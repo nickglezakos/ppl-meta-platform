@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from presence_auth import get_current_user, require_admin_user
 from models.presence_models import (
     BindResourcesRequest,
-    CreatePresenceGroupRequest,
     CreatePresenceSessionRequest,
+    PresenceIndividualGroupOption,
     PresenceBurstUploadRequest,
     PresenceOwnerQrRenderRequest,
     PresenceOwnerQrHitRequest,
@@ -16,6 +16,7 @@ from models.presence_models import (
     ResetInstallationReservationsRequest,
     ReserveResourceRequest,
     UnreserveResourceRequest,
+    UpdateActivePresenceGroupRequest,
     UpdateInstallationSettingsRequest,
     UpdateInstallationPolicyRequest,
 )
@@ -44,6 +45,18 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     async def update_current_installation_policy(request: UpdateInstallationPolicyRequest):
         return {"success": True, "data": service.update_installation_policy(request)}
 
+    @router.get("/installations/current/available-groups")
+    async def list_current_installation_available_groups(current_user: dict = Depends(get_current_user)):
+        items = await service.list_available_individual_groups(current_user)
+        return {"success": True, "data": {"items": [item.model_dump() for item in items]}}
+
+    @router.post("/installations/current/active-group")
+    async def update_current_installation_active_group(
+        request: UpdateActivePresenceGroupRequest,
+        current_user: dict = Depends(get_current_user),
+    ):
+        return {"success": True, "data": await service.update_active_presence_group(request, current_user)}
+
     @router.get("/installations/current/settings")
     async def get_current_installation_settings():
         context = service.get_current_installation_context()
@@ -56,25 +69,6 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     @router.get("/profiles/me")
     async def get_current_user_profile(current_user: dict = Depends(get_current_user)):
         return {"success": True, "data": service.get_current_user_profile(current_user)}
-
-    @router.get("/groups")
-    async def list_groups(installation_uuid: str | None = None):
-        return {"success": True, "data": {"items": [item.model_dump() for item in service.list_groups(installation_uuid)]}}
-
-    @router.get("/groups/{group_uuid}")
-    async def get_group(group_uuid: str):
-        group = service.get_group(group_uuid)
-        if not group:
-            raise HTTPException(status_code=404, detail="Presence group not found")
-        return {"success": True, "data": group.model_dump()}
-
-    @router.post("/groups/ensure")
-    async def ensure_group(
-        request: CreatePresenceGroupRequest,
-        current_user: dict = Depends(get_current_user),
-    ):
-        group = service.ensure_group(request, current_user)
-        return {"success": True, "data": group.model_dump()}
 
     @router.get("/mobile/sessions/{session_uuid}/action-plan")
     async def get_action_plan(session_uuid: str):

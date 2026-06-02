@@ -332,13 +332,13 @@ class PresenceApiClient {
     }
   }
 
-  Future<ApiResponse<List<PresenceGroupSummary>>> getGroups() async {
+  Future<ApiResponse<List<PresenceIndividualGroupOption>>> getAvailableIndividualGroups() async {
     try {
-      final response = await _apiClient.get('/api/v1/presence/groups');
+      final response = await _apiClient.get('/api/v1/presence/installations/current/available-groups');
       final data = _unwrapData(response.data);
       final items = (data['items'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
-          .map(PresenceGroupSummary.fromJson)
+          .map(PresenceIndividualGroupOption.fromJson)
           .toList();
       return ApiResponse.success(items);
     } on DioException catch (e) {
@@ -433,24 +433,22 @@ class PresenceApiClient {
     }
   }
 
-  Future<ApiResponse<PresenceGroupSummary>> ensureGroup({
+  Future<ApiResponse<PresenceInstallationContext>> updateActivePresenceGroup({
     required String installationUuid,
-    required String displayName,
-    String? userUuid,
-    PresenceGroupPolicy? groupPolicy,
+    String? individualGroupId,
+    String? groupName,
   }) async {
     try {
       final response = await _apiClient.post(
-        '/api/v1/presence/groups/ensure',
+        '/api/v1/presence/installations/current/active-group',
         data: {
           'installation_uuid': installationUuid,
-          'display_name': displayName,
-          if (userUuid != null && userUuid.isNotEmpty) 'user_uuid': userUuid,
-          if (groupPolicy != null) 'group_policy': groupPolicy.toJson(),
+          if (individualGroupId != null && individualGroupId.isNotEmpty) 'individual_group_id': individualGroupId,
+          if (groupName != null && groupName.isNotEmpty) 'group_name': groupName,
         },
       );
       final data = _unwrapData(response.data);
-      return ApiResponse.success(PresenceGroupSummary.fromJson(data));
+      return ApiResponse.success(PresenceInstallationContext.fromJson(data));
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {

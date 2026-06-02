@@ -74,6 +74,19 @@ class UpdateInstallationPolicyRequest(BaseModel):
     group_policy: PresenceGroupPolicy
 
 
+class UpdateActivePresenceGroupRequest(BaseModel):
+    installation_uuid: str = "local-installation"
+    individual_group_id: Optional[str] = None
+    group_name: Optional[str] = None
+
+
+class PresenceIndividualGroupOption(BaseModel):
+    individual_group_id: str
+    name: str
+    description: Optional[str] = None
+    member_count: int = 0
+
+
 class PresenceProfile(BaseModel):
     presence_profile_uuid: str = Field(default_factory=lambda: str(uuid4()))
     profile_type: str
@@ -86,26 +99,6 @@ class PresenceProfile(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class CreatePresenceGroupRequest(BaseModel):
-    installation_uuid: str = "local-installation"
-    user_uuid: Optional[str] = None
-    display_name: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    group_policy: Optional[PresenceGroupPolicy] = None
-
-
-class PresenceGroup(BaseModel):
-    group_uuid: str
-    installation_uuid: str = "local-installation"
-    user_uuid: Optional[str] = None
-    display_name: str
-    status: str = "active"
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    group_policy: Optional[PresenceGroupPolicy] = None
-    created_at: datetime
-    updated_at: datetime
 
 
 class PresenceResource(BaseModel):

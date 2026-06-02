@@ -19,12 +19,11 @@ from models.presence_models import (
     PresenceAssuranceLevel,
     PresenceAuditLogTrace,
     BindResourcesRequest,
-    CreatePresenceGroupRequest,
     CreatePresenceSessionRequest,
+    PresenceIndividualGroupOption,
     PresenceDecisionRecord,
     PresenceExternalAssets,
     PresenceGrantType,
-    PresenceGroup,
     PresenceGroupPolicy,
     PresenceAnalyticsEvent,
     PresencePolicyRule,
@@ -47,6 +46,7 @@ from models.presence_models import (
     ResetInstallationReservationsRequest,
     ReserveResourceRequest,
     UnreserveResourceRequest,
+    UpdateActivePresenceGroupRequest,
     UpdateInstallationSettingsRequest,
     UpdateInstallationPolicyRequest,
 )
@@ -108,27 +108,11 @@ class PresenceService:
             "user_uuid": profile.user_uuid,
             "presence_profile_uuid": profile.presence_profile_uuid,
             "presence_enabled": profile.status == "active",
-            "group_uuid": self._presence_group_uuid(profile.user_uuid),
+            "group_uuid": self._active_presence_individual_group_id(),
             "resolved_camera_uuid": self._get_default_camera_id(),
             "resolved_collection_uuid": self._get_default_collection_id(),
             "detection_backend_mode": config.DETECTION_BACKEND_MODE,
         }
-
-    def list_groups(self, installation_uuid: str | None = None) -> list[PresenceGroup]:
-        groups: list[PresenceGroup] = []
-        for profile in self.profiles.values():
-            if profile.profile_type != "group":
-                continue
-            if installation_uuid and profile.installation_uuid != installation_uuid:
-                continue
-            groups.append(self._group_from_profile(profile))
-        return groups
-
-    def get_group(self, group_uuid: str) -> PresenceGroup | None:
-        profile = self.profiles.get(group_uuid)
-        if not profile or profile.profile_type != "group":
-            return None
-        return self._group_from_profile(profile)
 
     def get_action_plan(self, session_uuid: str) -> PresenceActionPlan:
         session = self.sessions[session_uuid]
@@ -251,41 +235,6 @@ class PresenceService:
             "has_more": limit is not None and total > len(traces),
         }
 
-    def ensure_group(self, request: CreatePresenceGroupRequest, current_user: dict) -> PresenceGroup:
-        user_uuid = request.user_uuid or current_user.get("sub") or "unknown-user"
-        group_uuid = self._presence_group_uuid(user_uuid)
-        existing = self.profiles.get(group_uuid)
-        metadata = {
-            "group_type": "presence",
-            **request.metadata,
-        }
-        if request.group_policy is not None:
-            metadata["action_policy"] = request.group_policy.model_dump(exclude_none=True)
-
-        if existing and existing.profile_type == "group":
-            existing.installation_uuid = request.installation_uuid or existing.installation_uuid
-            existing.display_name = request.display_name or existing.display_name
-            existing.metadata = {
-                **existing.metadata,
-                **metadata,
-            }
-            existing.updated_at = datetime.utcnow()
-            self.repository.save_profile(existing)
-            return self._group_from_profile(existing)
-
-        display_name = request.display_name or f"Presence Group {user_uuid}"
-        profile = PresenceProfile(
-            presence_profile_uuid=group_uuid,
-            profile_type="group",
-            installation_uuid=request.installation_uuid,
-            user_uuid=user_uuid,
-            display_name=display_name,
-            metadata=metadata,
-        )
-        self.profiles[profile.presence_profile_uuid] = profile
-        self.repository.save_profile(profile)
-        return self._group_from_profile(profile)
-
     async def startup(self) -> None:
         from database import test_connection
 
@@ -311,6 +260,8 @@ class PresenceService:
             "preferred_camera_names": config.PREFERRED_CAMERA_NAMES,
             "allowed_camera_statuses": config.ALLOWED_CAMERA_STATUSES,
             "installation_reference": local_reference,
+            "active_presence_individual_group_id": self._active_presence_individual_group_id(),
+            "active_presence_individual_group_name": self._active_presence_individual_group_name(),
             "group_policy": self._group_policy_from_profile(self.installation_profile),
             "session_settings": self._session_settings_from_profile(self.installation_profile).model_dump(),
             "reserved_camera_uuid": reserved_camera.platform_resource_uuid if reserved_camera else None,
@@ -318,6 +269,60 @@ class PresenceService:
             "reserved_camera": reserved_camera.model_dump() if reserved_camera else None,
             "reserved_collection": reserved_collection.model_dump() if reserved_collection else None,
         }
+
+    async def list_available_individual_groups(self, current_user: dict) -> list[PresenceIndividualGroupOption]:
+        token = current_user.get("token")
+        if not token:
+            return []
+        groups = await self.platform_clients.list_individual_groups(token)
+        items: list[PresenceIndividualGroupOption] = []
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            group_id = group.get("id")
+            group_name = group.get("name")
+            if not group_id or not group_name:
+                continue
+            member_ids = group.get("member_ids") if isinstance(group.get("member_ids"), list) else []
+            member_count = group.get("member_count")
+            if not isinstance(member_count, int):
+                member_count = len(member_ids)
+            items.append(
+                PresenceIndividualGroupOption(
+                    individual_group_id=str(group_id),
+                    name=str(group_name),
+                    description=group.get("description") if isinstance(group.get("description"), str) else None,
+                    member_count=member_count,
+                )
+            )
+        return items
+
+    async def update_active_presence_group(self, request: UpdateActivePresenceGroupRequest, current_user: dict) -> dict:
+        token = current_user.get("token")
+        if token:
+            group_id, group_name = await self._resolve_or_create_active_individual_group(
+                token=token,
+                installation_uuid=request.installation_uuid,
+                selected_group_id=request.individual_group_id,
+                requested_group_name=request.group_name,
+            )
+            previous_group_id = self._active_presence_individual_group_id()
+            metadata = {
+                **(self.installation_profile.metadata or {}),
+                "active_presence_individual_group_id": group_id,
+                "active_presence_individual_group_name": group_name,
+            }
+            if previous_group_id != group_id:
+                metadata.pop("presence_trigger_uuid", None)
+                metadata.pop("presence_action_uuid", None)
+                metadata.pop("presence_seed_member_id", None)
+                metadata.pop("presence_seeded_at", None)
+            self.installation_profile.installation_uuid = request.installation_uuid
+            self.installation_profile.metadata = metadata
+            self.installation_profile.updated_at = datetime.utcnow()
+            self.profiles[self.installation_profile.presence_profile_uuid] = self.installation_profile
+            self.repository.save_profile(self.installation_profile)
+        return self.get_current_installation_context()
 
     def update_installation_policy(self, request: UpdateInstallationPolicyRequest) -> dict:
         self.installation_profile.installation_uuid = request.installation_uuid
@@ -379,14 +384,6 @@ class PresenceService:
         profile = self._get_or_create_user_profile(current_user=current_user, device_uuid=request.device_uuid)
         session_settings = self._current_session_settings()
         await self._ensure_default_resources(current_user)
-        self.ensure_group(
-            CreatePresenceGroupRequest(
-                installation_uuid="local-installation",
-                user_uuid=profile.user_uuid,
-                display_name=f"Presence Group {profile.user_uuid}",
-            ),
-            current_user,
-        )
         session = PresenceSession(
             device_uuid=request.device_uuid,
             user_uuid=profile.user_uuid or "unknown-user",
@@ -1229,17 +1226,13 @@ class PresenceService:
         if not token or not session.user_uuid or not session.resolved_camera_uuid:
             return
 
-        group_profile = self.profiles.get(self._presence_group_uuid(session.user_uuid))
-        if not group_profile:
-            return
-
-        metadata = dict(group_profile.metadata or {})
+        metadata = dict(self.installation_profile.metadata or {})
         changed = False
 
-        individual_group_id = metadata.get("presence_individual_group_id")
-        if not individual_group_id:
-            individual_group_id = await self._ensure_external_individual_group(session, token)
-            metadata["presence_individual_group_id"] = individual_group_id
+        individual_group_id = await self._ensure_external_individual_group(session, token)
+        if metadata.get("active_presence_individual_group_id") != individual_group_id:
+            metadata["active_presence_individual_group_id"] = individual_group_id
+            metadata["active_presence_individual_group_name"] = self._active_presence_individual_group_name() or "presence"
             changed = True
 
         action_uuid = metadata.get("presence_action_uuid")
@@ -1261,32 +1254,29 @@ class PresenceService:
             changed = True
 
         if changed:
-            group_profile.metadata = metadata
-            group_profile.updated_at = datetime.utcnow()
-            self.repository.save_profile(group_profile)
+            self.installation_profile.metadata = metadata
+            self.installation_profile.updated_at = datetime.utcnow()
+            self.repository.save_profile(self.installation_profile)
 
         self._sync_session_external_assets(session)
 
     async def _ensure_external_individual_group(self, session: PresenceSession, token: str) -> str:
-        expected_name = self._presence_individual_group_name(session.user_uuid)
-        groups = await self.platform_clients.list_individual_groups(token)
-        existing = next((group for group in groups if group.get("name") == expected_name), None)
-        if existing and existing.get("id"):
-            return str(existing["id"])
-
-        payload = {
-            "name": expected_name,
-            "description": f"Presence individuals group for user {session.user_uuid}",
-            "visibility": "private",
-            "tags": ["presence", "auto", f"user:{session.user_uuid}"],
-            "initial_member_ids": [],
-        }
-        response = await self.platform_clients.create_individual_group(token, payload)
-        group = response.get("group") if isinstance(response.get("group"), dict) else response
-        group_id = group.get("id") if isinstance(group, dict) else None
-        if not group_id:
-            raise RuntimeError("Presence individual group creation did not return an id")
-        return str(group_id)
+        group_id, group_name = await self._resolve_or_create_active_individual_group(
+            token=token,
+            installation_uuid=session.installation_uuid,
+            requested_group_name=self._active_presence_individual_group_name() or "presence",
+        )
+        current_group_id = self._active_presence_individual_group_id()
+        current_group_name = self._active_presence_individual_group_name()
+        if current_group_id != group_id or current_group_name != group_name:
+            self.installation_profile.metadata = {
+                **(self.installation_profile.metadata or {}),
+                "active_presence_individual_group_id": group_id,
+                "active_presence_individual_group_name": group_name,
+            }
+            self.installation_profile.updated_at = datetime.utcnow()
+            self.repository.save_profile(self.installation_profile)
+        return group_id
 
     async def _ensure_external_presence_action(self, session: PresenceSession, token: str) -> str:
         expected_name = self._presence_action_name(session.user_uuid)
@@ -1363,15 +1353,11 @@ class PresenceService:
             return False
 
         token = current_user.get("token")
-        if not token or not session.user_uuid:
+        if not token:
             return False
 
-        group_profile = self.profiles.get(self._presence_group_uuid(session.user_uuid))
-        if not group_profile:
-            return False
-
-        metadata = dict(group_profile.metadata or {})
-        group_id = metadata.get("presence_individual_group_id")
+        metadata = dict(self.installation_profile.metadata or {})
+        group_id = metadata.get("active_presence_individual_group_id")
         if not group_id:
             return False
 
@@ -1390,23 +1376,18 @@ class PresenceService:
         )
         metadata["presence_seed_member_id"] = identity_ids[0]
         metadata["presence_seeded_at"] = datetime.utcnow().isoformat()
-        group_profile.metadata = metadata
-        group_profile.updated_at = datetime.utcnow()
-        self.repository.save_profile(group_profile)
+        self.installation_profile.metadata = metadata
+        self.installation_profile.updated_at = datetime.utcnow()
+        self.repository.save_profile(self.installation_profile)
         self._sync_session_external_assets(session)
         return True
 
     def _external_assets_for_user(self, user_uuid: str | None) -> PresenceExternalAssets | None:
-        if not user_uuid:
+        metadata = self.installation_profile.metadata if isinstance(self.installation_profile.metadata, dict) else None
+        if not metadata:
             return None
-
-        group_profile = self.profiles.get(self._presence_group_uuid(user_uuid))
-        if not group_profile or not isinstance(group_profile.metadata, dict):
-            return None
-
-        metadata = group_profile.metadata
         assets = PresenceExternalAssets(
-            individual_group_id=metadata.get("presence_individual_group_id"),
+            individual_group_id=metadata.get("active_presence_individual_group_id"),
             trigger_uuid=metadata.get("presence_trigger_uuid"),
             action_uuid=metadata.get("presence_action_uuid"),
         )
@@ -1424,14 +1405,14 @@ class PresenceService:
         current_user: dict,
     ) -> dict | None:
         token = current_user.get("token")
-        if not token or not session.user_uuid:
+        if not token:
             return None
 
-        group_profile = self.profiles.get(self._presence_group_uuid(session.user_uuid))
-        if not group_profile or not isinstance(group_profile.metadata, dict):
+        metadata = self.installation_profile.metadata if isinstance(self.installation_profile.metadata, dict) else None
+        if not metadata:
             return None
 
-        trigger_uuid = group_profile.metadata.get("presence_trigger_uuid")
+        trigger_uuid = metadata.get("presence_trigger_uuid")
         if not trigger_uuid:
             return None
 
@@ -1893,13 +1874,7 @@ class PresenceService:
         return status in config.ALLOWED_CAMERA_STATUSES
 
     def _resolve_matched_group_uuid(self, session: PresenceSession) -> str | None:
-        if not session.user_uuid or session.user_uuid == "unknown-user":
-            return None
-        group_uuid = self._presence_group_uuid(session.user_uuid)
-        group_profile = self.profiles.get(group_uuid)
-        if not group_profile:
-            return None
-        return group_uuid
+        return self._active_presence_individual_group_id()
 
     def _resolve_trigger_and_action(self, session: PresenceSession) -> tuple[str | None, str | None, str | None]:
         policy_rule = self._resolve_group_policy_rule(session)
@@ -2263,21 +2238,51 @@ class PresenceService:
             return PresenceGrantType.PRESENCE_MATCH
         return PresenceGrantType.VERIFIED_PRESENCE
 
-    def _group_from_profile(self, profile: PresenceProfile) -> PresenceGroup:
-        return PresenceGroup(
-            group_uuid=profile.presence_profile_uuid,
-            installation_uuid=profile.installation_uuid or "local-installation",
-            user_uuid=profile.user_uuid,
-            display_name=profile.display_name,
-            status=profile.status,
-            metadata=profile.metadata,
-            group_policy=self._group_policy_from_profile(profile),
-            created_at=profile.created_at,
-            updated_at=profile.updated_at,
-        )
+    def _active_presence_individual_group_id(self) -> str | None:
+        metadata = self.installation_profile.metadata or {}
+        value = metadata.get("active_presence_individual_group_id")
+        return value if isinstance(value, str) and value else None
 
-    def _presence_group_uuid(self, user_uuid: str | None) -> str:
-        return f"grp_presence_{user_uuid or 'unknown-user'}"
+    def _active_presence_individual_group_name(self) -> str | None:
+        metadata = self.installation_profile.metadata or {}
+        value = metadata.get("active_presence_individual_group_name")
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
+    async def _resolve_or_create_active_individual_group(
+        self,
+        token: str,
+        installation_uuid: str | None,
+        selected_group_id: str | None = None,
+        requested_group_name: str | None = None,
+    ) -> tuple[str, str]:
+        groups = await self.platform_clients.list_individual_groups(token)
+        if selected_group_id:
+            existing_by_id = next((group for group in groups if str(group.get("id")) == selected_group_id), None)
+            if existing_by_id and existing_by_id.get("id") and existing_by_id.get("name"):
+                return str(existing_by_id["id"]), str(existing_by_id["name"])
+
+        effective_name = (requested_group_name or self._active_presence_individual_group_name() or "presence").strip() or "presence"
+        existing_by_name = next(
+            (group for group in groups if str(group.get("name", "")).strip().lower() == effective_name.lower()),
+            None,
+        )
+        if existing_by_name and existing_by_name.get("id") and existing_by_name.get("name"):
+            return str(existing_by_name["id"]), str(existing_by_name["name"])
+
+        payload = {
+            "name": effective_name,
+            "description": f"Presence individuals group for installation {installation_uuid or self.installation_profile.installation_uuid}",
+            "visibility": "private",
+            "tags": ["presence", "bootstrap", f"installation:{installation_uuid or self.installation_profile.installation_uuid}"],
+            "initial_member_ids": [],
+        }
+        response = await self.platform_clients.create_individual_group(token, payload)
+        group = response.get("group") if isinstance(response.get("group"), dict) else response
+        group_id = group.get("id") if isinstance(group, dict) else None
+        group_name = group.get("name") if isinstance(group, dict) else None
+        if not group_id:
+            raise RuntimeError("Presence individual group creation did not return an id")
+        return str(group_id), str(group_name or effective_name)
 
     def _should_simulate_detection(self) -> bool:
         return config.DETECTION_BACKEND_MODE == "simulate"
@@ -2507,11 +2512,10 @@ class PresenceService:
         if not assets or not assets.trigger_uuid:
             return None
 
-        group_profile = self.profiles.get(self._presence_group_uuid(session.user_uuid))
-        if not group_profile or not isinstance(group_profile.metadata, dict):
+        metadata = self.installation_profile.metadata if isinstance(self.installation_profile.metadata, dict) else None
+        if not metadata:
             return PresenceTriggerObservation(trigger_uuid=assets.trigger_uuid)
 
-        metadata = group_profile.metadata
         configured_action_uuid = metadata.get("presence_action_uuid")
         trigger = getattr(self.platform_clients, "trigger_lookup", {}).get(assets.trigger_uuid)
         if not isinstance(trigger, dict):

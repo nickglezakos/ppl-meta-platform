@@ -178,6 +178,8 @@ class PresenceInstallationContext {
   final String installationName;
   final String licenceStatus;
   final String detectionBackendMode;
+  final String? activePresenceIndividualGroupId;
+  final String? activePresenceIndividualGroupName;
   final List<String> preferredCameraTypes;
   final List<String> preferredCameraNames;
   final List<String> allowedCameraStatuses;
@@ -195,6 +197,8 @@ class PresenceInstallationContext {
     required this.installationName,
     required this.licenceStatus,
     required this.detectionBackendMode,
+    required this.activePresenceIndividualGroupId,
+    required this.activePresenceIndividualGroupName,
     required this.preferredCameraTypes,
     required this.preferredCameraNames,
     required this.allowedCameraStatuses,
@@ -222,6 +226,8 @@ class PresenceInstallationContext {
       installationName: (json['installation_name'] ?? '').toString(),
       licenceStatus: (json['licence_status'] ?? '').toString(),
       detectionBackendMode: (json['detection_backend_mode'] ?? '').toString(),
+      activePresenceIndividualGroupId: json['active_presence_individual_group_id']?.toString(),
+      activePresenceIndividualGroupName: json['active_presence_individual_group_name']?.toString(),
       preferredCameraTypes: readList('preferred_camera_types'),
       preferredCameraNames: readList('preferred_camera_names'),
       allowedCameraStatuses: readList('allowed_camera_statuses'),
@@ -240,6 +246,30 @@ class PresenceInstallationContext {
       reservedCollection: json['reserved_collection'] is Map<String, dynamic>
           ? PresenceResourceReservation.fromJson(json['reserved_collection'] as Map<String, dynamic>)
           : null,
+    );
+  }
+}
+
+class PresenceIndividualGroupOption {
+  final String individualGroupId;
+  final String name;
+  final String? description;
+  final int memberCount;
+
+  const PresenceIndividualGroupOption({
+    required this.individualGroupId,
+    required this.name,
+    required this.description,
+    required this.memberCount,
+  });
+
+  factory PresenceIndividualGroupOption.fromJson(Map<String, dynamic> json) {
+    final rawMemberCount = json['member_count'];
+    return PresenceIndividualGroupOption(
+      individualGroupId: (json['individual_group_id'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
+      description: json['description']?.toString(),
+      memberCount: rawMemberCount is num ? rawMemberCount.toInt() : 0,
     );
   }
 }
@@ -275,37 +305,6 @@ class PresenceCameraOption {
       reservedResourceUuid: json['reserved_resource_uuid']?.toString(),
       reservedInstallationUuid: json['reserved_installation_uuid']?.toString(),
       linkedCollectionUuid: json['linked_collection_uuid']?.toString(),
-    );
-  }
-}
-
-class PresenceGroupSummary {
-  final String groupUuid;
-  final String installationUuid;
-  final String? userUuid;
-  final String displayName;
-  final String status;
-  final PresenceGroupPolicy? groupPolicy;
-
-  const PresenceGroupSummary({
-    required this.groupUuid,
-    required this.installationUuid,
-    required this.userUuid,
-    required this.displayName,
-    required this.status,
-    required this.groupPolicy,
-  });
-
-  factory PresenceGroupSummary.fromJson(Map<String, dynamic> json) {
-    return PresenceGroupSummary(
-      groupUuid: (json['group_uuid'] ?? '').toString(),
-      installationUuid: (json['installation_uuid'] ?? '').toString(),
-      userUuid: json['user_uuid']?.toString(),
-      displayName: (json['display_name'] ?? '').toString(),
-      status: (json['status'] ?? '').toString(),
-      groupPolicy: json['group_policy'] is Map<String, dynamic>
-          ? PresenceGroupPolicy.fromJson(json['group_policy'] as Map<String, dynamic>)
-          : null,
     );
   }
 }
