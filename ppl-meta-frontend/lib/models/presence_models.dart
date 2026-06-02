@@ -181,6 +181,7 @@ class PresenceInstallationContext {
   final List<String> preferredCameraTypes;
   final List<String> preferredCameraNames;
   final List<String> allowedCameraStatuses;
+  final Map<String, dynamic> installationReference;
   final PresenceGroupPolicy? groupPolicy;
   final PresenceSessionSettings sessionSettings;
   final String? reservedCameraUuid;
@@ -197,6 +198,7 @@ class PresenceInstallationContext {
     required this.preferredCameraTypes,
     required this.preferredCameraNames,
     required this.allowedCameraStatuses,
+    required this.installationReference,
     required this.groupPolicy,
     required this.sessionSettings,
     required this.reservedCameraUuid,
@@ -223,6 +225,7 @@ class PresenceInstallationContext {
       preferredCameraTypes: readList('preferred_camera_types'),
       preferredCameraNames: readList('preferred_camera_names'),
       allowedCameraStatuses: readList('allowed_camera_statuses'),
+        installationReference: (json['installation_reference'] as Map<String, dynamic>? ?? const {}),
       groupPolicy: json['group_policy'] is Map<String, dynamic>
           ? PresenceGroupPolicy.fromJson(json['group_policy'] as Map<String, dynamic>)
           : null,
@@ -783,6 +786,7 @@ class PresenceQrPayload {
   final String? sessionUuid;
   final String? sessionStatus;
   final String? qrStatus;
+  final String? qrType;
   final Map<String, dynamic>? payload;
 
   const PresenceQrPayload({
@@ -794,6 +798,7 @@ class PresenceQrPayload {
     required this.sessionUuid,
     required this.sessionStatus,
     required this.qrStatus,
+    required this.qrType,
     required this.payload,
   });
 
@@ -807,6 +812,7 @@ class PresenceQrPayload {
       sessionUuid: json['session_uuid']?.toString(),
       sessionStatus: json['session_status']?.toString(),
       qrStatus: json['qr_status']?.toString(),
+      qrType: json['qr_type']?.toString() ?? (json['payload'] is Map<String, dynamic> ? (json['payload']['qr_type']?.toString()) : null),
       payload: json['payload'] is Map<String, dynamic> ? json['payload'] as Map<String, dynamic> : null,
     );
   }
@@ -816,11 +822,15 @@ class PresenceQrValidation {
   final bool valid;
   final String? sessionUuid;
   final String? installationUuid;
+  final String? qrType;
+  final String? referenceSource;
 
   const PresenceQrValidation({
     required this.valid,
     required this.sessionUuid,
     required this.installationUuid,
+    required this.qrType,
+    required this.referenceSource,
   });
 
   factory PresenceQrValidation.fromJson(Map<String, dynamic> json) {
@@ -828,6 +838,8 @@ class PresenceQrValidation {
       valid: json['valid'] == true,
       sessionUuid: json['session_uuid']?.toString(),
       installationUuid: json['installation_uuid']?.toString(),
+      qrType: json['qr_type']?.toString(),
+      referenceSource: json['reference_source']?.toString(),
     );
   }
 }

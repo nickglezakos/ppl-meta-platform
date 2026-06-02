@@ -12,12 +12,14 @@ import '../models/presence_mobile_models.dart';
 import 'auto_camera_registration_service.dart';
 import 'device_identifier_service.dart';
 import 'discovery_config_service.dart';
+import 'app_logger.dart';
 
 class PresenceMobileService {
   final AuthenticationService _authService = AuthenticationService.instance;
   final AutoCameraRegistrationService _registrationService = AutoCameraRegistrationService();
   final DeviceIdentifierService _deviceIdentifierService = DeviceIdentifierService();
   final DiscoveryConfigService _discoveryConfig = DiscoveryConfigService.instance;
+  String? _cachedInstallationUuid;
 
   Future<String> ensureRegisteredDevice() async {
     final token = _requireAuthToken();
@@ -73,6 +75,27 @@ class PresenceMobileService {
     return PresenceMobileResult.fromJson(_unwrapData(response));
   }
 
+  Future<List<PresenceMobileSessionTraceSummary>> getSessionTraces({
+    String? userUuid,
+    int limit = 10,
+  }) async {
+    final token = _requireAuthToken();
+    final baseUrl = await _presenceBaseUrl();
+    final uri = Uri.parse('$baseUrl/api/v1/presence/mobile/session-traces').replace(
+      queryParameters: {
+        'limit': limit.toString(),
+        if (userUuid != null && userUuid.isNotEmpty) 'user_uuid': userUuid,
+      },
+    );
+    final response = await http.get(uri, headers: _jsonHeaders(token));
+    final data = _unwrapData(response);
+    final items = (data['items'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(PresenceMobileSessionTraceSummary.fromJson)
+        .toList();
+    return items;
+  }
+
   Future<PresenceMobileQrPayload> getCurrentQr({
     required String installationUuid,
     String? deviceReference,
@@ -92,6 +115,8 @@ class PresenceMobileService {
   Future<PresenceMobileQrPayload> renderQr({
     required String installationUuid,
     String? deviceReference,
+    String? deviceDisplayName,
+    Map<String, dynamic>? location,
   }) async {
     final token = _requireAuthToken();
     final baseUrl = await _presenceBaseUrl();
@@ -101,6 +126,8 @@ class PresenceMobileService {
       body: jsonEncode({
         'installation_uuid': installationUuid,
         if (deviceReference != null && deviceReference.isNotEmpty) 'device_reference': deviceReference,
+        if (deviceDisplayName != null && deviceDisplayName.isNotEmpty) 'device_display_name': deviceDisplayName,
+        if (location != null) 'location': location,
       }),
     );
     final data = _unwrapData(response);
@@ -114,6 +141,50 @@ class PresenceMobileService {
       sessionUuid: payload?['session_uuid']?.toString(),
       sessionStatus: null,
       qrStatus: null,
+      qrType: payload?['qr_type']?.toString(),
+      payload: payload,
+    );
+  }
+
+  Future<PresenceMobileQrPayload> renderOwnerQr({
+    required String installationUuid,
+    String? ownerUserUuid,
+    String? ownerDisplayName,
+  }) async {
+    final token = _requireAuthToken();
+    final baseUrl = await _presenceBaseUrl();
+    AppLogger.instance.info(
+      'PresenceMobileService.renderOwnerQr start: baseUrl=$baseUrl, installation=$installationUuid, hasOwnerUser=${ownerUserUuid != null && ownerUserUuid.isNotEmpty}, hasDisplayName=${ownerDisplayName != null && ownerDisplayName.isNotEmpty}',
+    );
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/api/v1/presence/qr/render-owner'),
+          headers: _jsonHeaders(token),
+          body: jsonEncode({
+            'installation_uuid': installationUuid,
+            if (ownerUserUuid != null && ownerUserUuid.isNotEmpty) 'owner_user_uuid': ownerUserUuid,
+            if (ownerDisplayName != null && ownerDisplayName.isNotEmpty) 'owner_display_name': ownerDisplayName,
+          }),
+        )
+        .timeout(const Duration(seconds: 8));
+    AppLogger.instance.info(
+      'PresenceMobileService.renderOwnerQr response: status=${response.statusCode}, bytes=${response.bodyBytes.length}',
+    );
+    final data = _unwrapData(response);
+    final payload = data['payload'] is Map<String, dynamic> ? data['payload'] as Map<String, dynamic> : null;
+    AppLogger.instance.info(
+      'PresenceMobileService.renderOwnerQr parsed payload: session=${payload?['session_uuid']}, type=${payload?['qr_type']}, hasQrToken=${payload?['qr_token'] != null}',
+    );
+    return PresenceMobileQrPayload(
+      found: payload != null,
+      installationUuid: installationUuid,
+      deviceReference: null,
+      qrToken: payload?['qr_token']?.toString(),
+      expiresAt: payload?['expires_at']?.toString(),
+      sessionUuid: payload?['session_uuid']?.toString(),
+      sessionStatus: null,
+      qrStatus: null,
+      qrType: payload?['qr_type']?.toString(),
       payload: payload,
     );
   }
@@ -182,16 +253,40 @@ class PresenceMobileService {
   }) async {
     final token = _requireAuthToken();
     final baseUrl = await _presenceBaseUrl();
+    final installationUuid = await resolveInstallationUuid();
     final response = await http.post(
       Uri.parse('$baseUrl/api/v1/presence/mobile/sessions/$sessionUuid/qr-hit'),
       headers: _jsonHeaders(token),
       body: jsonEncode({
         'qr_token': qrToken,
-        'installation_uuid': 'local-installation',
+        'installation_uuid': installationUuid,
         'scanned_at': DateTime.now().toUtc().toIso8601String(),
       }),
     );
     return PresenceMobileSession.fromJson(_unwrapData(response));
+  }
+
+  Future<String> resolveInstallationUuid() async {
+    if (_cachedInstallationUuid != null && _cachedInstallationUuid!.isNotEmpty) {
+      return _cachedInstallationUuid!;
+    }
+
+    final token = _requireAuthToken();
+    final baseUrl = await _presenceBaseUrl();
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/v1/presence/installations/current'),
+      headers: _jsonHeaders(token),
+    );
+    final data = _unwrapData(response);
+    final installationUuid = data['installation_uuid']?.toString() ?? '';
+    if (installationUuid.isEmpty) {
+      throw Exception('Presence installation UUID is not available');
+    }
+    _cachedInstallationUuid = installationUuid;
+    AppLogger.instance.info(
+      'PresenceMobileService.resolveInstallationUuid resolved installation=$installationUuid',
+    );
+    return installationUuid;
   }
 
   String parseQrToken(String rawValue) {

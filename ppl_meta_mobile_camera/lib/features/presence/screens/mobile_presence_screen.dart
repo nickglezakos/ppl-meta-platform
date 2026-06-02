@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 
 import 'package:camera/camera.dart';
@@ -29,6 +30,9 @@ class MobilePresenceScreen extends StatefulWidget {
 class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
   final PresenceMobileService _presenceService = PresenceMobileService();
   final TextEditingController _stationDeviceReferenceController = TextEditingController(text: 'mobile-presence-station');
+  final TextEditingController _stationDisplayNameController = TextEditingController(text: 'Presence Mobile Station');
+  final TextEditingController _locationLabelController = TextEditingController();
+  final TextEditingController _ownerDisplayNameController = TextEditingController();
 
   String _role = 'scanner';
   late String _sessionMode;
@@ -38,12 +42,18 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
   PresenceMobileDetectionAttempt? _lastAttempt;
   PresenceMobileDetectionStatus? _detectionStatus;
   PresenceMobileQrPayload? _stationQr;
+  PresenceMobileSessionTraceSummary? _latestOwnerGrant;
   CameraController? _frontCameraController;
   bool _isBusy = false;
   bool _autoPolling = false;
   String? _statusMessage;
   Timer? _pollTimer;
+  Timer? _ownerGrantPollTimer;
   String? _lastTerminalAlertKey;
+  String? _lastGrantedAlertKey;
+  String? _lastOwnerGrantAlertKey;
+  String? _ownerWatchedUserUuid;
+  DateTime? _ownerQrIssuedAt;
 
   bool get _requiresFrontBurst => _sessionMode == 'qr_plus_camera';
   bool get _usesStreamingOnlyCameraPath => _sessionMode == 'camera_only';
@@ -58,8 +68,12 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _ownerGrantPollTimer?.cancel();
     _frontCameraController?.dispose();
     _stationDeviceReferenceController.dispose();
+    _stationDisplayNameController.dispose();
+    _locationLabelController.dispose();
+    _ownerDisplayNameController.dispose();
     super.dispose();
   }
 
@@ -89,16 +103,19 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
   Future<void> _renderStationQr({bool renderIfMissing = false}) async {
     await _runBusy(() async {
       final deviceReference = _stationDeviceReferenceController.text.trim();
+      final installationUuid = await _presenceService.resolveInstallationUuid();
       final current = await _presenceService.getCurrentQr(
-        installationUuid: 'local-installation',
+        installationUuid: installationUuid,
         deviceReference: deviceReference.isEmpty ? null : deviceReference,
       );
 
       var effectiveQr = current;
       if (renderIfMissing && (!current.found || (current.qrToken?.isEmpty ?? true))) {
         effectiveQr = await _presenceService.renderQr(
-          installationUuid: 'local-installation',
+          installationUuid: installationUuid,
           deviceReference: deviceReference.isEmpty ? null : deviceReference,
+          deviceDisplayName: _stationDisplayNameController.text.trim().isEmpty ? null : _stationDisplayNameController.text.trim(),
+          location: _locationLabelController.text.trim().isEmpty ? null : {'label': _locationLabelController.text.trim()},
         );
       }
 
@@ -107,25 +124,109 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
       }
       setState(() {
         _stationQr = effectiveQr;
+        _latestOwnerGrant = null;
+        _ownerQrIssuedAt = null;
         _statusMessage = effectiveQr.found
             ? 'Station QR is ready for another device to scan.'
             : 'No station QR is currently active for this device reference.';
       });
+      _setOwnerGrantPolling(false);
     });
   }
 
   Future<void> _copyStationQrToken() async {
-    final qrToken = _stationQr?.qrToken;
-    if (qrToken == null || qrToken.isEmpty) {
+    final qrData = _stationQrData;
+    if (qrData.isEmpty) {
       return;
     }
-    await Clipboard.setData(ClipboardData(text: qrToken));
+    await Clipboard.setData(ClipboardData(text: qrData));
     if (!mounted) {
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Station QR token copied.')),
     );
+  }
+
+  String get _stationQrData {
+    final payload = _stationQr?.payload;
+    if (payload != null) {
+      return jsonEncode(payload);
+    }
+    return _stationQr?.qrToken ?? '';
+  }
+
+  Future<void> _renderOwnerQr() async {
+    await _runBusy(() async {
+      final installationUuid = await _presenceService.resolveInstallationUuid();
+      final qr = await _presenceService.renderOwnerQr(
+        installationUuid: installationUuid,
+        ownerDisplayName: _ownerDisplayNameController.text.trim().isEmpty ? null : _ownerDisplayNameController.text.trim(),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _stationQr = qr;
+        _latestOwnerGrant = null;
+        _ownerQrIssuedAt = DateTime.now();
+        _statusMessage = 'Owner QR is ready for another scanner or printable export.';
+      });
+      _startOwnerGrantWatcher(qr);
+    });
+  }
+
+  void _startOwnerGrantWatcher(PresenceMobileQrPayload qr) {
+    final payload = qr.payload;
+    final owner = payload?['owner'];
+    final ownerUserUuid = owner is Map<String, dynamic>
+        ? owner['owner_user_uuid']?.toString()
+        : null;
+    if (ownerUserUuid == null || ownerUserUuid.isEmpty) {
+      _setOwnerGrantPolling(false);
+      return;
+    }
+    _ownerWatchedUserUuid = ownerUserUuid;
+    _setOwnerGrantPolling(true);
+    _refreshOwnerGrantStatus();
+  }
+
+  Future<void> _refreshOwnerGrantStatus() async {
+    final ownerUserUuid = _ownerWatchedUserUuid;
+    if (ownerUserUuid == null || ownerUserUuid.isEmpty) {
+      return;
+    }
+
+    try {
+      final traces = await _presenceService.getSessionTraces(userUuid: ownerUserUuid, limit: 8);
+      final issuedAt = _ownerQrIssuedAt;
+      final granted = traces.where((trace) {
+        if (trace.decision != 'granted') {
+          return false;
+        }
+        if (issuedAt == null) {
+          return true;
+        }
+        final effectiveTime = trace.completedAt ?? trace.createdAt;
+        return effectiveTime == null || !effectiveTime.isBefore(issuedAt);
+      }).toList()
+        ..sort((left, right) {
+          final leftTime = left.completedAt ?? left.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final rightTime = right.completedAt ?? right.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return rightTime.compareTo(leftTime);
+        });
+      if (!mounted || granted.isEmpty) {
+        return;
+      }
+      final latest = granted.first;
+      setState(() {
+        _latestOwnerGrant = latest;
+        _statusMessage = 'Owner QR has been granted by a station scanner.';
+      });
+      _showOwnerGrantAlertIfNeeded(latest);
+    } catch (_) {
+      // Keep polling silently for manual operator flow.
+    }
   }
 
   Future<void> _ensureFrontCameraPreview() async {
@@ -314,6 +415,10 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
         result: result,
         session: refreshedSession,
       );
+      _showGrantedAlertIfNeeded(
+        result: result,
+        session: refreshedSession,
+      );
     } catch (error) {
       if (!mounted) {
         return;
@@ -322,6 +427,45 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
         _statusMessage = error.toString();
       });
     }
+  }
+
+  void _showGrantedAlertIfNeeded({
+    PresenceMobileResult? result,
+    PresenceMobileSession? session,
+  }) {
+    if (!mounted) {
+      return;
+    }
+    final granted = result?.decision == 'granted' || session?.decision == 'granted' || result?.status == 'completed';
+    if (!granted) {
+      return;
+    }
+    final sessionUuid = result?.sessionUuid ?? session?.sessionUuid ?? '';
+    final alertKey = '$sessionUuid:granted';
+    if (_lastGrantedAlertKey == alertKey) {
+      return;
+    }
+    _lastGrantedAlertKey = alertKey;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Presence grant awarded.'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  void _showOwnerGrantAlertIfNeeded(PresenceMobileSessionTraceSummary trace) {
+    final alertKey = '${trace.sessionUuid}:owner-granted';
+    if (_lastOwnerGrantAlertKey == alertKey || !mounted) {
+      return;
+    }
+    _lastOwnerGrantAlertKey = alertKey;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Owner QR grant awarded by station scanner.'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   void _showTerminalFailureAlertIfNeeded({
@@ -368,13 +512,13 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
   String _humanizeFailureReason(String reasonCode) {
     switch (reasonCode) {
       case 'presence_session_expired':
-        return 'The presence session expired before a successful match was completed.';
+        return 'The presence session expired before a successful match was completed. Please try again.';
       case 'presence_attempt_limit_reached':
-        return 'The presence session reached the maximum number of unsuccessful attempts.';
+        return 'The presence session reached the maximum number of unsuccessful attempts. Please try again.';
       case 'presence_no_match':
-        return 'The presence session ended without a matching person.';
+        return 'The presence session ended without a matching person. Please try again.';
       default:
-        return 'The presence session ended unsuccessfully.';
+        return 'The presence session ended unsuccessfully. Please try again.';
     }
   }
 
@@ -398,6 +542,18 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!_isBusy && mounted) {
         _refreshResult();
+      }
+    });
+  }
+
+  void _setOwnerGrantPolling(bool enabled) {
+    _ownerGrantPollTimer?.cancel();
+    if (!enabled) {
+      return;
+    }
+    _ownerGrantPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!_isBusy && mounted) {
+        _refreshOwnerGrantStatus();
       }
     });
   }
@@ -494,6 +650,8 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
                       });
                       if (selection.first == 'station') {
                         _renderStationQr();
+                      } else {
+                        _setOwnerGrantPolling(false);
                       }
                     },
             ),
@@ -517,6 +675,30 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _stationDisplayNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Station Display Name',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _locationLabelController,
+                        decoration: const InputDecoration(
+                          labelText: 'Location Label',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _ownerDisplayNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Owner QR Display Name',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       Wrap(
                         spacing: 12,
                         runSpacing: 12,
@@ -527,9 +709,14 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
                             label: const Text('Render / Refresh QR'),
                           ),
                           OutlinedButton.icon(
-                            onPressed: _isBusy || _stationQr?.qrToken == null ? null : _copyStationQrToken,
+                            onPressed: _isBusy ? null : _renderOwnerQr,
+                            icon: const Icon(Icons.badge),
+                            label: const Text('Render Owner QR'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _isBusy || _stationQrData.isEmpty ? null : _copyStationQrToken,
                             icon: const Icon(Icons.copy),
-                            label: const Text('Copy Token'),
+                            label: const Text('Copy QR Data'),
                           ),
                         ],
                       ),
@@ -543,7 +730,7 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
                           ),
                           child: Center(
                             child: QrImageView(
-                              data: _stationQr!.qrToken!,
+                              data: _stationQrData,
                               version: QrVersions.auto,
                               size: 220,
                               backgroundColor: Colors.white,
@@ -551,10 +738,25 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        SelectableText(_stationQr!.qrToken!),
+                        SelectableText(_stationQrData),
                         if (_stationQr!.expiresAt != null) ...[
                           const SizedBox(height: 8),
                           Text('Expires: ${_stationQr!.expiresAt}'),
+                        ],
+                        if (_stationQr!.qrType != null) ...[
+                          const SizedBox(height: 8),
+                          Text('QR Type: ${_stationQr!.qrType}'),
+                        ],
+                        if (_stationQr!.payload != null) ...[
+                          const SizedBox(height: 8),
+                          SelectableText(_stationQr!.payload.toString()),
+                        ],
+                        if (_latestOwnerGrant != null) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            'Latest owner grant: ${_latestOwnerGrant!.sessionUuid} (${_latestOwnerGrant!.decision ?? _latestOwnerGrant!.status})',
+                            style: const TextStyle(color: Colors.green),
+                          ),
                         ],
                       ] else
                         const Text('No active station QR yet. Render one to let another device scan it.'),

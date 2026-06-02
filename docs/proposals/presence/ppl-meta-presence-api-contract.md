@@ -557,6 +557,15 @@ Purpose:
 
 - return the current session-backed QR payload for a device without minting a new QR token
 - support backend widgets that need to poll current QR state safely
+- expose the currently resolved QR payload using local installation context only
+
+QR payload rule:
+
+- `installation_uuid` is the required installation anchor
+- licence-related fields such as `application_key`, `licence_status`, `approved_owner_email`, and entitlement identifiers are optional reference metadata only
+- those optional reference fields must be sourced from the local node installation state if available
+- this endpoint must not call the online authority service in order to enrich the QR payload
+- QR payload fields must not be treated as software licence resolution outputs
 
 Response body when a current session-backed QR exists:
 
@@ -570,9 +579,30 @@ Response body when a current session-backed QR exists:
     "qr_token": "qr_tok_123",
     "expires_at": "2026-05-30T12:00:00Z",
     "payload": {
-      "installation_uuid": "inst_123",
-      "device_reference": "kiosk_a",
+      "schema": "ppl_meta_presence_qr/v1",
+      "qr_type": "station_challenge",
+      "challenge_uuid": "challenge_123",
       "qr_token": "qr_tok_123",
+      "created_at": "2026-05-30T11:55:00Z",
+      "expires_at": "2026-05-30T12:00:00Z",
+      "installation": {
+        "installation_uuid": "inst_123",
+        "application_key": "ppl-meta-platform",
+        "licence_status": "active",
+        "approved_owner_email": "owner@example.com",
+        "reference_source": "node_installation_cache"
+      },
+      "device": {
+        "device_reference": "kiosk_a",
+        "display_name": "Front Desk Station"
+      },
+      "actor": {
+        "user_uuid": "user_123",
+        "user_email": "operator@example.com"
+      },
+      "location": {
+        "label": "Athens Lobby"
+      },
       "session_uuid": "ps_123"
     },
     "session_uuid": "ps_123",
@@ -779,9 +809,22 @@ Request body:
 ```json
 {
   "installation_uuid": "inst_123",
-  "device_reference": "kiosk_a"
+  "device_reference": "kiosk_a",
+  "device_display_name": "Front Desk Station",
+  "location": {
+    "label": "Athens Lobby"
+  }
 }
 ```
+
+Request rules:
+
+- `installation_uuid` is required
+- `device_reference` should be stable for the station when available
+- `device_display_name` is optional and should fall back to a product default when omitted
+- `location` is optional
+- the backend may include optional licence-reference fields only when they already exist in the local installation context
+- the backend must not call the online authority service as part of QR render
 
 Response body:
 
@@ -791,7 +834,106 @@ Response body:
   "data": {
     "qr_token": "qr_tok_123",
     "expires_at": "2026-05-30T12:00:00Z",
-    "payload": "{signed payload}"
+    "payload": {
+      "schema": "ppl_meta_presence_qr/v1",
+      "qr_type": "station_challenge",
+      "challenge_uuid": "challenge_123",
+      "qr_token": "qr_tok_123",
+      "created_at": "2026-05-30T11:55:00Z",
+      "expires_at": "2026-05-30T12:00:00Z",
+      "installation": {
+        "installation_uuid": "inst_123",
+        "application_key": "ppl-meta-platform",
+        "licence_status": "active",
+        "approved_owner_email": "owner@example.com",
+        "reference_source": "node_installation_cache"
+      },
+      "device": {
+        "device_reference": "kiosk_a",
+        "display_name": "Front Desk Station"
+      },
+      "actor": {
+        "user_uuid": "user_123",
+        "user_email": "operator@example.com"
+      },
+      "location": {
+        "label": "Athens Lobby"
+      },
+      "integrity": {
+        "algorithm": "ed25519",
+        "key_id": "presence-signing-key-1",
+        "signature": "base64-signature"
+      },
+      "session_uuid": "ps_123"
+    }
+  }
+}
+```
+
+Field semantics:
+
+- `installation.installation_uuid` is required
+- `installation.application_key`, `installation.licence_status`, `installation.approved_owner_email`, and any entitlement identifiers are optional local reference fields only
+- `installation.reference_source` should identify the local data origin, for example `node_installation_cache`
+- these fields are informational and must not be used as standalone licence approval decisions
+
+## Render Owner Identity QR
+
+```text
+POST /api/v1/presence/qr/render-owner
+```
+
+Purpose:
+
+- render a user-owned Presence QR for display, download, or print
+- support reversed QR Presence flows where a station or another mobile client scans the user-presented QR
+
+Request body:
+
+```json
+{
+  "installation_uuid": "inst_123",
+  "owner_user_uuid": "user_999",
+  "owner_display_name": "Owner Name"
+}
+```
+
+Request rules:
+
+- the endpoint should use the authenticated user as the default owner when `owner_user_uuid` is omitted
+- `installation_uuid` is required
+- optional licence-reference fields may be copied from the local installation context when locally available
+- printable owner QRs may be long-lived, but they still require backend validation when scanned
+
+Response body:
+
+```json
+{
+  "success": true,
+  "data": {
+    "payload": {
+      "schema": "ppl_meta_presence_qr/v1",
+      "qr_type": "owner_identity",
+      "challenge_uuid": "challenge_456",
+      "created_at": "2026-05-30T12:00:00Z",
+      "installation": {
+        "installation_uuid": "inst_123",
+        "application_key": "ppl-meta-platform",
+        "approved_owner_email": "owner@example.com",
+        "reference_source": "node_installation_cache"
+      },
+      "owner": {
+        "owner_user_uuid": "user_999",
+        "owner_email": "owner@example.com",
+        "owner_display_name": "Owner Name",
+        "owner_type": "approved_owner"
+      },
+      "integrity": {
+        "algorithm": "ed25519",
+        "key_id": "presence-signing-key-1",
+        "signature": "base64-signature"
+      }
+    }
   }
 }
 ```
@@ -818,10 +960,19 @@ Response body:
   "data": {
     "valid": true,
     "installation_uuid": "inst_123",
-    "expires_at": "2026-05-30T12:00:00Z"
+    "expires_at": "2026-05-30T12:00:00Z",
+    "qr_type": "station_challenge",
+    "reference_source": "node_installation_cache"
   }
 }
 ```
+
+Validation rules:
+
+- validation should verify signature integrity, expiry, and payload shape
+- validation should resolve installation context from the local node state
+- validation must not depend on a live call to the online authority service
+- any licence-related fields present in the QR are descriptive references only and do not themselves resolve entitlement approval
 
 ---
 

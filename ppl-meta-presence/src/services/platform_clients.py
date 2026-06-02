@@ -208,14 +208,72 @@ class PlatformClients:
         data = response.json()
         return data if isinstance(data, list) else []
 
-    async def create_audit_log(self, token: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        response = await self._http_client.post(
-            f"{self.communications_url}/audit/log",
+    async def get_local_installation_reference(self, token: str) -> dict[str, Any]:
+        authority_payload = await self._get_json(
+            f"{config.NODE_SERVICE_URL}/licensing/authority/status",
             headers={"Authorization": f"Bearer {token}"},
-            json=payload,
+            service_name="node-authority-status",
         )
-        response.raise_for_status()
-        return response.json()
+        identity_payload = await self._get_json(
+            f"{config.NODE_SERVICE_URL}/licensing/platform/identity",
+            headers={"Authorization": f"Bearer {token}"},
+            service_name="node-platform-identity",
+        )
+
+        authority = authority_payload.get("authority") if isinstance(authority_payload, dict) else {}
+        platform_identity = identity_payload.get("platform_identity") if isinstance(identity_payload, dict) else {}
+
+        return {
+            "installation_uuid": authority.get("installation_uuid"),
+            "application_key": platform_identity.get("application_key"),
+            "approved_owner_email": authority.get("cached_owner_email"),
+            "licence_status": authority.get("cached_licence_status"),
+            "owner_enabled": authority.get("cached_owner_enabled"),
+            "offline_grace_days": authority.get("offline_grace_days"),
+            "authority_last_checked_at": authority.get("last_checked_at"),
+            "authority_last_successful_check_at": authority.get("last_successful_check_at"),
+            "authority_last_result_reason": authority.get("last_result_reason"),
+            "authority_cache_expires_at": authority.get("cache_expires_at"),
+            "node_uuid": platform_identity.get("installation_id") or platform_identity.get("node_uuid"),
+            "node_name": platform_identity.get("device_name") or platform_identity.get("node_name") or platform_identity.get("hostname"),
+            "node_hostname": platform_identity.get("hostname"),
+            "device_name": platform_identity.get("device_name"),
+            "device_type": platform_identity.get("device_type"),
+            "tenant_name": platform_identity.get("tenant_name"),
+            "environment": platform_identity.get("environment"),
+            "platform_version": platform_identity.get("platform_version"),
+            "authority_cache_within_grace": authority.get("cache_within_grace"),
+        }
+
+    async def create_audit_log(self, token: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            response = await self._http_client.post(
+                f"{self.communications_url}/audit/log",
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload,
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "service": "communications",
+                    "detail": str(exc),
+                },
+            ) from exc
+
+        if response.status_code >= 400:
+            self._raise_downstream_http_error(response, "communications")
+
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={
+                    "service": "communications",
+                    "detail": "Invalid JSON response from downstream service",
+                },
+            ) from exc
 
     async def get_audit_log(self, token: str, log_uuid: str) -> Dict[str, Any]:
         response = await self._http_client.get(

@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 // import 'package:camera/camera.dart'; // Unused import removed
 import '../../../core/core.dart';
 import '../../../core/services/orientation_service.dart';
@@ -39,6 +41,7 @@ class _CameraScreenState extends State<CameraScreen>
   bool _showSettings = false;
   bool _isNavigatingToAuth = false; // Prevent navigation loop
   bool _presenceFlowBusy = false;
+  bool _ownerQrRenderActive = false;
   String? _activePresenceSessionUuid;
   String? _presenceStatusMessage;
   _PresenceResultAlertData? _presenceResultAlert;
@@ -169,7 +172,9 @@ class _CameraScreenState extends State<CameraScreen>
             child: Stack(
               children: [
                 // Camera Preview
-                _buildCameraPreview(cameraProvider),
+                _ownerQrRenderActive
+                    ? _buildOwnerQrRenderBackdrop()
+                    : _buildCameraPreview(cameraProvider),
                 
                 // Top App Bar
                 _buildTopAppBar(authProvider),
@@ -214,6 +219,30 @@ class _CameraScreenState extends State<CameraScreen>
         isInitialized: cameraProvider.isInitialized,
         onTap: _handlePreviewTap,
         error: cameraProvider.error,
+      ),
+    );
+  }
+
+  Widget _buildOwnerQrRenderBackdrop() {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black,
+        alignment: Alignment.center,
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Colors.white),
+            SizedBox(height: 16),
+            Text(
+              'Preparing owner QR...',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -328,7 +357,7 @@ class _CameraScreenState extends State<CameraScreen>
       child: CameraControls(
         onCapturePhoto: () => _capturePhoto(cameraProvider),
         onSwitchCamera: () => _switchCamera(cameraProvider),
-        onToggleFlash: () => _toggleFlash(cameraProvider),
+        onRenderOwnerQr: _showOwnerQrDialog,
         onZoomChanged: (zoom) => _setZoom(cameraProvider, zoom),
         onVideoTap: () {
           CameraLogger.info('Video tap triggered - starting zero-input workflow');
@@ -337,7 +366,6 @@ class _CameraScreenState extends State<CameraScreen>
         onPresenceQrTap: _startQrOnlyPresence,
         onPresenceCameraTap: _startCameraOnlyPresence,
         onPresenceVerifiedTap: _startVerifiedPresence,
-        isFlashOn: cameraProvider.isFlashOn,
         zoomLevel: cameraProvider.zoomLevel,
         isFrontCamera: cameraProvider.isFrontCamera,
         galleryItemCount: cameraProvider.galleryItems.length,
@@ -583,8 +611,84 @@ class _CameraScreenState extends State<CameraScreen>
     await cameraProvider.switchCamera();
   }
 
-  Future<void> _toggleFlash(CameraProvider cameraProvider) async {
-    await cameraProvider.toggleFlash();
+  Future<void> _showOwnerQrDialog() async {
+    if (_ownerQrRenderActive) {
+      CameraLogger.warning('Owner QR render ignored because one is already in progress');
+      return;
+    }
+
+    final authProvider = context.read<AuthenticationProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final ownerDisplayName = authProvider.getUserDisplayName().trim();
+    CameraLogger.info('Owner QR button tapped from camera screen');
+
+    try {
+      if (mounted) {
+        setState(() {
+          _ownerQrRenderActive = true;
+        });
+      }
+      CameraLogger.debug('Owner QR render backdrop activated');
+
+      await Future.delayed(const Duration(milliseconds: 120));
+      CameraLogger.debug('Requesting owner QR payload from presence service');
+      final installationUuid = await _presenceService.resolveInstallationUuid();
+
+      final qr = await _presenceService
+          .renderOwnerQr(
+        installationUuid: installationUuid,
+        ownerDisplayName: ownerDisplayName.isEmpty ? null : ownerDisplayName,
+      )
+          .timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => throw TimeoutException('Owner QR request timed out'),
+      );
+      CameraLogger.success(
+        'Owner QR payload received: session=${qr.sessionUuid}, type=${qr.qrType}, hasPayload=${qr.payload != null}',
+      );
+
+      if (!mounted) {
+        CameraLogger.warning('Owner QR payload received after widget was unmounted');
+        return;
+      }
+
+      final payload = qr.payload;
+      final qrData = payload != null ? jsonEncode(payload) : (qr.qrToken ?? '');
+      if (qrData.isEmpty) {
+        throw Exception('Owner QR payload was empty');
+      }
+      CameraLogger.debug('Owner QR data prepared for dialog rendering');
+
+      CameraLogger.info('Owner QR route builder invoked');
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => _OwnerQrDisplayScreen(
+            qrData: qrData,
+            ownerDisplayName: ownerDisplayName,
+          ),
+          fullscreenDialog: true,
+        ),
+      );
+      CameraLogger.info('Owner QR route closed');
+    } catch (error) {
+      CameraLogger.error('Owner QR render failed: $error');
+      if (!mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Failed to render owner QR: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _ownerQrRenderActive = false;
+        });
+      }
+      CameraLogger.debug('Owner QR render backdrop cleared');
+    }
   }
 
   Future<void> _setZoom(CameraProvider cameraProvider, double zoom) async {
@@ -1244,7 +1348,7 @@ class _CameraScreenState extends State<CameraScreen>
     final success = result.decision == 'granted';
     final message = success
         ? 'Presence completed: ${result.reasonCode}'
-        : 'Presence ended: ${result.reasonCode}';
+        : _humanizePresenceFailureReason(result.reasonCode);
     _presenceResultAlertTimer?.cancel();
     setState(() {
       _presenceResultAlert = _PresenceResultAlertData(
@@ -1262,6 +1366,19 @@ class _CameraScreenState extends State<CameraScreen>
         _presenceResultAlert = null;
       });
     });
+  }
+
+  String _humanizePresenceFailureReason(String reasonCode) {
+    switch (reasonCode) {
+      case 'presence_session_expired':
+        return 'Presence timed out before the match completed. Please try again.';
+      case 'presence_attempt_limit_reached':
+        return 'Presence used all available attempts. Please try again.';
+      case 'presence_no_match':
+        return 'Presence did not find a match. Please try again.';
+      default:
+        return 'Presence ended unsuccessfully. Please try again.';
+    }
   }
 
   void _showUserProfile(AuthenticationProvider authProvider) {
@@ -1346,6 +1463,69 @@ class _CameraScreenState extends State<CameraScreen>
       return serviceData['url'] ?? serviceData['baseUrl'] ?? serviceData['endpoint'];
     }
     return null;
+  }
+}
+
+class _OwnerQrDisplayScreen extends StatelessWidget {
+  final String qrData;
+  final String ownerDisplayName;
+
+  const _OwnerQrDisplayScreen({
+    required this.qrData,
+    required this.ownerDisplayName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        title: const Text('User Owner QR'),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: QrImageView(
+                    data: qrData,
+                    version: QrVersions.auto,
+                    size: 260,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  ownerDisplayName.isEmpty
+                      ? 'Owner QR ready for station scan.'
+                      : ownerDisplayName,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SelectableText(
+                  qrData,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

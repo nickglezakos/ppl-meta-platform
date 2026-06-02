@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
+import httpx
 
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -718,6 +719,64 @@ async def test_advance_live_detection_cleans_up_camera_after_retry_exhaustion(mo
     assert attempt.instant_detection_status == "results_timeout"
     assert ("stop", camera_id) in platform_clients.calls
     assert ("disconnect", camera_id) in platform_clients.calls
+
+
+@pytest.mark.asyncio
+async def test_advance_live_detection_records_status_error_instead_of_raising(monkeypatch: pytest.MonkeyPatch) -> None:
+    camera_id = "camera-status-error"
+
+    class _StatusErrorPlatformClients(_FakePlatformClients):
+        async def get_instant_detection_status(self):
+            self.calls.append(("get_status", None))
+            raise httpx.ReadError("status endpoint cold start")
+
+    platform_clients = _StatusErrorPlatformClients(
+        {"success": False, "detail": "No instant detection results yet"},
+    )
+    service = _build_service(monkeypatch, platform_clients)
+    session = _build_session(camera_id)
+    attempt = _build_attempt(session.session_uuid)
+    service.sessions[session.session_uuid] = session
+    service.attempts[session.session_uuid] = [attempt]
+
+    await service._advance_live_detection(session)
+
+    assert session.detection_status == "status_error"
+    assert attempt.instant_detection_status == "status_error"
+    assert attempt.instant_detection_result_payload is not None
+    assert attempt.instant_detection_result_payload["failure_reason"] == "instant_detection_status_error"
+
+
+def test_repair_analytics_metadata_normalizes_granted_terminal_sessions(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+    session = _build_session("camera-repair")
+    session.status = PresenceSessionStatus.FAILED
+    session.decision = PresenceDecisionState.FAILED
+    session.detection_status = "presence_session_expired"
+    session.failure_reason_code = "presence_session_expired"
+    service.sessions[session.session_uuid] = session
+    service.decision_history.append(
+        presence_service_module.PresenceDecisionRecord(
+            session_uuid=session.session_uuid,
+            installation_uuid=session.installation_uuid,
+            user_uuid=session.user_uuid,
+            device_uuid=session.device_uuid,
+            decision=PresenceDecisionState.GRANTED,
+            reason_code="presence_ppl_match",
+            matched_group_uuid="grp_presence_7",
+            created_at=datetime.utcnow(),
+        )
+    )
+
+    repair_payload = service.repair_analytics_metadata()
+
+    repaired = service.sessions[session.session_uuid]
+    assert repair_payload["repaired_session_count"] >= 1
+    assert repaired.decision == PresenceDecisionState.GRANTED
+    assert repaired.status == PresenceSessionStatus.COMPLETED
+    assert repaired.failure_reason_code is None
+    assert repaired.detection_status == "completed"
 
 
 @pytest.mark.asyncio

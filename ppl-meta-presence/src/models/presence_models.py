@@ -193,6 +193,14 @@ class PresenceDetectionAttempt(BaseModel):
 class PresenceQrRenderRequest(BaseModel):
     installation_uuid: str = "local-installation"
     device_reference: Optional[str] = None
+    device_display_name: Optional[str] = None
+    location: Optional[Dict[str, Any]] = None
+
+
+class PresenceOwnerQrRenderRequest(BaseModel):
+    installation_uuid: str = "local-installation"
+    owner_user_uuid: Optional[str] = None
+    owner_display_name: Optional[str] = None
 
 
 class PresenceQrValidateRequest(BaseModel):
@@ -201,6 +209,12 @@ class PresenceQrValidateRequest(BaseModel):
 
 class PresenceQrHitRequest(BaseModel):
     qr_token: str
+    installation_uuid: str
+    scanned_at: datetime
+
+
+class PresenceOwnerQrHitRequest(BaseModel):
+    qr_payload: Dict[str, Any]
     installation_uuid: str
     scanned_at: datetime
 

@@ -5,13 +5,12 @@ import '../../../services/app_logger.dart';
 class CameraControls extends StatefulWidget {
   final VoidCallback onCapturePhoto;
   final VoidCallback onSwitchCamera;
-  final VoidCallback onToggleFlash;
+  final VoidCallback onRenderOwnerQr;
   final Function(double) onZoomChanged;
   final VoidCallback onVideoTap; // NEW: Video icon handler for simplified streaming
   final VoidCallback onPresenceQrTap;
   final VoidCallback onPresenceCameraTap;
   final VoidCallback onPresenceVerifiedTap;
-  final bool isFlashOn;
   final double zoomLevel;
   final bool isFrontCamera;
   final int galleryItemCount;
@@ -20,13 +19,12 @@ class CameraControls extends StatefulWidget {
     Key? key,
     required this.onCapturePhoto,
     required this.onSwitchCamera,
-    required this.onToggleFlash,
+    required this.onRenderOwnerQr,
     required this.onZoomChanged,
     required this.onVideoTap, // NEW: Video icon handler
     required this.onPresenceQrTap,
     required this.onPresenceCameraTap,
     required this.onPresenceVerifiedTap,
-    required this.isFlashOn,
     required this.zoomLevel,
     required this.isFrontCamera,
     required this.galleryItemCount,
@@ -93,8 +91,8 @@ class _CameraControlsState extends State<CameraControls>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              // Flash Toggle
-              _buildFlashButton(),
+              // Owner QR render button
+              _buildOwnerQrButton(),
               
               // Presence QR button
               _buildPresenceQrButton(),
@@ -242,24 +240,22 @@ class _CameraControlsState extends State<CameraControls>
     );
   }
 
-  Widget _buildFlashButton() {
+  Widget _buildOwnerQrButton() {
     return GestureDetector(
-      onTap: widget.onToggleFlash,
+      onTap: widget.onRenderOwnerQr,
       child: Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: widget.isFlashOn 
-              ? Theme.of(context).colorScheme.primary
-              : Colors.white.withOpacity(0.2),
+          color: Colors.white.withOpacity(0.2),
           shape: BoxShape.circle,
           border: Border.all(
             color: Colors.white.withOpacity(0.5),
             width: 1,
           ),
         ),
-        child: Icon(
-          widget.isFlashOn ? Icons.flash_on : Icons.flash_off,
+        child: const Icon(
+          Icons.badge,
           color: Colors.white,
           size: 20,
         ),

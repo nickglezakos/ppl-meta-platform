@@ -8,6 +8,8 @@ from models.presence_models import (
     CreatePresenceGroupRequest,
     CreatePresenceSessionRequest,
     PresenceBurstUploadRequest,
+    PresenceOwnerQrRenderRequest,
+    PresenceOwnerQrHitRequest,
     PresenceQrHitRequest,
     PresenceQrRenderRequest,
     PresenceQrValidateRequest,
@@ -23,7 +25,8 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     router = APIRouter(dependencies=[Depends(get_current_user)])
 
     @router.get("/installations/current")
-    async def get_current_installation():
+    async def get_current_installation(current_user: dict = Depends(get_current_user)):
+        await service.refresh_local_installation_reference(current_user)
         return {"success": True, "data": service.get_current_installation_context()}
 
     @router.post("/installations/current/reset-reservations")
@@ -196,6 +199,20 @@ def build_presence_router(service: PresenceService) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"success": True, "data": session.model_dump()}
 
+    @router.post("/mobile/sessions/{session_uuid}/owner-qr-hit")
+    async def submit_owner_qr_hit(
+        session_uuid: str,
+        request: PresenceOwnerQrHitRequest,
+        current_user: dict = Depends(get_current_user),
+    ):
+        if session_uuid not in service.sessions:
+            raise HTTPException(status_code=404, detail="Presence session not found")
+        try:
+            session = await service.owner_qr_hit_complete(session_uuid, request, current_user)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"success": True, "data": session.model_dump()}
+
     @router.post("/mobile/sessions/{session_uuid}/bind-resources")
     async def bind_resources(session_uuid: str, request: BindResourcesRequest):
         if session_uuid not in service.sessions:
@@ -217,8 +234,20 @@ def build_presence_router(service: PresenceService) -> APIRouter:
         return {"success": True, "data": result.model_dump()}
 
     @router.post("/qr/render")
-    async def render_qr(request: PresenceQrRenderRequest):
-        return {"success": True, "data": service.qr_render(request)}
+    async def render_qr(
+        request: PresenceQrRenderRequest,
+        current_user: dict = Depends(get_current_user),
+    ):
+        await service.refresh_local_installation_reference(current_user)
+        return {"success": True, "data": service.qr_render(request, current_user)}
+
+    @router.post("/qr/render-owner")
+    async def render_owner_qr(
+        request: PresenceOwnerQrRenderRequest,
+        current_user: dict = Depends(get_current_user),
+    ):
+        await service.refresh_local_installation_reference(current_user)
+        return {"success": True, "data": service.render_owner_qr(request, current_user)}
 
     @router.get("/qr/current")
     async def get_current_qr(installation_uuid: str = "local-installation", device_reference: str | None = None):

@@ -6,8 +6,10 @@ import json
 import logging
 from typing import Any, Dict, List
 from uuid import uuid4
+from typing import Any, Dict, List
 
 import httpx
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,8 @@ from models.presence_models import (
     PresenceDetectionAttempt,
     PresenceProfile,
     PresenceQrHitRequest,
+    PresenceOwnerQrRenderRequest,
+    PresenceOwnerQrHitRequest,
     PresenceQrRenderRequest,
     PresenceResource,
     PresenceResult,
@@ -58,6 +62,7 @@ class PresenceService:
         self.analytics_events: List[PresenceAnalyticsEvent] = self.repository.load_analytics_events()
         self.decision_history: List[PresenceDecisionRecord] = self.repository.load_decision_history()
         self._session_timeout_tasks: Dict[str, asyncio.Task[None]] = {}
+        self._repair_terminal_session_metadata()
         self._backfill_analytics_event_metadata()
         self.qr_tokens: Dict[str, str] = {}
         self.cameras: Dict[str, PresenceResource] = self.repository.load_resources("camera")
@@ -294,15 +299,17 @@ class PresenceService:
     def get_current_installation_context(self) -> dict:
         reserved_camera = next(iter(self.cameras.values()), None)
         reserved_collection = next(iter(self.collections.values()), None)
+        local_reference = self._local_installation_reference()
         return {
             "installation_uuid": self.installation_profile.installation_uuid,
             "presence_profile_uuid": self.installation_profile.presence_profile_uuid,
             "installation_name": self.installation_profile.display_name,
-            "licence_status": "unknown",
+            "licence_status": local_reference.get("licence_status") or "unknown",
             "detection_backend_mode": config.DETECTION_BACKEND_MODE,
             "preferred_camera_types": config.PREFERRED_CAMERA_TYPES,
             "preferred_camera_names": config.PREFERRED_CAMERA_NAMES,
             "allowed_camera_statuses": config.ALLOWED_CAMERA_STATUSES,
+            "installation_reference": local_reference,
             "group_policy": self._group_policy_from_profile(self.installation_profile),
             "session_settings": self._session_settings_from_profile(self.installation_profile).model_dump(),
             "reserved_camera_uuid": reserved_camera.platform_resource_uuid if reserved_camera else None,
@@ -332,6 +339,27 @@ class PresenceService:
         self.profiles[self.installation_profile.presence_profile_uuid] = self.installation_profile
         self.repository.save_profile(self.installation_profile)
         return self.get_current_installation_context()
+
+    async def refresh_local_installation_reference(self, current_user: dict) -> dict:
+        token = current_user.get("token")
+        if not token:
+            return self._local_installation_reference()
+
+        reference = await self.platform_clients.get_local_installation_reference(token)
+        installation_uuid = reference.get("installation_uuid") or self.installation_profile.installation_uuid or "local-installation"
+        reference = {key: value for key, value in reference.items() if value not in (None, "")}
+
+        self.installation_profile.installation_uuid = installation_uuid
+        self.installation_profile.metadata = {
+            **self.installation_profile.metadata,
+            "installation_reference": reference,
+        }
+        if reference.get("node_name"):
+            self.installation_profile.display_name = str(reference["node_name"])
+        self.installation_profile.updated_at = datetime.utcnow()
+        self.profiles[self.installation_profile.presence_profile_uuid] = self.installation_profile
+        self.repository.save_profile(self.installation_profile)
+        return reference
 
     def reset_installation_reservations(
         self,
@@ -487,20 +515,28 @@ class PresenceService:
         self.repository.save_session(session)
         return attempt
 
-    def qr_render(self, request: PresenceQrRenderRequest) -> dict:
+    def qr_render(self, request: PresenceQrRenderRequest, current_user: dict | None = None) -> dict:
         session = self._find_latest_session_for_device(request.device_reference)
         qr_token = session.qr_token if session else str(uuid4())
+        created_at = datetime.utcnow()
+        expires_at = datetime.utcnow() + timedelta(minutes=5)
         if session:
             self.qr_tokens[qr_token] = session.session_uuid
+        payload = self._build_station_qr_payload(
+            installation_uuid=request.installation_uuid,
+            device_reference=request.device_reference,
+            device_display_name=request.device_display_name,
+            location=request.location,
+            qr_token=qr_token,
+            session=session,
+            current_user=current_user,
+            created_at=created_at,
+            expires_at=expires_at,
+        )
         return {
             "qr_token": qr_token,
-            "expires_at": (datetime.utcnow() + timedelta(minutes=5)).isoformat(),
-            "payload": {
-                "installation_uuid": request.installation_uuid,
-                "device_reference": request.device_reference,
-                "qr_token": qr_token,
-                "session_uuid": session.session_uuid if session else None,
-            },
+            "expires_at": expires_at.isoformat(),
+            "payload": payload,
         }
 
     def qr_current(self, installation_uuid: str = "local-installation", device_reference: str | None = None) -> dict:
@@ -519,18 +555,24 @@ class PresenceService:
             }
 
         self.qr_tokens[session.qr_token] = session.session_uuid
+        payload = self._build_station_qr_payload(
+            installation_uuid=installation_uuid,
+            device_reference=device_reference,
+            device_display_name=None,
+            location=None,
+            qr_token=session.qr_token,
+            session=session,
+            current_user=None,
+            created_at=session.created_at,
+            expires_at=session.expires_at,
+        )
         return {
             "found": True,
             "installation_uuid": installation_uuid,
             "device_reference": device_reference,
             "qr_token": session.qr_token,
             "expires_at": session.expires_at.isoformat(),
-            "payload": {
-                "installation_uuid": installation_uuid,
-                "device_reference": device_reference,
-                "qr_token": session.qr_token,
-                "session_uuid": session.session_uuid,
-            },
+            "payload": payload,
             "session_uuid": session.session_uuid,
             "session_status": session.status,
             "qr_status": session.qr_status,
@@ -538,10 +580,124 @@ class PresenceService:
 
     def qr_validate(self, qr_token: str) -> dict:
         session_uuid = self.qr_tokens.get(qr_token)
+        session = self.sessions.get(session_uuid) if session_uuid else None
         return {
             "valid": session_uuid is not None,
             "session_uuid": session_uuid,
-            "installation_uuid": "local-installation",
+            "installation_uuid": session.installation_uuid if session else self.installation_profile.installation_uuid,
+            "qr_type": "station_challenge",
+            "reference_source": "node_installation_cache",
+        }
+
+    def render_owner_qr(self, request: PresenceOwnerQrRenderRequest, current_user: dict) -> dict:
+        created_at = datetime.utcnow()
+        owner_user_uuid = request.owner_user_uuid or current_user.get("sub") or current_user.get("email") or "demo-user"
+        owner_display_name = request.owner_display_name or current_user.get("username") or current_user.get("email") or "Presence Owner"
+        owner_email = current_user.get("email")
+        payload = {
+            "schema": "ppl_meta_presence_qr/v1",
+            "qr_type": "owner_identity",
+            "challenge_uuid": str(uuid4()),
+            "created_at": created_at.isoformat() + "Z",
+            "installation": self._installation_reference_block(request.installation_uuid),
+            "owner": {
+                "owner_user_uuid": owner_user_uuid,
+                "owner_email": owner_email,
+                "owner_display_name": owner_display_name,
+                "owner_profile_uuid": self._get_or_create_user_profile(current_user=current_user).presence_profile_uuid,
+                "owner_type": "approved_owner" if owner_email and owner_email == self._local_installation_reference().get("approved_owner_email") else "user",
+            },
+            "integrity": self._integrity_block(),
+        }
+        return {"payload": payload}
+
+    def _build_station_qr_payload(
+        self,
+        *,
+        installation_uuid: str,
+        device_reference: str | None,
+        device_display_name: str | None,
+        location: dict | None,
+        qr_token: str,
+        session: PresenceSession | None,
+        current_user: dict | None,
+        created_at: datetime,
+        expires_at: datetime,
+    ) -> dict:
+        return {
+            "schema": "ppl_meta_presence_qr/v1",
+            "qr_type": "station_challenge",
+            "challenge_uuid": str(uuid4()),
+            "qr_token": qr_token,
+            "created_at": created_at.isoformat() + "Z",
+            "expires_at": expires_at.isoformat() + "Z",
+            "installation": self._installation_reference_block(installation_uuid),
+            "device": {
+                "device_reference": device_reference,
+                "display_name": device_display_name or device_reference or "mobile-presence-station",
+            },
+            "actor": self._actor_block(session, current_user),
+            "location": location,
+            "integrity": self._integrity_block(),
+            "session_uuid": session.session_uuid if session else None,
+        }
+
+    def _actor_block(self, session: PresenceSession | None, current_user: dict | None) -> dict:
+        if current_user:
+            return {
+                "user_uuid": current_user.get("sub") or current_user.get("email"),
+                "user_email": current_user.get("email"),
+            }
+        user_profile = None
+        if session:
+            user_profile = next(
+                (profile for profile in self.profiles.values() if profile.profile_type == "user" and profile.user_uuid == session.user_uuid),
+                None,
+            )
+        actor_email = None
+        if isinstance(user_profile.metadata, dict):
+            actor_email = user_profile.metadata.get("email")
+        return {
+            "user_uuid": session.user_uuid if session else None,
+            "user_email": actor_email or (user_profile.display_name if user_profile and "@" in user_profile.display_name else None),
+        }
+
+    def _installation_reference_block(self, installation_uuid: str | None) -> dict:
+        local_reference = self._local_installation_reference()
+        payload = {"installation_uuid": installation_uuid or self.installation_profile.installation_uuid or "local-installation"}
+        for key in ("application_key", "licence_status", "approved_owner_email", "authority_entitlement_uuid", "tenant_name", "node_uuid", "node_name"):
+            value = local_reference.get(key)
+            if value:
+                payload[key] = value
+        if len(payload) > 1:
+            payload["reference_source"] = "node_installation_cache"
+        return payload
+
+    def _local_installation_reference(self) -> dict:
+        metadata = self.installation_profile.metadata if isinstance(self.installation_profile.metadata, dict) else {}
+        installation_reference = metadata.get("installation_reference")
+        if isinstance(installation_reference, dict):
+            return installation_reference
+        local_keys = {
+            key: metadata.get(key)
+            for key in (
+                "application_key",
+                "licence_status",
+                "approved_owner_email",
+                "authority_entitlement_uuid",
+                "tenant_name",
+                "node_uuid",
+                "node_name",
+            )
+            if metadata.get(key)
+        }
+        return local_keys
+
+    def _integrity_block(self) -> dict:
+        return {
+            "algorithm": "unsigned-local-reference",
+            "key_id": "presence-local-reference",
+            "signature": None,
         }
 
     def qr_hit(self, session_uuid: str, request: PresenceQrHitRequest) -> PresenceSession:
@@ -554,6 +710,53 @@ class PresenceService:
         session.status = PresenceSessionStatus.QR_RESOLVED
         session.updated_at = datetime.utcnow()
         self.repository.save_session(session)
+        return session
+
+    def owner_qr_hit(self, session_uuid: str, request: PresenceOwnerQrHitRequest) -> PresenceSession:
+        session = self.sessions[session_uuid]
+        self._apply_session_limits(session)
+        if session.status == PresenceSessionStatus.FAILED:
+            raise ValueError(self._human_reason_for_code(session.failure_reason_code))
+
+        payload = request.qr_payload if isinstance(request.qr_payload, dict) else {}
+        if payload.get("qr_type") != "owner_identity":
+            raise ValueError("Scanned QR is not an owner identity QR")
+
+        installation = payload.get("installation") if isinstance(payload.get("installation"), dict) else {}
+        payload_installation_uuid = installation.get("installation_uuid")
+        if payload_installation_uuid and payload_installation_uuid != request.installation_uuid:
+            raise ValueError("Owner QR installation does not match the current installation")
+
+        owner = payload.get("owner") if isinstance(payload.get("owner"), dict) else {}
+        session.qr_status = "scanned"
+        session.status = PresenceSessionStatus.QR_RESOLVED
+        session.updated_at = datetime.utcnow()
+        user_profile = self._get_or_create_user_profile()
+        if owner:
+            user_profile.metadata = {
+                **user_profile.metadata,
+                "scanned_owner_user_uuid": owner.get("owner_user_uuid"),
+                "scanned_owner_email": owner.get("owner_email"),
+                "scanned_owner_display_name": owner.get("owner_display_name"),
+                "scanned_owner_type": owner.get("owner_type"),
+            }
+            user_profile.updated_at = datetime.utcnow()
+            self.repository.save_profile(user_profile)
+        self.repository.save_session(session)
+        return session
+
+    async def owner_qr_hit_complete(
+        self,
+        session_uuid: str,
+        request: PresenceOwnerQrHitRequest,
+        current_user: dict,
+    ) -> PresenceSession:
+        session = self.owner_qr_hit(session_uuid, request)
+        if (
+            session.session_mode == PresenceSessionMode.QR_ONLY
+            and session.decision == PresenceDecisionState.PENDING
+        ):
+            await self._grant_qr_check_in(session, current_user)
         return session
 
     def bind_resources(self, session_uuid: str, request: BindResourcesRequest) -> PresenceSession:
@@ -898,7 +1101,24 @@ class PresenceService:
             return
 
         retry_count = self._detection_retry_count(latest_attempt)
-        status_payload = await self.platform_clients.get_instant_detection_status()
+        try:
+            status_payload = await self.platform_clients.get_instant_detection_status()
+        except httpx.HTTPError:
+            session.detection_status = "status_error"
+            latest_attempt.instant_detection_status = "status_error"
+            latest_attempt.instant_detection_result_payload = {
+                "success": False,
+                "camera_id": camera_id,
+                "session_uuid": session.session_uuid,
+                "simulated": False,
+                "retry_count": retry_count,
+                "raw_payload": external_result,
+                "failure_reason": "instant_detection_status_error",
+            }
+            session.updated_at = datetime.utcnow()
+            self.repository.save_attempt(latest_attempt)
+            self.repository.save_session(session)
+            return
         camera_status = self._instant_detection_camera_status(status_payload, camera_id)
 
         if camera_status.get("running"):
@@ -927,8 +1147,26 @@ class PresenceService:
             await self._cleanup_detection_camera(camera_id)
             return
 
-        await self.platform_clients.connect_camera(camera_id)
-        restart_result = await self.platform_clients.start_instant_detection(camera_id)
+        try:
+            await self.platform_clients.connect_camera(camera_id)
+            restart_result = await self.platform_clients.start_instant_detection(camera_id)
+        except httpx.HTTPError:
+            latest_attempt.instant_detection_status = "start_failed"
+            latest_attempt.instant_detection_result_payload = {
+                "success": False,
+                "camera_id": camera_id,
+                "session_uuid": session.session_uuid,
+                "simulated": False,
+                "retry_count": retry_count,
+                "raw_payload": external_result,
+                "failure_reason": "instant_detection_restart_failed",
+            }
+            session.detection_status = "start_failed"
+            session.instant_detection_request_id = None
+            session.updated_at = datetime.utcnow()
+            self.repository.save_attempt(latest_attempt)
+            self.repository.save_session(session)
+            return
         latest_attempt.instant_detection_request_id = restart_result.get(
             "session_uuid",
             latest_attempt.instant_detection_request_id,
@@ -1211,9 +1449,15 @@ class PresenceService:
         reason_code: str,
         trigger_match: dict | None = None,
     ) -> None:
+        if self._session_has_terminal_resolution(session):
+            return
         self._cancel_session_timeout(session.session_uuid)
         session.status = PresenceSessionStatus.COMPLETED
         session.decision = PresenceDecisionState.GRANTED
+        session.failure_reason_code = None
+        session.retry_allowed = False
+        session.detection_status = "completed"
+        session.instant_detection_request_id = None
         session.matched_group_uuid = self._resolve_matched_group_uuid(session)
         session.trigger_type, session.action_type, session.policy_source = self._resolve_trigger_and_action(session)
         if trigger_match:
@@ -1251,9 +1495,15 @@ class PresenceService:
             self.repository.save_analytics_event(event)
 
     async def _grant_qr_check_in(self, session: PresenceSession, current_user: dict) -> None:
+        if self._session_has_terminal_resolution(session):
+            return
         self._cancel_session_timeout(session.session_uuid)
         session.status = PresenceSessionStatus.COMPLETED
         session.decision = PresenceDecisionState.GRANTED
+        session.failure_reason_code = None
+        session.retry_allowed = False
+        session.detection_status = "completed"
+        session.instant_detection_request_id = None
         session.trigger_type, session.action_type, session.policy_source = self._resolve_trigger_and_action(session)
         session.action_execution_status, action_log_uuid = await self._execute_action(
             session,
@@ -1429,9 +1679,11 @@ class PresenceService:
         ]
 
     def repair_analytics_metadata(self) -> dict:
+        repaired_session_count = self._repair_terminal_session_metadata()
         repaired_event_count = self._backfill_analytics_event_metadata()
         return {
             "analytics_event_count": len(self.analytics_events),
+            "repaired_session_count": repaired_session_count,
             "repaired_event_count": repaired_event_count,
             "policy_source_breakdown": self.analytics_by_policy_source(),
             "installation_breakdown": self.analytics_by_installation(),
@@ -1480,6 +1732,59 @@ class PresenceService:
         for event in updated_events:
             self.repository.save_analytics_event(event)
         return len(updated_events)
+
+    def _repair_terminal_session_metadata(self) -> int:
+        latest_decision_by_session: Dict[str, PresenceDecisionRecord] = {}
+        for record in self.decision_history:
+            existing = latest_decision_by_session.get(record.session_uuid)
+            if existing is None or record.created_at >= existing.created_at:
+                latest_decision_by_session[record.session_uuid] = record
+
+        repaired_sessions: list[PresenceSession] = []
+        for session in self.sessions.values():
+            latest_decision = latest_decision_by_session.get(session.session_uuid)
+            changed = False
+
+            if latest_decision and latest_decision.decision == PresenceDecisionState.GRANTED:
+                if session.decision != PresenceDecisionState.GRANTED:
+                    session.decision = PresenceDecisionState.GRANTED
+                    changed = True
+                if session.status != PresenceSessionStatus.COMPLETED:
+                    session.status = PresenceSessionStatus.COMPLETED
+                    changed = True
+                if session.failure_reason_code is not None:
+                    session.failure_reason_code = None
+                    changed = True
+                if session.detection_status != "completed":
+                    session.detection_status = "completed"
+                    changed = True
+                if session.retry_allowed:
+                    session.retry_allowed = False
+                    changed = True
+            elif latest_decision and latest_decision.decision == PresenceDecisionState.FAILED:
+                if session.decision != PresenceDecisionState.FAILED:
+                    session.decision = PresenceDecisionState.FAILED
+                    changed = True
+                if session.status != PresenceSessionStatus.FAILED:
+                    session.status = PresenceSessionStatus.FAILED
+                    changed = True
+                if session.failure_reason_code != latest_decision.reason_code:
+                    session.failure_reason_code = latest_decision.reason_code
+                    changed = True
+                if session.detection_status != latest_decision.reason_code:
+                    session.detection_status = latest_decision.reason_code
+                    changed = True
+                if session.retry_allowed:
+                    session.retry_allowed = False
+                    changed = True
+
+            if changed:
+                session.updated_at = datetime.utcnow()
+                repaired_sessions.append(session)
+
+        for session in repaired_sessions:
+            self.repository.save_session(session)
+        return len(repaired_sessions)
 
     def _get_default_camera_id(self) -> str | None:
         reserved_camera = next(iter(self.cameras.values()), None)
@@ -1621,7 +1926,12 @@ class PresenceService:
         if session.decision == PresenceDecisionState.PENDING and self._remaining_attempt_capacity(session) <= 0:
             self._fail_session(session, "presence_attempt_limit_reached")
 
+    def _session_has_terminal_resolution(self, session: PresenceSession) -> bool:
+        return session.decision in {PresenceDecisionState.GRANTED, PresenceDecisionState.FAILED}
+
     def _fail_session(self, session: PresenceSession, reason_code: str) -> None:
+        if self._session_has_terminal_resolution(session):
+            return
         camera_id = session.resolved_camera_uuid
         self._cancel_session_timeout(session.session_uuid)
         session.status = PresenceSessionStatus.FAILED
@@ -1857,7 +2167,7 @@ class PresenceService:
                 },
             )
             return "executed", str(response.get("log_uuid")) if isinstance(response, dict) else None
-        except httpx.HTTPError:
+        except (httpx.HTTPError, HTTPException, ValueError, TypeError):
             return "execution_failed", None
 
     def _record_decision(
@@ -2221,6 +2531,12 @@ class PresenceService:
         if existing:
             if device_uuid and existing.device_uuid != device_uuid:
                 existing.device_uuid = device_uuid
+            if current_user:
+                existing.metadata = {
+                    **existing.metadata,
+                    "email": current_user.get("email"),
+                    "username": current_user.get("username"),
+                }
                 self.repository.save_profile(existing)
             return existing
 
@@ -2231,6 +2547,10 @@ class PresenceService:
             device_uuid=device_uuid,
             user_uuid=user_uuid or "demo-user",
             display_name=display_name,
+            metadata={
+                "email": current_user.get("email") if current_user else None,
+                "username": current_user.get("username") if current_user else None,
+            },
         )
         self.profiles[profile.presence_profile_uuid] = profile
         self.repository.save_profile(profile)

@@ -168,6 +168,8 @@ class PresenceApiClient {
   Future<ApiResponse<PresenceQrPayload>> renderQr({
     required String installationUuid,
     String? deviceReference,
+    String? deviceDisplayName,
+    Map<String, dynamic>? location,
   }) async {
     try {
       final response = await _apiClient.post(
@@ -175,6 +177,8 @@ class PresenceApiClient {
         data: {
           'installation_uuid': installationUuid,
           if (deviceReference != null && deviceReference.isNotEmpty) 'device_reference': deviceReference,
+          if (deviceDisplayName != null && deviceDisplayName.isNotEmpty) 'device_display_name': deviceDisplayName,
+          if (location != null) 'location': location,
         },
       );
       final data = _unwrapData(response.data);
@@ -189,6 +193,44 @@ class PresenceApiClient {
           sessionUuid: payload?['session_uuid']?.toString(),
           sessionStatus: null,
           qrStatus: null,
+          qrType: payload?['qr_type']?.toString(),
+          payload: payload,
+        ),
+      );
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<PresenceQrPayload>> renderOwnerQr({
+    required String installationUuid,
+    String? ownerUserUuid,
+    String? ownerDisplayName,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/presence/qr/render-owner',
+        data: {
+          'installation_uuid': installationUuid,
+          if (ownerUserUuid != null && ownerUserUuid.isNotEmpty) 'owner_user_uuid': ownerUserUuid,
+          if (ownerDisplayName != null && ownerDisplayName.isNotEmpty) 'owner_display_name': ownerDisplayName,
+        },
+      );
+      final data = _unwrapData(response.data);
+      final payload = data['payload'] is Map<String, dynamic> ? data['payload'] as Map<String, dynamic> : null;
+      return ApiResponse.success(
+        PresenceQrPayload(
+          found: payload != null,
+          installationUuid: installationUuid,
+          deviceReference: null,
+          qrToken: payload?['qr_token']?.toString(),
+          expiresAt: payload?['expires_at']?.toString(),
+          sessionUuid: payload?['session_uuid']?.toString(),
+          sessionStatus: null,
+          qrStatus: null,
+          qrType: payload?['qr_type']?.toString(),
           payload: payload,
         ),
       );
@@ -225,6 +267,30 @@ class PresenceApiClient {
         '/api/v1/presence/mobile/sessions/$sessionUuid/qr-hit',
         data: {
           'qr_token': qrToken,
+          'installation_uuid': installationUuid,
+          'scanned_at': (scannedAt ?? DateTime.now().toUtc()).toIso8601String(),
+        },
+      );
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(PresenceLiveSession.fromJson(data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<PresenceLiveSession>> submitOwnerQrHit({
+    required String sessionUuid,
+    required Map<String, dynamic> qrPayload,
+    required String installationUuid,
+    DateTime? scannedAt,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/presence/mobile/sessions/$sessionUuid/owner-qr-hit',
+        data: {
+          'qr_payload': qrPayload,
           'installation_uuid': installationUuid,
           'scanned_at': (scannedAt ?? DateTime.now().toUtc()).toIso8601String(),
         },

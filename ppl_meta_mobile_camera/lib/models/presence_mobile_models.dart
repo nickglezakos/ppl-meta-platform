@@ -149,6 +149,7 @@ class PresenceMobileQrPayload {
   final String? sessionUuid;
   final String? sessionStatus;
   final String? qrStatus;
+  final String? qrType;
   final Map<String, dynamic>? payload;
 
   const PresenceMobileQrPayload({
@@ -160,6 +161,7 @@ class PresenceMobileQrPayload {
     required this.sessionUuid,
     required this.sessionStatus,
     required this.qrStatus,
+    required this.qrType,
     required this.payload,
   });
 
@@ -173,7 +175,48 @@ class PresenceMobileQrPayload {
       sessionUuid: json['session_uuid']?.toString(),
       sessionStatus: json['session_status']?.toString(),
       qrStatus: json['qr_status']?.toString(),
+      qrType: json['qr_type']?.toString() ?? (json['payload'] is Map<String, dynamic> ? (json['payload']['qr_type']?.toString()) : null),
       payload: json['payload'] is Map<String, dynamic> ? json['payload'] as Map<String, dynamic> : null,
+    );
+  }
+}
+
+class PresenceMobileSessionTraceSummary {
+  final String sessionUuid;
+  final String status;
+  final String? decision;
+  final String? userUuid;
+  final String sessionMode;
+  final DateTime? createdAt;
+  final DateTime? completedAt;
+
+  const PresenceMobileSessionTraceSummary({
+    required this.sessionUuid,
+    required this.status,
+    required this.decision,
+    required this.userUuid,
+    required this.sessionMode,
+    required this.createdAt,
+    required this.completedAt,
+  });
+
+  factory PresenceMobileSessionTraceSummary.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDate(String key) {
+      final value = json[key];
+      if (value is String && value.isNotEmpty) {
+        return DateTime.tryParse(value)?.toLocal();
+      }
+      return null;
+    }
+
+    return PresenceMobileSessionTraceSummary(
+      sessionUuid: (json['session_uuid'] ?? '').toString(),
+      status: (json['status'] ?? '').toString(),
+      decision: json['decision']?.toString(),
+      userUuid: json['user_uuid']?.toString(),
+      sessionMode: (json['session_mode'] ?? '').toString(),
+      createdAt: parseDate('created_at'),
+      completedAt: parseDate('completed_at'),
     );
   }
 }

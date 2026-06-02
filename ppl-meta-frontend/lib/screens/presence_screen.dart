@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../core/providers/auth_provider.dart';
@@ -42,7 +44,11 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
   bool _autoRefreshExecution = false;
   Timer? _executionPollTimer;
   final TextEditingController _deviceReferenceController = TextEditingController();
+  final TextEditingController _deviceDisplayNameController = TextEditingController();
+  final TextEditingController _locationLabelController = TextEditingController();
+  final TextEditingController _ownerDisplayNameController = TextEditingController();
   String? _lastTerminalAlertSessionKey;
+  String? _lastGrantedAlertSessionKey;
 
   PresenceApiClient get _apiClient => ref.read(presenceApiClientProvider);
 
@@ -50,6 +56,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
   void initState() {
     super.initState();
     _deviceReferenceController.text = widget.stationMode ? 'presence-web-station' : 'presence-web-console';
+    _deviceDisplayNameController.text = widget.stationMode ? 'Presence Web Station' : 'Presence Web Console';
     if (widget.stationMode) {
       _selectedExecutionMode = 'qr_plus_camera';
     }
@@ -65,6 +72,9 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
   void dispose() {
     _executionPollTimer?.cancel();
     _deviceReferenceController.dispose();
+    _deviceDisplayNameController.dispose();
+    _locationLabelController.dispose();
+    _ownerDisplayNameController.dispose();
     super.dispose();
   }
 
@@ -334,6 +344,124 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
     }
   }
 
+  String _qrData(PresenceQrPayload payload) {
+    if (payload.payload != null) {
+      return jsonEncode(payload.payload);
+    }
+    return payload.qrToken ?? '';
+  }
+
+  Future<void> _renderOwnerQr() async {
+    final installationUuid = _installationContext?.installationUuid;
+    final currentUser = ref.read(currentUserProvider);
+    if (installationUuid == null || installationUuid.isEmpty || currentUser == null) {
+      return;
+    }
+
+    setState(() {
+      _isSubmittingAdminAction = true;
+    });
+
+    final response = await _apiClient.renderOwnerQr(
+      installationUuid: installationUuid,
+      ownerDisplayName: _ownerDisplayNameController.text.trim().isEmpty ? currentUser.username : _ownerDisplayNameController.text.trim(),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isSubmittingAdminAction = false;
+      _currentQr = response.data;
+      _qrValidation = null;
+    });
+  }
+
+  Future<void> _openWebQrScanner() async {
+    final scannedText = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => const _PresenceQrScannerSheet(),
+    );
+    if (scannedText == null || scannedText.trim().isEmpty) {
+      return;
+    }
+    await _consumeScannedQr(scannedText.trim());
+  }
+
+  Future<void> _consumeScannedQr(String rawValue) async {
+    final installationUuid = _installationContext?.installationUuid;
+    final deviceReference = _deviceReferenceController.text.trim();
+    if (installationUuid == null || installationUuid.isEmpty || deviceReference.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isSubmittingAdminAction = true;
+    });
+
+    Map<String, dynamic>? payload;
+    try {
+      final decoded = jsonDecode(rawValue);
+      if (decoded is Map<String, dynamic>) {
+        payload = decoded;
+      }
+    } catch (_) {
+      payload = null;
+    }
+
+    var activeSession = _activeSession;
+    if (activeSession == null || activeSession.sessionUuid.isEmpty) {
+      final currentUser = ref.read(currentUserProvider);
+      final sessionResponse = await _apiClient.createSession(
+        sessionMode: 'qr_only',
+        deviceUuid: deviceReference,
+        deviceName: _deviceDisplayNameController.text.trim().isEmpty ? (currentUser?.username ?? 'presence-web-station') : _deviceDisplayNameController.text.trim(),
+        devicePlatform: 'web',
+        appVersion: 'presence-web-scanner',
+      );
+      activeSession = sessionResponse.data;
+    }
+
+    ApiResponse<PresenceLiveSession> response;
+    if (payload != null && payload['qr_type'] == 'owner_identity') {
+      response = await _apiClient.submitOwnerQrHit(
+        sessionUuid: activeSession!.sessionUuid,
+        qrPayload: payload,
+        installationUuid: installationUuid,
+      );
+    } else {
+      final qrToken = payload != null && payload['qr_token'] != null ? payload['qr_token'].toString() : rawValue;
+      response = await _apiClient.submitQrHit(
+        sessionUuid: activeSession!.sessionUuid,
+        qrToken: qrToken,
+        installationUuid: installationUuid,
+      );
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isSubmittingAdminAction = false;
+      _activeSession = response.data ?? activeSession;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(response.success ? 'Scanned QR submitted.' : (response.error ?? 'Failed to submit scanned QR')),
+        backgroundColor: response.success ? null : Colors.red,
+      ),
+    );
+
+    if (response.success) {
+      await _refreshExecutionState();
+      await _loadPresenceDashboard();
+    }
+  }
+
   Future<void> _refreshExecutionState({bool renderIfMissing = false}) async {
     final installationUuid = _installationContext?.installationUuid;
     final deviceReference = _deviceReferenceController.text.trim();
@@ -355,6 +483,8 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
       renderedQrResponse = await _apiClient.renderQr(
         installationUuid: installationUuid,
         deviceReference: deviceReference,
+        deviceDisplayName: _deviceDisplayNameController.text.trim().isEmpty ? null : _deviceDisplayNameController.text.trim(),
+        location: _locationLabelController.text.trim().isEmpty ? null : {'label': _locationLabelController.text.trim()},
       );
     }
 
@@ -378,6 +508,34 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
     });
 
     _showTerminalFailureAlertIfNeeded();
+    _showGrantedAlertIfNeeded();
+  }
+
+  void _showGrantedAlertIfNeeded() {
+    final session = _activeSession;
+    final result = _activeResult;
+    if (!mounted) {
+      return;
+    }
+
+    final granted = result?.decision == 'granted' || session?.decision == 'granted' || result?.status == 'completed';
+    if (!granted) {
+      return;
+    }
+
+    final sessionUuid = result?.sessionUuid ?? session?.sessionUuid ?? '';
+    final alertKey = '$sessionUuid:granted';
+    if (_lastGrantedAlertSessionKey == alertKey) {
+      return;
+    }
+    _lastGrantedAlertSessionKey = alertKey;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Presence grant awarded.'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   void _showTerminalFailureAlertIfNeeded() {
@@ -518,11 +676,11 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
   }
 
   Future<void> _copyQrToken() async {
-    final qrToken = _currentQr?.qrToken;
-    if (qrToken == null || qrToken.isEmpty) {
+    final qrData = _currentQr == null ? '' : _qrData(_currentQr!);
+    if (qrData.isEmpty) {
       return;
     }
-    await Clipboard.setData(ClipboardData(text: qrToken));
+    await Clipboard.setData(ClipboardData(text: qrData));
     if (!mounted) {
       return;
     }
@@ -980,6 +1138,32 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
             ),
           ),
           const SizedBox(height: 12),
+          TextFormField(
+            controller: _deviceDisplayNameController,
+            decoration: const InputDecoration(
+              labelText: 'Device Display Name',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _locationLabelController,
+            decoration: const InputDecoration(
+              labelText: 'Location Label',
+              border: OutlineInputBorder(),
+              helperText: 'Optional local label stored inside the QR payload.',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _ownerDisplayNameController,
+            decoration: const InputDecoration(
+              labelText: 'Owner QR Display Name',
+              border: OutlineInputBorder(),
+              helperText: 'Optional display name used when rendering a user-owned QR.',
+            ),
+          ),
+          const SizedBox(height: 12),
           Wrap(
             spacing: 12,
             runSpacing: 12,
@@ -993,6 +1177,16 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
                 onPressed: _isSubmittingAdminAction ? null : () => _refreshExecutionState(),
                 icon: const Icon(Icons.sync),
                 label: Text(widget.stationMode ? 'Refresh QR' : 'Refresh State'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _isSubmittingAdminAction ? null : _renderOwnerQr,
+                icon: const Icon(Icons.badge),
+                label: const Text('Render Owner QR'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _isSubmittingAdminAction ? null : _openWebQrScanner,
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('Open Web Scanner'),
               ),
               OutlinedButton.icon(
                 onPressed: _isSubmittingAdminAction || _currentQr?.qrToken == null ? null : _validateCurrentQr,
@@ -1054,7 +1248,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
                 ),
                 child: Center(
                   child: QrImageView(
-                    data: _currentQr!.qrToken ?? '',
+                    data: _qrData(_currentQr!),
                     version: QrVersions.auto,
                     size: 220,
                     backgroundColor: Colors.white,
@@ -1072,10 +1266,10 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(child: SelectableText(_currentQr!.qrToken ?? 'No token')),
+                  Expanded(child: SelectableText(_qrData(_currentQr!))),
                   IconButton(
                     onPressed: _copyQrToken,
-                    tooltip: 'Copy QR token',
+                    tooltip: 'Copy QR data',
                     icon: const Icon(Icons.copy),
                   ),
                 ],
@@ -1098,9 +1292,16 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
                     runSpacing: 8,
                     children: [
                       _TraceChip(label: _qrValidation!.valid ? 'QR Valid' : 'QR Invalid'),
+                      if (_currentQr!.qrType != null) _TraceChip(label: _currentQr!.qrType!),
+                      if (_qrValidation!.referenceSource != null) _TraceChip(label: _qrValidation!.referenceSource!),
                       if (_qrValidation!.sessionUuid != null) _TraceChip(label: 'Session ${_qrValidation!.sessionUuid}'),
                     ],
                   ),
+                ),
+              if (_installationContext != null && _installationContext!.installationReference.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: SelectableText(_installationContext!.installationReference.toString()),
                 ),
             ] else
               Text(
@@ -1573,6 +1774,103 @@ class _EnsurePresenceGroupDialog extends StatefulWidget {
 
   @override
   State<_EnsurePresenceGroupDialog> createState() => _EnsurePresenceGroupDialogState();
+}
+
+class _PresenceQrScannerSheet extends StatefulWidget {
+  const _PresenceQrScannerSheet();
+
+  @override
+  State<_PresenceQrScannerSheet> createState() => _PresenceQrScannerSheetState();
+}
+
+class _PresenceQrScannerSheetState extends State<_PresenceQrScannerSheet> {
+  final TextEditingController _controller = TextEditingController();
+  final MobileScannerController _scannerController = MobileScannerController(
+    formats: const [BarcodeFormat.qrCode],
+  );
+  bool _hasDetectedCode = false;
+
+  @override
+  void dispose() {
+    _scannerController.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submitValue(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty || _hasDetectedCode) {
+      return;
+    }
+    _hasDetectedCode = true;
+    Navigator.of(context).pop(trimmed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return SingleChildScrollView(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, bottomInset + 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Web QR Scanner', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            const Text('Scan from the device camera when available, or paste scanned QR data manually. This accepts raw station tokens and full JSON payloads such as owner identity QR data.'),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                height: 280,
+                child: MobileScanner(
+                  controller: _scannerController,
+                  onDetect: (capture) {
+                    if (_hasDetectedCode) {
+                      return;
+                    }
+                    for (final barcode in capture.barcodes) {
+                      final value = barcode.rawValue;
+                      if (value != null && value.trim().isNotEmpty) {
+                        _submitValue(value);
+                        return;
+                      }
+                    }
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              minLines: 4,
+              maxLines: 10,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Manual QR Data',
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: () => _submitValue(_controller.text),
+                  child: const Text('Submit'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _EnsurePresenceGroupDialogState extends State<_EnsurePresenceGroupDialog> {
