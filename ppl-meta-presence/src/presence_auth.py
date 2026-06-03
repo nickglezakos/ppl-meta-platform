@@ -21,7 +21,32 @@ ADMIN_ROLE_NAMES = {"admin", "owner"}
 ADMIN_CAPABILITY_NAMES = {"presence.analytics.repair", "presence.config.manage"}
 
 
-def get_current_user(
+async def _fetch_node_user_info(user_id: str) -> dict[str, Any]:
+    if not config.SERVICE_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Presence service is missing SERVICE_SECRET for user resolution",
+        )
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0), follow_redirects=True) as client:
+        response = await client.get(
+            f"{config.NODE_SERVICE_URL}/users/user-info/{user_id}",
+            headers={"Authorization": f"Bearer {config.SERVICE_SECRET}"},
+        )
+
+    if response.status_code == 404:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Authenticated user not found")
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to resolve authenticated user information",
+        )
+
+    payload = response.json()
+    return payload if isinstance(payload, dict) else {}
+
+
+async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> Dict[str, Any]:
     if credentials is None or credentials.scheme.lower() != "bearer":
@@ -39,7 +64,7 @@ def get_current_user(
             detail="Invalid or expired token",
         ) from exc
 
-    return {
+    current_user = {
         "sub": payload.get("sub"),
         "username": payload.get("username"),
         "email": payload.get("email"),
@@ -47,6 +72,13 @@ def get_current_user(
         "permissions": payload.get("permissions", []),
         "token": token,
     }
+
+    if current_user.get("sub") and (not current_user.get("email") or not current_user.get("username")):
+        resolved_user = await _fetch_node_user_info(str(current_user["sub"]))
+        current_user["email"] = current_user.get("email") or resolved_user.get("email")
+        current_user["username"] = current_user.get("username") or resolved_user.get("username")
+
+    return current_user
 
 
 def _has_admin_access(current_user: Dict[str, Any]) -> bool:

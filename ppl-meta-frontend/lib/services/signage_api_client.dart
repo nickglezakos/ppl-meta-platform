@@ -28,9 +28,12 @@ class SignageApiClient {
     String? search,
     bool? isActive,
   }) async {
+    final effectiveLimit = limit.clamp(1, 100);
+
     final queryParams = {
       'page': page,
-      'limit': limit,
+      'page_size': effectiveLimit,
+      'limit': effectiveLimit,
       if (search != null) 'search': search,
       if (isActive != null) 'is_active': isActive,
     };
@@ -118,6 +121,26 @@ class SignageApiClient {
     );
 
     return List<Map<String, dynamic>>.from(response.data['history'] ?? []);
+  }
+
+  /// Get sync history for a specific device
+  Future<List<Map<String, dynamic>>> getDeviceSyncHistory({
+    required String deviceId,
+    int page = 1,
+    int pageSize = 100,
+  }) async {
+    final effectivePageSize = pageSize.clamp(1, 100);
+
+    final response = await _apiClient.get(
+      '/api/v1/signage/etl/sync-history',
+      queryParameters: {
+        'device_id': deviceId,
+        'page': page,
+        'page_size': effectivePageSize,
+      },
+    );
+
+    return List<Map<String, dynamic>>.from(response.data['results'] ?? []);
   }
 
   // ==================== Playback Control ====================

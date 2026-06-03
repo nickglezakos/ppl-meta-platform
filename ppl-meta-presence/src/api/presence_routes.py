@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from presence_auth import get_current_user, require_admin_user
 from models.presence_models import (
     BindResourcesRequest,
     CreatePresenceSessionRequest,
-    PresenceIndividualGroupOption,
     PresenceBurstUploadRequest,
     PresenceOwnerQrRenderRequest,
     PresenceOwnerQrHitRequest,
@@ -21,6 +22,15 @@ from models.presence_models import (
     UpdateInstallationPolicyRequest,
 )
 from services.presence_service import PresenceService
+
+
+def _parse_filter_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
 
 
 def build_presence_router(service: PresenceService) -> APIRouter:
@@ -104,7 +114,7 @@ def build_presence_router(service: PresenceService) -> APIRouter:
             "success": True,
             "data": {
                 **{key: value for key, value in result.items() if key != "items"},
-                "items": [item.model_dump() for item in result["items"]],
+                "items": [item.model_dump() if hasattr(item, "model_dump") else item for item in result["items"]],
             },
         }
 
@@ -124,22 +134,63 @@ def build_presence_router(service: PresenceService) -> APIRouter:
         user_uuid: str | None = None,
         installation_uuid: str | None = None,
         policy_source: str | None = None,
+        user_query: str | None = None,
+        camera_uuid: str | None = None,
+        grant_type: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         limit: int | None = None,
+        offset: int | None = None,
         current_user: dict = Depends(get_current_user),
     ):
+        parsed_start_date = _parse_filter_datetime(start_date)
+        parsed_end_date = _parse_filter_datetime(end_date)
         result = await service.query_session_traces(
             current_user,
             session_uuid=session_uuid,
             user_uuid=user_uuid,
             installation_uuid=installation_uuid,
             policy_source=policy_source,
+            user_query=user_query,
+            camera_uuid=camera_uuid,
+            grant_type=grant_type,
+            start_date=parsed_start_date,
+            end_date=parsed_end_date,
             limit=limit,
+            offset=offset,
         )
         return {
             "success": True,
             "data": {
                 **{key: value for key, value in result.items() if key != "items"},
-                "items": [item.model_dump() for item in result["items"]],
+                "items": [item.model_dump() if hasattr(item, "model_dump") else item for item in result["items"]],
+            },
+        }
+
+    @router.get("/mobile/session-awards/by-user-day")
+    async def query_user_day_award_summary(
+        user_query: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        current_user: dict = Depends(get_current_user),
+    ):
+        parsed_start_date = _parse_filter_datetime(start_date)
+        parsed_end_date = _parse_filter_datetime(end_date)
+        result = await service.query_user_day_award_summary(
+            current_user,
+            user_query=user_query,
+            start_date=parsed_start_date,
+            end_date=parsed_end_date,
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "success": True,
+            "data": {
+                **{key: value for key, value in result.items() if key != "items"},
+                "items": [item.model_dump() if hasattr(item, "model_dump") else item for item in result["items"]],
             },
         }
 

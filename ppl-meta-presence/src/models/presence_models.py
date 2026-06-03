@@ -62,6 +62,7 @@ class PresenceSessionSettings(BaseModel):
     session_timeout_seconds: int = 300
     max_unsuccessful_attempts: int = 3
     allow_concurrent_trigger_operations: bool = True
+    qr_to_camera_transition_window_minutes: int = 10
 
 
 class UpdateInstallationSettingsRequest(BaseModel):
@@ -78,6 +79,7 @@ class UpdateActivePresenceGroupRequest(BaseModel):
     installation_uuid: str = "local-installation"
     individual_group_id: Optional[str] = None
     group_name: Optional[str] = None
+    clear_active_group: bool = False
 
 
 class PresenceIndividualGroupOption(BaseModel):
@@ -204,6 +206,7 @@ class PresenceQrHitRequest(BaseModel):
     qr_token: str
     installation_uuid: str
     scanned_at: datetime
+    qr_payload: Optional[Dict[str, Any]] = None
 
 
 class PresenceOwnerQrHitRequest(BaseModel):

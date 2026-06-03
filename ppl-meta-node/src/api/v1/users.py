@@ -218,7 +218,11 @@ async def login(
     user = get_user_by_email(db, form_data.username)
     if not user or not pwd_context.verify(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
-    access_token = create_access_token(data={"sub": str(user.id)})
+    access_token = create_access_token(data={
+        "sub": str(user.id),
+        "email": user.email,
+        "username": user.username,
+    })
     log_user_action(db, user.username, user.email, "login")
     return {"access_token": access_token, "token_type": "bearer"}
 

@@ -72,6 +72,8 @@ enum PlaybackState {
 /// Video List model
 @JsonSerializable()
 class VideoList {
+  @JsonKey(name: 'id')
+  final int? databaseId;
   @JsonKey(name: 'uuid')
   final String id;
   final String name;
@@ -98,6 +100,7 @@ class VideoList {
   final int? totalDurationMs;
 
   VideoList({
+    this.databaseId,
     required this.id,
     required this.name,
     this.description,
@@ -117,6 +120,7 @@ class VideoList {
   Map<String, dynamic> toJson() => _$VideoListToJson(this);
 
   VideoList copyWith({
+    int? databaseId,
     String? id,
     String? name,
     String? description,
@@ -132,6 +136,7 @@ class VideoList {
     int? totalDurationMs,
   }) {
     return VideoList(
+      databaseId: databaseId ?? this.databaseId,
       id: id ?? this.id,
       name: name ?? this.name,
       description: description ?? this.description,

@@ -137,6 +137,13 @@ class PresenceService:
 
     async def get_session_trace(self, session_uuid: str, current_user: dict) -> PresenceSessionTrace:
         session = self.sessions[session_uuid]
+        self._apply_session_limits(session)
+        if (
+            session.session_mode == PresenceSessionMode.QR_ONLY
+            and session.qr_status == "scanned"
+            and session.decision == PresenceDecisionState.PENDING
+        ):
+            await self._grant_qr_check_in(session, current_user)
         self._sync_session_external_assets(session)
         action_plan = self.get_action_plan(session_uuid)
         decision_history = self.list_decision_history(session_uuid)
@@ -199,8 +206,17 @@ class PresenceService:
         user_uuid: str | None = None,
         installation_uuid: str | None = None,
         policy_source: str | None = None,
+        user_query: str | None = None,
+        camera_uuid: str | None = None,
+        grant_type: str | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         limit: int | None = None,
+        offset: int | None = None,
     ) -> dict:
+        self._get_or_create_user_profile(current_user=current_user)
+        camera_names = await self._camera_name_lookup_for_user(current_user)
+
         sessions = sorted(
             self.sessions.values(),
             key=lambda session: session.updated_at,
@@ -217,23 +233,221 @@ class PresenceService:
                 continue
             if policy_source and session.policy_source != policy_source:
                 continue
+            if grant_type:
+                session_grant_type = session.grant_type.value if hasattr(session.grant_type, "value") else str(session.grant_type)
+                if session_grant_type != grant_type:
+                    continue
+            if camera_uuid and session.resolved_camera_uuid != camera_uuid:
+                continue
+            if start_date and session.created_at < start_date:
+                continue
+            if end_date and session.created_at > end_date:
+                continue
+            if user_query and not self._session_matches_user_query(session, user_query):
+                continue
             matched_sessions.append(session)
 
         total = len(matched_sessions)
+        if offset is not None and offset > 0:
+            matched_sessions = matched_sessions[offset:]
         if limit is not None:
             matched_sessions = matched_sessions[:limit]
 
-        traces = [
-            await self.get_session_trace(session.session_uuid, current_user)
-            for session in matched_sessions
-        ]
+        traces = []
+        for session in matched_sessions:
+            trace = await self.get_session_trace(session.session_uuid, current_user)
+            traces.append(self._session_trace_summary(trace, current_user=current_user, camera_names=camera_names))
         return {
             "items": traces,
             "total": total,
             "returned": len(traces),
             "limit": limit,
+            "offset": offset or 0,
             "has_more": limit is not None and total > len(traces),
         }
+
+    async def query_user_day_award_summary(
+        self,
+        current_user: dict,
+        *,
+        user_query: str | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> dict:
+        self._get_or_create_user_profile(current_user=current_user)
+        transition_window_minutes = max(1, self._current_session_settings().qr_to_camera_transition_window_minutes)
+        transition_window = timedelta(minutes=transition_window_minutes)
+
+        sessions = sorted(
+            self.sessions.values(),
+            key=lambda session: session.created_at,
+            reverse=True,
+        )
+
+        def grant_type_name(session: PresenceSession) -> str:
+            return session.grant_type.value if hasattr(session.grant_type, "value") else str(session.grant_type or "unknown")
+
+        def is_qr_grant(grant_type: str) -> bool:
+            normalized = grant_type.strip().lower()
+            return normalized in {"check_in", "presence_check_in"}
+
+        def is_camera_family_grant(grant_type: str) -> bool:
+            normalized = grant_type.strip().lower()
+            return normalized in {"presence_match", "verified_presence", "presence_verified_match"}
+
+        def actor_identity(session: PresenceSession) -> tuple[str | None, str, str | None]:
+            profile = self._find_user_profile(session.user_uuid)
+            profile_metadata = profile.metadata if isinstance(profile and profile.metadata, dict) else {}
+            belongs_to_current_user = self._session_belongs_to_current_user(session.user_uuid, current_user)
+            current_user_email = current_user.get("email") if current_user else None
+            actor_email = (
+                profile_metadata.get("scanned_owner_email")
+                or (current_user_email if belongs_to_current_user else None)
+                or profile_metadata.get("email")
+                or profile_metadata.get("username")
+            )
+            actor_label = actor_email or self._preferred_actor_label(profile, session.user_uuid)
+            return actor_email, actor_label, session.user_uuid
+
+        available_users: set[str] = set()
+        for session in sessions:
+            actor_email, actor_label, _ = actor_identity(session)
+            candidate = (actor_email or actor_label or "").strip()
+            if candidate:
+                available_users.add(candidate)
+
+        normalized_query = (user_query or "").strip().lower()
+        grouped: dict[tuple[str, str], dict] = {}
+        grouped_sessions: dict[tuple[str, str], list[PresenceSession]] = {}
+
+        for session in sessions:
+            if session.decision != PresenceDecisionState.GRANTED:
+                continue
+            if start_date and session.created_at < start_date:
+                continue
+            if end_date and session.created_at > end_date:
+                continue
+
+            actor_email, actor_label, actor_user_uuid = actor_identity(session)
+            searchable_values = [actor_email, actor_label, actor_user_uuid]
+            if normalized_query and not any(
+                normalized_query in str(value).strip().lower() for value in searchable_values if value
+            ):
+                continue
+
+            user_key = (actor_email or actor_label or "unknown user").strip()
+            day_key = session.created_at.date().isoformat()
+            group_key = (user_key, day_key)
+
+            entry = grouped.get(group_key)
+            if entry is None:
+                entry = {
+                    "user_email": actor_email,
+                    "user_label": actor_label,
+                    "user_uuid": actor_user_uuid,
+                    "date": day_key,
+                    "grant_type_totals": {},
+                    "total_awards": 0,
+                    "first_award_at": session.created_at,
+                    "last_award_at": session.created_at,
+                    "qr_to_cam_transition_count": 0,
+                    "qr_to_cam_contributing_session_uuids": [],
+                }
+                grouped[group_key] = entry
+                grouped_sessions[group_key] = []
+
+            grant_type = grant_type_name(session)
+            entry["grant_type_totals"][grant_type] = entry["grant_type_totals"].get(grant_type, 0) + 1
+            entry["total_awards"] += 1
+            if session.created_at < entry["first_award_at"]:
+                entry["first_award_at"] = session.created_at
+            if session.created_at > entry["last_award_at"]:
+                entry["last_award_at"] = session.created_at
+            grouped_sessions[group_key].append(session)
+
+        for group_key, group_sessions in grouped_sessions.items():
+            sorted_group_sessions = sorted(group_sessions, key=lambda item: item.created_at)
+            qr_to_cam_count = 0
+            contributing_session_uuids: set[str] = set()
+            for index, candidate in enumerate(sorted_group_sessions):
+                candidate_grant = grant_type_name(candidate)
+                if not is_qr_grant(candidate_grant):
+                    continue
+                candidate_time = candidate.created_at
+                has_following_camera_grant = False
+                matched_follower: PresenceSession | None = None
+                for follower in sorted_group_sessions[index + 1:]:
+                    delta = follower.created_at - candidate_time
+                    if delta > transition_window:
+                        break
+                    follower_grant = grant_type_name(follower)
+                    if is_camera_family_grant(follower_grant):
+                        has_following_camera_grant = True
+                        matched_follower = follower
+                        break
+                if has_following_camera_grant:
+                    qr_to_cam_count += 1
+                    contributing_session_uuids.add(candidate.session_uuid)
+                    if matched_follower and matched_follower.session_uuid:
+                        contributing_session_uuids.add(matched_follower.session_uuid)
+            grouped[group_key]["qr_to_cam_transition_count"] = qr_to_cam_count
+            grouped[group_key]["qr_to_cam_contributing_session_uuids"] = sorted(contributing_session_uuids)
+
+        items = list(grouped.values())
+        items.sort(
+            key=lambda item: (
+                item["date"],
+                (item["user_email"] or item["user_label"] or "").lower(),
+            ),
+            reverse=True,
+        )
+
+        total = len(items)
+        safe_offset = max(offset or 0, 0)
+        if safe_offset:
+            items = items[safe_offset:]
+        if limit is not None:
+            items = items[:limit]
+
+        serialized_items = [
+            {
+                **item,
+                "first_award_at": item["first_award_at"].isoformat() if item["first_award_at"] else None,
+                "last_award_at": item["last_award_at"].isoformat() if item["last_award_at"] else None,
+                "qr_to_cam_transition_window_minutes": transition_window_minutes,
+            }
+            for item in items
+        ]
+
+        available_users_list = sorted(available_users, key=lambda value: value.lower())
+        return {
+            "items": serialized_items,
+            "total": total,
+            "returned": len(serialized_items),
+            "limit": limit,
+            "offset": safe_offset,
+            "has_more": limit is not None and (safe_offset + len(serialized_items)) < total,
+            "available_users": available_users_list,
+        }
+
+    def _session_matches_user_query(self, session: PresenceSession, user_query: str) -> bool:
+        query = user_query.strip().lower()
+        if not query:
+            return True
+
+        profile = self._find_user_profile(session.user_uuid)
+        profile_metadata = profile.metadata if isinstance(profile and profile.metadata, dict) else {}
+        candidates = [
+            session.user_uuid,
+            profile.display_name if profile else None,
+            profile_metadata.get("email"),
+            profile_metadata.get("username"),
+            profile_metadata.get("scanned_actor_email"),
+            profile_metadata.get("scanned_owner_email"),
+        ]
+        return any(query in str(candidate).lower() for candidate in candidates if candidate)
 
     async def startup(self) -> None:
         from database import test_connection
@@ -299,6 +513,25 @@ class PresenceService:
 
     async def update_active_presence_group(self, request: UpdateActivePresenceGroupRequest, current_user: dict) -> dict:
         token = current_user.get("token")
+        if request.clear_active_group:
+            previous_group_id = self._active_presence_individual_group_id()
+            metadata = {
+                **(self.installation_profile.metadata or {}),
+            }
+            metadata.pop("active_presence_individual_group_id", None)
+            metadata.pop("active_presence_individual_group_name", None)
+            if previous_group_id:
+                metadata.pop("presence_trigger_uuid", None)
+                metadata.pop("presence_action_uuid", None)
+                metadata.pop("presence_seed_member_id", None)
+                metadata.pop("presence_seeded_at", None)
+            self.installation_profile.installation_uuid = request.installation_uuid
+            self.installation_profile.metadata = metadata
+            self.installation_profile.updated_at = datetime.utcnow()
+            self.profiles[self.installation_profile.presence_profile_uuid] = self.installation_profile
+            self.repository.save_profile(self.installation_profile)
+            return self.get_current_installation_context()
+
         if token:
             group_id, group_name = await self._resolve_or_create_active_individual_group(
                 token=token,
@@ -703,10 +936,31 @@ class PresenceService:
         self._apply_session_limits(session)
         if session.status == PresenceSessionStatus.FAILED:
             raise ValueError(self._human_reason_for_code(session.failure_reason_code))
+
+        payload = request.qr_payload if isinstance(request.qr_payload, dict) else {}
+        installation = payload.get("installation") if isinstance(payload.get("installation"), dict) else {}
+        payload_installation_uuid = installation.get("installation_uuid")
+        if payload_installation_uuid and payload_installation_uuid != request.installation_uuid:
+            raise ValueError("Scanned QR installation does not match the current installation")
+
+        actor = payload.get("actor") if isinstance(payload.get("actor"), dict) else {}
         self.qr_tokens[request.qr_token] = session_uuid
         session.qr_status = "scanned"
         session.status = PresenceSessionStatus.QR_RESOLVED
         session.updated_at = datetime.utcnow()
+        if actor:
+            user_profile = self._get_or_create_user_profile(user_uuid=session.user_uuid)
+            user_profile.metadata = {
+                **user_profile.metadata,
+                "email": actor.get("user_email") or user_profile.metadata.get("email"),
+                "username": actor.get("user_email") or user_profile.metadata.get("username"),
+                "scanned_actor_user_uuid": actor.get("user_uuid"),
+                "scanned_actor_email": actor.get("user_email"),
+            }
+            if actor.get("user_email"):
+                user_profile.display_name = str(actor.get("user_email"))
+            user_profile.updated_at = datetime.utcnow()
+            self.repository.save_profile(user_profile)
         self.repository.save_session(session)
         return session
 
@@ -729,7 +983,7 @@ class PresenceService:
         session.qr_status = "scanned"
         session.status = PresenceSessionStatus.QR_RESOLVED
         session.updated_at = datetime.utcnow()
-        user_profile = self._get_or_create_user_profile()
+        user_profile = self._get_or_create_user_profile(user_uuid=session.user_uuid)
         if owner:
             user_profile.metadata = {
                 **user_profile.metadata,
@@ -1589,14 +1843,39 @@ class PresenceService:
             return None
 
     def analytics_summary(self) -> dict:
-        total = sum(len(attempts) for attempts in self.attempts.values())
-        granted = len([event for event in self.analytics_events if event.outcome == PresenceDecisionState.GRANTED.value])
-        failed = len([event for event in self.analytics_events if event.outcome == PresenceDecisionState.FAILED.value])
+        total_sessions = len(self.sessions)
+        granted = len(
+            [session for session in self.sessions.values() if session.decision == PresenceDecisionState.GRANTED]
+        )
+        denied = len(
+            [session for session in self.sessions.values() if session.decision == PresenceDecisionState.DENIED]
+        )
+        failed = len(
+            [session for session in self.sessions.values() if session.decision == PresenceDecisionState.FAILED]
+        )
+        completed = len(
+            [session for session in self.sessions.values() if session.status == PresenceSessionStatus.COMPLETED]
+        )
+        pending = len(
+            [
+                session
+                for session in self.sessions.values()
+                if session.status not in {PresenceSessionStatus.COMPLETED, PresenceSessionStatus.FAILED}
+                and session.decision not in {PresenceDecisionState.GRANTED, PresenceDecisionState.DENIED, PresenceDecisionState.FAILED}
+            ]
+        )
+        total_attempts = sum(len(attempts) for attempts in self.attempts.values())
         retries = len([a for attempts in self.attempts.values() for a in attempts if a.attempt_index > 1])
         return {
-            "attempts": total,
+            "total_sessions": total_sessions,
+            "completed_sessions": completed,
+            "pending_sessions": pending,
+            "granted_sessions": granted,
+            "denied_sessions": denied,
+            "failed_sessions": failed,
+            "attempts": total_attempts,
             "granted": granted,
-            "denied": 0,
+            "denied": denied,
             "failed": failed,
             "retry_count": retries,
         }
@@ -1645,7 +1924,7 @@ class PresenceService:
             key = event.session_mode.value if hasattr(event.session_mode, "value") else str(event.session_mode or "unknown")
             aggregates[key] = aggregates.get(key, 0) + 1
         return [
-            {"session_mode": session_mode, "event_count": count}
+            {"session_mode": session_mode, "count": count, "event_count": count}
             for session_mode, count in aggregates.items()
         ]
 
@@ -1655,7 +1934,7 @@ class PresenceService:
             key = event.grant_type.value if hasattr(event.grant_type, "value") else str(event.grant_type or "unknown")
             aggregates[key] = aggregates.get(key, 0) + 1
         return [
-            {"grant_type": grant_type, "event_count": count}
+            {"grant_type": grant_type, "count": count, "event_count": count}
             for grant_type, count in aggregates.items()
         ]
 
@@ -1688,10 +1967,12 @@ class PresenceService:
     def repair_analytics_metadata(self) -> dict:
         repaired_session_count = self._repair_terminal_session_metadata()
         repaired_event_count = self._backfill_analytics_event_metadata()
+        repaired_identity_count = self._repair_user_identity_metadata()
         return {
             "analytics_event_count": len(self.analytics_events),
             "repaired_session_count": repaired_session_count,
             "repaired_event_count": repaired_event_count,
+            "repaired_identity_count": repaired_identity_count,
             "policy_source_breakdown": self.analytics_by_policy_source(),
             "installation_breakdown": self.analytics_by_installation(),
             "session_mode_breakdown": self.analytics_by_session_mode(),
@@ -1792,6 +2073,47 @@ class PresenceService:
         for session in repaired_sessions:
             self.repository.save_session(session)
         return len(repaired_sessions)
+
+    def _repair_user_identity_metadata(self) -> int:
+        repaired_profiles: list[PresenceProfile] = []
+        for session in self.sessions.values():
+            target_profile = self._find_user_profile(session.user_uuid)
+            if target_profile is None:
+                continue
+
+            donor_profile = self._find_user_profile_by_alias(session.user_uuid, exclude_uuid=target_profile.user_uuid)
+            if donor_profile is None:
+                continue
+
+            target_metadata = target_profile.metadata if isinstance(target_profile.metadata, dict) else {}
+            donor_metadata = donor_profile.metadata if isinstance(donor_profile.metadata, dict) else {}
+            updated_metadata = dict(target_metadata)
+            changed = False
+
+            for key in (
+                "email",
+                "username",
+                "scanned_owner_user_uuid",
+                "scanned_owner_email",
+                "scanned_owner_display_name",
+                "scanned_owner_type",
+            ):
+                if not updated_metadata.get(key) and donor_metadata.get(key):
+                    updated_metadata[key] = donor_metadata.get(key)
+                    changed = True
+
+            if (not target_profile.display_name or target_profile.display_name == "Presence User") and donor_profile.display_name:
+                target_profile.display_name = donor_profile.display_name
+                changed = True
+
+            if changed:
+                target_profile.metadata = updated_metadata
+                target_profile.updated_at = datetime.utcnow()
+                repaired_profiles.append(target_profile)
+
+        for profile in repaired_profiles:
+            self.repository.save_profile(profile)
+        return len(repaired_profiles)
 
     def _get_default_camera_id(self) -> str | None:
         reserved_camera = next(iter(self.cameras.values()), None)
@@ -2543,30 +2865,31 @@ class PresenceService:
         self,
         current_user: dict | None = None,
         device_uuid: str | None = None,
+        user_uuid: str | None = None,
     ) -> PresenceProfile:
-        user_uuid = None
+        resolved_user_uuid = user_uuid
         display_name = "Presence User"
+        preferred_email = None
+        preferred_username = None
         if current_user:
-            user_uuid = current_user.get("sub") or current_user.get("username") or current_user.get("email")
-            display_name = current_user.get("username") or current_user.get("email") or display_name
+            resolved_user_uuid = current_user.get("sub") or current_user.get("username") or current_user.get("email")
+            preferred_email = current_user.get("email")
+            preferred_username = current_user.get("username")
+            display_name = preferred_email or preferred_username or display_name
+        elif resolved_user_uuid:
+            display_name = resolved_user_uuid
 
-        existing = next(
-            (
-                profile
-                for profile in self.profiles.values()
-                if profile.profile_type == "user" and (not user_uuid or profile.user_uuid == user_uuid)
-            ),
-            None,
-        )
+        existing = self._find_user_profile(resolved_user_uuid)
         if existing:
             if device_uuid and existing.device_uuid != device_uuid:
                 existing.device_uuid = device_uuid
             if current_user:
                 existing.metadata = {
                     **existing.metadata,
-                    "email": current_user.get("email"),
-                    "username": current_user.get("username"),
+                    "email": preferred_email,
+                    "username": preferred_username,
                 }
+                existing.display_name = display_name
                 self.repository.save_profile(existing)
             return existing
 
@@ -2575,13 +2898,263 @@ class PresenceService:
             parent_presence_profile_uuid=self.installation_profile.presence_profile_uuid,
             installation_uuid=self.installation_profile.installation_uuid,
             device_uuid=device_uuid,
-            user_uuid=user_uuid or "demo-user",
+            user_uuid=resolved_user_uuid or "demo-user",
             display_name=display_name,
             metadata={
-                "email": current_user.get("email") if current_user else None,
-                "username": current_user.get("username") if current_user else None,
+                "email": preferred_email,
+                "username": preferred_username,
             },
         )
         self.profiles[profile.presence_profile_uuid] = profile
         self.repository.save_profile(profile)
         return profile
+
+    def _session_trace_summary(
+        self,
+        trace: PresenceSessionTrace,
+        current_user: dict | None = None,
+        camera_names: dict[str, str] | None = None,
+    ) -> dict:
+        session = trace.session
+        profile = self._find_user_profile(session.user_uuid)
+        profile_metadata = profile.metadata if isinstance(profile and profile.metadata, dict) else {}
+        belongs_to_current_user = self._session_belongs_to_current_user(session.user_uuid, current_user)
+        current_user_email = current_user.get("email") if current_user else None
+        actor_email = (
+            profile_metadata.get("scanned_owner_email")
+            or (current_user_email if belongs_to_current_user else None)
+            or profile_metadata.get("email")
+            or profile_metadata.get("username")
+        )
+        actor_label = actor_email or self._preferred_actor_label(profile, session.user_uuid)
+        camera_label = self._camera_label_for_session(session, camera_names=camera_names)
+        source_label = self._source_label_for_session(session)
+        reason_code = session.failure_reason_code or self._latest_reason_code(trace)
+        interaction_label = self._interaction_label_for_session(session, profile_metadata)
+        headline = self._human_log_headline(
+            session=session,
+            actor_label=actor_label,
+            interaction_label=interaction_label,
+            source_label=source_label,
+            camera_label=camera_label,
+            reason_code=reason_code,
+        )
+        subtitle_parts = [part for part in [source_label, camera_label, reason_code] if part]
+        return {
+            "session_uuid": session.session_uuid,
+            "status": session.status.value if hasattr(session.status, "value") else str(session.status),
+            "session_mode": session.session_mode.value if hasattr(session.session_mode, "value") else str(session.session_mode),
+            "assurance_level": session.assurance_level.value if hasattr(session.assurance_level, "value") else str(session.assurance_level),
+            "grant_type": session.grant_type.value if hasattr(session.grant_type, "value") else str(session.grant_type),
+            "qr_status": session.qr_status,
+            "decision": session.decision.value if hasattr(session.decision, "value") else str(session.decision),
+            "reason_code": reason_code,
+            "actor_label": actor_label,
+            "actor_email": actor_email,
+            "interaction_label": interaction_label,
+            "source_label": source_label,
+            "camera_label": camera_label,
+            "headline": headline,
+            "subtitle": " • ".join(subtitle_parts) if subtitle_parts else None,
+            "created_at": session.created_at.isoformat(),
+            "completed_at": session.executed_at.isoformat() if session.executed_at else None,
+        }
+
+    def _latest_reason_code(self, trace: PresenceSessionTrace) -> str | None:
+        if trace.decision_history:
+            latest = max(trace.decision_history, key=lambda item: item.created_at)
+            return latest.reason_code
+        return None
+
+    def _camera_label_for_session(self, session: PresenceSession, camera_names: dict[str, str] | None = None) -> str | None:
+        if not session.resolved_camera_uuid:
+            return None
+        if camera_names and camera_names.get(session.resolved_camera_uuid):
+            return camera_names[session.resolved_camera_uuid]
+        resource = next(
+            (
+                resource
+                for resource in self.cameras.values()
+                if resource.platform_resource_uuid == session.resolved_camera_uuid
+            ),
+            None,
+        )
+        if resource and isinstance(resource.metadata, dict):
+            return (
+                resource.metadata.get("name")
+                or resource.metadata.get("camera_name")
+                or resource.metadata.get("device_name")
+                or resource.metadata.get("label")
+                or resource.platform_resource_uuid
+                or session.resolved_camera_uuid
+            )
+        return session.resolved_camera_uuid
+
+    async def _camera_name_lookup_for_user(self, current_user: dict | None) -> dict[str, str]:
+        token = current_user.get("token") if current_user else None
+        if not token:
+            return {}
+        try:
+            platform_cameras = await self.platform_clients.list_cameras(token)
+        except (httpx.HTTPError, HTTPException):
+            return {}
+
+        lookup: dict[str, str] = {}
+        for camera in platform_cameras:
+            if not isinstance(camera, dict):
+                continue
+            device_id = str(camera.get("device_id") or "").strip()
+            name = str(camera.get("name") or "").strip()
+            if device_id and name:
+                lookup[device_id] = name
+        return lookup
+
+    def _find_user_profile(self, user_uuid: str | None) -> PresenceProfile | None:
+        if not user_uuid:
+            return next((profile for profile in self.profiles.values() if profile.profile_type == "user"), None)
+
+        exact = next(
+            (
+                profile
+                for profile in self.profiles.values()
+                if profile.profile_type == "user" and profile.user_uuid == user_uuid
+            ),
+            None,
+        )
+        if exact is not None:
+            return exact
+        return self._find_user_profile_by_alias(user_uuid)
+
+    def _find_user_profile_by_alias(self, user_uuid: str | None, exclude_uuid: str | None = None) -> PresenceProfile | None:
+        variants = self._user_identifier_variants(user_uuid)
+        if not variants:
+            return None
+        return next(
+            (
+                profile
+                for profile in self.profiles.values()
+                if profile.profile_type == "user"
+                and profile.user_uuid != exclude_uuid
+                and profile.user_uuid in variants
+            ),
+            None,
+        )
+
+    def _user_identifier_variants(self, user_uuid: str | None) -> set[str]:
+        value = (user_uuid or "").strip()
+        if not value:
+            return set()
+
+        variants = {value}
+        lowered = value.lower()
+        if lowered.startswith("user "):
+            numeric = value[5:].strip()
+            if numeric:
+                variants.add(numeric)
+        elif value.isdigit():
+            variants.add(f"user {value}")
+        return variants
+
+    def _preferred_actor_label(self, profile: PresenceProfile | None, user_uuid: str | None) -> str:
+        if profile:
+            display_name = (profile.display_name or "").strip()
+            if display_name and display_name.lower() != "presence user":
+                return display_name
+
+        candidate = (user_uuid or "").strip()
+        if candidate and not self._looks_like_placeholder_user_identifier(candidate):
+            return candidate
+        return "unknown user"
+
+    def _looks_like_placeholder_user_identifier(self, value: str) -> bool:
+        normalized = value.strip().lower()
+        if normalized == "presence user":
+            return True
+        if normalized.isdigit():
+            return True
+        if normalized.startswith("user "):
+            suffix = normalized[5:].strip()
+            return suffix.isdigit()
+        return False
+
+    def _session_belongs_to_current_user(self, session_user_uuid: str | None, current_user: dict | None) -> bool:
+        if not session_user_uuid or not current_user:
+            return False
+
+        current_identifiers = {
+            str(value).strip().lower()
+            for value in [
+                current_user.get("sub"),
+                current_user.get("username"),
+                current_user.get("email"),
+            ]
+            if value
+        }
+        session_identifier = str(session_user_uuid).strip().lower()
+        if session_identifier in current_identifiers:
+            return True
+
+        if session_identifier.isdigit():
+            for identifier in current_identifiers:
+                if identifier == session_identifier:
+                    return True
+                if identifier.startswith("user ") and identifier[5:].strip() == session_identifier:
+                    return True
+        return False
+
+    def _source_label_for_session(self, session: PresenceSession) -> str:
+        device_uuid = (session.device_uuid or "").lower()
+        if "mobile" in device_uuid:
+            return "mobile app"
+        if "station" in device_uuid:
+            return "detection station"
+        if "console" in device_uuid or "web" in device_uuid:
+            return "detection station"
+        return "presence client"
+
+    def _interaction_label_for_session(self, session: PresenceSession, profile_metadata: dict) -> str:
+        if profile_metadata.get("scanned_owner_email"):
+            if session.session_mode == PresenceSessionMode.QR_PLUS_CAMERA:
+                return "owner QR + video verification"
+            return "owner QR verification"
+        if session.session_mode == PresenceSessionMode.QR_ONLY:
+            return "QR-only grant"
+        if session.session_mode == PresenceSessionMode.CAMERA_ONLY:
+            return "video-only people match"
+        if session.session_mode == PresenceSessionMode.QR_PLUS_CAMERA:
+            return "QR + video verification"
+        return "presence verification"
+
+    def _human_log_headline(
+        self,
+        *,
+        session: PresenceSession,
+        actor_label: str,
+        interaction_label: str,
+        source_label: str,
+        camera_label: str | None,
+        reason_code: str | None,
+    ) -> str:
+        if session.decision == PresenceDecisionState.GRANTED:
+            if session.session_mode == PresenceSessionMode.QR_ONLY:
+                return f"A QR-only grant was awarded to {actor_label} via the {source_label}."
+            if session.session_mode == PresenceSessionMode.CAMERA_ONLY:
+                if camera_label:
+                    return f"A video-only people match granted access to {actor_label} on {camera_label}."
+                return f"A video-only people match granted access to {actor_label} via the {source_label}."
+            if camera_label:
+                return f"A QR + video verification granted access to {actor_label} on {camera_label}."
+            return f"A QR + video verification granted access to {actor_label} via the {source_label}."
+        if session.decision == PresenceDecisionState.DENIED:
+            return f"A {interaction_label} was denied for {actor_label}."
+        if reason_code == "presence_session_expired":
+            return f"A {interaction_label} for {actor_label} expired before completion."
+        if reason_code == "presence_no_match":
+            return f"A {interaction_label} failed for {actor_label} because no match was found."
+        if reason_code == "presence_attempt_limit_reached":
+            return f"A {interaction_label} for {actor_label} reached the attempt limit."
+        if session.decision == PresenceDecisionState.RETRY_REQUIRED:
+            return f"A {interaction_label} for {actor_label} requires another attempt."
+        if session.decision == PresenceDecisionState.PENDING:
+            return f"A {interaction_label} for {actor_label} is still in progress."
+        return f"A {interaction_label} ended unsuccessfully for {actor_label}."

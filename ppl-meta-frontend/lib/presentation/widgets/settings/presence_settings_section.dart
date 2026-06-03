@@ -19,6 +19,7 @@ class _PresenceSettingsSectionState
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _timeoutController;
   late final TextEditingController _attemptsController;
+  late final TextEditingController _qrToCamWindowController;
 
   PresenceInstallationContext? _context;
   bool _allowConcurrentTriggerOperations = true;
@@ -31,6 +32,7 @@ class _PresenceSettingsSectionState
     super.initState();
     _timeoutController = TextEditingController();
     _attemptsController = TextEditingController();
+    _qrToCamWindowController = TextEditingController();
     _loadSettings();
   }
 
@@ -38,6 +40,7 @@ class _PresenceSettingsSectionState
   void dispose() {
     _timeoutController.dispose();
     _attemptsController.dispose();
+    _qrToCamWindowController.dispose();
     super.dispose();
   }
 
@@ -67,6 +70,8 @@ class _PresenceSettingsSectionState
       _context = installationContext;
       _timeoutController.text = installationContext.sessionSettings.sessionTimeoutSeconds.toString();
       _attemptsController.text = installationContext.sessionSettings.maxUnsuccessfulAttempts.toString();
+        _qrToCamWindowController.text =
+          installationContext.sessionSettings.qrToCameraTransitionWindowMinutes.toString();
       _allowConcurrentTriggerOperations =
           installationContext.sessionSettings.allowConcurrentTriggerOperations;
       _isLoading = false;
@@ -90,6 +95,8 @@ class _PresenceSettingsSectionState
         sessionTimeoutSeconds: int.parse(_timeoutController.text.trim()),
         maxUnsuccessfulAttempts: int.parse(_attemptsController.text.trim()),
         allowConcurrentTriggerOperations: _allowConcurrentTriggerOperations,
+        qrToCameraTransitionWindowMinutes:
+            int.parse(_qrToCamWindowController.text.trim()),
       ),
     );
 
@@ -180,6 +187,23 @@ class _PresenceSettingsSectionState
                       final parsed = int.tryParse((value ?? '').trim());
                       if (parsed == null || parsed < 1) {
                         return 'Enter at least 1 attempt.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _qrToCamWindowController,
+                    enabled: !_isLoading && !_isSaving,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'QR to Cam transition window (minutes)',
+                      hintText: '10',
+                    ),
+                    validator: (value) {
+                      final parsed = int.tryParse((value ?? '').trim());
+                      if (parsed == null || parsed < 1) {
+                        return 'Enter at least 1 minute.';
                       }
                       return null;
                     },

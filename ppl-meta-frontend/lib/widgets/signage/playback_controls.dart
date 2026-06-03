@@ -80,7 +80,7 @@ class _PlaybackControlsState extends State<PlaybackControls> {
                   const SizedBox(height: 24),
                   
                   // Playlist selector
-                  _buildPlaylistSelector(provider, isOnline),
+                  _buildPlaylistSelector(provider, status, isOnline),
                   const SizedBox(height: 24),
                   
                   // Volume control
@@ -332,7 +332,7 @@ class _PlaybackControlsState extends State<PlaybackControls> {
             } else if (isPaused) {
               provider.resumePlayback(widget.device.id);
             } else {
-              _showPlaylistSelector(provider);
+              _showPlaylistSelector(provider, status);
             }
           },
           color: Colors.green,
@@ -392,7 +392,11 @@ class _PlaybackControlsState extends State<PlaybackControls> {
     );
   }
 
-  Widget _buildPlaylistSelector(SignageProvider provider, bool isOnline) {
+  Widget _buildPlaylistSelector(
+    SignageProvider provider,
+    PlaybackStatus? status,
+    bool isOnline,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -402,7 +406,7 @@ class _PlaybackControlsState extends State<PlaybackControls> {
         ),
         const SizedBox(height: 8),
         ElevatedButton.icon(
-          onPressed: isOnline ? () => _showPlaylistSelector(provider) : null,
+          onPressed: isOnline ? () => _showPlaylistSelector(provider, status) : null,
           icon: const Icon(Icons.playlist_play),
           label: const Text('Select & Play Playlist'),
         ),
@@ -537,36 +541,75 @@ class _PlaybackControlsState extends State<PlaybackControls> {
     }
   }
 
-  Future<void> _showPlaylistSelector(SignageProvider provider) async {
-    if (provider.videoLists.isEmpty) {
-      await provider.loadVideoLists();
+  Future<void> _showPlaylistSelector(
+    SignageProvider provider,
+    PlaybackStatus? status,
+  ) async {
+    final syncedPlaylists = await provider.loadSyncedVideoListsForDevice(
+      widget.device.id,
+    );
+
+    var candidatePlaylists = List<VideoList>.from(syncedPlaylists);
+
+    var currentStatus = status;
+    if (currentStatus == null) {
+      await provider.loadDeviceStatus(widget.device.id);
+      currentStatus = provider.deviceStatuses[widget.device.id];
     }
 
-    if (provider.videoLists.isEmpty) {
+    final currentPlaylist = currentStatus?.playlist;
+    if (currentPlaylist != null &&
+        candidatePlaylists.every((list) => list.id != (currentPlaylist.videoListId ?? currentPlaylist.id))) {
+      if (provider.videoLists.isEmpty) {
+        await provider.loadVideoLists(limit: 200);
+      }
+
+      final currentListId = currentPlaylist.videoListId ?? currentPlaylist.id;
+      final existingCurrent = provider.videoLists.where((list) => list.id == currentListId);
+      if (existingCurrent.isNotEmpty) {
+        candidatePlaylists.insert(0, existingCurrent.first);
+      }
+    }
+
+    if (candidatePlaylists.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No playlists available')),
+          const SnackBar(
+            content: Text('No synced playlists found for this device'),
+          ),
         );
       }
       return;
     }
 
-    final playlist = await showDialog<VideoList>(
+    if (!mounted) {
+      return;
+    }
+
+    final playlist = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Select Playlist'),
+        title: const Text('Select Synced Playlist'),
         content: SizedBox(
           width: double.maxFinite,
           child: ListView.builder(
             shrinkWrap: true,
-            itemCount: provider.videoLists.length,
+            itemCount: candidatePlaylists.length,
             itemBuilder: (context, index) {
-              final list = provider.videoLists[index];
+              final list = candidatePlaylists[index];
+              final isCurrent = currentPlaylist != null &&
+                  list.id == (currentPlaylist.videoListId ?? currentPlaylist.id);
+              final videoCount = list.videoCount ?? list.videoItems?.length ?? 0;
+
               return ListTile(
                 leading: const Icon(Icons.playlist_play),
                 title: Text(list.name),
-                subtitle: Text('${list.videoItems?.length ?? 0} videos'),
-                onTap: () => Navigator.pop(context, list),
+                subtitle: Text(
+                  isCurrent
+                      ? 'Currently active on this device\n$videoCount videos'
+                      : '$videoCount videos',
+                ),
+                onTap: () => Navigator.pop(context, list.id),
               );
             },
           ),
@@ -583,7 +626,7 @@ class _PlaybackControlsState extends State<PlaybackControls> {
     if (playlist != null && mounted) {
       await provider.startPlayback(
         deviceId: widget.device.id,
-        videoListId: playlist.id,
+        videoListId: playlist,
         volume: _volume.toInt(),
       );
     }

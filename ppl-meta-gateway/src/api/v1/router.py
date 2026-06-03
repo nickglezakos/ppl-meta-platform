@@ -912,6 +912,12 @@ async def get_sync_history(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.get("/signage/etl/sync-history")
+async def get_etl_sync_history(request: Request):
+    """Proxy ETL sync history to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.post("/signage/etl/sync")
 async def sync_video_list_etl(request: Request):
     """Proxy ETL sync request to Media service."""

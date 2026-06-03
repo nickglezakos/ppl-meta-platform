@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 
+import 'package:excel/excel.dart' hide Border;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ import '../models/api_response.dart';
 import '../core/theme/app_theme.dart';
 import '../models/presence_models.dart';
 import '../services/presence_api_client.dart';
+import '../utils/platform_file_download.dart';
 import '../widgets/custom_app_bar.dart';
 import '../core/providers/camera_providers.dart';
 
@@ -33,20 +35,57 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   List<PresenceAnalyticsBucket> _sessionModes = const [];
   List<PresenceAnalyticsBucket> _grantTypes = const [];
   List<PresenceSessionTraceSummary> _recentSessions = const [];
+  PresenceSessionTracePage _sessionsPage = const PresenceSessionTracePage(
+    items: <PresenceSessionTraceSummary>[],
+    total: 0,
+    returned: 0,
+    limit: 20,
+    offset: 0,
+    hasMore: false,
+  );
+  PresenceUserDayAwardPage _userDayAwardPage = const PresenceUserDayAwardPage(
+    items: <PresenceUserDayAwardSummary>[],
+    total: 0,
+    returned: 0,
+    limit: 20,
+    offset: 0,
+    hasMore: false,
+    availableUsers: <String>[],
+  );
   List<PresenceCameraOption> _cameras = const [];
   List<PresenceIndividualGroupOption> _availableIndividualGroups = const [];
   PresenceLiveSession? _activeSession;
   PresenceQrPayload? _currentQr;
   PresenceResultDetails? _activeResult;
   bool _isLoading = true;
+  bool _isSessionsLoading = false;
+  bool _isUserDayAwardsLoading = false;
+  bool _isDownloadingSessions = false;
   bool _isSubmittingAdminAction = false;
   String? _error;
+  String? _sessionsError;
+  String? _userDayAwardsError;
   bool _autoRefreshExecution = false;
   Timer? _executionPollTimer;
   final TextEditingController _deviceDisplayNameController = TextEditingController();
   final TextEditingController _locationLabelController = TextEditingController();
+  final TextEditingController _sessionsUserQueryController = TextEditingController();
+  final TextEditingController _userDayAwardUserController = TextEditingController();
   String? _lastTerminalAlertSessionKey;
   String? _lastGrantedAlertSessionKey;
+  static const int _sessionsPageSize = 20;
+  static const int _userDayAwardsPageSize = 20;
+  late DateTime _sessionsStartDate;
+  late DateTime _sessionsEndDate;
+  late DateTime _userDayAwardsStartDate;
+  late DateTime _userDayAwardsEndDate;
+  String? _sessionsCameraUuid;
+  String? _sessionsGrantType;
+  String? _selectedUserDayAwardQuery;
+  final Map<String, List<PresenceSessionTraceSummary>> _userDayAwardSessions = {};
+  final Set<String> _loadingUserDayAwardRows = <String>{};
+  final Set<String> _expandedUserDayAwardRows = <String>{};
+  final Map<String, String> _userDayAwardRowFilters = <String, String>{};
 
   String get _deviceReference => widget.stationMode ? 'presence-web-station' : 'presence-web-console';
 
@@ -80,15 +119,43 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     return null;
   }
 
+  List<PresenceIndividualGroupOption> get _presenceMatchGroups {
+    final groups = List<PresenceIndividualGroupOption>.from(_availableIndividualGroups);
+    final activeGroup = _activePresenceIndividualGroup;
+    if (activeGroup != null &&
+        groups.every((group) => group.individualGroupId != activeGroup.individualGroupId)) {
+      groups.insert(0, activeGroup);
+    }
+    return groups;
+  }
+
   PresenceApiClient get _apiClient => ref.read(presenceApiClientProvider);
+
+  String? get _defaultUserDayAwardQuery {
+    final currentUser = ref.read(currentUserProvider);
+    final email = currentUser?.email?.trim();
+    if (email != null && email.isNotEmpty) {
+      return email;
+    }
+    final username = currentUser?.username?.trim();
+    if (username != null && username.isNotEmpty) {
+      return username;
+    }
+    return null;
+  }
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
+    _sessionsEndDate = DateTime.now();
+    _sessionsStartDate = _sessionsEndDate.subtract(const Duration(days: 3));
+    _userDayAwardsEndDate = DateTime.now();
+    _userDayAwardsStartDate = _userDayAwardsEndDate.subtract(const Duration(days: 3));
     _deviceDisplayNameController.text = widget.stationMode ? 'Presence Web Station' : 'Presence Web Console';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadPresenceDashboard();
+      _loadSessionsPage();
       if (widget.stationMode) {
         _refreshExecutionState(renderIfMissing: true);
       }
@@ -101,6 +168,8 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     _tabController.dispose();
     _deviceDisplayNameController.dispose();
     _locationLabelController.dispose();
+    _sessionsUserQueryController.dispose();
+    _userDayAwardUserController.dispose();
     super.dispose();
   }
 
@@ -147,12 +216,292 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       _grantTypes = grantResponse.data ?? const [];
       _recentSessions = traceResponse.data ?? const [];
       _cameras = camerasResponse.data ?? const [];
-        _availableIndividualGroups = availableGroupsResponse.data ?? const [];
-      _error = traceResponse.success || modeResponse.success || grantResponse.success
+      _availableIndividualGroups = availableGroupsResponse.data ?? const [];
+      _error = installationResponse.success &&
+              modeResponse.success &&
+              grantResponse.success &&
+              traceResponse.success &&
+              camerasResponse.success &&
+              availableGroupsResponse.success
           ? null
-          : traceResponse.error ?? modeResponse.error ?? grantResponse.error ?? installationResponse.error;
+          : traceResponse.error ??
+              modeResponse.error ??
+              grantResponse.error ??
+              installationResponse.error ??
+              camerasResponse.error ??
+              availableGroupsResponse.error;
       _isLoading = false;
     });
+
+    unawaited(_loadSessionsPage());
+    unawaited(_loadUserDayAwardPage(offset: 0));
+  }
+
+  Future<void> _loadUserDayAwardPage({int? offset}) async {
+    if ((_selectedUserDayAwardQuery == null || _selectedUserDayAwardQuery!.trim().isEmpty)) {
+      _selectedUserDayAwardQuery = _defaultUserDayAwardQuery;
+      _userDayAwardUserController.text = _selectedUserDayAwardQuery ?? '';
+    }
+
+    setState(() {
+      _isUserDayAwardsLoading = true;
+      _userDayAwardsError = null;
+    });
+
+    final response = await _apiClient.getUserDayAwardSummaryPage(
+      limit: _userDayAwardsPageSize,
+      offset: offset ?? _userDayAwardPage.offset,
+      userQuery: _selectedUserDayAwardQuery,
+      startDate: DateTime(
+        _userDayAwardsStartDate.year,
+        _userDayAwardsStartDate.month,
+        _userDayAwardsStartDate.day,
+      ),
+      endDate: DateTime(
+        _userDayAwardsEndDate.year,
+        _userDayAwardsEndDate.month,
+        _userDayAwardsEndDate.day,
+        23,
+        59,
+        59,
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isUserDayAwardsLoading = false;
+      if (response.success && response.data != null) {
+        _userDayAwardPage = response.data!;
+        final activeRowKeys = _userDayAwardPage.items.map((item) => item.rowKey).toSet();
+        _expandedUserDayAwardRows.removeWhere((rowKey) => !activeRowKeys.contains(rowKey));
+        _userDayAwardRowFilters.removeWhere((rowKey, _) => !activeRowKeys.contains(rowKey));
+      }
+      _userDayAwardsError = response.success ? null : (response.error ?? 'Failed to load user-day awards');
+    });
+  }
+
+  Future<void> _loadUserDayAwardSessions(PresenceUserDayAwardSummary summary) async {
+    final rowKey = summary.rowKey;
+    if (_loadingUserDayAwardRows.contains(rowKey) || _userDayAwardSessions.containsKey(rowKey)) {
+      return;
+    }
+
+    setState(() {
+      _loadingUserDayAwardRows.add(rowKey);
+    });
+
+    final sessions = <PresenceSessionTraceSummary>[];
+    var offset = 0;
+    const pageSize = 200;
+    final startDate = DateTime(summary.date.year, summary.date.month, summary.date.day);
+    final endDate = DateTime(summary.date.year, summary.date.month, summary.date.day, 23, 59, 59);
+    final userQuery = summary.userEmail.isNotEmpty ? summary.userEmail : summary.userLabel;
+
+    while (true) {
+      final response = await _apiClient.getSessionTracePage(
+        limit: pageSize,
+        offset: offset,
+        userQuery: userQuery,
+        startDate: startDate,
+        endDate: endDate,
+      );
+
+      if (!response.success || response.data == null) {
+        break;
+      }
+
+      final page = response.data!;
+      sessions.addAll(page.items.where((session) => session.decision == 'granted'));
+      if (!page.hasMore || page.returned == 0) {
+        break;
+      }
+      offset += page.returned;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _loadingUserDayAwardRows.remove(rowKey);
+      _userDayAwardSessions[rowKey] = sessions;
+    });
+  }
+
+  Future<void> _loadSessionsPage({int? offset}) async {
+    setState(() {
+      _isSessionsLoading = true;
+      _sessionsError = null;
+    });
+
+    final response = await _apiClient.getSessionTracePage(
+      limit: _sessionsPageSize,
+      offset: offset ?? _sessionsPage.offset,
+      userQuery: _sessionsUserQueryController.text.trim(),
+      cameraUuid: _sessionsCameraUuid,
+      grantType: _sessionsGrantType,
+      startDate: DateTime(_sessionsStartDate.year, _sessionsStartDate.month, _sessionsStartDate.day),
+      endDate: DateTime(_sessionsEndDate.year, _sessionsEndDate.month, _sessionsEndDate.day, 23, 59, 59),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isSessionsLoading = false;
+      _sessionsPage = response.data ?? _sessionsPage;
+      _sessionsError = response.success ? null : response.error ?? 'Failed to load sessions';
+    });
+  }
+
+  Future<List<PresenceSessionTraceSummary>> _loadAllFilteredSessions() async {
+    const exportPageSize = 200;
+    final sessions = <PresenceSessionTraceSummary>[];
+    var offset = 0;
+    var total = 0;
+
+    do {
+      final response = await _apiClient.getSessionTracePage(
+        limit: exportPageSize,
+        offset: offset,
+        userQuery: _sessionsUserQueryController.text.trim(),
+        cameraUuid: _sessionsCameraUuid,
+        grantType: _sessionsGrantType,
+        startDate: DateTime(_sessionsStartDate.year, _sessionsStartDate.month, _sessionsStartDate.day),
+        endDate: DateTime(_sessionsEndDate.year, _sessionsEndDate.month, _sessionsEndDate.day, 23, 59, 59),
+      );
+
+      if (!response.success || response.data == null) {
+        throw Exception(response.error ?? 'Failed to load filtered sessions');
+      }
+
+      final page = response.data!;
+      sessions.addAll(page.items);
+      total = page.total;
+      offset += page.returned;
+
+      if (page.returned == 0) {
+        break;
+      }
+    } while (offset < total);
+
+    return sessions;
+  }
+
+  Future<void> _downloadSessionsWorkbook() async {
+    if (_isDownloadingSessions) {
+      return;
+    }
+
+    setState(() {
+      _isDownloadingSessions = true;
+      _sessionsError = null;
+    });
+
+    try {
+      final sessions = await _loadAllFilteredSessions();
+      final workbook = Excel.createExcel();
+      final sheet = workbook['Sessions'];
+      final timestampFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
+      final rows = <List<CellValue>>[
+        [
+          TextCellValue('Session UUID'),
+          TextCellValue('Created At'),
+          TextCellValue('Completed At'),
+          TextCellValue('Status'),
+          TextCellValue('Decision'),
+          TextCellValue('Grant Type'),
+          TextCellValue('Session Mode'),
+          TextCellValue('Assurance Level'),
+          TextCellValue('QR Status'),
+          TextCellValue('Actor'),
+          TextCellValue('Actor Email'),
+          TextCellValue('Interaction'),
+          TextCellValue('Source'),
+          TextCellValue('Camera'),
+          TextCellValue('Reason Code'),
+          TextCellValue('Headline'),
+          TextCellValue('Subtitle'),
+        ],
+      ];
+
+      for (final session in sessions) {
+        rows.add([
+          TextCellValue(session.sessionUuid),
+          TextCellValue(session.createdAt != null ? timestampFormat.format(session.createdAt!) : ''),
+          TextCellValue(session.completedAt != null ? timestampFormat.format(session.completedAt!) : ''),
+          TextCellValue(session.status),
+          TextCellValue(session.decision),
+          TextCellValue(session.grantType),
+          TextCellValue(session.sessionMode),
+          TextCellValue(session.assuranceLevel),
+          TextCellValue(session.qrStatus),
+          TextCellValue(session.actorLabel ?? ''),
+          TextCellValue(session.actorEmail ?? ''),
+          TextCellValue(session.interactionLabel ?? ''),
+          TextCellValue(session.sourceLabel ?? ''),
+          TextCellValue(session.cameraLabel ?? ''),
+          TextCellValue(session.reasonCode ?? ''),
+          TextCellValue(session.headline ?? ''),
+          TextCellValue(session.subtitle ?? ''),
+        ]);
+      }
+
+      for (final row in rows) {
+        sheet.appendRow(row);
+      }
+
+      for (var column = 0; column < rows.first.length; column++) {
+        sheet.setColumnAutoFit(column);
+      }
+
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final filename = 'presence_sessions_$timestamp.xlsx';
+      final bytes = workbook.encode();
+      if (bytes == null) {
+        throw Exception('Failed to generate workbook');
+      }
+      final savedPath = await downloadFileBytes(
+        bytes: bytes,
+        filename: filename,
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Downloaded ${sessions.length} sessions to ${savedPath ?? filename}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _sessionsError = 'Failed to download sessions: $e';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_sessionsError!),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloadingSessions = false;
+        });
+      }
+    }
   }
 
   Future<void> _reserveCamera(PresenceCameraOption camera) async {
@@ -233,7 +582,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     }
   }
 
-  Future<void> _resetReservations() async {
+  Future<void> _reservePresenceMatchGroup(PresenceIndividualGroupOption group) async {
     final installationUuid = _installationContext?.installationUuid;
     if (installationUuid == null || installationUuid.isEmpty) {
       return;
@@ -243,103 +592,10 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       _isSubmittingAdminAction = true;
     });
 
-    final response = await _apiClient.resetReservations(installationUuid: installationUuid);
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _isSubmittingAdminAction = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          response.success ? 'Presence reservations cleared.' : (response.error ?? 'Failed to reset reservations'),
-        ),
-        backgroundColor: response.success ? null : Colors.red,
-      ),
-    );
-
-    if (response.success) {
-      await _loadPresenceDashboard();
-    }
-  }
-
-  Future<void> _showPolicyEditor() async {
-    final current = _installationContext?.groupPolicy ?? const PresenceGroupPolicy();
-    final updatedPolicy = await showDialog<PresenceGroupPolicy>(
-      context: context,
-      builder: (context) => _PresencePolicyDialog(initialPolicy: current),
-    );
-
-    if (updatedPolicy == null || _installationContext == null) {
-      return;
-    }
-
-    setState(() {
-      _isSubmittingAdminAction = true;
-    });
-
-    final response = await _apiClient.updateInstallationPolicy(
-      installationUuid: _installationContext!.installationUuid,
-      groupPolicy: updatedPolicy,
-    );
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _isSubmittingAdminAction = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          response.success ? 'Installation policy updated.' : (response.error ?? 'Failed to update policy'),
-        ),
-        backgroundColor: response.success ? null : Colors.red,
-      ),
-    );
-
-    if (response.success) {
-      await _loadPresenceDashboard();
-    }
-  }
-
-  Future<void> _showManagePresenceGroupDialog() async {
-    final activeGroup = _activePresenceIndividualGroup;
-    final hasActiveGroup = activeGroup != null;
-    if (!hasActiveGroup) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Presence needs an active match group for the people-match flow.'),
-        ),
-      );
-    }
-
-    final payload = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => _ManagePresenceGroupDialog(
-        currentGroup: activeGroup,
-        availableGroups: _availableIndividualGroups,
-      ),
-    );
-
-    if (payload == null || _installationContext == null) {
-      return;
-    }
-
-    setState(() {
-      _isSubmittingAdminAction = true;
-    });
-
     final response = await _apiClient.updateActivePresenceGroup(
-      installationUuid: _installationContext!.installationUuid,
-      individualGroupId: payload['individual_group_id'] as String?,
-      groupName: payload['group_name'] as String,
+      installationUuid: installationUuid,
+      individualGroupId: group.individualGroupId,
+      groupName: group.name,
     );
 
     if (!mounted) {
@@ -354,8 +610,47 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       SnackBar(
         content: Text(
           response.success
-            ? (hasActiveGroup ? 'Presence match group updated.' : 'Presence match group created.')
-            : (response.error ?? 'Failed to update Presence match group'),
+              ? 'Reserved match group ${group.name} for presence.'
+              : (response.error ?? 'Failed to reserve match group'),
+        ),
+        backgroundColor: response.success ? null : Colors.red,
+      ),
+    );
+
+    if (response.success) {
+      await _loadPresenceDashboard();
+    }
+  }
+
+  Future<void> _unreservePresenceMatchGroup(PresenceIndividualGroupOption group) async {
+    final installationUuid = _installationContext?.installationUuid;
+    if (installationUuid == null || installationUuid.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isSubmittingAdminAction = true;
+    });
+
+    final response = await _apiClient.updateActivePresenceGroup(
+      installationUuid: installationUuid,
+      clearActiveGroup: true,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isSubmittingAdminAction = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          response.success
+              ? 'Released match group ${group.name} from presence.'
+              : (response.error ?? 'Failed to unreserve match group'),
         ),
         backgroundColor: response.success ? null : Colors.red,
       ),
@@ -374,6 +669,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
         return _PresenceSessionInspector(
           session: session,
           apiClient: _apiClient,
+          cameras: _cameras,
         );
       },
     );
@@ -535,8 +831,8 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     await _consumeScannedQr(scannedText.trim(), sessionMode: 'qr_only', requireOwnerQr: true);
   }
 
-  Future<void> _openWebQrScanner({String sessionMode = 'qr_only'}) async {
-    final session = await _ensureExecutionSession(sessionMode: sessionMode);
+  Future<void> _openOwnerQrVideoScanner() async {
+    final session = await _ensureExecutionSession(sessionMode: 'qr_plus_camera');
     if (session == null || !mounted) {
       return;
     }
@@ -549,7 +845,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     if (scannedText == null || scannedText.trim().isEmpty) {
       return;
     }
-    await _consumeScannedQr(scannedText.trim(), sessionMode: sessionMode);
+    await _consumeScannedQr(scannedText.trim(), sessionMode: 'qr_plus_camera', requireOwnerQr: true);
   }
 
   Future<void> _consumeScannedQr(
@@ -618,6 +914,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
         sessionUuid: activeSession.sessionUuid,
         qrToken: qrToken,
         installationUuid: installationUuid,
+        qrPayload: payload,
       );
     }
 
@@ -891,6 +1188,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
               Tab(icon: Icon(Icons.dashboard_outlined), text: 'Overview'),
               Tab(icon: Icon(Icons.play_circle_outline), text: 'Actions'),
               Tab(icon: Icon(Icons.analytics_outlined), text: 'Analytics'),
+              Tab(icon: Icon(Icons.list_alt_outlined), text: 'Sessions'),
               Tab(icon: Icon(Icons.settings_outlined), text: 'Settings'),
             ],
           ),
@@ -902,6 +1200,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
               _buildOverviewTab(context),
               _buildActionsTab(context),
               _buildAnalyticsTab(context),
+              _buildSessionsTab(context),
               _buildSettingsTab(context),
             ],
           ),
@@ -961,6 +1260,8 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
 
   Widget _buildAnalyticsTab(BuildContext context) {
     return _buildTabbedList([
+      _buildUserDayAwardsHierarchySection(context),
+      const SizedBox(height: 20),
       _buildDistributionSection(
         context,
         title: 'Session Modes',
@@ -977,10 +1278,317 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     ]);
   }
 
+  Widget _buildUserDayAwardsHierarchySection(BuildContext context) {
+    final availableUsers = _userDayAwardPage.availableUsers.toSet().toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final selectedUser = _selectedUserDayAwardQuery ?? '';
+    if (selectedUser.isNotEmpty && !availableUsers.contains(selectedUser)) {
+      availableUsers.insert(0, selectedUser);
+    }
+
+    final pageStart = _userDayAwardPage.total == 0 ? 0 : _userDayAwardPage.offset + 1;
+    final pageEnd = _userDayAwardPage.offset + _userDayAwardPage.returned;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'User-Day Presence Awards',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Daily per-user award totals with first/last award timestamps. Expand a row to see award sessions.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 360,
+                child: Autocomplete<String>(
+                  initialValue: TextEditingValue(text: _userDayAwardUserController.text),
+                  optionsBuilder: (textEditingValue) {
+                    final query = textEditingValue.text.trim().toLowerCase();
+                    if (query.isEmpty) {
+                      return availableUsers;
+                    }
+                    return availableUsers.where((user) => user.toLowerCase().contains(query));
+                  },
+                  onSelected: (selection) {
+                    _userDayAwardUserController.text = selection;
+                    _selectedUserDayAwardQuery = selection;
+                    _userDayAwardSessions.clear();
+                    _loadUserDayAwardPage(offset: 0);
+                  },
+                  fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                    controller.value = TextEditingValue(
+                      text: _userDayAwardUserController.text,
+                      selection: TextSelection.collapsed(offset: _userDayAwardUserController.text.length),
+                    );
+                    return TextField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      decoration: const InputDecoration(
+                        labelText: 'User',
+                        hintText: 'Search users',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                      onSubmitted: (value) {
+                        _userDayAwardUserController.text = value.trim();
+                        _selectedUserDayAwardQuery = value.trim().isEmpty ? _defaultUserDayAwardQuery : value.trim();
+                        _userDayAwardSessions.clear();
+                        _loadUserDayAwardPage(offset: 0);
+                      },
+                    );
+                  },
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: _isUserDayAwardsLoading
+                    ? null
+                    : () {
+                        _selectedUserDayAwardQuery = _userDayAwardUserController.text.trim().isEmpty
+                            ? _defaultUserDayAwardQuery
+                            : _userDayAwardUserController.text.trim();
+                        _userDayAwardSessions.clear();
+                        _loadUserDayAwardPage(offset: 0);
+                      },
+                icon: const Icon(Icons.filter_alt_outlined),
+                label: const Text('Apply'),
+              ),
+              _buildDateFilterButton(
+                context,
+                label: 'Start',
+                value: _userDayAwardsStartDate,
+                onPicked: (value) {
+                  setState(() {
+                    _userDayAwardsStartDate = value;
+                    if (_userDayAwardsEndDate.isBefore(value)) {
+                      _userDayAwardsEndDate = value;
+                    }
+                  });
+                  _userDayAwardSessions.clear();
+                  _loadUserDayAwardPage(offset: 0);
+                },
+              ),
+              _buildDateFilterButton(
+                context,
+                label: 'End',
+                value: _userDayAwardsEndDate,
+                onPicked: (value) {
+                  setState(() {
+                    _userDayAwardsEndDate = value;
+                    if (_userDayAwardsStartDate.isAfter(value)) {
+                      _userDayAwardsStartDate = value;
+                    }
+                  });
+                  _userDayAwardSessions.clear();
+                  _loadUserDayAwardPage(offset: 0);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Showing $pageStart-$pageEnd of ${_userDayAwardPage.total} user-day rows.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[400]),
+          ),
+          const SizedBox(height: 12),
+          if (_isUserDayAwardsLoading && _userDayAwardPage.items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_userDayAwardPage.items.isEmpty)
+            Text(
+              'No award activity found for the selected user filter.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            )
+          else
+            ..._userDayAwardPage.items.map((summary) {
+              final rowKey = summary.rowKey;
+              final isExpanded = _expandedUserDayAwardRows.contains(rowKey);
+              final activeFilter = _userDayAwardRowFilters[rowKey] ?? 'ALL';
+              final firstAward = summary.firstAwardAt != null ? DateFormat('HH:mm:ss').format(summary.firstAwardAt!) : '-';
+              final lastAward = summary.lastAwardAt != null ? DateFormat('HH:mm:ss').format(summary.lastAwardAt!) : '-';
+              final dateLabel = '${DateFormat('yyyy-MM-dd').format(summary.date)} ${DateFormat('EEE').format(summary.date).toUpperCase()}';
+              const chipOrder = ['QR', 'Cam', 'Cam & QR'];
+              final sortedGrantEntries = summary.grantTypeTotals.entries.toList()
+                ..sort((a, b) {
+                  final leftLabel = _userDayGrantLabel(a.key);
+                  final rightLabel = _userDayGrantLabel(b.key);
+                  final leftIndex = chipOrder.indexOf(leftLabel);
+                  final rightIndex = chipOrder.indexOf(rightLabel);
+                  final leftRank = leftIndex >= 0 ? leftIndex : 999;
+                  final rightRank = rightIndex >= 0 ? rightIndex : 999;
+                  if (leftRank != rightRank) {
+                    return leftRank.compareTo(rightRank);
+                  }
+                  return leftLabel.compareTo(rightLabel);
+                });
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: ExpansionTile(
+                  key: ValueKey('user_day_$rowKey\_$isExpanded\_$activeFilter'),
+                  initiallyExpanded: isExpanded,
+                  onExpansionChanged: (expanded) {
+                    setState(() {
+                      if (expanded) {
+                        _expandedUserDayAwardRows.add(rowKey);
+                      } else {
+                        _expandedUserDayAwardRows.remove(rowKey);
+                        _userDayAwardRowFilters.remove(rowKey);
+                      }
+                    });
+                    if (expanded) {
+                      _loadUserDayAwardSessions(summary);
+                    }
+                  },
+                  title: Text('${summary.identity} • $dateLabel'),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ...sortedGrantEntries.map(
+                          (entry) => _buildUserDayGrantFilterChip(
+                            context,
+                            rowKey: rowKey,
+                            label: _userDayGrantLabel(entry.key),
+                            count: entry.value,
+                            isActive: activeFilter == _userDayGrantLabel(entry.key),
+                          ),
+                        ),
+                        _buildQrToCamTransitionChip(
+                          context,
+                          count: summary.qrToCamTransitionCount,
+                          windowMinutes: summary.qrToCamTransitionWindowMinutes,
+                          isActive: activeFilter == 'QR_TO_CAM',
+                          onTap: () {
+                            setState(() {
+                              _expandedUserDayAwardRows.add(rowKey);
+                              if (activeFilter == 'QR_TO_CAM') {
+                                _userDayAwardRowFilters.remove(rowKey);
+                              } else {
+                                _userDayAwardRowFilters[rowKey] = 'QR_TO_CAM';
+                              }
+                            });
+                            _loadUserDayAwardSessions(summary);
+                          },
+                        ),
+                        _TraceChip(label: 'Total ${summary.totalAwards}'),
+                        if (firstAward != '-' || lastAward != '-')
+                          _TraceChip(label: '$firstAward – $lastAward'),
+                      ],
+                    ),
+                  ),
+                  childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  children: [
+                    if (_loadingUserDayAwardRows.contains(rowKey))
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: CircularProgressIndicator(),
+                      )
+                    else if ((_userDayAwardSessions[rowKey] ?? const []).isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text('No award sessions found for this row.'),
+                      )
+                    else
+                      ..._buildSessionCards(
+                        context,
+                        _sessionsForUserDayRow(summary, filter: activeFilter),
+                      ),
+                  ],
+                ),
+              );
+            }),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _userDayAwardPage.offset <= 0 || _isUserDayAwardsLoading
+                    ? null
+                    : () => _loadUserDayAwardPage(
+                          offset: (_userDayAwardPage.offset - _userDayAwardsPageSize).clamp(0, _userDayAwardPage.offset),
+                        ),
+                icon: const Icon(Icons.chevron_left),
+                label: const Text('Previous'),
+              ),
+              const SizedBox(width: 12),
+              FilledButton.icon(
+                onPressed: !_userDayAwardPage.hasMore || _isUserDayAwardsLoading
+                    ? null
+                    : () => _loadUserDayAwardPage(offset: _userDayAwardPage.offset + _userDayAwardsPageSize),
+                icon: const Icon(Icons.chevron_right),
+                label: const Text('Next'),
+              ),
+            ],
+          ),
+          if (_userDayAwardsError != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _userDayAwardsError!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orangeAccent),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildSettingsTab(BuildContext context) {
     return _buildTabbedList([
       _buildAdminSection(context),
     ]);
+  }
+
+  Widget _buildSessionsTab(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        await _loadPresenceDashboard();
+        await _loadSessionsPage(offset: 0);
+      },
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(
+            'Sessions',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'All presence sessions with server-side pagination and filtering.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
+          ),
+          const SizedBox(height: 20),
+          _buildSessionsFilters(context),
+          const SizedBox(height: 20),
+          _buildSessionsResults(context),
+          if (_sessionsError != null) ...[
+            const SizedBox(height: 16),
+            Text(
+              _sessionsError!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orangeAccent),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildSummaryGrid(BuildContext context) {
@@ -1073,8 +1681,23 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   }
 
   Widget _buildRecentSessions(BuildContext context) {
-    final formatter = DateFormat('MMM d, HH:mm');
+    return _buildSessionListPanel(
+      context,
+      title: 'Recent Sessions',
+      subtitle: 'Latest presence interactions rendered as operator-readable logs.',
+      sessions: _recentSessions,
+      emptyMessage: 'No recent presence sessions found.',
+    );
+  }
 
+  Widget _buildSessionListPanel(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required List<PresenceSessionTraceSummary> sessions,
+    required String emptyMessage,
+    Widget? footer,
+  }) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1086,53 +1709,499 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Recent Sessions',
+            title,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 6),
           Text(
-            'Latest presence traces exposed by the backend for operator review.',
+            subtitle,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
           ),
           const SizedBox(height: 16),
-          if (_recentSessions.isEmpty)
+          if (sessions.isEmpty)
             Text(
-              'No recent presence sessions found.',
+              emptyMessage,
               style: Theme.of(context).textTheme.bodyMedium,
             )
           else
-            ..._recentSessions.map((session) {
-              final createdAt = session.createdAt != null ? formatter.format(session.createdAt!) : 'Unknown';
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  onTap: () => _showSessionInspector(session),
-                  title: Text(session.sessionUuid),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _TraceChip(label: session.sessionMode),
-                        _TraceChip(label: session.assuranceLevel),
-                        _TraceChip(label: session.grantType),
-                        _TraceChip(label: 'QR ${session.qrStatus}'),
-                        _TraceChip(label: session.status),
-                      ],
-                    ),
-                  ),
-                  trailing: Text(
-                    createdAt,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-              );
-            }),
+            ..._buildSessionCards(context, sessions),
+          if (footer != null) ...[
+            const SizedBox(height: 16),
+            footer,
+          ],
         ],
       ),
     );
+  }
+
+  List<Widget> _buildSessionCards(BuildContext context, List<PresenceSessionTraceSummary> sessions) {
+    final formatter = DateFormat('MMM d, HH:mm');
+    return sessions.map((session) {
+      final createdAt = session.createdAt != null ? formatter.format(session.createdAt!) : 'Unknown';
+      final headline = session.headline ?? _fallbackSessionHeadline(session);
+      final statusColor = _statusColorForSession(session, Theme.of(context).colorScheme);
+      final metadata = <String>[
+        createdAt,
+        if (session.actorEmail != null && session.actorEmail!.isNotEmpty) session.actorEmail!,
+        if (session.subtitle != null && session.subtitle!.isNotEmpty) session.subtitle!,
+      ];
+      return Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        color: statusColor.withValues(alpha: 0.10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: statusColor.withValues(alpha: 0.45)),
+        ),
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          onTap: () => _showSessionInspector(session),
+          leading: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              _interactionIconForSession(session),
+              color: statusColor,
+              size: 22,
+            ),
+          ),
+          title: Text(headline),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  metadata.join(' • '),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _TraceChip(
+                      label: _statusLabelForSession(session),
+                      backgroundColor: statusColor.withValues(alpha: 0.18),
+                      foregroundColor: statusColor,
+                    ),
+                    _TraceChip(label: _interactionLabelForSession(session)),
+                    if (session.cameraLabel != null && session.cameraLabel!.isNotEmpty)
+                      _TraceChip(label: session.cameraLabel!),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+        ),
+      );
+    }).toList();
+  }
+
+  Widget _buildSessionsFilters(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2)),
+      ),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: 240,
+            child: TextField(
+              controller: _sessionsUserQueryController,
+              decoration: const InputDecoration(
+                labelText: 'User',
+                hintText: 'Email, username, or id',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.search),
+              ),
+              onSubmitted: (_) => _loadSessionsPage(offset: 0),
+            ),
+          ),
+          SizedBox(
+            width: 220,
+            child: DropdownButtonFormField<String?>(
+              isExpanded: true,
+              value: _sessionsCameraUuid,
+              decoration: const InputDecoration(
+                labelText: 'Camera',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                const DropdownMenuItem<String?>(value: null, child: Text('All cameras')),
+                ..._cameras.map(
+                  (camera) => DropdownMenuItem<String?>(value: camera.deviceId, child: Text(camera.name)),
+                ),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _sessionsCameraUuid = value;
+                });
+                _loadSessionsPage(offset: 0);
+              },
+            ),
+          ),
+          SizedBox(
+            width: 220,
+            child: DropdownButtonFormField<String?>(
+              isExpanded: true,
+              value: _sessionsGrantType,
+              decoration: const InputDecoration(
+                labelText: 'Grant type',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                const DropdownMenuItem<String?>(value: null, child: Text('All grant types')),
+                ..._grantTypes.map(
+                  (grant) => DropdownMenuItem<String?>(value: grant.key, child: Text(grant.label)),
+                ),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _sessionsGrantType = value;
+                });
+                _loadSessionsPage(offset: 0);
+              },
+            ),
+          ),
+          _buildDateFilterButton(
+            context,
+            label: 'Start',
+            value: _sessionsStartDate,
+            onPicked: (value) {
+              setState(() {
+                _sessionsStartDate = value;
+                if (_sessionsEndDate.isBefore(value)) {
+                  _sessionsEndDate = value;
+                }
+              });
+              _loadSessionsPage(offset: 0);
+            },
+          ),
+          _buildDateFilterButton(
+            context,
+            label: 'End',
+            value: _sessionsEndDate,
+            onPicked: (value) {
+              setState(() {
+                _sessionsEndDate = value;
+                if (_sessionsStartDate.isAfter(value)) {
+                  _sessionsStartDate = value;
+                }
+              });
+              _loadSessionsPage(offset: 0);
+            },
+          ),
+          FilledButton.icon(
+            onPressed: () => _loadSessionsPage(offset: 0),
+            icon: const Icon(Icons.filter_alt_outlined),
+            label: const Text('Apply'),
+          ),
+          OutlinedButton.icon(
+            onPressed: _isDownloadingSessions || _isSessionsLoading ? null : _downloadSessionsWorkbook,
+            icon: _isDownloadingSessions
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.download_outlined),
+            label: Text(_isDownloadingSessions ? 'Downloading...' : 'Download Excel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDateFilterButton(
+    BuildContext context, {
+    required String label,
+    required DateTime value,
+    required ValueChanged<DateTime> onPicked,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: value,
+          firstDate: DateTime.now().subtract(const Duration(days: 365)),
+          lastDate: DateTime.now().add(const Duration(days: 30)),
+        );
+        if (picked != null) {
+          onPicked(picked);
+        }
+      },
+      icon: const Icon(Icons.event_outlined),
+      label: Text('$label: ${DateFormat('MMM d, y').format(value)}'),
+    );
+  }
+
+  Widget _buildSessionsResults(BuildContext context) {
+    if (_isSessionsLoading && _sessionsPage.items.isEmpty) {
+      return const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()));
+    }
+    final pageStart = _sessionsPage.total == 0 ? 0 : _sessionsPage.offset + 1;
+    final pageEnd = _sessionsPage.offset + _sessionsPage.returned;
+    return _buildSessionListPanel(
+      context,
+      title: 'All Sessions',
+      subtitle: 'Showing $pageStart-$pageEnd of ${_sessionsPage.total} sessions.',
+      sessions: _sessionsPage.items,
+      emptyMessage: 'No sessions matched the current filters.',
+      footer: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Page size $_sessionsPageSize',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[400]),
+          ),
+          Wrap(
+            spacing: 12,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _sessionsPage.offset <= 0 || _isSessionsLoading
+                    ? null
+                    : () => _loadSessionsPage(offset: (_sessionsPage.offset - _sessionsPageSize).clamp(0, _sessionsPage.offset)),
+                icon: const Icon(Icons.chevron_left),
+                label: const Text('Previous'),
+              ),
+              FilledButton.icon(
+                onPressed: !_sessionsPage.hasMore || _isSessionsLoading
+                    ? null
+                    : () => _loadSessionsPage(offset: _sessionsPage.offset + _sessionsPageSize),
+                icon: const Icon(Icons.chevron_right),
+                label: const Text('Next'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _fallbackSessionHeadline(PresenceSessionTraceSummary session) {
+    final actor = session.actorLabel ?? session.actorEmail ?? 'unknown user';
+    final interaction = _interactionLabelForSession(session).toLowerCase();
+    final status = _statusLabelForSession(session).toLowerCase();
+    return '$interaction for $actor is $status.';
+  }
+
+  String _statusLabelForSession(PresenceSessionTraceSummary session) {
+    if (session.decision == 'granted') {
+      return 'Granted';
+    }
+    if (session.decision == 'denied') {
+      return 'Denied';
+    }
+    if (session.decision == 'failed' || session.status == 'failed') {
+      return 'Failed';
+    }
+    if (session.decision == 'retry_required') {
+      return 'Retry Required';
+    }
+    return 'Pending';
+  }
+
+  String _userDayGrantLabel(String rawGrantType) {
+    final normalized = rawGrantType.trim().toLowerCase();
+    if (normalized == 'verified_presence' || normalized == 'presence_verified_match') {
+      return 'Cam & QR';
+    }
+    if (normalized == 'presence_match') {
+      return 'Cam';
+    }
+    if (normalized == 'check_in' || normalized == 'presence_check_in') {
+      return 'QR';
+    }
+    return rawGrantType;
+  }
+
+  Widget _buildQrToCamTransitionChip(
+    BuildContext context, {
+    required int count,
+    required int windowMinutes,
+    required VoidCallback onTap,
+    bool isActive = false,
+  }) {
+    final backgroundColor = isActive
+        ? Colors.green.withValues(alpha: 0.30)
+        : Colors.green.withValues(alpha: 0.16);
+    final foregroundColor = Colors.lightGreenAccent.shade100;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+        border: isActive ? Border.all(color: Colors.lightGreenAccent.shade100.withValues(alpha: 0.5)) : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'QR',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: foregroundColor,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(width: 4),
+          Icon(Icons.arrow_forward, size: 14, color: foregroundColor),
+          const SizedBox(width: 4),
+          Text(
+            'Cam',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: foregroundColor,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$count',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: foregroundColor,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '($windowMinutes m)',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: foregroundColor.withValues(alpha: 0.9),
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
+      ),
+      ),
+    );
+  }
+
+  Widget _buildUserDayGrantFilterChip(
+    BuildContext context, {
+    required String rowKey,
+    required String label,
+    required int count,
+    required bool isActive,
+  }) {
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _expandedUserDayAwardRows.add(rowKey);
+          if (isActive) {
+            _userDayAwardRowFilters.remove(rowKey);
+          } else {
+            _userDayAwardRowFilters[rowKey] = label;
+          }
+        });
+      },
+      borderRadius: BorderRadius.circular(999),
+      child: _TraceChip(
+        label: '$label $count',
+        backgroundColor: isActive ? AppColors.secondary.withValues(alpha: 0.28) : null,
+      ),
+    );
+  }
+
+  List<PresenceSessionTraceSummary> _sessionsForUserDayRow(
+    PresenceUserDayAwardSummary summary, {
+    required String filter,
+  }) {
+    final sessions = _userDayAwardSessions[summary.rowKey] ?? const <PresenceSessionTraceSummary>[];
+    if (filter == 'ALL') {
+      return sessions;
+    }
+    if (filter == 'QR_TO_CAM') {
+      final contributingIds = summary.qrToCamContributingSessionUuids.toSet();
+      if (contributingIds.isEmpty) {
+        return const <PresenceSessionTraceSummary>[];
+      }
+      return sessions.where((session) => contributingIds.contains(session.sessionUuid)).toList();
+    }
+    return sessions
+        .where((session) => _userDayGrantLabel(session.grantType) == filter)
+        .toList();
+  }
+
+  String _interactionLabelForSession(PresenceSessionTraceSummary session) {
+    if (session.interactionLabel != null && session.interactionLabel!.isNotEmpty) {
+      final normalized = session.interactionLabel!.toLowerCase();
+      if (normalized.contains('verified presence') ||
+          normalized.contains('qr + video') ||
+          normalized.contains('owner qr + video') ||
+          normalized.contains('presence_verified_match')) {
+        return 'Cam & QR';
+      }
+      if (normalized.contains('presence match') ||
+          normalized.contains('video-only people match') ||
+          normalized.contains('presence_match')) {
+        return 'Cam';
+      }
+      if (normalized.contains('checkin') ||
+          normalized.contains('check-in') ||
+          normalized.contains('check in') ||
+          normalized.contains('qr-only grant') ||
+          normalized.contains('presence_check_in') ||
+          normalized.contains('owner qr verification')) {
+        return 'QR';
+      }
+      return session.interactionLabel!;
+    }
+    switch (session.sessionMode) {
+      case 'qr_only':
+        return 'QR';
+      case 'camera_only':
+        return 'Cam';
+      case 'qr_plus_camera':
+        return 'Cam & QR';
+      default:
+        return 'Cam & QR';
+    }
+  }
+
+  IconData _interactionIconForSession(PresenceSessionTraceSummary session) {
+    final interaction = (session.interactionLabel ?? '').toLowerCase();
+    if (interaction.contains('owner qr')) {
+      return Icons.badge_outlined;
+    }
+    if (session.sessionMode == 'qr_only') {
+      return Icons.qr_code_2;
+    }
+    if (session.sessionMode == 'camera_only') {
+      return Icons.videocam;
+    }
+    if (session.sessionMode == 'qr_plus_camera') {
+      return Icons.video_call;
+    }
+    return Icons.fact_check_outlined;
+  }
+
+  Color _statusColorForSession(PresenceSessionTraceSummary session, ColorScheme colorScheme) {
+    if (session.decision == 'granted') {
+      return Colors.greenAccent;
+    }
+    if (session.decision == 'denied') {
+      return Colors.orangeAccent;
+    }
+    if (session.decision == 'failed' || session.status == 'failed') {
+      return colorScheme.error;
+    }
+    if (session.decision == 'retry_required') {
+      return Colors.amberAccent;
+    }
+    return colorScheme.primary;
   }
 
   Widget _buildAdminSection(BuildContext context) {
@@ -1188,35 +2257,14 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
               spacing: 8,
               runSpacing: 8,
               children: [
-                _TraceChip(label: installation.installationName),
-                _TraceChip(label: 'Backend ${installation.detectionBackendMode}'),
                 if (reservedCameraName != null)
                   _TraceChip(label: 'Camera $reservedCameraName'),
+                if (activePresenceIndividualGroup != null)
+                  _TraceChip(label: 'Group ${activePresenceIndividualGroup.name}'),
               ],
             ),
             const SizedBox(height: 16),
           ],
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              ElevatedButton.icon(
-                onPressed: _isSubmittingAdminAction ? null : _showPolicyEditor,
-                icon: const Icon(Icons.rule),
-                label: const Text('Edit Policy'),
-              ),
-              OutlinedButton.icon(
-                onPressed: _isSubmittingAdminAction ? null : _showManagePresenceGroupDialog,
-                icon: const Icon(Icons.group_add),
-                label: Text(activePresenceIndividualGroup == null ? 'Create Match Group' : 'Manage Match Group'),
-              ),
-              OutlinedButton.icon(
-                onPressed: _isSubmittingAdminAction ? null : _resetReservations,
-                icon: const Icon(Icons.restart_alt),
-                label: const Text('Reset Reservations'),
-              ),
-            ],
-          ),
           const SizedBox(height: 20),
           Text(
             'Available Cameras',
@@ -1257,30 +2305,38 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
             'Presence Match Groups',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
+          const SizedBox(height: 8),
+          Text(
+            'Reserve one group as the active ppl-match group for presence.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[400]),
+          ),
           const SizedBox(height: 12),
-          if (activePresenceIndividualGroup != null) ...[
-            ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text('Current Match Group: ${activePresenceIndividualGroup.name}'),
-              subtitle: Text(activePresenceIndividualGroup.individualGroupId),
-              trailing: Text('${activePresenceIndividualGroup.memberCount} members'),
-            ),
-            const SizedBox(height: 8),
-          ],
-          if (_availableIndividualGroups.isEmpty)
+          if (_presenceMatchGroups.isEmpty)
             Text(
-              'No individual groups are available yet. Create one here to bootstrap Presence.',
+              'No individual groups are available yet.',
               style: Theme.of(context).textTheme.bodyMedium,
             )
           else
-            ..._availableIndividualGroups.take(6).map((group) => ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
+            ..._presenceMatchGroups.map((group) {
+              final isActive = activePresenceIndividualGroup != null &&
+                  group.individualGroupId == activePresenceIndividualGroup.individualGroupId;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 10),
+                child: ListTile(
                   title: Text(group.name),
-                  subtitle: Text(group.individualGroupId),
-                  trailing: Text('${group.memberCount} members'),
-                )),
+                  subtitle: Text('${group.individualGroupId} • ${group.memberCount} members'),
+                  trailing: isActive
+                      ? TextButton(
+                          onPressed: _isSubmittingAdminAction ? null : () => _unreservePresenceMatchGroup(group),
+                          child: const Text('Unreserve'),
+                        )
+                      : TextButton(
+                          onPressed: _isSubmittingAdminAction ? null : () => _reservePresenceMatchGroup(group),
+                          child: const Text('Reserve'),
+                        ),
+                ),
+              );
+            }),
         ],
       ),
     );
@@ -1398,7 +2454,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
                   child: OutlinedButton(
                     onPressed: widget.stationMode || _isSubmittingAdminAction
                         ? null
-                        : () => _openWebQrScanner(sessionMode: 'qr_plus_camera'),
+                        : _openOwnerQrVideoScanner,
                     style: OutlinedButton.styleFrom(
                       padding: EdgeInsets.zero,
                       side: BorderSide(color: outlinedBorderColor),
@@ -1412,7 +2468,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
                         Icon(Icons.video_call, size: iconSize),
                         const SizedBox(height: 12),
                         Text(
-                          'Scan QR + Video',
+                          'Scan Owner QR + Video',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                         ),
@@ -1513,10 +2569,12 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
 class _PresenceSessionInspector extends StatefulWidget {
   final PresenceSessionTraceSummary session;
   final PresenceApiClient apiClient;
+  final List<PresenceCameraOption> cameras;
 
   const _PresenceSessionInspector({
     required this.session,
     required this.apiClient,
+    required this.cameras,
   });
 
   @override
@@ -1626,7 +2684,7 @@ class _PresenceSessionInspectorState extends State<_PresenceSessionInspector> {
                     resolvedCollectionUuid: null,
                     createdAt: widget.session.createdAt?.toIso8601String(),
                     externalAssets: null,
-                  )),
+                  ), cameras: widget.cameras),
                   const SizedBox(height: 16),
                   if (_actionPlan != null) _ActionPlanCard(actionPlan: _actionPlan!),
                   const SizedBox(height: 16),
@@ -1645,11 +2703,26 @@ class _PresenceSessionInspectorState extends State<_PresenceSessionInspector> {
 
 class _SessionOverviewCard extends StatelessWidget {
   final PresenceSessionDetails session;
+  final List<PresenceCameraOption> cameras;
 
-  const _SessionOverviewCard({required this.session});
+  const _SessionOverviewCard({required this.session, required this.cameras});
+
+  String? _cameraLabel() {
+    final cameraId = session.resolvedCameraUuid;
+    if (cameraId == null || cameraId.isEmpty) {
+      return null;
+    }
+    final matched = cameras.where((camera) => camera.deviceId == cameraId).toList();
+    if (matched.isEmpty) {
+      return cameraId;
+    }
+    final name = matched.first.name;
+    return name.isEmpty ? cameraId : name;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final cameraLabel = _cameraLabel();
     return _InspectorCard(
       title: 'Session',
       child: Wrap(
@@ -1663,8 +2736,7 @@ class _SessionOverviewCard extends StatelessWidget {
           _TraceChip(label: session.decision),
           _TraceChip(label: 'QR ${session.qrStatus}'),
           _TraceChip(label: 'Detection ${session.detectionStatus}'),
-          if (session.resolvedCameraUuid != null) _TraceChip(label: 'Camera ${session.resolvedCameraUuid}'),
-          if (session.resolvedCollectionUuid != null) _TraceChip(label: 'Collection ${session.resolvedCollectionUuid}'),
+          if (cameraLabel != null) _TraceChip(label: 'Camera $cameraLabel'),
         ],
       ),
     );
@@ -1817,128 +2889,6 @@ class _InspectorRow extends StatelessWidget {
           ),
           Expanded(
             child: Text(value == null || value!.isEmpty ? 'Not available' : value!),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PresencePolicyDialog extends StatefulWidget {
-  final PresenceGroupPolicy initialPolicy;
-
-  const _PresencePolicyDialog({required this.initialPolicy});
-
-  @override
-  State<_PresencePolicyDialog> createState() => _PresencePolicyDialogState();
-}
-
-class _PresencePolicyDialogState extends State<_PresencePolicyDialog> {
-  late final TextEditingController _grantedTrigger;
-  late final TextEditingController _grantedAction;
-  late final TextEditingController _deniedTrigger;
-  late final TextEditingController _deniedAction;
-  late final TextEditingController _retryTrigger;
-  late final TextEditingController _retryAction;
-  late final TextEditingController _failedTrigger;
-  late final TextEditingController _failedAction;
-
-  @override
-  void initState() {
-    super.initState();
-    _grantedTrigger = TextEditingController(text: widget.initialPolicy.granted?.triggerType ?? '');
-    _grantedAction = TextEditingController(text: widget.initialPolicy.granted?.actionType ?? '');
-    _deniedTrigger = TextEditingController(text: widget.initialPolicy.denied?.triggerType ?? '');
-    _deniedAction = TextEditingController(text: widget.initialPolicy.denied?.actionType ?? '');
-    _retryTrigger = TextEditingController(text: widget.initialPolicy.retryRequired?.triggerType ?? '');
-    _retryAction = TextEditingController(text: widget.initialPolicy.retryRequired?.actionType ?? '');
-    _failedTrigger = TextEditingController(text: widget.initialPolicy.failed?.triggerType ?? '');
-    _failedAction = TextEditingController(text: widget.initialPolicy.failed?.actionType ?? '');
-  }
-
-  @override
-  void dispose() {
-    _grantedTrigger.dispose();
-    _grantedAction.dispose();
-    _deniedTrigger.dispose();
-    _deniedAction.dispose();
-    _retryTrigger.dispose();
-    _retryAction.dispose();
-    _failedTrigger.dispose();
-    _failedAction.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Edit Installation Policy'),
-      content: SizedBox(
-        width: 560,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _PolicyRuleEditor(label: 'Granted', triggerController: _grantedTrigger, actionController: _grantedAction),
-              _PolicyRuleEditor(label: 'Denied', triggerController: _deniedTrigger, actionController: _deniedAction),
-              _PolicyRuleEditor(label: 'Retry Required', triggerController: _retryTrigger, actionController: _retryAction),
-              _PolicyRuleEditor(label: 'Failed', triggerController: _failedTrigger, actionController: _failedAction),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () {
-            Navigator.pop(
-              context,
-              PresenceGroupPolicy(
-                granted: PresencePolicyRule(triggerType: _grantedTrigger.text.trim(), actionType: _grantedAction.text.trim()),
-                denied: PresencePolicyRule(triggerType: _deniedTrigger.text.trim(), actionType: _deniedAction.text.trim()),
-                retryRequired: PresencePolicyRule(triggerType: _retryTrigger.text.trim(), actionType: _retryAction.text.trim()),
-                failed: PresencePolicyRule(triggerType: _failedTrigger.text.trim(), actionType: _failedAction.text.trim()),
-              ),
-            );
-          },
-          child: const Text('Save'),
-        ),
-      ],
-    );
-  }
-}
-
-class _PolicyRuleEditor extends StatelessWidget {
-  final String label;
-  final TextEditingController triggerController;
-  final TextEditingController actionController;
-
-  const _PolicyRuleEditor({
-    required this.label,
-    required this.triggerController,
-    required this.actionController,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: triggerController,
-            decoration: const InputDecoration(labelText: 'Trigger Type', border: OutlineInputBorder()),
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: actionController,
-            decoration: const InputDecoration(labelText: 'Action Type', border: OutlineInputBorder()),
           ),
         ],
       ),
@@ -2222,21 +3172,29 @@ class _MetricCard extends StatelessWidget {
 
 class _TraceChip extends StatelessWidget {
   final String label;
+  final Color? backgroundColor;
+  final Color? foregroundColor;
 
-  const _TraceChip({required this.label});
+  const _TraceChip({
+    required this.label,
+    this.backgroundColor,
+    this.foregroundColor,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final resolvedBackgroundColor = backgroundColor ?? AppColors.secondary.withValues(alpha: 0.12);
+    final resolvedForegroundColor = foregroundColor ?? AppColors.secondary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.secondary.withValues(alpha: 0.12),
+        color: resolvedBackgroundColor,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppColors.secondary,
+              color: resolvedForegroundColor,
               fontWeight: FontWeight.w600,
             ),
       ),

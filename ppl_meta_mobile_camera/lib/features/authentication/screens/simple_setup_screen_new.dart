@@ -32,6 +32,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   String? _errorMessage;
   bool _isHowTosExpanded = false;
   bool _hasStoredCredentials = false;
+  bool _isPasswordVisible = false;
 
   @override
   void initState() {
@@ -401,12 +402,22 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
               // Password Input
               TextFormField(
                 controller: _passwordController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Password',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _isPasswordVisible ? Icons.visibility_off : Icons.visibility,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _isPasswordVisible = !_isPasswordVisible;
+                      });
+                    },
+                  ),
                 ),
-                obscureText: true,
+                obscureText: !_isPasswordVisible,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter your password';

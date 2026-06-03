@@ -207,6 +207,62 @@ class SignageProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Load all playlists that have been synced to a device, newest first
+  Future<List<VideoList>> loadSyncedVideoListsForDevice(String deviceId) async {
+    try {
+      if (_videoLists.isEmpty) {
+        await loadVideoLists(limit: 100);
+      } else if (_totalListsCount > _videoLists.length) {
+        await loadVideoLists(limit: _totalListsCount);
+      }
+
+      if (_videoLists.isEmpty) {
+        return [];
+      }
+
+      final syncHistory = await _apiClient.getDeviceSyncHistory(
+        deviceId: deviceId,
+        pageSize: 100,
+      );
+
+      final orderedPlaylistDbIds = <int>[];
+      final seen = <int>{};
+
+      for (final entry in syncHistory) {
+        final status = entry['sync_status']?.toString();
+        if (status == 'failed') {
+          continue;
+        }
+
+        final rawId = entry['video_list_id'];
+        final playlistDbId = rawId is num ? rawId.toInt() : int.tryParse('$rawId');
+        if (playlistDbId == null || seen.contains(playlistDbId)) {
+          continue;
+        }
+
+        seen.add(playlistDbId);
+        orderedPlaylistDbIds.add(playlistDbId);
+      }
+
+      if (orderedPlaylistDbIds.isEmpty) {
+        return [];
+      }
+
+      final byDatabaseId = <int, VideoList>{
+        for (final list in _videoLists)
+          if (list.databaseId != null) list.databaseId!: list,
+      };
+
+      return orderedPlaylistDbIds
+          .map((dbId) => byDatabaseId[dbId])
+          .whereType<VideoList>()
+          .toList();
+    } catch (e) {
+      debugPrint('Failed to load synced playlists for device $deviceId: $e');
+      return [];
+    }
+  }
+
   // ==================== Device Operations ====================
 
   /// Load all signage devices from discovery service

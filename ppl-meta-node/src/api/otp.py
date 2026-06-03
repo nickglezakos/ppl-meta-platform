@@ -35,5 +35,9 @@ async def verify_otp_api(email: str, otp_code: str, db: Session = Depends(get_db
         raise HTTPException(status_code=400, detail="Invalid or expired OTP code")
     log_user_action(db, user.username, user.email, "otp_verified")
     # Generate access token after successful OTP verification
-    access_token = create_access_token(data={"sub": user.id})
+    access_token = create_access_token(data={
+        "sub": str(user.id),
+        "email": user.email,
+        "username": user.username,
+    })
     return {"access_token": access_token, "token_type": "bearer"}

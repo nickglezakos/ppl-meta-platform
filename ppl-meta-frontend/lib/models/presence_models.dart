@@ -27,12 +27,25 @@ class PresenceAnalyticsSummary {
       return 0;
     }
 
+    final totalSessions = readInt(['total_sessions', 'sessions_total', 'total', 'sessions', 'attempts']);
+    final grantedSessions = readInt(['granted_sessions', 'sessions_granted', 'granted']);
+    final deniedSessions = readInt(['denied_sessions', 'sessions_denied', 'denied']);
+    final failedSessions = readInt(['failed_sessions', 'sessions_failed', 'failed']);
+    final completedSessions = readInt(['completed_sessions', 'sessions_completed']);
+    final resolvedCompletedSessions = completedSessions > 0
+        ? completedSessions
+        : grantedSessions + deniedSessions + failedSessions;
+    final pendingSessions = readInt(['pending_sessions', 'sessions_pending']);
+    final resolvedPendingSessions = pendingSessions > 0
+        ? pendingSessions
+        : (totalSessions - resolvedCompletedSessions).clamp(0, totalSessions);
+
     return PresenceAnalyticsSummary(
-      totalSessions: readInt(['total_sessions', 'sessions_total']),
-      completedSessions: readInt(['completed_sessions', 'sessions_completed']),
-      pendingSessions: readInt(['pending_sessions', 'sessions_pending']),
-      grantedSessions: readInt(['granted_sessions', 'sessions_granted']),
-      deniedSessions: readInt(['denied_sessions', 'sessions_denied']),
+      totalSessions: totalSessions,
+      completedSessions: resolvedCompletedSessions,
+      pendingSessions: resolvedPendingSessions,
+      grantedSessions: grantedSessions,
+      deniedSessions: deniedSessions,
     );
   }
 }
@@ -105,22 +118,26 @@ class PresenceSessionSettings {
   final int sessionTimeoutSeconds;
   final int maxUnsuccessfulAttempts;
   final bool allowConcurrentTriggerOperations;
+  final int qrToCameraTransitionWindowMinutes;
 
   const PresenceSessionSettings({
     required this.sessionTimeoutSeconds,
     required this.maxUnsuccessfulAttempts,
     required this.allowConcurrentTriggerOperations,
+    required this.qrToCameraTransitionWindowMinutes,
   });
 
   const PresenceSessionSettings.defaults()
       : sessionTimeoutSeconds = 300,
         maxUnsuccessfulAttempts = 3,
-        allowConcurrentTriggerOperations = true;
+        allowConcurrentTriggerOperations = true,
+        qrToCameraTransitionWindowMinutes = 10;
 
   Map<String, dynamic> toJson() => {
         'session_timeout_seconds': sessionTimeoutSeconds,
         'max_unsuccessful_attempts': maxUnsuccessfulAttempts,
         'allow_concurrent_trigger_operations': allowConcurrentTriggerOperations,
+      'qr_to_camera_transition_window_minutes': qrToCameraTransitionWindowMinutes,
       };
 
   factory PresenceSessionSettings.fromJson(Map<String, dynamic> json) {
@@ -139,6 +156,7 @@ class PresenceSessionSettings {
       sessionTimeoutSeconds: readInt('session_timeout_seconds', 300),
       maxUnsuccessfulAttempts: readInt('max_unsuccessful_attempts', 3),
       allowConcurrentTriggerOperations: json['allow_concurrent_trigger_operations'] != false,
+      qrToCameraTransitionWindowMinutes: readInt('qr_to_camera_transition_window_minutes', 10),
     );
   }
 }
@@ -332,7 +350,7 @@ class PresenceAnalyticsBucket {
         json['key'] ??
         json['name'] ??
         'unknown';
-    final rawCount = json['count'] ?? json['sessions'] ?? 0;
+    final rawCount = json['count'] ?? json['event_count'] ?? json['sessions'] ?? 0;
 
     return PresenceAnalyticsBucket(
       key: rawKey.toString(),
@@ -348,6 +366,15 @@ class PresenceSessionTraceSummary {
   final String assuranceLevel;
   final String grantType;
   final String qrStatus;
+  final String decision;
+  final String? reasonCode;
+  final String? actorLabel;
+  final String? actorEmail;
+  final String? interactionLabel;
+  final String? sourceLabel;
+  final String? cameraLabel;
+  final String? headline;
+  final String? subtitle;
   final DateTime? createdAt;
   final DateTime? completedAt;
 
@@ -358,6 +385,15 @@ class PresenceSessionTraceSummary {
     required this.assuranceLevel,
     required this.grantType,
     required this.qrStatus,
+    required this.decision,
+    required this.reasonCode,
+    required this.actorLabel,
+    required this.actorEmail,
+    required this.interactionLabel,
+    required this.sourceLabel,
+    required this.cameraLabel,
+    required this.headline,
+    required this.subtitle,
     required this.createdAt,
     required this.completedAt,
   });
@@ -378,8 +414,187 @@ class PresenceSessionTraceSummary {
       assuranceLevel: (json['assurance_level'] ?? 'unknown').toString(),
       grantType: (json['grant_type'] ?? 'unknown').toString(),
       qrStatus: (json['qr_status'] ?? 'unknown').toString(),
+      decision: (json['decision'] ?? 'unknown').toString(),
+      reasonCode: json['reason_code']?.toString(),
+      actorLabel: json['actor_label']?.toString(),
+      actorEmail: json['actor_email']?.toString(),
+      interactionLabel: json['interaction_label']?.toString(),
+      sourceLabel: json['source_label']?.toString(),
+      cameraLabel: json['camera_label']?.toString(),
+      headline: json['headline']?.toString(),
+      subtitle: json['subtitle']?.toString(),
       createdAt: parseDate('created_at'),
       completedAt: parseDate('completed_at'),
+    );
+  }
+}
+
+class PresenceSessionTracePage {
+  final List<PresenceSessionTraceSummary> items;
+  final int total;
+  final int returned;
+  final int limit;
+  final int offset;
+  final bool hasMore;
+
+  const PresenceSessionTracePage({
+    required this.items,
+    required this.total,
+    required this.returned,
+    required this.limit,
+    required this.offset,
+    required this.hasMore,
+  });
+
+  factory PresenceSessionTracePage.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'];
+    final items = rawItems is List
+        ? rawItems
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .map(PresenceSessionTraceSummary.fromJson)
+            .toList()
+        : const <PresenceSessionTraceSummary>[];
+    int readInt(String key, int fallback) {
+      final value = json[key];
+      return value is num ? value.toInt() : fallback;
+    }
+
+    return PresenceSessionTracePage(
+      items: items,
+      total: readInt('total', items.length),
+      returned: readInt('returned', items.length),
+      limit: readInt('limit', items.length),
+      offset: readInt('offset', 0),
+      hasMore: json['has_more'] == true,
+    );
+  }
+}
+
+class PresenceUserDayAwardSummary {
+  final String userEmail;
+  final String userLabel;
+  final String? userUuid;
+  final DateTime date;
+  final Map<String, int> grantTypeTotals;
+  final int totalAwards;
+  final DateTime? firstAwardAt;
+  final DateTime? lastAwardAt;
+  final int qrToCamTransitionCount;
+  final int qrToCamTransitionWindowMinutes;
+  final List<String> qrToCamContributingSessionUuids;
+
+  const PresenceUserDayAwardSummary({
+    required this.userEmail,
+    required this.userLabel,
+    required this.userUuid,
+    required this.date,
+    required this.grantTypeTotals,
+    required this.totalAwards,
+    required this.firstAwardAt,
+    required this.lastAwardAt,
+    required this.qrToCamTransitionCount,
+    required this.qrToCamTransitionWindowMinutes,
+    required this.qrToCamContributingSessionUuids,
+  });
+
+  String get identity => userEmail.isNotEmpty ? userEmail : userLabel;
+
+  String get rowKey => '${identity.toLowerCase()}|${date.toIso8601String().split('T').first}';
+
+  factory PresenceUserDayAwardSummary.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDateTime(dynamic value) {
+      if (value == null) {
+        return null;
+      }
+      return DateTime.tryParse(value.toString());
+    }
+
+    final dateValue = DateTime.tryParse((json['date'] ?? '').toString()) ?? DateTime.now();
+    final rawTotals = json['grant_type_totals'];
+    final totals = <String, int>{};
+    if (rawTotals is Map) {
+      rawTotals.forEach((key, value) {
+        if (key == null) {
+          return;
+        }
+        final parsedValue = value is num ? value.toInt() : int.tryParse(value.toString()) ?? 0;
+        totals[key.toString()] = parsedValue;
+      });
+    }
+
+    final userEmail = (json['user_email'] ?? '').toString();
+    final userLabel = (json['user_label'] ?? '').toString();
+    return PresenceUserDayAwardSummary(
+      userEmail: userEmail,
+      userLabel: userLabel,
+      userUuid: json['user_uuid']?.toString(),
+      date: DateTime(dateValue.year, dateValue.month, dateValue.day),
+      grantTypeTotals: totals,
+      totalAwards: json['total_awards'] is num ? (json['total_awards'] as num).toInt() : 0,
+      firstAwardAt: parseDateTime(json['first_award_at']),
+      lastAwardAt: parseDateTime(json['last_award_at']),
+      qrToCamTransitionCount: json['qr_to_cam_transition_count'] is num
+          ? (json['qr_to_cam_transition_count'] as num).toInt()
+          : 0,
+      qrToCamTransitionWindowMinutes: json['qr_to_cam_transition_window_minutes'] is num
+          ? (json['qr_to_cam_transition_window_minutes'] as num).toInt()
+          : 10,
+        qrToCamContributingSessionUuids: (json['qr_to_cam_contributing_session_uuids'] as List<dynamic>? ?? const [])
+          .map((value) => value.toString())
+          .where((value) => value.isNotEmpty)
+          .toList(),
+    );
+  }
+}
+
+class PresenceUserDayAwardPage {
+  final List<PresenceUserDayAwardSummary> items;
+  final int total;
+  final int returned;
+  final int limit;
+  final int offset;
+  final bool hasMore;
+  final List<String> availableUsers;
+
+  const PresenceUserDayAwardPage({
+    required this.items,
+    required this.total,
+    required this.returned,
+    required this.limit,
+    required this.offset,
+    required this.hasMore,
+    required this.availableUsers,
+  });
+
+  factory PresenceUserDayAwardPage.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'];
+    final items = rawItems is List
+        ? rawItems
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .map(PresenceUserDayAwardSummary.fromJson)
+            .toList()
+        : const <PresenceUserDayAwardSummary>[];
+
+    int readInt(String key, int fallback) {
+      final value = json[key];
+      return value is num ? value.toInt() : fallback;
+    }
+
+    final rawUsers = json['available_users'];
+    final availableUsers = rawUsers is List
+        ? rawUsers.map((entry) => entry.toString()).where((entry) => entry.isNotEmpty).toList()
+        : const <String>[];
+
+    return PresenceUserDayAwardPage(
+      items: items,
+      total: readInt('total', items.length),
+      returned: readInt('returned', items.length),
+      limit: readInt('limit', items.length),
+      offset: readInt('offset', 0),
+      hasMore: json['has_more'] == true,
+      availableUsers: availableUsers,
     );
   }
 }

@@ -79,28 +79,14 @@ class IndividualGroupsManager:
 
         direct_mvr_row = await conn.fetchrow(
             """
-            SELECT mvr_people_uuid, is_orphaned
+            SELECT mvr_people_uuid
             FROM mvr_people
             WHERE mvr_people_uuid = $1
             """,
             candidate_uuid_obj,
         )
         if direct_mvr_row:
-            if not direct_mvr_row["is_orphaned"]:
-                return str(direct_mvr_row["mvr_people_uuid"])
-
-            super_row = await conn.fetchrow(
-                """
-                SELECT super_individual_uuid
-                FROM mvr_merge_hierarchy
-                WHERE merged_mvr_uuid = $1
-                ORDER BY merged_at DESC
-                LIMIT 1
-                """,
-                candidate_uuid_obj,
-            )
-            if super_row and super_row["super_individual_uuid"]:
-                return str(super_row["super_individual_uuid"])
+            return str(direct_mvr_row["mvr_people_uuid"])
 
         mapped_row = await conn.fetchrow(
             """
@@ -108,7 +94,6 @@ class IndividualGroupsManager:
             FROM individual_mvr_mapping imm
             JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
             WHERE imm.individual_uuid = $1
-              AND m.is_orphaned = FALSE
             ORDER BY imm.is_representative DESC, imm.linked_at DESC
             LIMIT 1
             """,
@@ -124,7 +109,6 @@ class IndividualGroupsManager:
             JOIN individual_mvr_mapping imm ON iva.individual_uuid = imm.individual_uuid
             JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
             WHERE iva.person_object_uuid = $1
-              AND m.is_orphaned = FALSE
             ORDER BY imm.is_representative DESC, iva.start_timestamp DESC, imm.linked_at DESC
             LIMIT 1
             """,
@@ -733,8 +717,8 @@ class IndividualGroupsManager:
             sort,
         )
 
-        # First, clean up any orphaned members in this group
-        await self._cleanup_orphaned_members(group_id)
+        # Do not auto-clean orphaned members during reads; this can hide valid
+        # members and block downstream group features (thumbnails, naming, etc.).
         
         # Now fetch the cleaned members list
         query = """
@@ -956,8 +940,18 @@ class IndividualGroupsManager:
                 # Check if super-individual is already in the group
                 existing = await conn.fetchval("""
                     SELECT 1 FROM group_memberships 
-                    WHERE group_id = $1 AND individual_id = $2
-                """, group_id, super_id)
+                    WHERE group_id = $1 AND individual_id = $2 AND individual_id <> $3
+                """, group_id, super_id, orphaned_id)
+
+                # Guard against self-referential orphan mappings (orphan -> itself).
+                # In that case, do not delete the member entry.
+                if orphaned_id == super_id:
+                    logger.warning(
+                        "Skipping orphan cleanup for member %s in group %s because it resolves to itself",
+                        orphaned_id[:8],
+                        group_id,
+                    )
+                    continue
                 
                 if existing:
                     # Super-individual already exists, just remove the orphaned one
@@ -2011,58 +2005,47 @@ class IndividualGroupsManager:
         group = await self.get_group(group_id)
         if not group:
             raise ValueError(f"Group {group_id} not found")
+
+        def _no_duplicates_response() -> CheckDuplicatesResponse:
+            return CheckDuplicatesResponse(
+                has_duplicates=False,
+                matches=[],
+                candidate_mvr_uuid=candidate_mvr_uuid,
+                group_id=group_id,
+                group_name=group.name,
+            )
         
         # Get candidate's face embedding
         async with self.db.pool.acquire() as conn:
             try:
                 candidate_uuid_obj = UUID(candidate_mvr_uuid)
             except ValueError:
-                raise ValueError(f"Candidate MVR person {candidate_mvr_uuid} not found")
+                logger.warning(
+                    "Candidate UUID %s is not a valid UUID for duplicate check in group %s; proceeding without duplicate matches",
+                    candidate_mvr_uuid,
+                    group_id,
+                )
+                return _no_duplicates_response()
 
             resolved_candidate_uuid = candidate_mvr_uuid
             resolution_type = "direct_mvr"
 
             candidate_row = await conn.fetchrow(
                 """
-                SELECT mvr_people_uuid, face_embedding, name, is_orphaned
+                SELECT mvr_people_uuid, face_embedding, name
                 FROM mvr_people
                 WHERE mvr_people_uuid = $1
                 """,
                 candidate_uuid_obj
             )
 
-            if candidate_row and candidate_row['is_orphaned']:
-                super_row = await conn.fetchrow(
-                    """
-                    SELECT super_individual_uuid
-                    FROM mvr_merge_hierarchy
-                    WHERE merged_mvr_uuid = $1
-                    ORDER BY merged_at DESC
-                    LIMIT 1
-                    """,
-                    candidate_uuid_obj
-                )
-                if super_row and super_row['super_individual_uuid']:
-                    candidate_row = await conn.fetchrow(
-                        """
-                        SELECT mvr_people_uuid, face_embedding, name, is_orphaned
-                        FROM mvr_people
-                        WHERE mvr_people_uuid = $1 AND is_orphaned = FALSE
-                        """,
-                        super_row['super_individual_uuid']
-                    )
-                    if candidate_row:
-                        resolved_candidate_uuid = str(candidate_row['mvr_people_uuid'])
-                        resolution_type = "orphaned_mvr_to_super"
-
             if not candidate_row:
                 candidate_row = await conn.fetchrow(
                     """
-                    SELECT m.mvr_people_uuid, m.face_embedding, m.name, m.is_orphaned
+                                        SELECT m.mvr_people_uuid, m.face_embedding, m.name
                     FROM individual_mvr_mapping imm
                     JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
                     WHERE imm.individual_uuid = $1
-                      AND m.is_orphaned = FALSE
                     ORDER BY imm.is_representative DESC, imm.linked_at DESC
                     LIMIT 1
                     """,
@@ -2075,12 +2058,11 @@ class IndividualGroupsManager:
             if not candidate_row:
                 candidate_row = await conn.fetchrow(
                     """
-                    SELECT m.mvr_people_uuid, m.face_embedding, m.name, m.is_orphaned
+                                        SELECT m.mvr_people_uuid, m.face_embedding, m.name
                     FROM individual_video_appearances iva
                     JOIN individual_mvr_mapping imm ON iva.individual_uuid = imm.individual_uuid
                     JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
                     WHERE iva.person_object_uuid = $1
-                      AND m.is_orphaned = FALSE
                     ORDER BY imm.is_representative DESC, iva.start_timestamp DESC, imm.linked_at DESC
                     LIMIT 1
                     """,
@@ -2091,10 +2073,20 @@ class IndividualGroupsManager:
                     resolution_type = "person_object_to_mvr"
 
             if not candidate_row:
-                raise ValueError(f"Candidate MVR person {candidate_mvr_uuid} not found")
+                logger.warning(
+                    "Candidate MVR person %s not found for duplicate check in group %s; proceeding without duplicate matches",
+                    candidate_mvr_uuid,
+                    group_id,
+                )
+                return _no_duplicates_response()
 
             if not candidate_row['face_embedding']:
-                raise ValueError(f"Candidate MVR person {resolved_candidate_uuid} has no face embedding")
+                logger.warning(
+                    "Candidate MVR person %s has no face embedding for duplicate check in group %s; proceeding without duplicate matches",
+                    resolved_candidate_uuid,
+                    group_id,
+                )
+                return _no_duplicates_response()
 
             if resolved_candidate_uuid != candidate_mvr_uuid:
                 logger.info(
@@ -2138,7 +2130,6 @@ class IndividualGroupsManager:
                         m.name
                     FROM mvr_people m
                     WHERE m.mvr_people_uuid = gm.individual_uuid
-                      AND m.is_orphaned = FALSE
                     LIMIT 1
                 ) m_direct ON TRUE
                 LEFT JOIN LATERAL (
@@ -2149,7 +2140,6 @@ class IndividualGroupsManager:
                     FROM individual_mvr_mapping imm
                     JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
                     WHERE imm.individual_uuid = gm.individual_uuid
-                      AND m.is_orphaned = FALSE
                     ORDER BY imm.is_representative DESC, imm.linked_at DESC
                     LIMIT 1
                 ) m_mapped ON TRUE

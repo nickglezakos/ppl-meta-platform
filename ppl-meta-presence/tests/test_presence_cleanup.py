@@ -20,6 +20,7 @@ from models.presence_models import (  # noqa: E402
     PresenceSessionMode,
     PresenceSessionStatus,
 )
+from api.presence_routes import _parse_filter_datetime  # noqa: E402
 from services import presence_service as presence_service_module  # noqa: E402
 
 
@@ -124,6 +125,14 @@ class _FakePlatformClients:
     async def start_instant_detection(self, camera_id: str):
         self.calls.append(("start", camera_id))
         return {"session_uuid": "restart-session"}
+
+
+def test_parse_filter_datetime_normalizes_utc_suffix_to_naive_datetime() -> None:
+    parsed = _parse_filter_datetime("2026-06-02T23:59:59.000Z")
+
+    assert parsed == datetime(2026, 6, 2, 23, 59, 59)
+    assert parsed is not None
+    assert parsed.tzinfo is None
 
     async def connect_camera(self, camera_id: str):
         self.calls.append(("connect", camera_id))

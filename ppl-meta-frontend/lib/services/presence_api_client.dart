@@ -35,17 +35,64 @@ class PresenceApiClient {
   Future<ApiResponse<List<PresenceSessionTraceSummary>>> getSessionTraces({
     int limit = 10,
   }) async {
+    final pageResponse = await getSessionTracePage(limit: limit);
+    if (!pageResponse.success) {
+      return ApiResponse.error(pageResponse.error ?? 'Failed to load session traces');
+    }
+    return ApiResponse.success(pageResponse.data?.items ?? const []);
+  }
+
+  Future<ApiResponse<PresenceSessionTracePage>> getSessionTracePage({
+    int limit = 20,
+    int offset = 0,
+    String? userQuery,
+    String? cameraUuid,
+    String? grantType,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
     try {
       final response = await _apiClient.get(
         '/api/v1/presence/mobile/session-traces',
-        queryParameters: {'limit': limit},
+        queryParameters: {
+          'limit': limit,
+          'offset': offset,
+          if (userQuery != null && userQuery.isNotEmpty) 'user_query': userQuery,
+          if (cameraUuid != null && cameraUuid.isNotEmpty) 'camera_uuid': cameraUuid,
+          if (grantType != null && grantType.isNotEmpty) 'grant_type': grantType,
+          if (startDate != null) 'start_date': startDate.toUtc().toIso8601String(),
+          if (endDate != null) 'end_date': endDate.toUtc().toIso8601String(),
+        },
       );
       final data = _unwrapData(response.data);
-      final items = (data['items'] as List<dynamic>? ?? const [])
-          .whereType<Map<String, dynamic>>()
-          .map(PresenceSessionTraceSummary.fromJson)
-          .toList();
-      return ApiResponse.success(items);
+      return ApiResponse.success(PresenceSessionTracePage.fromJson(data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<PresenceUserDayAwardPage>> getUserDayAwardSummaryPage({
+    int limit = 20,
+    int offset = 0,
+    String? userQuery,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/presence/mobile/session-awards/by-user-day',
+        queryParameters: {
+          'limit': limit,
+          'offset': offset,
+          if (userQuery != null && userQuery.isNotEmpty) 'user_query': userQuery,
+          if (startDate != null) 'start_date': startDate.toUtc().toIso8601String(),
+          if (endDate != null) 'end_date': endDate.toUtc().toIso8601String(),
+        },
+      );
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(PresenceUserDayAwardPage.fromJson(data));
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
@@ -260,6 +307,7 @@ class PresenceApiClient {
     required String sessionUuid,
     required String qrToken,
     required String installationUuid,
+    Map<String, dynamic>? qrPayload,
     DateTime? scannedAt,
   }) async {
     try {
@@ -269,6 +317,7 @@ class PresenceApiClient {
           'qr_token': qrToken,
           'installation_uuid': installationUuid,
           'scanned_at': (scannedAt ?? DateTime.now().toUtc()).toIso8601String(),
+          if (qrPayload != null) 'qr_payload': qrPayload,
         },
       );
       final data = _unwrapData(response.data);
@@ -437,6 +486,7 @@ class PresenceApiClient {
     required String installationUuid,
     String? individualGroupId,
     String? groupName,
+    bool clearActiveGroup = false,
   }) async {
     try {
       final response = await _apiClient.post(
@@ -445,6 +495,7 @@ class PresenceApiClient {
           'installation_uuid': installationUuid,
           if (individualGroupId != null && individualGroupId.isNotEmpty) 'individual_group_id': individualGroupId,
           if (groupName != null && groupName.isNotEmpty) 'group_name': groupName,
+          if (clearActiveGroup) 'clear_active_group': true,
         },
       );
       final data = _unwrapData(response.data);
