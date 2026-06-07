@@ -25,6 +25,13 @@ redis_client = redis.Redis(
 BROKER_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 BACKEND_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 
+STREAM_OPS_RECONCILE_INTERVAL_SECONDS = int(
+    os.getenv("STREAM_OPS_RECONCILE_INTERVAL_SECONDS", "60")
+)
+STREAM_OPS_RECONCILE_ENABLED = (
+    os.getenv("STREAM_OPS_RECONCILE_ENABLED", "true").lower() == "true"
+)
+
 celery_app = Celery("ppl_workflows", broker=BROKER_URL, backend=BACKEND_URL)
 
 # Celery configuration
@@ -40,6 +47,8 @@ celery_app.conf.update(
         "instant_detection.process_frames": {"queue": "instant_detection_queue"},
         "instant_detection.persist_results": {"queue": "instant_detection_queue"},
         "instant_detection.flush_persist_batch": {"queue": "instant_detection_queue"},
+        "stream_operations.reconcile_all": {"queue": "instant_detection_queue"},
+        "stream_operations.reconcile_camera": {"queue": "instant_detection_queue"},
     },
     # Task retry configuration
     task_acks_late=True,
@@ -49,6 +58,15 @@ celery_app.conf.update(
     task_soft_time_limit=300,  # 5 minutes
     task_time_limit=600,  # 10 minutes
 )
+
+if STREAM_OPS_RECONCILE_ENABLED and STREAM_OPS_RECONCILE_INTERVAL_SECONDS > 0:
+    celery_app.conf.beat_schedule = {
+        "stream-operations-reconcile-all": {
+            "task": "stream_operations.reconcile_all",
+            "schedule": STREAM_OPS_RECONCILE_INTERVAL_SECONDS,
+            "args": (),
+        }
+    }
 
 
 def test_redis_connection():

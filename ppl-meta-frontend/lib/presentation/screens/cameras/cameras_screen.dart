@@ -39,6 +39,14 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
   Widget build(BuildContext context) {
     final cameraListState = ref.watch(cameraListProvider);
 
+    bool isCameraActiveForMultiview(Camera camera) {
+      final status = ref.read(cameraStatusProvider(camera.deviceId));
+      final normalized = camera.status.toLowerCase();
+      final cameraSaysActive = normalized == 'connected' || normalized == 'streaming';
+      final wsSaysActive = (status?.isConnected ?? false) || (status?.isStreaming ?? false);
+      return wsSaysActive || cameraSaysActive;
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: CustomAppBar(
@@ -47,10 +55,9 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
           // Multi-stream viewer button
           IconButton(
             onPressed: () {
-              final connectedCameras = cameraListState.cameras.where((camera) {
-                final status = ref.read(cameraStatusProvider(camera.deviceId));
-                return status?.isConnected ?? false;
-              }).toList();
+              final connectedCameras = cameraListState.cameras
+                  .where(isCameraActiveForMultiview)
+                  .toList();
               
               if (connectedCameras.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(

@@ -44,6 +44,19 @@ class CameraCard extends ConsumerWidget {
     }
   }
 
+  static bool _isCameraConnectedForUi(Camera camera, CameraStatus? status) {
+    final normalized = camera.status.toLowerCase();
+    final cameraSaysActive = normalized == 'connected' || normalized == 'streaming';
+    final wsSaysActive = (status?.isConnected ?? false) || (status?.isStreaming ?? false);
+
+    // Mobile and edge cameras can be actively streamable without websocket connected state.
+    if (camera.type == CameraType.mobile || camera.type == CameraType.edge) {
+      return cameraSaysActive || wsSaysActive;
+    }
+
+    return wsSaysActive || cameraSaysActive;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -68,9 +81,7 @@ class CameraCard extends ConsumerWidget {
     
     // For mobile and edge cameras, use the camera's own status field since they don't use backend WebSocket
     // For USB/RTSP cameras, use WebSocket status if available, otherwise use camera status
-    final bool isConnected = (updatedCamera.type == CameraType.mobile || updatedCamera.type == CameraType.edge)
-        ? updatedCamera.status.toLowerCase() == 'connected'
-        : (cameraStatus?.isConnected ?? updatedCamera.status.toLowerCase() == 'connected');
+    final bool isConnected = _isCameraConnectedForUi(updatedCamera, cameraStatus);
     
     // 🔍 DEBUG: Log camera status evaluation
     debugPrint('🎥 [CameraCard] ${updatedCamera.deviceId}:');
@@ -874,9 +885,7 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
       
       // For mobile and edge cameras, use camera.status since they don't use backend WebSocket
       // For USB/RTSP cameras, use WebSocket status if available, otherwise camera.status
-      final isConnected = (widget.camera.type == CameraType.mobile || widget.camera.type == CameraType.edge)
-          ? widget.camera.status.toLowerCase() == 'connected'
-          : (status?.isConnected ?? widget.camera.status.toLowerCase() == 'connected');
+        final isConnected = CameraCard._isCameraConnectedForUi(widget.camera, status);
       
       debugPrint('🔌 [ConnectionButton] Toggle check: deviceId=${widget.camera.deviceId}, type=${widget.camera.type}, isConnected=$isConnected');
       
@@ -937,9 +946,7 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
     
     // For mobile and edge cameras, use camera.status since they don't use backend WebSocket
     // For USB/RTSP cameras, use WebSocket status if available, otherwise camera.status
-    final isConnected = (widget.camera.type == CameraType.mobile || widget.camera.type == CameraType.edge)
-        ? widget.camera.status.toLowerCase() == 'connected'
-        : (status?.isConnected ?? widget.camera.status.toLowerCase() == 'connected');
+    final isConnected = CameraCard._isCameraConnectedForUi(widget.camera, status);
     
     if (_isLoading) {
       return Container(

@@ -1442,6 +1442,63 @@ async def detect_cameras(request: Request):
     return await _proxy_to_cameras_service(request)
 
 
+# Camera Operations Routes
+@api_router.get("/cameras/operations/status")
+async def get_camera_operations_status(request: Request):
+    """Proxy camera operations status to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/operations/policies")
+async def get_camera_operations_policies(request: Request):
+    """Proxy camera operations policy list to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.patch("/cameras/operations/policies/{scope_type}/{scope_id}")
+async def patch_camera_operations_policy(request: Request):
+    """Proxy camera operations policy update to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/operations/analytics/readings")
+async def get_camera_operations_readings(request: Request):
+    """Proxy camera operations analytics readings to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/operations/analytics/aggregates")
+async def get_camera_operations_aggregates(request: Request):
+    """Proxy camera operations analytics aggregates to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/operations/analytics/incidents/{camera_id}")
+async def get_camera_operations_incidents(request: Request):
+    """Proxy camera operations incident timeline to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/cameras/operations/reconcile")
+async def post_camera_operations_reconcile(request: Request):
+    """Proxy camera operations reconcile trigger to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/operations/reconcile/health")
+async def get_camera_operations_reconcile_health(request: Request):
+    """Proxy camera operations reconcile health to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
 @api_router.get("/cameras/{camera_id}")
 async def get_camera(request: Request):
     """Proxy get camera by ID to Cameras service."""

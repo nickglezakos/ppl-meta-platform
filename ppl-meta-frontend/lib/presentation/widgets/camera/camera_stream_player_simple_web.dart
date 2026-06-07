@@ -39,6 +39,9 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
   html.ImageElement? _imageElement;
   html.DivElement? _containerElement;
   String? _currentStreamUrl;
+  String? _fallbackStreamUrl;
+  bool _usingFallbackUrl = false;
+  bool _isMobileCamera = false;
   int _retryCount = 0;
   final int _maxRetries = 5;
   final int _retryDelay = 2;
@@ -63,6 +66,9 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
     
     // Clear any cached URL when starting fresh to ensure new session
     _currentStreamUrl = null;
+    _fallbackStreamUrl = null;
+    _usingFallbackUrl = false;
+    _isMobileCamera = false;
     _retryCount = 0;
     
     print('🎥 Starting stream for camera: ${widget.cameraId} (before setState)');
@@ -103,6 +109,9 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
     _containerElement?.remove();
     _containerElement = null;
     _currentStreamUrl = null;
+    _fallbackStreamUrl = null;
+    _usingFallbackUrl = false;
+    _isMobileCamera = false;
     _retryCount = 0;
     
     widget.onStop?.call();
@@ -140,10 +149,21 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
       
       // Route stream through the gateway so it works on mobile hotspots
       // (direct cameraServiceUrl port may not be reachable across NAT)
-      final baseUrl = AppConfig.instance.apiBaseUrl;
-      final authenticatedUrl = '$baseUrl/api/v1/streaming/${camera.deviceId}/video?token=$token';
+      final gatewayBaseUrl = AppConfig.instance.apiBaseUrl;
+      final camerasBaseUrl = AppConfig.instance.cameraServiceUrl;
+      final isMobileCamera = camera.type == CameraType.mobile || camera.isMobileCamera == true;
+      final gatewayUrl = '$gatewayBaseUrl/api/v1/streaming/${camera.deviceId}/video?token=$token';
+      final directCameraUrl = '$camerasBaseUrl/api/v1/streaming/${camera.deviceId}/video?token=$token';
+
+      _isMobileCamera = isMobileCamera;
+      _usingFallbackUrl = false;
+      _fallbackStreamUrl = isMobileCamera ? directCameraUrl : null;
+      final authenticatedUrl = gatewayUrl;
       
       debugPrint('🎥 [SIMPLE_STREAMING] Backend stream URL: ${authenticatedUrl.replaceAll(token, "***")}');
+      if (_fallbackStreamUrl != null) {
+        debugPrint('🎥 [SIMPLE_STREAMING] Mobile fallback stream URL prepared');
+      }
       
       // Final check before caching the URL
       if (!_isActive || !mounted) {
@@ -421,6 +441,14 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
             print('❌ Stream error for ${widget.cameraId}: $event');
             print('❌ Failed URL: $authenticatedUrl');
             print('❌ Error details: ${event.toString()}');
+
+            if (_isMobileCamera && !_usingFallbackUrl && _fallbackStreamUrl != null && _imageElement != null) {
+              _usingFallbackUrl = true;
+              _currentStreamUrl = _fallbackStreamUrl;
+              print('🔁 [SIMPLE_STREAMING] Switching mobile stream to direct cameras fallback URL');
+              _imageElement!.src = _fallbackStreamUrl!;
+              return;
+            }
             print('❌ Stream error for ${widget.cameraId}: $event');
             print('❌ Failed URL: $authenticatedUrl');
             print('❌ Error details: ${event.toString()}');

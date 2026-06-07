@@ -329,6 +329,15 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
+                        icon: Icons.monitor_heart,
+                        iconColor: AppColors.secondary,
+                        title: 'Camera Ops',
+                        subtitle: 'Live status, health, and aggregates',
+                        onTap: () {
+                          context.go('/camera-operations');
+                        },
+                      ),
+                      _ActionCard(
                         icon: Icons.photo_library,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'My Media',

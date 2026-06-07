@@ -96,13 +96,21 @@ async def list_cameras(
         
         # Get real-time worker status
         queue_service = get_camera_service()
+        from src.services.mobile_streaming import mobile_streaming_service
 
         camera_list = []
         for camera in cameras:
-            # For mobile and edge cameras, use database status (they don't have workers)
-            # For USB/RTSP cameras, check real-time worker status
-            if camera.camera_type in [CameraType.MOBILE, CameraType.EDGE]:
-                # Mobile and edge cameras don't use workers - check database status
+            # For mobile cameras, compute status from live stream activity.
+            # This prevents stale persisted DB status (e.g. "connected" after restart)
+            # from leaking into the UI when no frames are actually flowing.
+            if camera.camera_type == CameraType.MOBILE:
+                realtime_status = (
+                    "connected"
+                    if mobile_streaming_service.has_active_mobile_camera(camera.device_id)
+                    else "disconnected"
+                )
+            # For edge cameras, use persisted status (they don't use queue workers).
+            elif camera.camera_type == CameraType.EDGE:
                 realtime_status = camera.status.value if hasattr(camera, 'status') and camera.status else "available"
             else:
                 # Check if camera has an active worker

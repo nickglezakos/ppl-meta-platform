@@ -103,6 +103,21 @@ class MobileCameraCleanupService:
                     old_status = camera.status
                     camera.status = CameraStatus.AVAILABLE
 
+                    try:
+                        from src.services.stream_operations_state import get_stream_operations_state_service
+
+                        state_service = get_stream_operations_state_service()
+                        await state_service.mark_stream_stopped(
+                            camera_id=camera.device_id,
+                            reason="mobile_cleanup_status_reconciliation",
+                        )
+                    except Exception as exc:
+                        logger.debug(
+                            "Failed to synchronize stream operations state for %s: %s",
+                            camera.device_id,
+                            exc,
+                        )
+
                     time_since_seen = datetime.utcnow() - camera.last_seen
                     minutes_ago = int(time_since_seen.total_seconds() / 60)
 

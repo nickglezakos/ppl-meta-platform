@@ -67,6 +67,47 @@ class Config:
     STREAM_BUFFER_SIZE: int = int(os.getenv("STREAM_BUFFER_SIZE", "1024"))
     STREAM_QUALITY: str = os.getenv("STREAM_QUALITY", "medium")  # low, medium, high
 
+    # Stream operations state (phased rollout)
+    STREAM_STATE_REDIS_ENABLED: bool = (
+        os.getenv("STREAM_STATE_REDIS_ENABLED", "true").lower() == "true"
+    )
+    STREAM_STATE_REDIS_URL: str = os.getenv("STREAM_STATE_REDIS_URL", "")
+    STREAM_STATE_REDIS_HOST: str = os.getenv("STREAM_STATE_REDIS_HOST", "localhost")
+    STREAM_STATE_REDIS_PORT: int = int(os.getenv("STREAM_STATE_REDIS_PORT", "6379"))
+    STREAM_STATE_REDIS_DB: int = int(os.getenv("STREAM_STATE_REDIS_DB", "1"))
+    STREAM_STATE_KEY_NAMESPACE: str = os.getenv("STREAM_STATE_KEY_NAMESPACE", "camera")
+    STREAM_STATE_EVENTS_STREAM: str = os.getenv(
+        "STREAM_STATE_EVENTS_STREAM", "camera:stream:events"
+    )
+    STREAM_STATE_FRAME_EVENT_MIN_INTERVAL_SECONDS: int = int(
+        os.getenv("STREAM_STATE_FRAME_EVENT_MIN_INTERVAL_SECONDS", "5")
+    )
+
+    STREAM_PROFILE_USB_LIVENESS_TTL_SECONDS: int = int(
+        os.getenv("STREAM_PROFILE_USB_LIVENESS_TTL_SECONDS", "12")
+    )
+    STREAM_PROFILE_USB_STALE_GRACE_SECONDS: int = int(
+        os.getenv("STREAM_PROFILE_USB_STALE_GRACE_SECONDS", "20")
+    )
+    STREAM_PROFILE_MOBILE_LIVENESS_TTL_SECONDS: int = int(
+        os.getenv("STREAM_PROFILE_MOBILE_LIVENESS_TTL_SECONDS", "20")
+    )
+    STREAM_PROFILE_MOBILE_STALE_GRACE_SECONDS: int = int(
+        os.getenv("STREAM_PROFILE_MOBILE_STALE_GRACE_SECONDS", "45")
+    )
+    STREAM_PROFILE_RTSP_LIVENESS_TTL_SECONDS: int = int(
+        os.getenv("STREAM_PROFILE_RTSP_LIVENESS_TTL_SECONDS", "18")
+    )
+    STREAM_PROFILE_RTSP_STALE_GRACE_SECONDS: int = int(
+        os.getenv("STREAM_PROFILE_RTSP_STALE_GRACE_SECONDS", "35")
+    )
+    STREAM_PROFILE_EDGE_LIVENESS_TTL_SECONDS: int = int(
+        os.getenv("STREAM_PROFILE_EDGE_LIVENESS_TTL_SECONDS", "20")
+    )
+    STREAM_PROFILE_EDGE_STALE_GRACE_SECONDS: int = int(
+        os.getenv("STREAM_PROFILE_EDGE_STALE_GRACE_SECONDS", "40")
+    )
+
     # Storage configuration
     VIDEO_STORAGE_PATH: str = os.getenv("VIDEO_STORAGE_PATH", "/tmp/cameras/videos")
     SNAPSHOT_STORAGE_PATH: str = os.getenv(

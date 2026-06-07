@@ -557,6 +557,21 @@ class MobileCameraStreamingService:
         # Remove stale cameras
         for device_id in stale_cameras:
             await self.stop_mobile_camera_stream(device_id)
+
+            try:
+                from src.services.stream_operations_state import get_stream_operations_state_service
+
+                state_service = get_stream_operations_state_service()
+                await state_service.mark_stream_stopped(
+                    camera_id=device_id,
+                    reason="mobile_cleanup_stale_timeout",
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Failed to synchronize stream operations state during stale cleanup for %s: %s",
+                    device_id,
+                    exc,
+                )
             
             # Stop worker if exists
             if device_id in self.mobile_workers:

@@ -135,7 +135,6 @@ async def lifespan(_app: FastAPI):
     celery_process = None
     try:
         import subprocess
-        import os
         
         # Get venv python path
         venv_path = os.path.join(os.path.dirname(__file__), "..", "venv", "bin", "python")
@@ -144,7 +143,8 @@ async def lifespan(_app: FastAPI):
             venv_path = sys.executable
         
         # Start Celery worker as background process
-        log_file = os.path.join(log_dir, "celery-instant-detection.log")
+        celery_log_file = os.path.join(log_dir, "celery-instant-detection.log")
+        celery_enable_beat = os.getenv("CAMERAS_CELERY_ENABLE_BEAT", "true").lower() == "true"
         celery_cmd = [
             venv_path, "-m", "celery",
             "-A", "src.tasks.instant_detection_tasks",
@@ -152,9 +152,13 @@ async def lifespan(_app: FastAPI):
             "--loglevel=INFO",
             "--concurrency=2",
             "--queues=instant_detection_queue",
-            f"--logfile={log_file}",
+            f"--logfile={celery_log_file}",
             "--detach"
         ]
+
+        # Run beat in-process for local orchestration of periodic reconciliation tasks.
+        if celery_enable_beat:
+            celery_cmd.append("--beat")
         
         celery_process = subprocess.Popen(
             celery_cmd,

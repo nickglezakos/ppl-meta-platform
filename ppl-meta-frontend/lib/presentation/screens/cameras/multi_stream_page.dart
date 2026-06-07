@@ -30,14 +30,21 @@ class _MultiStreamPageState extends ConsumerState<MultiStreamPage> {
     _initializeStreams();
   }
 
+  bool _isCameraConnectedForMulti(Camera camera) {
+    final providerStatus = ref.read(cameraStatusProvider(camera.deviceId));
+    if (providerStatus?.isConnected == true || providerStatus?.isStreaming == true) {
+      return true;
+    }
+
+    final normalizedStatus = camera.status.toLowerCase();
+    return normalizedStatus == 'connected' || normalizedStatus == 'streaming';
+  }
+
   void _initializeStreams() {
     // Filter to only show connected cameras
     setState(() {
       _activeStreams = widget.cameras
-          .where((camera) {
-            final status = ref.read(cameraStatusProvider(camera.deviceId));
-            return status?.isConnected ?? false;
-          })
+          .where(_isCameraConnectedForMulti)
           .map((c) => c.deviceId)
           .toSet();
       _isLoading = false;
@@ -57,7 +64,12 @@ class _MultiStreamPageState extends ConsumerState<MultiStreamPage> {
   Widget build(BuildContext context) {
     final connectedCameras = widget.cameras.where((camera) {
       final status = ref.watch(cameraStatusProvider(camera.deviceId));
-      return status?.isConnected ?? false;
+      if (status?.isConnected == true) {
+        return true;
+      }
+
+      final normalizedStatus = camera.status.toLowerCase();
+      return normalizedStatus == 'connected' || normalizedStatus == 'streaming';
     }).toList();
 
     return Scaffold(
@@ -194,13 +206,18 @@ class _MultiStreamPageState extends ConsumerState<MultiStreamPage> {
 
   Widget _buildStreamTile(Camera camera) {
     final status = ref.watch(cameraStatusProvider(camera.deviceId));
+    final tileConnected =
+        (status?.isConnected ?? false) ||
+        (status?.isStreaming ?? false) ||
+        camera.status.toLowerCase() == 'connected' ||
+        camera.status.toLowerCase() == 'streaming';
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.grey[900],
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: status?.isConnected == true ? Colors.green : Colors.red,
+          color: tileConnected ? Colors.green : Colors.red,
           width: 2,
         ),
       ),
@@ -225,7 +242,7 @@ class _MultiStreamPageState extends ConsumerState<MultiStreamPage> {
                   height: 8,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: status?.isConnected == true ? Colors.green : Colors.red,
+                    color: tileConnected ? Colors.green : Colors.red,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -267,7 +284,7 @@ class _MultiStreamPageState extends ConsumerState<MultiStreamPage> {
                 bottomLeft: Radius.circular(6),
                 bottomRight: Radius.circular(6),
               ),
-              child: status?.isConnected == true
+              child: tileConnected
                   ? RepaintBoundary(
                       // Isolate each stream to prevent cross-interference
                       child: CameraStreamPlayerSimple(

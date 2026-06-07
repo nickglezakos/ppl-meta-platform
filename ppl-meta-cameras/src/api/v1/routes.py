@@ -5,6 +5,7 @@ API v1 routes for PPL Meta Cameras microservice.
 from fastapi import APIRouter
 from src.api.v1.endpoints.auth import router as auth_router
 from src.api.v1.endpoints.cameras import router as cameras_router
+from src.api.v1.endpoints.camera_operations import router as camera_operations_router
 from src.api.v1.endpoints.instant_detection import router as instant_detection_router
 from src.api.v1.endpoints.mobile_streaming import router as mobile_streaming_router
 from src.api.v1.endpoints.edge_streaming import router as edge_streaming_router
@@ -19,6 +20,11 @@ v1_router = APIRouter()
 
 # Include endpoint routers
 v1_router.include_router(cameras_router, prefix="/cameras", tags=["Cameras"])
+v1_router.include_router(
+    camera_operations_router,
+    prefix="/cameras/operations",
+    tags=["Camera Operations"],
+)
 v1_router.include_router(streaming_router, prefix="/streaming", tags=["Streaming"])
 v1_router.include_router(
     mobile_streaming_router, prefix="/streaming", tags=["Mobile Streaming"]

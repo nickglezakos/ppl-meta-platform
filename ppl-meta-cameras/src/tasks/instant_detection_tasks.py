@@ -19,6 +19,9 @@ from celery import Task
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from shared.queue_config import celery_app, redis_client
 
+# Ensure stream operations tasks are registered in the same Celery worker process.
+from src.tasks import stream_operations_tasks as _stream_operations_tasks  # noqa: F401
+
 LEGACY_MEDIA_TRIGGER_WEBHOOK_SUFFIX = "/api/v1/triggers/instant-detection"
 
 

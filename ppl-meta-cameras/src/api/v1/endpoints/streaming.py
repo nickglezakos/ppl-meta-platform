@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from src.database import get_db
-from src.models.camera import Camera
+from src.models.camera import Camera, CameraType
 from src.security.auth import (
     get_current_user,
     get_current_user_flexible,
@@ -26,6 +26,7 @@ from src.security.auth import (
 )
 from src.services.camera_service_queue import get_camera_service
 from src.services.camera_detection import camera_service
+from src.services.stream_operations_state import get_stream_operations_state_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -89,8 +90,16 @@ async def video_stream(
 ):
     """Stream video from camera."""
 
+    camera_type = None
+    is_mobile = False
+    is_edge = False
+    camera_type_name = "UNKNOWN"
+
     async def generate_frames():
         """Generate video frames for streaming."""
+
+        viewer_registered = False
+        stream_state_service = get_stream_operations_state_service()
 
         try:
             # Set quality parameters
@@ -104,6 +113,21 @@ async def video_stream(
             width, height, fps = quality_settings.get(
                 quality, quality_settings["medium"]
             )
+
+            try:
+                await stream_state_service.register_viewer(
+                    camera_id=device_id,
+                    camera_type=camera_type_name,
+                    user_id=current_user.get("sub"),
+                    quality=quality,
+                )
+                viewer_registered = True
+            except Exception as state_exc:
+                logger.debug(
+                    "Stream state viewer registration failed for %s: %s",
+                    device_id,
+                    state_exc,
+                )
             
             # Publish streaming started event
             try:
@@ -127,22 +151,6 @@ async def video_stream(
             last_frame_time = time.time()
             stream_timeout = 30.0  # 30 seconds without frames = timeout
             
-            # Determine camera type from database (mobile cameras use UUID, not prefix)
-            from src.database import get_db
-            from src.models.camera import Camera, CameraType
-            
-            camera_type = None
-            db = next(get_db())
-            try:
-                camera = db.query(Camera).filter(Camera.device_id == device_id).first()
-                if camera:
-                    camera_type = camera.camera_type
-            finally:
-                db.close()
-            
-            is_mobile = camera_type == CameraType.MOBILE
-            is_edge = device_id.startswith('edge-camera-')
-            
             # 🎯 UNIFIED QUEUE ARCHITECTURE: All cameras use queue workers now
             if is_edge:
                 # Edge cameras use EdgeCameraFrameProcessor which manages CameraWorker
@@ -159,6 +167,11 @@ async def video_stream(
                     # Check for stream timeout
                     if time.time() - last_frame_time > stream_timeout:
                         logger.error(f"⏱️ Stream timeout for {device_id} - no frames for {stream_timeout}s")
+                        await stream_state_service.mark_stale_candidate(
+                            camera_id=device_id,
+                            reason="stream_timeout",
+                            details={"timeout_seconds": stream_timeout},
+                        )
                         break
 
                     # Get frame from appropriate source
@@ -189,6 +202,11 @@ async def video_stream(
                         consecutive_failures += 1
                         if consecutive_failures >= max_consecutive_failures:
                             logger.error(f"❌ Too many frame read failures for {device_id}, stopping stream")
+                            await stream_state_service.mark_stale_candidate(
+                                camera_id=device_id,
+                                reason="too_many_frame_read_failures",
+                                details={"consecutive_failures": consecutive_failures},
+                            )
                             break
                         logger.debug(f"No frame available from {device_id} (failure {consecutive_failures}/{max_consecutive_failures})")
                         await asyncio.sleep(0.1)
@@ -196,7 +214,14 @@ async def video_stream(
 
                     # Reset failure counter on success
                     consecutive_failures = 0
-                    last_frame_time = time.time()
+                    now_time = time.time()
+                    frame_gap_ms = int((now_time - last_frame_time) * 1000)
+                    last_frame_time = now_time
+                    await stream_state_service.heartbeat_frame(
+                        camera_id=device_id,
+                        camera_type=camera_type_name,
+                        frame_gap_ms=frame_gap_ms,
+                    )
 
                     # Mobile camera frames are already rotated by the queue worker
                     # No additional rotation needed
@@ -255,6 +280,11 @@ async def video_stream(
                     logger.error(f"Error in stream loop for {device_id}: {e}")
                     if consecutive_failures >= max_consecutive_failures:
                         logger.error(f"❌ Too many errors for {device_id}, stopping stream")
+                        await stream_state_service.mark_stale_candidate(
+                            camera_id=device_id,
+                            reason="stream_loop_error_threshold",
+                            details={"consecutive_failures": consecutive_failures},
+                        )
                         break
                     await asyncio.sleep(0.1)
                     
@@ -277,14 +307,24 @@ async def video_stream(
         except Exception as e:
             logger.error(f"Error in video stream for camera {device_id}: {e}")
             return
+        finally:
+            if viewer_registered:
+                try:
+                    await stream_state_service.unregister_viewer(
+                        camera_id=device_id,
+                        reason="stream_ended",
+                    )
+                except Exception as state_exc:
+                    logger.debug(
+                        "Stream state viewer unregister failed for %s: %s",
+                        device_id,
+                        state_exc,
+                    )
 
     logger.info(f"🎥 [VIDEO_STREAM] Request for device_id={device_id}, user={current_user.get('sub')}")
     
     try:
         # Check camera type from database
-        from src.database import get_db
-        from src.models.camera import Camera, CameraType
-        
         camera_type = None
         db = next(get_db())
         try:
@@ -296,6 +336,7 @@ async def video_stream(
         
         is_mobile = camera_type == CameraType.MOBILE
         is_edge = device_id.startswith('edge-camera-')
+        camera_type_name = camera_type.value if camera_type else ("EDGE" if is_edge else "UNKNOWN")
         
         if is_mobile:
             # 🎯 UNIFIED QUEUE ARCHITECTURE: Mobile cameras now use queue workers too
@@ -304,10 +345,8 @@ async def video_stream(
             
             # Check if mobile camera is sending frames to backend
             if not mobile_streaming_service.has_active_mobile_camera(device_id):
-                logger.error(f"❌ [VIDEO_STREAM] Mobile camera {device_id} not streaming to backend")
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=f"Mobile camera {device_id} not actively streaming frames",
+                logger.warning(
+                    f"⚠️ [VIDEO_STREAM] Mobile camera {device_id} not currently marked active; continuing with graceful startup"
                 )
             
             # Ensure queue worker is connected
@@ -318,14 +357,17 @@ async def video_stream(
                 logger.info(f"📱 [VIDEO_STREAM] Connecting queue worker for mobile camera {device_id}")
                 success = await queue_service.connect_camera(device_id)
                 if not success:
-                    logger.error(f"❌ Failed to connect queue worker for mobile camera {device_id}")
-                    raise HTTPException(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        detail=f"Failed to connect mobile camera worker",
+                    logger.warning(
+                        f"⚠️ [VIDEO_STREAM] Failed to connect queue worker for mobile camera {device_id}; continuing with direct mobile frame fallback"
                     )
                 worker = await queue_service.get_camera_stream(device_id)
             
-            logger.info(f"✅ [VIDEO_STREAM] Mobile camera {device_id} queue worker ready")
+            if worker:
+                logger.info(f"✅ [VIDEO_STREAM] Mobile camera {device_id} queue worker ready")
+            else:
+                logger.info(
+                    f"✅ [VIDEO_STREAM] Mobile camera {device_id} proceeding without queue worker (direct frame fallback path)"
+                )
         elif is_edge:
             # Edge cameras use processor architecture (frames pushed from edge device)
             logger.info(f"📹 [VIDEO_STREAM] Edge camera detected: {device_id}")
