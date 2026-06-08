@@ -117,6 +117,28 @@ class _AuthorityStatusContent extends StatelessWidget {
                     label: 'Licence: ${status.cachedLicenceStatus}',
                     color: _licenceColor(status.cachedLicenceStatus),
                   ),
+                if (status.cachedLicenceName != null && status.cachedLicenceName!.isNotEmpty)
+                  _buildChip(
+                    label: status.cachedLicenceName!,
+                    color: Colors.indigo,
+                  ),
+                if (status.cachedTenantName != null && status.cachedTenantName!.isNotEmpty)
+                  _buildChip(
+                    label: 'Tenant: ${status.cachedTenantName}',
+                    color: Colors.cyan,
+                  ),
+                if (status.isWarningActive)
+                  _buildChip(
+                    label: status.warningDaysRemaining != null
+                        ? 'Warning: ${status.warningDaysRemaining} day(s) remaining'
+                        : 'Warning period active',
+                    color: Colors.amber,
+                  ),
+                if (status.isSafeguardActive)
+                  _buildChip(
+                    label: 'Safeguard active',
+                    color: Colors.red,
+                  ),
                 if (status.isOfflineCached)
                   _buildChip(
                     label: 'Running from cached approval',
@@ -140,8 +162,22 @@ class _AuthorityStatusContent extends StatelessWidget {
                 value: _boolLabel(status.applicationKeyConfigured),
               ),
               _DetailRow(
+                label: 'Authority key state',
+                value: status.applicationKeyConfigured
+                    ? 'Active and managed by Authority'
+                    : 'Not configured',
+              ),
+              _DetailRow(
                 label: 'Cached owner email',
                 value: status.cachedOwnerEmail ?? 'Unavailable',
+              ),
+              _DetailRow(
+                label: 'Licence name',
+                value: status.cachedLicenceName ?? 'Unavailable',
+              ),
+              _DetailRow(
+                label: 'Tenant name',
+                value: status.cachedTenantName ?? 'Unavailable',
               ),
               _DetailRow(
                 label: 'Current user approved owner',
@@ -152,6 +188,34 @@ class _AuthorityStatusContent extends StatelessWidget {
                 value: status.cachedOwnerEnabled == null
                     ? 'Unknown'
                     : _boolLabel(status.cachedOwnerEnabled!),
+              ),
+              _DetailRow(
+                label: 'Runtime state',
+                value: status.runtimeState,
+              ),
+              _DetailRow(
+                label: 'Runtime reason',
+                value: status.runtimeReason ?? 'Unavailable',
+              ),
+              _DetailRow(
+                label: 'Can operate',
+                value: _boolLabel(status.canOperate),
+              ),
+              _DetailRow(
+                label: 'Warning period days',
+                value: status.warningPeriodDays?.toString() ?? 'Unavailable',
+              ),
+              _DetailRow(
+                label: 'Warning started',
+                value: _formatDateTime(status.warningStartedAt),
+              ),
+              _DetailRow(
+                label: 'Warning deadline',
+                value: _formatDateTime(status.warningDeadline),
+              ),
+              _DetailRow(
+                label: 'Warning days remaining',
+                value: status.warningDaysRemaining?.toString() ?? 'Unavailable',
               ),
               _DetailRow(
                 label: 'Last result',
@@ -176,6 +240,12 @@ class _AuthorityStatusContent extends StatelessWidget {
               _DetailRow(
                 label: 'Installation UUID',
                 value: status.installationUuid.isEmpty ? 'Unavailable' : status.installationUuid,
+              ),
+              _DetailRow(
+                label: 'Resolved installation UUID',
+                value: status.resolvedInstallationUuid?.isNotEmpty == true
+                    ? status.resolvedInstallationUuid!
+                    : 'Unavailable',
               ),
               _DetailRow(
                 label: 'Authority service URL',
@@ -203,6 +273,24 @@ class _AuthorityStatusContent extends StatelessWidget {
         subtitle: 'The frontend is authenticated, but Node does not have a complete authority configuration.',
         color: Colors.orange,
         icon: Icons.settings_input_component,
+      );
+    }
+    if (status.isSafeguardActive) {
+      return const _AuthoritySummary(
+        title: 'Safeguard active',
+        subtitle: 'Protected operations are blocked until the licence state is resolved in Authority.',
+        color: Colors.red,
+        icon: Icons.gpp_bad,
+      );
+    }
+    if (status.isWarningActive) {
+      return _AuthoritySummary(
+        title: 'Licence warning active',
+        subtitle: status.warningDaysRemaining != null
+            ? 'Resolve the licence in Authority within ${status.warningDaysRemaining} day(s) to avoid safeguard mode.'
+            : 'Resolve the licence in Authority before the warning period elapses.',
+        color: Colors.amber,
+        icon: Icons.warning_amber,
       );
     }
     if (status.isOfflineCached) {

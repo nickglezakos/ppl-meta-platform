@@ -12,7 +12,9 @@ import '../../../widgets/custom_app_bar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/providers/bootstrap_provider.dart';
 import '../../../providers/authority_status_providers.dart';
+import '../../../services/authority_status_client.dart';
 import '../../../services/platform_connectivity_service.dart';
 import '../../../widgets/authority_status_card.dart';
 
@@ -22,6 +24,7 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentUser = ref.watch(authNotifierProvider).user;
+    final bootstrapStatus = ref.watch(bootstrapStatusProvider);
 
     return Scaffold(
       appBar: const CustomAppBar(
@@ -46,7 +49,13 @@ class SettingsScreen extends ConsumerWidget {
 
             const SizedBox(height: 24),
 
-            const _AuthorityApplicationKeySection(),
+            bootstrapStatus.when(
+              data: (status) => status.complete
+                  ? const _AuthorityManagedNotice()
+                  : const _AuthorityApplicationKeySection(),
+              loading: () => const _AuthorityApplicationKeySection(),
+              error: (_, __) => const _AuthorityApplicationKeySection(),
+            ),
 
             const SizedBox(height: 24),
 
@@ -167,6 +176,8 @@ class _AuthorityApplicationKeySectionState
         'value': installationUuid,
       });
 
+      await ref.read(authorityStatusClientProvider).refreshAuthorityStatus();
+
       ref.invalidate(authorityStatusProvider);
 
       if (!mounted) {
@@ -175,7 +186,7 @@ class _AuthorityApplicationKeySectionState
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Authority settings saved.'),
+          content: Text('Bootstrap authority binding saved and refreshed.'),
         ),
       );
     } catch (_) {
@@ -265,7 +276,7 @@ class _AuthorityApplicationKeySectionState
               Icon(Icons.vpn_key, color: AppColors.primary, size: 28),
               const SizedBox(width: 12),
               Text(
-                'Authority Application Key',
+                'Bootstrap Authority Binding',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppColors.primary,
@@ -281,7 +292,7 @@ class _AuthorityApplicationKeySectionState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Manage the authority application key and installation UUID here so node onboarding can use persisted values instead of relying on local env-only configuration.',
+                  'Use this only during bootstrap to bind the node to the correct Authority licence record. After bootstrap completes, licence state should be managed in Authority as the single source of truth.',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 16),
@@ -326,6 +337,44 @@ class _AuthorityApplicationKeySectionState
                   ],
                 ),
               ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AuthorityManagedNotice extends StatelessWidget {
+  const _AuthorityManagedNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Row(
+            children: [
+              Icon(Icons.verified_user, color: AppColors.primary, size: 28),
+              const SizedBox(width: 12),
+              Text(
+                'Authority Managed Licence',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+              ),
+            ],
+          ),
+        ),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'This node is already bootstrapped. The application key is no longer editable here. Update licence status and related metadata in Authority only, then refresh the Authority Status card to sync the latest state.',
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
         ),

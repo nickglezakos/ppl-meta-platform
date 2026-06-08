@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'core/config/app_config.dart';
+import 'core/providers/bootstrap_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/navigation/app_router.dart';
 import 'presentation/screens/setup/platform_connection_setup_screen.dart';
@@ -10,6 +11,7 @@ import 'services/dynamic_service_provider.dart';
 import 'services/platform_connectivity_service.dart';
 import 'widgets/global_screenshot_overlay.dart';
 import 'widgets/alert_overlay.dart';
+import 'widgets/authority_lifecycle_banner.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -139,6 +141,7 @@ class PPLMetaApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
+    ref.watch(bootstrapStatusProvider);
     
     // Initialize service discovery if enabled
     ref.listen(serviceDiscoveryInitProvider, (previous, next) {
@@ -163,8 +166,10 @@ class PPLMetaApp extends ConsumerWidget {
       builder: (context, child) {
         // Wrap entire app with alert overlay, then screenshot overlay
         return AlertOverlay(
-          child: GlobalScreenshotOverlay(
-            child: child ?? const SizedBox.shrink(),
+          child: AuthorityLifecycleBanner(
+            child: GlobalScreenshotOverlay(
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         );
       },

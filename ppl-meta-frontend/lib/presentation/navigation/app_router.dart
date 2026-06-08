@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/bootstrap_provider.dart';
 import '../../core/providers/provider_bridge.dart';
 import '../../core/services/secure_storage_service.dart';
 import '../screens/auth/new_login_screen.dart';
@@ -41,6 +42,7 @@ import '../../pages/workflow_widget_test_page.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authNotifierProvider);
+  final bootstrapStatus = ref.watch(bootstrapStatusProvider);
   
   return GoRouter(
     initialLocation: '/home', // Set a default, let redirect handle authentication
@@ -51,18 +53,31 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           storedToken.isNotEmpty;
       final isLoginRoute = state.fullPath == '/login';
       final isRegisterRoute = state.fullPath == '/register';
+      final isBootstrapRoute = state.fullPath == '/bootstrap';
       final isPublicRoute = state.fullPath == '/forgot-password' ||
           (state.fullPath?.startsWith('/reset-password') ?? false) ||
           (state.fullPath?.startsWith('/verify-email') ?? false);
+      final bootstrapPending = bootstrapStatus.maybeWhen(
+        data: (status) => status.needsOwnerBootstrap,
+        orElse: () => false,
+      );
+
+      if (!isAuthenticated && bootstrapPending && !isBootstrapRoute && !isPublicRoute) {
+        return '/bootstrap';
+      }
       
       // If not authenticated and trying to access protected routes, redirect to login
-      if (!isAuthenticated && !isLoginRoute && !isRegisterRoute && !isPublicRoute) {
+      if (!isAuthenticated && !isLoginRoute && !isRegisterRoute && !isBootstrapRoute && !isPublicRoute) {
         return '/login';
       }
       
       // If authenticated and trying to access auth routes, redirect to home
-      if (isAuthenticated && (isLoginRoute || isRegisterRoute)) {
+      if (isAuthenticated && (isLoginRoute || isRegisterRoute || isBootstrapRoute)) {
         return '/home';
+      }
+
+      if (!bootstrapPending && isBootstrapRoute && !isAuthenticated) {
+        return '/login';
       }
 
       return null; // No redirect needed
@@ -77,6 +92,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/register',
         name: 'register',
         builder: (context, state) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: '/bootstrap',
+        name: 'bootstrap',
+        builder: (context, state) => const RegisterScreen(isBootstrapFlow: true),
       ),
       GoRoute(
         path: '/forgot-password',

@@ -13,6 +13,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import inspect
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -125,9 +126,15 @@ def ensure_installation_info_schema(db: Session):
         column["name"] for column in inspector.get_columns("installation_info")
     }
     required_columns = {
+        "authority_application_key": "TEXT",
+        "authority_installation_uuid": "TEXT",
+        "authority_licence_name": "TEXT",
+        "authority_tenant_name": "TEXT",
         "authority_approved_owner_email": "TEXT",
         "authority_licence_status": "TEXT",
         "authority_owner_enabled": "BOOLEAN",
+        "authority_warning_period_days": "INTEGER",
+        "authority_warning_started_at": "TIMESTAMP",
         "authority_offline_grace_days": "INTEGER",
         "authority_last_checked_at": "TIMESTAMP",
         "authority_last_successful_check_at": "TIMESTAMP",
@@ -206,6 +213,60 @@ class TimingMiddleware(BaseHTTPMiddleware):
         process_time = time.time() - start_time
         response.headers["X-Process-Time"] = str(process_time)
         return response
+
+
+class AuthoritySafeguardMiddleware(BaseHTTPMiddleware):
+    """Block protected routes when the resolved authority runtime state is safeguard."""
+
+    _exempt_exact_paths = {
+        "/",
+        "/health",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/api/v1/health",
+        "/api/v1/licensing/bootstrap/status",
+        "/api/v1/licensing/bootstrap/activate",
+        "/api/v1/licensing/authority/status",
+        "/api/v1/licensing/authority/refresh",
+        "/api/v1/users/login",
+        "/api/v1/users/logout",
+        "/api/v1/users/profile",
+        "/api/v1/users/forgot-password",
+        "/api/v1/users/reset-password",
+        "/api/v1/users/verify-email",
+    }
+
+    def _is_exempt(self, path: str) -> bool:
+        return (
+            path in self._exempt_exact_paths
+            or path.startswith("/docs/")
+            or path.startswith("/redoc/")
+            or path.startswith("/openapi")
+        )
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "OPTIONS" or self._is_exempt(request.url.path):
+            return await call_next(request)
+
+        db = SessionLocal()
+        try:
+            runtime_state = authority_service.derive_runtime_state(db)
+        finally:
+            db.close()
+
+        if runtime_state["state"] == "safeguard":
+            return JSONResponse(
+                status_code=423,
+                content={
+                    "detail": "Installation is in safeguard mode",
+                    "runtime_state": runtime_state["state"],
+                    "reason": runtime_state["reason"],
+                    "warning_deadline": runtime_state["warning_deadline"],
+                },
+            )
+
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -542,6 +603,7 @@ async def value_error_handler(_request, exc):
 
 # Middleware
 app.add_middleware(TimingMiddleware)
+app.add_middleware(AuthoritySafeguardMiddleware)
 
 # Add metrics middleware - disabled for testing
 # app.add_middleware(PrometheusMiddleware, metrics_collector=metrics_collector)
