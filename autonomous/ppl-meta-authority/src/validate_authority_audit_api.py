@@ -24,7 +24,7 @@ owner = create_authority_user(
     role_name='owner',
 )
 entitlement = upsert_entitlement({
-    'application_key': 'audit-api-key',
+    'application_key': 'lic_bbbbbbbb222233334444555566667777',
     'approved_owner_email': owner['email'],
     'owner_enabled': True,
     'licence_status': 'active',

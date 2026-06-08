@@ -47,7 +47,7 @@ orphan_owner = create_authority_user(
     reseller_uuid='reseller-lifecycle',
 )
 entitlement = upsert_entitlement({
-    'application_key': 'lifecycle-key',
+    'application_key': 'lic_aaaaaaaa222233334444555566667777',
     'approved_owner_email': owner['email'],
     'owner_enabled': True,
     'licence_status': 'active',

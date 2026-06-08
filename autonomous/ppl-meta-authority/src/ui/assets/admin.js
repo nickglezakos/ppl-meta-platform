@@ -808,7 +808,7 @@ function pickerActivityItems(records, kind) {
   }
   if (kind === 'entitlement' || kind === 'audit_entitlement') {
     return records.map((record) => ({
-      title: `${escapeHtml(record.tenant_name || record.approved_owner_email || record.application_key || 'Entitlement')} · ${escapeHtml(record.activation_status || record.licence_status || 'unknown')}`,
+      title: `${escapeHtml(record.licence_name || record.tenant_name || record.approved_owner_email || record.application_key || 'Entitlement')} · ${escapeHtml(record.activation_status || record.licence_status || 'unknown')}`,
       badges: statusBadgeMarkup(record.activation_status || 'unknown'),
       meta: `${escapeHtml(record.approved_owner_email || 'no owner')} · ${escapeHtml(record.entitlement_uuid)} · ${escapeHtml(record.installation_uuid || 'unbound installation')}`,
       actions: `<button type="button" class="secondary mini-button" data-picker-select-value="${escapeHtml(record.entitlement_uuid)}">Use entitlement</button>`,
@@ -816,7 +816,7 @@ function pickerActivityItems(records, kind) {
   }
   if (kind === 'installation') {
     return records.map((record) => ({
-      title: `${escapeHtml(record.tenant_name || record.approved_owner_email || 'Installation')} · ${escapeHtml(record.installation_uuid)}`,
+      title: `${escapeHtml(record.licence_name || record.tenant_name || record.approved_owner_email || 'Installation')} · ${escapeHtml(record.installation_uuid)}`,
       badges: statusBadgeMarkup(record.activation_status || 'unknown'),
       meta: `${escapeHtml(record.approved_owner_email || 'no owner')} · ${escapeHtml(record.entitlement_uuid || 'no entitlement')}`,
       actions: `<button type="button" class="secondary mini-button" data-picker-select-value="${escapeHtml(record.installation_uuid)}">Use installation</button>`,
@@ -1442,30 +1442,30 @@ function resetConsoleRows() {
 function updateEventRows(records) {
   return records.map((record) => ({
     type: `<span class="pill ${badgeClassForStatus(record.status)}">Update</span>`,
-    primary: `${escapeHtml(record.tenant_name || record.approved_owner_email || 'Unknown installation')}<br><span class="small"><code class="inline">${escapeHtml(record.installation_uuid)}</code></span>`,
+    primary: `${escapeHtml(record.licence_name || record.tenant_name || record.approved_owner_email || 'Unknown installation')}<br><span class="small"><code class="inline">${escapeHtml(record.installation_uuid)}</code></span>`,
     scope: `${escapeHtml(record.status)}<br><span class="small">${escapeHtml(record.created_at)}</span>`,
     owner: escapeHtml(record.approved_owner_email || '-'),
     keyInfo: `${escapeHtml(record.from_release_version || 'unknown')} -> <code class="inline">${escapeHtml(record.to_release_version)}</code>`,
-    details: `${escapeHtml(record.tenant_name || record.application_key || 'Unknown tenant')}<br><span class="small">${escapeHtml(record.failure_reason || 'no failure')}</span>`,
+    details: `${escapeHtml(record.licence_name || record.tenant_name || record.application_key || 'Unknown tenant')}<br><span class="small">${escapeHtml(record.failure_reason || 'no failure')}</span>`,
   }));
 }
 
 function stateReportRows(records) {
   return records.map((record) => ({
     type: '<span class="pill">Health</span>',
-    primary: `${escapeHtml(record.tenant_name || record.approved_owner_email || 'Unknown installation')}<br><span class="small"><code class="inline">${escapeHtml(record.installation_uuid)}</code></span>`,
+    primary: `${escapeHtml(record.licence_name || record.tenant_name || record.approved_owner_email || 'Unknown installation')}<br><span class="small"><code class="inline">${escapeHtml(record.installation_uuid)}</code></span>`,
     scope: `${escapeHtml(record.health_state || 'unknown')}<br><span class="small">${escapeHtml(record.reported_at)}</span>`,
     owner: escapeHtml(record.approved_owner_email || '-'),
     keyInfo: `<code class="inline">${escapeHtml(record.current_release_version)}</code><br><span class="small">${escapeHtml(record.deployment_mode || 'unknown mode')}</span>`,
-    details: `${escapeHtml(record.tenant_name || record.application_key || 'Unknown tenant')}<br><span class="small">${escapeHtml(record.activation_status)} / ${escapeHtml(record.licence_status)}</span>`,
+    details: `${escapeHtml(record.licence_name || record.tenant_name || record.application_key || 'Unknown tenant')}<br><span class="small">${escapeHtml(record.activation_status)} / ${escapeHtml(record.licence_status)}</span>`,
   }));
 }
 
 function entitlementRows(records) {
   return records.map((record) => ({
     type: '<span class="pill">Entitlement</span>',
-    primary: `${escapeHtml(record.tenant_name || record.approved_owner_email || 'Unassigned entitlement')}<br><span class="small"><code class="inline">${escapeHtml(record.entitlement_uuid)}</code></span>`,
-    scope: `${statusBadgeMarkup(record.activation_status)}<br><span class="small">${record.tenant_name || 'No tenant'}</span>`,
+    primary: `${escapeHtml(record.licence_name || record.tenant_name || record.approved_owner_email || 'Unassigned entitlement')}<br><span class="small"><code class="inline">${escapeHtml(record.entitlement_uuid)}</code></span>`,
+    scope: `${statusBadgeMarkup(record.activation_status)}<br><span class="small">${record.licence_name || record.tenant_name || 'No tenant'}</span>`,
     owner: record.approved_owner_email,
     keyInfo: `<code class="inline">${record.application_key}</code><br><span class="small">${record.licence_status}</span>`,
     details: `${record.installation_uuid || 'unbound'}<br><span class="small">grace ${record.offline_grace_days}d</span>`,
@@ -2452,6 +2452,7 @@ async function createEntitlement() {
       licence_status: document.getElementById('licence_status').value,
       offline_grace_days: Number(document.getElementById('offline_grace_days').value || 0),
       tenant_name: document.getElementById('tenant_name').value.trim() || null,
+      licence_name: document.getElementById('tenant_name').value.trim() || null,
       notes: document.getElementById('notes').value.trim() || null,
     };
     const record = await api('/api/v1/admin/installations', {
@@ -2489,6 +2490,7 @@ async function updateEntitlementDetails() {
       licence_status: document.getElementById('edit_licence_status').value,
       offline_grace_days: Number(document.getElementById('edit_offline_grace_days').value || 0),
       tenant_name: document.getElementById('edit_tenant_name').value.trim() || null,
+      licence_name: document.getElementById('edit_tenant_name').value.trim() || null,
       notes: document.getElementById('edit_notes').value.trim() || null,
     };
     const record = await api('/api/v1/admin/installations', {

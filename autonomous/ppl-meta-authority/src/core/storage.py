@@ -4,9 +4,14 @@ import uuid
 import json
 import secrets
 import hashlib
+import re
 from typing import Any
 
 from core.database import connect_database, get_database_settings
+
+
+APPLICATION_KEY_PATTERN = re.compile(r"^lic_[0-9a-f]{32}$")
+CURRENT_DEV_APPLICATION_KEY = "lic_6f3c8d1e2b4a5c7d8e9f0a1b2c3d4e5f"
 
 
 def _connect():
@@ -35,6 +40,7 @@ def _schema_statements() -> list[str]:
         CREATE TABLE IF NOT EXISTS entitlements (
             entitlement_uuid TEXT PRIMARY KEY,
             application_key TEXT NOT NULL UNIQUE,
+            licence_name TEXT,
             approved_owner_email TEXT NOT NULL,
             owner_enabled BOOLEAN NOT NULL DEFAULT TRUE,
             licence_status TEXT NOT NULL,
@@ -51,6 +57,7 @@ def _schema_statements() -> list[str]:
         CREATE TABLE IF NOT EXISTS installations (
             installation_uuid TEXT PRIMARY KEY,
             application_key TEXT NOT NULL,
+            licence_name TEXT,
             approved_owner_email TEXT NOT NULL,
             owner_enabled BOOLEAN NOT NULL DEFAULT TRUE,
             licence_status TEXT NOT NULL,
@@ -171,6 +178,14 @@ def initialize_database() -> None:
         _ensure_column(connection, "authority_invitations", "email_delivery_attempted", "BOOLEAN NOT NULL DEFAULT FALSE")
         _ensure_column(connection, "authority_invitations", "email_delivered", "BOOLEAN NOT NULL DEFAULT FALSE")
         _ensure_column(connection, "authority_invitations", "email_delivery_message", "TEXT")
+        _ensure_column(connection, "entitlements", "licence_name", "TEXT")
+        _ensure_column(connection, "installations", "licence_name", "TEXT")
+        connection.execute(
+            "UPDATE entitlements SET licence_name = COALESCE(licence_name, tenant_name, application_key)"
+        )
+        connection.execute(
+            "UPDATE installations SET licence_name = COALESCE(licence_name, tenant_name, application_key)"
+        )
         connection.commit()
 
     _migrate_installations_to_entitlements()
@@ -201,13 +216,31 @@ def _json_value(value: Any) -> str | None:
     return json.dumps(value, sort_keys=True)
 
 
+def _generate_application_key() -> str:
+    return f"lic_{secrets.token_hex(16)}"
+
+
+def is_machine_application_key(value: str | None) -> bool:
+    return bool(value and APPLICATION_KEY_PATTERN.fullmatch(value.strip().lower()))
+
+
+def _normalize_application_key(value: str | None) -> str:
+    candidate = (value or "").strip().lower()
+    if not candidate:
+        return _generate_application_key()
+    if not is_machine_application_key(candidate):
+        raise ValueError("application_key must use the lic_<32 hex chars> format")
+    return candidate
+
+
 def seed_demo_installation() -> None:
-    if get_entitlement_by_application_key("mvp-demo-key") is not None:
+    if get_entitlement_by_application_key(CURRENT_DEV_APPLICATION_KEY) is not None:
         return
 
     upsert_entitlement(
         {
-            "application_key": "mvp-demo-key",
+            "application_key": CURRENT_DEV_APPLICATION_KEY,
+            "licence_name": "MVP Demo Licence",
             "approved_owner_email": "owner@example.com",
             "owner_enabled": True,
             "licence_status": "active",
@@ -358,6 +391,7 @@ def ensure_owner_entitlement_for_user(
     tenant_name = (user.get("display_name") or user["email"].split("@", 1)[0]).strip() or user["email"]
     entitlement = upsert_entitlement(
         {
+            "licence_name": tenant_name,
             "approved_owner_email": user["email"],
             "owner_enabled": True,
             "licence_status": "active",
@@ -1229,13 +1263,21 @@ def list_recent_assignment_activity(
 def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
     entitlement_uuid = record.get("entitlement_uuid") or str(uuid.uuid4())
     existing_entitlement = get_entitlement_by_uuid(entitlement_uuid) if record.get("entitlement_uuid") else None
-    application_key = record.get("application_key") or (
-        existing_entitlement["application_key"] if existing_entitlement else str(uuid.uuid4())
+    application_key = _normalize_application_key(
+        record.get("application_key")
+        or (existing_entitlement["application_key"] if existing_entitlement else None)
     )
     installation_uuid = record.get("installation_uuid")
     if installation_uuid is None and existing_entitlement is not None:
         installation_uuid = existing_entitlement.get("installation_uuid")
     installation_uuid = installation_uuid or None
+    licence_name = (
+        record.get("licence_name")
+        or (existing_entitlement.get("licence_name") if existing_entitlement else None)
+        or record.get("tenant_name")
+        or (existing_entitlement.get("tenant_name") if existing_entitlement else None)
+        or application_key
+    )
     activation_status = record.get("activation_status") or (
         existing_entitlement.get("activation_status") if existing_entitlement else None
     ) or ("active" if installation_uuid else "pending_activation")
@@ -1246,6 +1288,7 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
             INSERT INTO entitlements (
                 entitlement_uuid,
                 application_key,
+                licence_name,
                 approved_owner_email,
                 owner_enabled,
                 licence_status,
@@ -1254,9 +1297,10 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                 installation_uuid,
                 activation_status,
                 notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(entitlement_uuid) DO UPDATE SET
                 application_key = excluded.application_key,
+                licence_name = excluded.licence_name,
                 approved_owner_email = excluded.approved_owner_email,
                 owner_enabled = excluded.owner_enabled,
                 licence_status = excluded.licence_status,
@@ -1270,6 +1314,7 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
             (
                 entitlement_uuid,
                 application_key,
+                licence_name,
                 record["approved_owner_email"],
                 bool(record["owner_enabled"]),
                 record["licence_status"],
@@ -1287,15 +1332,17 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                 INSERT INTO installations (
                     installation_uuid,
                     application_key,
+                    licence_name,
                     approved_owner_email,
                     owner_enabled,
                     licence_status,
                     offline_grace_days,
                     tenant_name,
                     notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(installation_uuid) DO UPDATE SET
                     application_key = excluded.application_key,
+                    licence_name = excluded.licence_name,
                     approved_owner_email = excluded.approved_owner_email,
                     owner_enabled = excluded.owner_enabled,
                     licence_status = excluded.licence_status,
@@ -1307,6 +1354,7 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                 (
                     installation_uuid,
                     application_key,
+                    licence_name,
                     record["approved_owner_email"],
                     bool(record["owner_enabled"]),
                     record["licence_status"],
@@ -1360,6 +1408,16 @@ def get_installation_by_uuid(installation_uuid: str) -> dict[str, Any] | None:
         row = connection.execute(
             "SELECT * FROM installations WHERE installation_uuid = ?",
             (installation_uuid,),
+        ).fetchone()
+
+    return _row_to_dict(row)
+
+
+def get_installation_by_application_key(application_key: str) -> dict[str, Any] | None:
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM installations WHERE application_key = ?",
+            (application_key,),
         ).fetchone()
 
     return _row_to_dict(row)
@@ -1852,6 +1910,7 @@ def _row_to_dict(row: Any | None) -> dict[str, Any] | None:
     return {
         "installation_uuid": row["installation_uuid"],
         "application_key": row["application_key"],
+        "licence_name": row["licence_name"],
         "approved_owner_email": row["approved_owner_email"],
         "owner_enabled": bool(row["owner_enabled"]),
         "licence_status": row["licence_status"],
@@ -1869,6 +1928,7 @@ def _entitlement_row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "entitlement_uuid": row["entitlement_uuid"],
         "installation_uuid": row["installation_uuid"],
         "application_key": row["application_key"],
+        "licence_name": row["licence_name"],
         "approved_owner_email": row["approved_owner_email"],
         "owner_enabled": bool(row["owner_enabled"]),
         "licence_status": row["licence_status"],

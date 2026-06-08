@@ -45,7 +45,7 @@ assert client.post('/api/v1/auth/accept-invitation', json={
     'password': 'invitepass1'
 }).status_code == 201
 entitlement = client.post('/api/v1/admin/installations', json={
-    'application_key': 'invited-owner-key',
+    'application_key': 'lic_dddddddd222233334444555566667777',
     'approved_owner_email': 'invited-owner@example.com',
     'owner_enabled': True,
     'licence_status': 'active',

@@ -5,6 +5,7 @@ from core.storage import (
     activate_entitlement,
     evaluate_update_eligibility,
     find_installation_by_owner_email,
+    get_installation_by_application_key,
     get_entitlement_by_installation_uuid,
     get_installation_by_uuid,
     record_installation_state,
@@ -13,10 +14,13 @@ from core.storage import (
 
 router = APIRouter(prefix="/api/v1", tags=["authority"])
 
+APPLICATION_KEY_PATTERN = r"^lic_[0-9a-f]{32}$"
+
 
 class InstallationRecord(BaseModel):
     installation_uuid: str
-    application_key: str
+    application_key: str = Field(pattern=APPLICATION_KEY_PATTERN)
+    licence_name: str | None = None
     approved_owner_email: str
     owner_enabled: bool
     licence_status: str
@@ -28,7 +32,8 @@ class InstallationRecord(BaseModel):
 class EntitlementRecord(BaseModel):
     entitlement_uuid: str
     installation_uuid: str | None = None
-    application_key: str
+    application_key: str = Field(pattern=APPLICATION_KEY_PATTERN)
+    licence_name: str | None = None
     approved_owner_email: str
     owner_enabled: bool
     licence_status: str
@@ -41,7 +46,8 @@ class EntitlementRecord(BaseModel):
 class InstallationUpsertRequest(BaseModel):
     entitlement_uuid: str | None = None
     installation_uuid: str | None = None
-    application_key: str | None = Field(default=None, min_length=3)
+    application_key: str | None = Field(default=None, pattern=APPLICATION_KEY_PATTERN)
+    licence_name: str | None = None
     approved_owner_email: str
     owner_enabled: bool = True
     licence_status: str = "active"
@@ -51,7 +57,7 @@ class InstallationUpsertRequest(BaseModel):
 
 
 class ActivationRequest(BaseModel):
-    application_key: str = Field(min_length=3)
+    application_key: str = Field(pattern=APPLICATION_KEY_PATTERN)
     installation_uuid: str = Field(min_length=3)
     owner_email: str
 
@@ -61,7 +67,8 @@ class ActivationResponse(BaseModel):
     reason: str
     entitlement_uuid: str | None = None
     installation_uuid: str | None = None
-    application_key: str | None = None
+    application_key: str | None = Field(default=None, pattern=APPLICATION_KEY_PATTERN)
+    licence_name: str | None = None
     approved_owner_email: str | None = None
     owner_enabled: bool | None = None
     licence_status: str | None = None
@@ -134,6 +141,15 @@ class UpdateEventResponse(BaseModel):
 @router.get("/installations/{installation_uuid}", response_model=InstallationRecord)
 async def get_installation(installation_uuid: str) -> InstallationRecord:
     record = get_installation_by_uuid(installation_uuid)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Installation not found")
+
+    return InstallationRecord(**record)
+
+
+@router.get("/application-keys/{application_key}", response_model=InstallationRecord)
+async def get_installation_for_application_key(application_key: str) -> InstallationRecord:
+    record = get_installation_by_application_key(application_key)
     if record is None:
         raise HTTPException(status_code=404, detail="Installation not found")
 
