@@ -1261,13 +1261,25 @@ def list_recent_assignment_activity(
 
 
 def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
-    entitlement_uuid = record.get("entitlement_uuid") or str(uuid.uuid4())
-    existing_entitlement = get_entitlement_by_uuid(entitlement_uuid) if record.get("entitlement_uuid") else None
+    installation_uuid = record.get("installation_uuid")
+    existing_entitlement = None
+    if record.get("entitlement_uuid"):
+        existing_entitlement = get_entitlement_by_uuid(record["entitlement_uuid"])
+    if existing_entitlement is None and record.get("application_key"):
+        existing_entitlement = get_entitlement_by_application_key(record["application_key"])
+    if existing_entitlement is None and installation_uuid:
+        existing_entitlement = get_entitlement_by_installation_uuid(installation_uuid)
+
+    entitlement_uuid = (
+        record.get("entitlement_uuid")
+        or (existing_entitlement["entitlement_uuid"] if existing_entitlement else None)
+        or str(uuid.uuid4())
+    )
+    previous_installation_uuid = existing_entitlement.get("installation_uuid") if existing_entitlement else None
     application_key = _normalize_application_key(
         record.get("application_key")
         or (existing_entitlement["application_key"] if existing_entitlement else None)
     )
-    installation_uuid = record.get("installation_uuid")
     if installation_uuid is None and existing_entitlement is not None:
         installation_uuid = existing_entitlement.get("installation_uuid")
     installation_uuid = installation_uuid or None
@@ -1362,6 +1374,16 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                     record.get("tenant_name"),
                     record.get("notes"),
                 ),
+            )
+
+        if (
+            previous_installation_uuid
+            and installation_uuid
+            and previous_installation_uuid != installation_uuid
+        ):
+            connection.execute(
+                "DELETE FROM installations WHERE installation_uuid = ?",
+                (previous_installation_uuid,),
             )
         connection.commit()
 

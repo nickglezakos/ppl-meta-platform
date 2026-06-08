@@ -19,7 +19,7 @@ APPLICATION_KEY_PATTERN = r"^lic_[0-9a-f]{32}$"
 
 class InstallationRecord(BaseModel):
     installation_uuid: str
-    application_key: str = Field(pattern=APPLICATION_KEY_PATTERN)
+    application_key: str
     licence_name: str | None = None
     approved_owner_email: str
     owner_enabled: bool
@@ -32,7 +32,7 @@ class InstallationRecord(BaseModel):
 class EntitlementRecord(BaseModel):
     entitlement_uuid: str
     installation_uuid: str | None = None
-    application_key: str = Field(pattern=APPLICATION_KEY_PATTERN)
+    application_key: str
     licence_name: str | None = None
     approved_owner_email: str
     owner_enabled: bool
@@ -67,7 +67,7 @@ class ActivationResponse(BaseModel):
     reason: str
     entitlement_uuid: str | None = None
     installation_uuid: str | None = None
-    application_key: str | None = Field(default=None, pattern=APPLICATION_KEY_PATTERN)
+    application_key: str | None = None
     licence_name: str | None = None
     approved_owner_email: str | None = None
     owner_enabled: bool | None = None

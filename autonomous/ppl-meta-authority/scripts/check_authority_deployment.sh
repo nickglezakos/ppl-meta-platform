@@ -54,23 +54,19 @@ wait_for_admin_shell
 
 SESSION_TOKEN=''
 if [ -n "$AUTHORITY_ADMIN_EMAIL" ] && [ -n "$AUTHORITY_ADMIN_PASSWORD" ]; then
+  echo 'Checking authenticated login...'
   if [ "$AUTHORITY_BOOTSTRAP_ADMIN_BEFORE_LOGIN" = 'true' ]; then
     echo 'Bootstrapping initial admin...'
-    fetch_json -X POST "$AUTHORITY_BASE_URL/api/v1/auth/bootstrap-admin" >/dev/null
   fi
 
-  echo 'Checking authenticated login...'
-  SESSION_TOKEN="$(fetch_json -X POST "$AUTHORITY_BASE_URL/api/v1/auth/login" \
-    -d "{\"email\":\"$AUTHORITY_ADMIN_EMAIL\",\"password\":\"$AUTHORITY_ADMIN_PASSWORD\"}" | sed -n 's/.*"session_token":"\([^"]*\)".*/\1/p')"
-
-  if [ -z "$SESSION_TOKEN" ]; then
-    echo 'Failed to obtain session token from authority login response'
-    exit 1
-  fi
-
-  curl --fail --silent --show-error \
-    -H "Authorization: Bearer $SESSION_TOKEN" \
-    "$AUTHORITY_BASE_URL/api/v1/auth/me" >/dev/null
+  SESSION_TOKEN="$({
+    AUTHORITY_BASE_URL="$AUTHORITY_BASE_URL" \
+    AUTHORITY_ADMIN_EMAIL="$AUTHORITY_ADMIN_EMAIL" \
+    AUTHORITY_ADMIN_PASSWORD="$AUTHORITY_ADMIN_PASSWORD" \
+    AUTHORITY_BOOTSTRAP_ADMIN_BEFORE_LOGIN="$AUTHORITY_BOOTSTRAP_ADMIN_BEFORE_LOGIN" \
+    AUTHORITY_VERIFY_ME=true \
+    sh "$(dirname "$0")/get_authority_session_token.sh"
+  })"
 fi
 
 if [ -n "$AUTHORITY_TEST_APPLICATION_KEY" ] && [ -n "$AUTHORITY_TEST_OWNER_EMAIL" ] && [ -n "$AUTHORITY_TEST_INSTALLATION_UUID" ]; then
