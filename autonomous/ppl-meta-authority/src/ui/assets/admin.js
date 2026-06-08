@@ -71,6 +71,7 @@ const viewTitleMap = {
 const searchParams = new URLSearchParams(window.location.search);
 const requestedView = searchParams.get('view');
 const requestedInvitationToken = searchParams.get('invitation_token');
+const requestedEditEntitlementUuid = searchParams.get('edit_entitlement_uuid');
 const requestedPublicView = requestedInvitationToken ? 'invitation' : 'login';
 
 function requestedAuditFilters() {
@@ -1335,6 +1336,39 @@ function buildEntitlementConsoleActions(record) {
   return consoleActionMenu('Actions', actions.join(''));
 }
 
+function entitlementEditFormFields() {
+  return {
+    entitlementUuid: document.getElementById('edit_entitlement_uuid'),
+    approvedOwnerEmail: document.getElementById('edit_approved_owner_email'),
+    licenceStatus: document.getElementById('edit_licence_status'),
+    warningPeriodDays: document.getElementById('edit_warning_period_days'),
+    offlineGraceDays: document.getElementById('edit_offline_grace_days'),
+    ownerEnabled: document.getElementById('edit_owner_enabled'),
+    tenantName: document.getElementById('edit_tenant_name'),
+    notes: document.getElementById('edit_notes'),
+  };
+}
+
+function entitlementEditFormReady() {
+  const fields = entitlementEditFormFields();
+  return Object.values(fields).every((field) => field);
+}
+
+function openAdminEntitlementEdit(entitlementUuid) {
+  const nextSearch = new URLSearchParams();
+  nextSearch.set('view', 'admin');
+  nextSearch.set('edit_entitlement_uuid', entitlementUuid);
+  window.location.href = `/admin?${nextSearch.toString()}`;
+}
+
+function clearRequestedEntitlementEdit() {
+  if (!searchParams.get('edit_entitlement_uuid')) {
+    return;
+  }
+  searchParams.delete('edit_entitlement_uuid');
+  window.history.replaceState(null, '', `${window.location.pathname}?${searchParams.toString()}`);
+}
+
 async function prepareEntitlementEdit(entitlementUuid) {
   const trimmedUuid = String(entitlementUuid || '').trim();
   if (!trimmedUuid) {
@@ -1342,27 +1376,41 @@ async function prepareEntitlementEdit(entitlementUuid) {
     return;
   }
 
+  if (!entitlementEditFormReady()) {
+    openAdminEntitlementEdit(trimmedUuid);
+    return;
+  }
+
   try {
     const record = await api(`/api/v1/admin/installations/${encodeURIComponent(trimmedUuid)}`, {
       headers: authHeaders(),
     });
-    document.getElementById('edit_entitlement_uuid').value = record.entitlement_uuid || '';
-    document.getElementById('edit_approved_owner_email').value = record.approved_owner_email || '';
-    document.getElementById('edit_licence_status').value = record.licence_status || 'active';
-    document.getElementById('edit_warning_period_days').value = String(record.warning_period_days ?? 0);
-    document.getElementById('edit_offline_grace_days').value = String(record.offline_grace_days ?? 0);
-    document.getElementById('edit_owner_enabled').value = record.owner_enabled === false ? 'false' : 'true';
-    document.getElementById('edit_tenant_name').value = record.tenant_name || record.licence_name || '';
-    document.getElementById('edit_notes').value = record.notes || '';
+    const fields = entitlementEditFormFields();
+    fields.entitlementUuid.value = record.entitlement_uuid || '';
+    fields.approvedOwnerEmail.value = record.approved_owner_email || '';
+    fields.licenceStatus.value = record.licence_status || 'active';
+    fields.warningPeriodDays.value = String(record.warning_period_days ?? 0);
+    fields.offlineGraceDays.value = String(record.offline_grace_days ?? 0);
+    fields.ownerEnabled.value = record.owner_enabled === false ? 'false' : 'true';
+    fields.tenantName.value = record.tenant_name || record.licence_name || '';
+    fields.notes.value = record.notes || '';
 
-    const editField = document.getElementById('edit_entitlement_uuid');
+    const editField = fields.entitlementUuid;
     if (editField && typeof editField.scrollIntoView === 'function') {
       editField.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
+    clearRequestedEntitlementEdit();
     setStatus(`Loaded entitlement ${trimmedUuid} into the licence edit form.`);
   } catch (error) {
     setStatus(error.message, true);
   }
+}
+
+async function applyRequestedEntitlementEdit() {
+  if (!requestedEditEntitlementUuid || pageName !== 'admin' || !currentUser) {
+    return;
+  }
+  await prepareEntitlementEdit(requestedEditEntitlementUuid);
 }
 
 function stripHtml(value) {
@@ -2227,6 +2275,7 @@ async function handleLogin() {
       const nextView = resolvedRequestedView(payload.user.role_name);
       const loginLandingView = nextView === 'session' ? 'overview' : nextView;
       activateView(loginLandingView);
+      await applyRequestedEntitlementEdit();
     }
     if (pageName !== 'console' && payload.user.role_name === 'platform_admin') {
       await loadAdminSummary();
@@ -3073,6 +3122,7 @@ async function restoreSessionOnLoad() {
     } else {
       const nextView = resolvedRequestedView(me.role_name);
       activateView(nextView);
+      await applyRequestedEntitlementEdit();
     }
   } catch (error) {
     sessionToken = '';
