@@ -1326,12 +1326,43 @@ function buildUserConsoleActions(record) {
 function buildEntitlementConsoleActions(record) {
   const actions = [];
   if (viewerCanManageEntitlements()) {
+    actions.push(`<button type="button" class="mini-button secondary" data-edit-entitlement="${escapeHtml(record.entitlement_uuid)}">Edit</button>`);
     actions.push(`<button type="button" class="mini-button secondary" data-entitlement-status="active" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Activate</button>`);
     actions.push(`<button type="button" class="mini-button secondary" data-entitlement-status="suspended" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Suspend</button>`);
     actions.push(`<button type="button" class="mini-button secondary" data-entitlement-status="revoked" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Revoke</button>`);
   }
   actions.push(`<button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="entitlement" data-audit-target-entity-uuid="${escapeHtml(record.entitlement_uuid)}">Audit</button>`);
   return consoleActionMenu('Actions', actions.join(''));
+}
+
+async function prepareEntitlementEdit(entitlementUuid) {
+  const trimmedUuid = String(entitlementUuid || '').trim();
+  if (!trimmedUuid) {
+    setStatus('Entitlement edit requires an entitlement UUID.', true);
+    return;
+  }
+
+  try {
+    const record = await api(`/api/v1/admin/installations/${encodeURIComponent(trimmedUuid)}`, {
+      headers: authHeaders(),
+    });
+    document.getElementById('edit_entitlement_uuid').value = record.entitlement_uuid || '';
+    document.getElementById('edit_approved_owner_email').value = record.approved_owner_email || '';
+    document.getElementById('edit_licence_status').value = record.licence_status || 'active';
+    document.getElementById('edit_warning_period_days').value = String(record.warning_period_days ?? 0);
+    document.getElementById('edit_offline_grace_days').value = String(record.offline_grace_days ?? 0);
+    document.getElementById('edit_owner_enabled').value = record.owner_enabled === false ? 'false' : 'true';
+    document.getElementById('edit_tenant_name').value = record.tenant_name || record.licence_name || '';
+    document.getElementById('edit_notes').value = record.notes || '';
+
+    const editField = document.getElementById('edit_entitlement_uuid');
+    if (editField && typeof editField.scrollIntoView === 'function') {
+      editField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    setStatus(`Loaded entitlement ${trimmedUuid} into the licence edit form.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
 }
 
 function stripHtml(value) {
@@ -1517,6 +1548,12 @@ function bindConsoleActions() {
       const token = button.dataset.fillToken || '';
       document.getElementById('accept_invitation_token').value = token;
       setAcceptStatus('Invitation token copied into the acceptance form.');
+    });
+  });
+
+  document.querySelectorAll('[data-edit-entitlement]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await prepareEntitlementEdit(button.dataset.editEntitlement || '');
     });
   });
 
@@ -2450,6 +2487,7 @@ async function createEntitlement() {
       approved_owner_email: document.getElementById('approved_owner_email').value.trim(),
       owner_enabled: document.getElementById('owner_enabled').value === 'true',
       licence_status: document.getElementById('licence_status').value,
+      warning_period_days: Number(document.getElementById('warning_period_days').value || 0),
       offline_grace_days: Number(document.getElementById('offline_grace_days').value || 0),
       tenant_name: document.getElementById('tenant_name').value.trim() || null,
       licence_name: document.getElementById('tenant_name').value.trim() || null,
@@ -2488,6 +2526,7 @@ async function updateEntitlementDetails() {
       approved_owner_email: document.getElementById('edit_approved_owner_email').value.trim(),
       owner_enabled: document.getElementById('edit_owner_enabled').value === 'true',
       licence_status: document.getElementById('edit_licence_status').value,
+      warning_period_days: Number(document.getElementById('edit_warning_period_days').value || 0),
       offline_grace_days: Number(document.getElementById('edit_offline_grace_days').value || 0),
       tenant_name: document.getElementById('edit_tenant_name').value.trim() || null,
       licence_name: document.getElementById('edit_tenant_name').value.trim() || null,

@@ -24,6 +24,8 @@ class InstallationRecord(BaseModel):
     approved_owner_email: str
     owner_enabled: bool
     licence_status: str
+    warning_period_days: int = 0
+    warning_started_at: str | None = None
     offline_grace_days: int
     tenant_name: str | None = None
     notes: str | None = None
@@ -37,6 +39,8 @@ class EntitlementRecord(BaseModel):
     approved_owner_email: str
     owner_enabled: bool
     licence_status: str
+    warning_period_days: int = 0
+    warning_started_at: str | None = None
     offline_grace_days: int
     tenant_name: str | None = None
     activation_status: str
@@ -51,6 +55,8 @@ class InstallationUpsertRequest(BaseModel):
     approved_owner_email: str
     owner_enabled: bool = True
     licence_status: str = "active"
+    warning_period_days: int = Field(default=0, ge=0)
+    warning_started_at: str | None = None
     offline_grace_days: int = Field(default=14, ge=0)
     tenant_name: str | None = None
     notes: str | None = None
@@ -72,6 +78,8 @@ class ActivationResponse(BaseModel):
     approved_owner_email: str | None = None
     owner_enabled: bool | None = None
     licence_status: str | None = None
+    warning_period_days: int | None = None
+    warning_started_at: str | None = None
     offline_grace_days: int | None = None
     tenant_name: str | None = None
     activation_status: str | None = None
@@ -83,6 +91,8 @@ class OwnerStatusResponse(BaseModel):
     approved: bool
     licence_status: str | None = None
     owner_enabled: bool = False
+    warning_period_days: int | None = None
+    warning_started_at: str | None = None
     installation_uuid: str | None = None
     activation_status: str | None = None
 
@@ -167,6 +177,8 @@ async def get_owner_status(email: str) -> OwnerStatusResponse:
         approved=record["owner_enabled"] and record["licence_status"] in {"active", "grace"},
         licence_status=record["licence_status"],
         owner_enabled=record["owner_enabled"],
+        warning_period_days=record.get("warning_period_days"),
+        warning_started_at=record.get("warning_started_at"),
         installation_uuid=record["installation_uuid"],
         activation_status=record["activation_status"],
     )

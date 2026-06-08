@@ -34,6 +34,8 @@ class DashboardInstallation(BaseModel):
     approved_owner_email: str
     owner_enabled: bool
     licence_status: str
+    warning_period_days: int = 0
+    warning_started_at: str | None = None
     offline_grace_days: int
     tenant_name: str | None = None
     activation_status: str

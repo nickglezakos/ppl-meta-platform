@@ -5,6 +5,7 @@ import json
 import secrets
 import hashlib
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from core.database import connect_database, get_database_settings
@@ -12,6 +13,8 @@ from core.database import connect_database, get_database_settings
 
 APPLICATION_KEY_PATTERN = re.compile(r"^lic_[0-9a-f]{32}$")
 CURRENT_DEV_APPLICATION_KEY = "lic_6f3c8d1e2b4a5c7d8e9f0a1b2c3d4e5f"
+ACTIVE_LICENCE_STATES = {"active", "grace"}
+IMMEDIATE_SAFEGUARD_STATUSES = {"revoked"}
 
 
 def _connect():
@@ -44,6 +47,8 @@ def _schema_statements() -> list[str]:
             approved_owner_email TEXT NOT NULL,
             owner_enabled BOOLEAN NOT NULL DEFAULT TRUE,
             licence_status TEXT NOT NULL,
+            warning_period_days INTEGER NOT NULL DEFAULT 0,
+            warning_started_at TIMESTAMPTZ,
             offline_grace_days INTEGER NOT NULL DEFAULT 14,
             tenant_name TEXT,
             installation_uuid TEXT,
@@ -61,6 +66,8 @@ def _schema_statements() -> list[str]:
             approved_owner_email TEXT NOT NULL,
             owner_enabled BOOLEAN NOT NULL DEFAULT TRUE,
             licence_status TEXT NOT NULL,
+            warning_period_days INTEGER NOT NULL DEFAULT 0,
+            warning_started_at TIMESTAMPTZ,
             offline_grace_days INTEGER NOT NULL DEFAULT 14,
             tenant_name TEXT,
             notes TEXT,
@@ -179,7 +186,11 @@ def initialize_database() -> None:
         _ensure_column(connection, "authority_invitations", "email_delivered", "BOOLEAN NOT NULL DEFAULT FALSE")
         _ensure_column(connection, "authority_invitations", "email_delivery_message", "TEXT")
         _ensure_column(connection, "entitlements", "licence_name", "TEXT")
+        _ensure_column(connection, "entitlements", "warning_period_days", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(connection, "entitlements", "warning_started_at", "TIMESTAMPTZ")
         _ensure_column(connection, "installations", "licence_name", "TEXT")
+        _ensure_column(connection, "installations", "warning_period_days", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(connection, "installations", "warning_started_at", "TIMESTAMPTZ")
         connection.execute(
             "UPDATE entitlements SET licence_name = COALESCE(licence_name, tenant_name, application_key)"
         )
@@ -218,6 +229,32 @@ def _json_value(value: Any) -> str | None:
 
 def _generate_application_key() -> str:
     return f"lic_{secrets.token_hex(16)}"
+
+
+def _utcnow_isoformat() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _is_valid_runtime_state(*, owner_enabled: bool, licence_status: str | None) -> bool:
+    return owner_enabled is True and licence_status in ACTIVE_LICENCE_STATES
+
+
+def _resolve_warning_started_at(
+    *,
+    existing_entitlement: dict[str, Any] | None,
+    owner_enabled: bool,
+    licence_status: str,
+    requested_warning_started_at: str | None,
+) -> str | None:
+    if _is_valid_runtime_state(owner_enabled=owner_enabled, licence_status=licence_status):
+        return None
+    if licence_status in IMMEDIATE_SAFEGUARD_STATUSES:
+        return requested_warning_started_at or (existing_entitlement or {}).get("warning_started_at")
+    if requested_warning_started_at:
+        return requested_warning_started_at
+    if existing_entitlement and existing_entitlement.get("warning_started_at"):
+        return existing_entitlement["warning_started_at"]
+    return _utcnow_isoformat()
 
 
 def is_machine_application_key(value: str | None) -> bool:
@@ -395,6 +432,7 @@ def ensure_owner_entitlement_for_user(
             "approved_owner_email": user["email"],
             "owner_enabled": True,
             "licence_status": "active",
+            "warning_period_days": 0,
             "offline_grace_days": 14,
             "tenant_name": tenant_name,
             "notes": "Auto-created during owner onboarding",
@@ -1293,6 +1331,19 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
     activation_status = record.get("activation_status") or (
         existing_entitlement.get("activation_status") if existing_entitlement else None
     ) or ("active" if installation_uuid else "pending_activation")
+    owner_enabled = bool(record.get("owner_enabled", existing_entitlement["owner_enabled"] if existing_entitlement else True))
+    licence_status = record.get("licence_status") or (
+        existing_entitlement.get("licence_status") if existing_entitlement else "active"
+    )
+    warning_period_days = record.get("warning_period_days")
+    if warning_period_days is None:
+        warning_period_days = existing_entitlement.get("warning_period_days") if existing_entitlement else 0
+    warning_started_at = _resolve_warning_started_at(
+        existing_entitlement=existing_entitlement,
+        owner_enabled=owner_enabled,
+        licence_status=licence_status,
+        requested_warning_started_at=record.get("warning_started_at"),
+    )
 
     with _connect() as connection:
         connection.execute(
@@ -1304,18 +1355,22 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                 approved_owner_email,
                 owner_enabled,
                 licence_status,
+                warning_period_days,
+                warning_started_at,
                 offline_grace_days,
                 tenant_name,
                 installation_uuid,
                 activation_status,
                 notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(entitlement_uuid) DO UPDATE SET
                 application_key = excluded.application_key,
                 licence_name = excluded.licence_name,
                 approved_owner_email = excluded.approved_owner_email,
                 owner_enabled = excluded.owner_enabled,
                 licence_status = excluded.licence_status,
+                warning_period_days = excluded.warning_period_days,
+                warning_started_at = excluded.warning_started_at,
                 offline_grace_days = excluded.offline_grace_days,
                 tenant_name = excluded.tenant_name,
                 installation_uuid = excluded.installation_uuid,
@@ -1328,8 +1383,10 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                 application_key,
                 licence_name,
                 record["approved_owner_email"],
-                bool(record["owner_enabled"]),
-                record["licence_status"],
+                owner_enabled,
+                licence_status,
+                warning_period_days,
+                warning_started_at,
                 record["offline_grace_days"],
                 record.get("tenant_name"),
                 installation_uuid,
@@ -1348,16 +1405,20 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                     approved_owner_email,
                     owner_enabled,
                     licence_status,
+                    warning_period_days,
+                    warning_started_at,
                     offline_grace_days,
                     tenant_name,
                     notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(installation_uuid) DO UPDATE SET
                     application_key = excluded.application_key,
                     licence_name = excluded.licence_name,
                     approved_owner_email = excluded.approved_owner_email,
                     owner_enabled = excluded.owner_enabled,
                     licence_status = excluded.licence_status,
+                    warning_period_days = excluded.warning_period_days,
+                    warning_started_at = excluded.warning_started_at,
                     offline_grace_days = excluded.offline_grace_days,
                     tenant_name = excluded.tenant_name,
                     notes = excluded.notes,
@@ -1368,8 +1429,10 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                     application_key,
                     licence_name,
                     record["approved_owner_email"],
-                    bool(record["owner_enabled"]),
-                    record["licence_status"],
+                    owner_enabled,
+                    licence_status,
+                    warning_period_days,
+                    warning_started_at,
                     record["offline_grace_days"],
                     record.get("tenant_name"),
                     record.get("notes"),
@@ -1936,6 +1999,8 @@ def _row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "approved_owner_email": row["approved_owner_email"],
         "owner_enabled": bool(row["owner_enabled"]),
         "licence_status": row["licence_status"],
+        "warning_period_days": row["warning_period_days"],
+        "warning_started_at": _timestamp_value(row["warning_started_at"]),
         "offline_grace_days": row["offline_grace_days"],
         "tenant_name": row["tenant_name"],
         "notes": row["notes"],
@@ -1954,6 +2019,8 @@ def _entitlement_row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "approved_owner_email": row["approved_owner_email"],
         "owner_enabled": bool(row["owner_enabled"]),
         "licence_status": row["licence_status"],
+        "warning_period_days": row["warning_period_days"],
+        "warning_started_at": _timestamp_value(row["warning_started_at"]),
         "offline_grace_days": row["offline_grace_days"],
         "tenant_name": row["tenant_name"],
         "activation_status": row["activation_status"],
