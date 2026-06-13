@@ -848,52 +848,11 @@ async def stop_recording(
             f"File: {recording_result.get('file_path')}"
         )
 
-        # Notify VMeta service of recording stop for final batch processing
-        try:
-            import httpx
-            from datetime import datetime
-            
-            # Get collection UUID for this camera
-            collection_uuid = None
-            try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    response = await client.get(
-                        f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}",
-                        headers={"Authorization": f"Bearer {credentials.credentials}"}
-                    )
-                    if response.status_code == 200:
-                        collection_data = response.json()
-                        collection_uuid = collection_data.get("uuid")
-                        logger.info(f"📦 Found collection UUID for stop notification: {collection_uuid}")
-            except Exception as e:
-                logger.warning(f"Could not fetch collection UUID for stop notification: {e}")
-            
-            # Use collection UUID if available, otherwise fallback to device_id
-            collection_id = collection_uuid or device_id
-            
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(
-                    "http://localhost:8008/api/v1/recording/stopped",
-                    json={
-                        "collection_id": collection_id,  # Use UUID when available
-                        "session_uuid": recording_result.get("session_uuid", ""),
-                        "device_id": device_id,
-                        "user_id": current_user.get("sub") or "",
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
-                        "video_count": recording_result.get("segment_count", 0),
-                        "metadata": {
-                            "duration_seconds": recording_result.get("duration_seconds"),
-                            "file_size_bytes": recording_result.get("file_size_bytes")
-                        }
-                    }
-                )
-                logger.info(
-                    f"🛑 Notified VMeta of recording stop: {recording_result.get('session_uuid')} "
-                    f"(collection: {collection_id}, {recording_result.get('segment_count', 0)} videos)"
-                )
-        except Exception as e:
-            logger.warning(f"Failed to notify VMeta of recording stop: {e}")
-            # Don't fail the stop operation if VMeta notification fails
+        # ✅ SCHEDULE VMETA NOTIFICATION AS BACKGROUND TASK (return response immediately)
+        # The VMeta notification for recording stop is now done inside _stop_session_recording
+        # which already posts to /api/v1/recording/stopped. The duplicate here in the endpoint
+        # was causing response delays. This has been removed to ensure instant response.
+        logger.info(f"✅ [RECORD-STOP] Response returning immediately, VMeta notification handled by camera_service")
 
         return {
             "status": "success",

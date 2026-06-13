@@ -1825,6 +1825,7 @@ class CameraDetectionService:
 
         # ✅ DELEGATE TO WORKER THREAD: Stop recording in worker
         worker = recording_info.get("worker")
+        result = None
         if worker:
             cmd_id = worker.send_command({'action': 'stop_recording'})
             result = worker.wait_for_result(cmd_id, timeout=5.0)
@@ -1833,12 +1834,19 @@ class CameraDetectionService:
                 logger.error(f"❌ Worker failed to stop recording: {result.get('error')}")
             else:
                 logger.info(f"✅ Worker stopped recording: {result}")
+        else:
+            logger.warning(f"⚠️ No worker reference in recording_info for {device_id}")
         
         # Get final segment info
         current_segment_path = recording_info["current_segment_path"]
         file_size = os.path.getsize(current_segment_path) if os.path.exists(current_segment_path) else 0
         stopped_at = datetime.datetime.now()
         total_duration = stopped_at - recording_info["started_at"]
+        
+        # 🛑 CRITICAL FIX: Remove from active recordings FIRST so subsequent stop calls return immediately
+        if device_id in self.active_recordings:
+            del self.active_recordings[device_id]
+            logger.info(f"✅ Removed {device_id} from active_recordings")
 
         # Add final segment to recording session
         try:
@@ -1866,7 +1874,7 @@ class CameraDetectionService:
             logger.error(f"Error finalizing recording session {session_uuid}: {e}")
 
         # ✅ v2.24.14: Upload any remaining segments (final segment that didn't rotate)
-        remaining_segments = result.get('remaining_segments', [])
+        remaining_segments = result.get('remaining_segments', []) if result else []
         if remaining_segments:
             logger.info(f"📤 [UPLOAD] Uploading {len(remaining_segments)} remaining segment(s) on stop")
             session_info = result.get('session_info', {})
@@ -1967,15 +1975,8 @@ class CameraDetectionService:
         # Only the video_writer was released above (line 1172)
         logger.info(f"🎬 [INFO] Camera {device_id} capture remains active for streaming and instant detection")
 
-        # Clean up recording info
-        elapsed_time = (
-            datetime.datetime.now()
-            - recording_info.get("started_at", datetime.datetime.now())
-        ).total_seconds()
-        logger.info(
-            f"🎬 [CLEANUP] Removing {device_id} from active_recordings after {elapsed_time:.1f}s"
-        )
-        del self.active_recordings[device_id]
+        # Note: active_recordings cleanup already done above (removed early so subsequent
+        # stop calls return immediately instead of looping on stale state)
 
         # Stop mobile worker for mobile cameras
         is_mobile = recording_info.get("is_mobile", False)
@@ -1988,12 +1989,12 @@ class CameraDetectionService:
             except Exception as e:
                 logger.error(f"❌ [CLEANUP] Failed to stop mobile worker for {device_id}: {e}")
 
-        # Complete face detection session
-        await self._complete_face_detection_session(device_id)
+        # Complete face detection session — fire-and-forget to avoid blocking stop response
+        asyncio.create_task(self._complete_face_detection_session(device_id))
 
-        # Publish recording completion event
+        # Publish recording completion event — fire-and-forget to avoid blocking stop response
         segment_files = recording_info.get("segment_files", [])
-        result = {
+        completion_result = {
             "recording_id": recording_info["recording_id"],
             "session_uuid": session_uuid,
             "duration_seconds": int(total_duration.total_seconds()),
@@ -2005,37 +2006,22 @@ class CameraDetectionService:
             "media_uuid": media_uuid,
             "stopped_at": stopped_at.isoformat(),
         }
+        asyncio.create_task(self._publish_recording_completion_event(device_id, completion_result, user_id))
 
-        await self._publish_recording_completion_event(device_id, result, user_id)
-
-        # Notify VMeta service of recording stop for final batch processing
-        try:
-            import httpx
-            logger.info(f"🛑 [VMETA-NOTIFY] Notifying VMeta of recording stop for {session_uuid}")
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(
-                    "http://localhost:8008/api/v1/recording/stopped",
-                    json={
-                        "collection_id": collection_uuid,  # Use collection UUID for consistency
-                        "session_uuid": session_uuid,
-                        "device_id": device_id,
-                        "user_id": user_id or "",
-                        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-                        "video_count": len(segment_files),
-                        "metadata": {
-                            "duration_seconds": int(total_duration.total_seconds()),
-                            "total_frame_count": recording_info["total_frame_count"]
-                        }
-                    },
-                    headers={"Authorization": f"Bearer {recording_info.get('auth_token')}"} if recording_info.get('auth_token') else {}
-                )
-                logger.info(
-                    f"✅ [VMETA-NOTIFY] VMeta notified of recording stop: {session_uuid} "
-                    f"(collection: {collection_uuid}, {len(segment_files)} videos)"
-                )
-        except Exception as e:
-            logger.warning(f"⚠️ [VMETA-NOTIFY] Failed to notify VMeta of recording stop: {e}")
-            # Don't fail the stop operation if VMeta notification fails
+        # ✅ FIRE-AND-FORGET VMeta notification as background task (non-blocking)
+        auth_token = recording_info.get('auth_token')
+        asyncio.create_task(
+            self._notify_vmeta_stop_background(
+                session_uuid=session_uuid,
+                collection_uuid=collection_uuid,
+                device_id=device_id,
+                user_id=user_id,
+                segment_files=segment_files,
+                total_duration=total_duration,
+                total_frame_count=recording_info["total_frame_count"],
+                auth_token=auth_token,
+            )
+        )
 
         logger.info(
             f"🎬 [SESSION] ✅ Session recording completed for {device_id}: {len(segment_files)} segments"
@@ -4120,6 +4106,42 @@ class CameraDetectionService:
                 self.segment_upload_task.cancel()
             logger.info("📤 [SEGMENT-UPLOAD] Monitor stopped")
     
+    async def _notify_vmeta_stop_background(
+        self, session_uuid: str, collection_uuid: str, device_id: str,
+        user_id: str, segment_files: list, total_duration: datetime.timedelta,
+        total_frame_count: int, auth_token: Optional[str] = None,
+    ):
+        """Fire-and-forget background task to notify VMeta of recording stop."""
+        try:
+            import httpx
+            logger.info(f"🛑 [VMETA-BG] Notifying VMeta of recording stop for {session_uuid}")
+            headers = {}
+            if auth_token:
+                headers["Authorization"] = f"Bearer {auth_token}"
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    "http://localhost:8008/api/v1/recording/stopped",
+                    json={
+                        "collection_id": collection_uuid,
+                        "session_uuid": session_uuid,
+                        "device_id": device_id,
+                        "user_id": user_id or "",
+                        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                        "video_count": len(segment_files),
+                        "metadata": {
+                            "duration_seconds": int(total_duration.total_seconds()),
+                            "total_frame_count": total_frame_count
+                        }
+                    },
+                    headers=headers,
+                )
+                logger.info(
+                    f"✅ [VMETA-BG] VMeta notified of recording stop: {session_uuid} "
+                    f"(collection: {collection_uuid}, {len(segment_files)} videos)"
+                )
+        except Exception as e:
+            logger.warning(f"⚠️ [VMETA-BG] Failed to notify VMeta of recording stop: {e}")
+
     async def _send_vmeta_recording_event(self, device_id: str, event_type: str, details: Dict):
         """Send recording event to vmeta service for continuous pipeline trigger."""
         try:
