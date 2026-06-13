@@ -10,7 +10,7 @@
             "problemMatcher": []
         },
         {
-            "label": "🎨 Start Media Service (Local Python)",
+            "label": "📹 Start Media Service (Local Python)",
             "type": "shell",
             "command": "cd ppl-meta-media && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload",
             "group": "build",
@@ -584,6 +584,30 @@
             "problemMatcher": []
         },
         {
+            "label": "🔍 Bootstrap State Status",
+            "type": "shell",
+            "command": "AUTHORITY_BASE_URL=${input:bootstrapAuthorityBaseUrl} ${workspaceFolder}/scripts/bootstrap-state.sh status",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Bootstrap State Pending",
+            "type": "shell",
+            "command": "if [ -z \"$AUTHORITY_ADMIN_TOKEN\" ] && { [ -z \"$AUTHORITY_ADMIN_EMAIL\" ] || [ -z \"$AUTHORITY_ADMIN_PASSWORD\" ]; }; then echo 'Export AUTHORITY_ADMIN_TOKEN or AUTHORITY_ADMIN_EMAIL and AUTHORITY_ADMIN_PASSWORD before running this task.'; exit 1; fi && AUTHORITY_BASE_URL=${input:bootstrapAuthorityBaseUrl} AUTHORITY_ADMIN_TOKEN=$AUTHORITY_ADMIN_TOKEN AUTHORITY_ADMIN_EMAIL=$AUTHORITY_ADMIN_EMAIL AUTHORITY_ADMIN_PASSWORD=$AUTHORITY_ADMIN_PASSWORD ${workspaceFolder}/scripts/bootstrap-state.sh pending",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "♻️ Bootstrap State Restore",
+            "type": "shell",
+            "command": "if [ -z \"$AUTHORITY_ADMIN_TOKEN\" ] && { [ -z \"$AUTHORITY_ADMIN_EMAIL\" ] || [ -z \"$AUTHORITY_ADMIN_PASSWORD\" ]; }; then echo 'Export AUTHORITY_ADMIN_TOKEN or AUTHORITY_ADMIN_EMAIL and AUTHORITY_ADMIN_PASSWORD before running this task.'; exit 1; fi && AUTHORITY_BASE_URL=${input:bootstrapAuthorityBaseUrl} AUTHORITY_ADMIN_TOKEN=$AUTHORITY_ADMIN_TOKEN AUTHORITY_ADMIN_EMAIL=$AUTHORITY_ADMIN_EMAIL AUTHORITY_ADMIN_PASSWORD=$AUTHORITY_ADMIN_PASSWORD ${workspaceFolder}/scripts/bootstrap-state.sh restore",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
             "label": "📋 View Logs - All Services (Docker)",
             "type": "shell",
             "command": "docker-compose",
@@ -688,7 +712,7 @@
         {
             "label": "📱 Start Frontend (Web)",
             "type": "shell",
-            "command": "echo '🧹 Ensuring port 3000 is free...' && lsof -ti tcp:3000 | xargs kill -9 2>/dev/null || true && cd ppl-meta-frontend && flutter run -d chrome --web-port 3000",
+            "command": "echo '🧹 Ensuring port 3000 is free...' && lsof -ti tcp:3000 | xargs kill -9 2>/dev/null || true && cd ppl-meta-frontend && flutter run -d web-server --web-port 3000 --web-hostname 0.0.0.0",
             "group": "build",
             "isBackground": true,
             "problemMatcher": []
@@ -760,7 +784,7 @@
         {
             "label": "🚀 Start Full Stack (Backend + Frontend)",
             "type": "shell",
-            "command": "echo '🚀 Starting Full PPL Meta Platform (Backend + Frontend)...' && echo 'Starting Backend Services...' && (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Frontend...' && sleep 3 && (echo '🧹 Ensuring port 3000 is free...' && lsof -ti tcp:3000 | xargs kill -9 2>/dev/null || true && cd ppl-meta-frontend && flutter run -d chrome --web-port 3000) & wait",
+            "command": "echo '🚀 Starting Full PPL Meta Platform (Backend + Frontend)...' && echo 'Starting Backend Services...' && (cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload) & (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Frontend...' && sleep 3 && (echo '🧹 Ensuring port 3000 is free...' && lsof -ti tcp:3000 | xargs kill -9 2>/dev/null || true && cd ppl-meta-frontend && flutter run -d web-server --web-port 3000 --web-hostname 0.0.0.0) & wait",
             "group": "build",
             "isBackground": true,
             "problemMatcher": []
@@ -768,14 +792,14 @@
         {
             "label": "🧪 Complete Testing Workflow",
             "type": "shell",
-            "command": "echo '🧪 PPL Meta Platform - Complete Testing Workflow' && echo '========================================================' && echo && echo '1️⃣ Stopping any existing services...' && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && sudo nginx -s quit 2>/dev/null || true && sleep 2 && echo '✅ Cleanup complete' && echo && echo '2️⃣ Starting all services...' && (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & (cd ppl-meta-vision && python src/main_enhanced.py) & (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo '✅ All services starting...' && echo && echo '3️⃣ Waiting for services to initialize...' && sleep 10 && echo && echo '4️⃣ Starting Nginx (will prompt for password)...' && sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && echo '✅ Nginx started' && echo && echo '5️⃣ Running health checks...' && sleep 3 && echo && if curl -s --connect-timeout 2 http://localhost/ >/dev/null 2>&1; then echo '✅ Nginx is running' && echo '📋 Service Status via Nginx:' && for service in health health/node health/media health/gateway health/orchestrator health/vision health/cameras; do echo -n \"  $service: \"; if curl -s --connect-timeout 3 http://localhost/$service >/dev/null 2>&1; then echo '✅ OK'; else echo '❌ FAIL'; fi; done; else echo '❌ Nginx failed to start'; fi && echo && echo '✅ Testing workflow complete!'",
+            "command": "echo '🧪 PPL Meta Platform - Complete Testing Workflow' && echo '========================================================' && echo && echo '1️⃣ Stopping any existing services...' && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && sudo nginx -s quit 2>/dev/null || true && sleep 2 && echo '✅ Cleanup complete' && echo && echo '2️⃣ Starting all services...' && (cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload) & (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & (cd ppl-meta-vision && python src/main_enhanced.py) & (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo '✅ All services starting...' && echo && echo '3️⃣ Waiting for services to initialize...' && sleep 10 && echo && echo '4️⃣ Starting Nginx (will prompt for password)...' && sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && echo '✅ Nginx started' && echo && echo '5️⃣ Running health checks...' && sleep 3 && echo && if curl -s --connect-timeout 2 http://localhost/ >/dev/null 2>&1; then echo '✅ Nginx is running' && echo '📋 Service Status via Nginx:' && for service in health health/node health/media health/gateway health/orchestrator health/vision health/cameras; do echo -n \"  $service: \"; if curl -s --connect-timeout 3 http://localhost/$service >/dev/null 2>&1; then echo '✅ OK'; else echo '❌ FAIL'; fi; done; else echo '❌ Nginx failed to start'; fi && echo && echo '✅ Testing workflow complete!'",
             "group": "test",
             "isBackground": false,
             "problemMatcher": []
         },
         {
             "label": "🔧 Start Bootcore Service (Local Python)",
-            "type": "shell",
+            "command": "echo '🧪 PPL Meta Platform - Complete Testing Workflow' && echo '========================================================' && echo && echo '1️⃣ Stopping any existing services...' && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && sudo nginx -s quit 2>/dev/null || true && sleep 2 && echo '✅ Cleanup complete' && echo && echo '2️⃣ Starting all services...' && (cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload) & (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & (cd ppl-meta-vision && python src/main_enhanced.py) & (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo '✅ All services starting...' && echo && echo '3️⃣ Waiting for services to initialize...' && sleep 10 && echo && echo '4️⃣ Starting Nginx (will prompt for password)...' && sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && echo '✅ Nginx started' && echo && echo '5️⃣ Running health checks...' && sleep 3 && echo && if curl -s --connect-timeout 2 http://localhost/ >/dev/null 2>&1; then echo '✅ Nginx is running' && echo '📋 Service Status via Nginx:' && for service in health health/node health/media health/gateway health/orchestrator health/vision health/cameras; do echo -n \"  $service: \"; if curl -s --connect-timeout 3 http://localhost/$service >/dev/null 2>&1; then echo '✅ OK'; else echo '❌ FAIL'; fi; done; else echo '❌ Nginx failed to start'; fi && echo && [truncated]",
             "command": "cd ppl-meta-bootcore/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8007 --reload",
             "isBackground": true,
             "group": "build"

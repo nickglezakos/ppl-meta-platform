@@ -246,7 +246,8 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
       },
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isWide = constraints.maxWidth >= 700;
+          final isWide = constraints.maxWidth >= 900;
+          final cardMainExtent = constraints.maxWidth >= 1200 ? 430.0 : 470.0;
           return CustomScrollView(
             slivers: [
               SliverPadding(
@@ -266,11 +267,11 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
                 SliverPadding(
                   padding: const EdgeInsets.all(16),
                   sliver: SliverGrid(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: constraints.maxWidth >= 1400 ? 3 : 2,
                       mainAxisSpacing: 16,
                       crossAxisSpacing: 16,
-                      childAspectRatio: 1.5,
+                      mainAxisExtent: cardMainExtent,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) => CameraCard(

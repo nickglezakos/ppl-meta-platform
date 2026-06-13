@@ -1,10 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import '../core/config.dart';
 
 /// Service for processing media with Vision AI (VMeta Single-Media MVR endpoint)
 class VisionProcessingService extends ChangeNotifier {
   final Dio _dio;
-  final String _vmetaBaseUrl = 'http://localhost:8008';
   final String? _authToken;
   
   // State
@@ -46,11 +46,11 @@ class VisionProcessingService extends ChangeNotifier {
       print('🔍 Vision Processing Service: Starting processing...');
       print('   Media IDs count: ${mediaIds.length}');
       print('   Media IDs: $mediaIds');
-      print('   Endpoint: $_vmetaBaseUrl/api/v1/mvr-people/process-media');
+      print('   Endpoint: ${Config.vmetaServiceUrl}/api/v1/mvr-people/process-media');
       
       // Call VMeta Single-Media MVR endpoint
       final response = await _dio.post(
-        '$_vmetaBaseUrl/api/v1/mvr-people/process-media',
+        '${Config.vmetaServiceUrl}/api/v1/mvr-people/process-media',
         options: Options(
           headers: {
             'Authorization': 'Bearer $token',

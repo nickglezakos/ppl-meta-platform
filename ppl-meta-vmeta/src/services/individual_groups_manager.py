@@ -764,11 +764,15 @@ class IndividualGroupsManager:
                 COALESCE(
                     (
                         WITH RECURSIVE merge_chain AS (
-                            SELECT gm.individual_uuid AS current_uuid, 0 AS depth
+                            SELECT gm.individual_uuid AS current_uuid, 0 AS depth,
+                                   ARRAY[gm.individual_uuid] AS visited
                             UNION ALL
-                            SELECT mh.super_individual_uuid AS current_uuid, mc.depth + 1 AS depth
+                            SELECT mh.super_individual_uuid AS current_uuid, mc.depth + 1 AS depth,
+                                   mc.visited || mh.super_individual_uuid
                             FROM mvr_merge_hierarchy mh
                             JOIN merge_chain mc ON mh.merged_mvr_uuid = mc.current_uuid
+                            WHERE mc.depth < 20
+                              AND NOT (mh.super_individual_uuid = ANY(mc.visited))
                         )
                         SELECT current_uuid
                         FROM merge_chain
@@ -921,11 +925,15 @@ class IndividualGroupsManager:
                 canonical_super_row = await conn.fetchrow(
                     """
                     WITH RECURSIVE merge_chain AS (
-                        SELECT $1::uuid AS current_uuid, 0 AS depth
+                        SELECT $1::uuid AS current_uuid, 0 AS depth,
+                               ARRAY[$1::uuid] AS visited
                         UNION ALL
-                        SELECT mh.super_individual_uuid AS current_uuid, mc.depth + 1 AS depth
+                        SELECT mh.super_individual_uuid AS current_uuid, mc.depth + 1 AS depth,
+                               mc.visited || mh.super_individual_uuid
                         FROM mvr_merge_hierarchy mh
                         JOIN merge_chain mc ON mh.merged_mvr_uuid = mc.current_uuid
+                        WHERE mc.depth < 20
+                          AND NOT (mh.super_individual_uuid = ANY(mc.visited))
                     )
                     SELECT current_uuid
                     FROM merge_chain

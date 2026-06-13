@@ -132,6 +132,43 @@ class AuthService {
     }
   }
 
+  Future<AuthResponse> bootstrapActivate(
+    String username,
+    String email,
+    String password,
+    String applicationKey,
+  ) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/licensing/bootstrap/activate',
+        data: {
+          'username': username,
+          'email': email,
+          'password': password,
+          'application_key': applicationKey,
+        },
+        options: Options(
+          extra: const {
+            'skipAuthHeader': true,
+            'skipAuthRecovery': true,
+          },
+        ),
+      );
+
+      if (response.data == null) {
+        throw const AuthenticationException('Invalid response from bootstrap activation');
+      }
+
+      final authResponse = AuthResponse.fromJson(response.data!);
+      await _storeToken(authResponse.accessToken);
+      _apiClient.setAuthToken(authResponse.accessToken);
+      _notifyAuthenticationSuccess();
+      return authResponse;
+    } on DioException catch (e) {
+      throw _handleApiError(e);
+    }
+  }
+
   // Logout method
   Future<void> logout() async {
     try {

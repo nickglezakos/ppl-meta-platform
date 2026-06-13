@@ -16,7 +16,7 @@ class WorkflowWidgetApiClient {
     String? baseUrl,
     ApiClient? apiClient,
     required dynamic authManager, // Changed from AuthManager to dynamic
-  }) : baseUrl = baseUrl ?? 'http://localhost:8080', // Use gateway URL
+  }) : baseUrl = baseUrl ?? AppConfig.instance.apiBaseUrl,
         _authManager = authManager {
     // ALWAYS create our own ApiClient to avoid baseUrl conflicts
     // Do NOT reuse the shared instance as it causes baseUrl to be overwritten

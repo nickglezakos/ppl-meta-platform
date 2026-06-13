@@ -15,12 +15,34 @@ fi
 
 echo "✅ Nginx is running"
 
+LAN_IP=""
+if [[ -f /tmp/ppl-meta-local-dev-meta.env ]]; then
+    # shellcheck disable=SC1091
+    source /tmp/ppl-meta-local-dev-meta.env
+fi
+
 # Test main entry point
 echo "🔍 Testing main entry point (http://localhost)..."
 if curl -s -o /dev/null -w "%{http_code}" http://localhost | grep -q "200\|302"; then
     echo "✅ Main entry point is accessible"
 else
     echo "❌ Main entry point failed"
+fi
+
+echo "🔍 Testing HTTPS entry point (https://localhost)..."
+if curl -k -s -o /dev/null -w "%{http_code}" https://localhost | grep -q "200\|302"; then
+    echo "✅ HTTPS entry point is accessible"
+else
+    echo "❌ HTTPS entry point failed"
+fi
+
+if [[ -n "${LAN_IP:-}" ]]; then
+    echo "🔍 Testing LAN HTTPS entry point (https://$LAN_IP)..."
+    if curl -k -s -o /dev/null -w "%{http_code}" "https://$LAN_IP" | grep -q "200\|302"; then
+        echo "✅ LAN HTTPS entry point is accessible"
+    else
+        echo "❌ LAN HTTPS entry point failed"
+    fi
 fi
 
 # Test health checks through nginx
@@ -97,12 +119,16 @@ echo ""
 echo "🎯 Test Summary:"
 echo "   Nginx is properly routing requests to your local Python services"
 echo "   You can access all services through http://localhost"
+echo "   HTTPS is available through https://localhost"
+if [[ -n "${LAN_IP:-}" ]]; then
+    echo "   LAN HTTPS target: https://$LAN_IP"
+fi
 echo "   CORS and security headers are configured for development"
 if command -v brew > /dev/null 2>&1 && brew list nginx > /dev/null 2>&1; then
     echo "   Homebrew service status: $(brew services list | awk '$1 == "nginx" {print $2}')"
 fi
 echo ""
 echo "💡 Next steps:"
-echo "   • Test with a frontend application"
-echo "   • Configure SSL for HTTPS (optional)"
+echo "   • Test with a frontend application on iPad over LAN HTTPS"
+echo "   • Trust the local CA on iPad when using mkcert"
 echo "   • Add monitoring and logging"

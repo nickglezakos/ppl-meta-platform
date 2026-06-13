@@ -41,6 +41,27 @@ It also includes the latest merge-related work currently reflected in the repo:
 - propagation of merge statistics through `sessionData`
 - backend-owned MVR merge settings (`merge_rule`, `merge_threshold`) exposed by orchestrator
 
+## Flowchart
+
+```mermaid
+flowchart TD
+   A[Collection selected] --> B[Media service resolves video UUIDs]
+   B --> C[vmeta search/by-videos]
+   C --> D[Search existing MVR people]
+   D --> E{Merge rule}
+   E -->|none| F[Return raw search results]
+   E -->|semi / auto| G[Persisted merge session]
+   G --> H[search/by-videos/persisted-merge-session]
+   H --> I[Store merged results + session data]
+   I --> J[Open cross-video analysis]
+   J --> K{hierarchical_merge_applied?}
+   K -->|Yes| L[Load hierarchy-backed super-individual analysis]
+   K -->|No| M[Load direct MVR analysis]
+   L --> N[Manual merge uses /merge/hierarchical]
+   M --> N
+   N --> O[Update merge statistics and reload analysis]
+```
+
 ## High-Level Flow
 
 1. The user selects a collection and time range.
@@ -75,6 +96,7 @@ Merge settings files:
 ## Current Merge Settings (Headless Source of Truth)
 
 MVR merge settings are now backend-authoritative and managed by orchestrator.
+The same endpoint also returns `stored_comparison_enabled`, which the frontend keeps backend-owned alongside merge rule and threshold.
 
 Endpoint:
 - `GET /api/v1/settings/workflow/mvr-merge`
@@ -91,15 +113,16 @@ Backend setting keys:
 Current defaults:
 - `merge_rule = semi`
 - `merge_threshold = 0.70`
+- `stored_comparison_enabled = false`
 
 Validation/range constraints:
 - threshold min `0.30`
 - threshold max `0.95`
 
 Frontend behavior in headless mode:
-- frontend loads merge rule and threshold from orchestrator during settings load
-- frontend updates merge rule/threshold by calling orchestrator `PUT /mvr-merge`
-- frontend intentionally does **not** persist these two fields in local SharedPreferences
+- frontend loads merge rule, threshold, and stored-comparison flag from orchestrator during settings load
+- frontend updates these backend-owned fields by calling orchestrator `PUT /mvr-merge`
+- frontend intentionally does **not** persist these fields in local SharedPreferences
 - local settings parsing remains backward-compatible when merge keys are absent
 
 ## Search Phase
@@ -235,18 +258,21 @@ This is supported server-side today.
 
 ### 2. Explicit merge after search in the frontend
 
-The main UI currently uses explicit merge-after-search instead of setting `auto_merge` on the original search call.
+The collection flow does not merge on the initial `/search/by-videos` request.
+Instead it promotes the search results into a persisted merge session.
 
 This flow is implemented in:
 - `ppl-meta-frontend/lib/screens/collections_screen.dart`
+- `ppl-meta-frontend/lib/services/media_api_client.dart`
 
 It:
 1. reads `_trackingSessionData['search_results']`
-2. extracts all `mvr_people_uuid` values
-3. posts them to `/api/v1/mvr-people/merge/hierarchical`
-4. reads back `super_individuals` and merge `statistics`
-5. stores those in updated session data
-6. navigates to the cross-video analysis screen using the super-individual UUIDs
+2. extracts the current video and camera UUIDs plus the active date window
+3. calls `searchPersistedMergedMVRPeopleByVideos(...)`
+4. hits `/api/v1/mvr-people/search/by-videos/persisted-merge-session`
+5. reads back `search_session_uuid` plus the merged `mvr_people` payload
+6. stores the merged results, merge statistics, and persisted session UUID in `sessionData`
+7. navigates to the cross-video analysis screen using the merged UUIDs
 
 This is the most visible part of the latest MVR merge work in the frontend.
 
@@ -460,11 +486,11 @@ After a successful merge, the screen clears the selection and reloads cross-vide
 
 The latest relevant work visible in this code includes the following.
 
-### 1. Search-first, merge-second workflow
+### 1. Search-first, persisted-merge-session-second workflow
 
 The collection flow now clearly separates:
 - fetching existing MVR people by video UUIDs
-- explicitly merging them through the hierarchical merge endpoint
+- promoting them through the persisted merge-session endpoint
 - carrying the merge result forward into analysis
 
 This gives the UI clearer control over when merge happens and what statistics are shown.
@@ -477,6 +503,8 @@ The frontend now preserves merge context in `sessionData`, especially:
 - `pre_merge_count`
 - `post_merge_count`
 - `search_results`
+- `persisted_merge_session_uuid`
+- `persisted_merge_session_reused`
 
 That allows downstream screens to know whether they should load hierarchy-backed super-individuals.
 
@@ -486,7 +514,7 @@ That allows downstream screens to know whether they should load hierarchy-backed
 
 ### 4. Merge statistics surfaced to the user
 
-`CollectionsScreen` now displays hierarchical merge summary information such as:
+`CollectionsScreen` now displays merge summary information such as:
 - original MVR people count
 - final unique individuals count
 - merges performed
@@ -528,7 +556,7 @@ The preferred flow is:
 
 ### 2. Search endpoint supports auto-merge, but UI mainly merges explicitly
 
-The backend has built-in support for `auto_merge=true`, but the visible frontend flow currently performs merge as a deliberate step after search.
+The backend has built-in support for `auto_merge=true`, but the visible frontend flow currently prefers the persisted merge-session path in the collection workflow and uses the hierarchical merge endpoint for manual analysis-time merge.
 
 This means there are two valid integration patterns in the codebase.
 
@@ -603,10 +631,11 @@ Existing related doc:
 
 The current MVR merge functionality is a search-result consolidation pipeline.
 
-The frontend first searches existing MVR people by video UUIDs, then optionally merges duplicates through the hierarchical merge endpoint, then navigates to the cross-video analysis screen using super-individual UUIDs. The backend supplies the hierarchy math and persistence, while the frontend supplies the session-state propagation and hierarchy-aware rendering.
+The frontend first searches existing MVR people by video UUIDs, then either promotes that result through the persisted merge-session endpoint or performs manual hierarchical merge in analysis, and then navigates to the cross-video analysis screen using the merged UUIDs. The backend supplies the hierarchy math and persistence, while the frontend supplies the session-state propagation and hierarchy-aware rendering.
 
 The latest work in this area made the pipeline much clearer and more robust by:
 - separating search from merge
+- adding persisted merge-session reuse for the collection flow
 - surfacing merge statistics in the UI
 - carrying merge state into analysis explicitly
 - loading merged results through hierarchy rather than flattening them back into duplicate cards

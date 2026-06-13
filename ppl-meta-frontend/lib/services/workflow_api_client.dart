@@ -15,7 +15,7 @@ class WorkflowApiClient {
   WorkflowApiClient({
     String? baseUrl,
     ApiClient? apiClient,
-  }) : baseUrl = baseUrl ?? 'http://localhost:8080' {
+  }) : baseUrl = baseUrl ?? AppConfig.instance.apiBaseUrl {
     // Use provided ApiClient or create new one
     _apiClient = apiClient ?? ApiClient(AppConfig.instance);
     

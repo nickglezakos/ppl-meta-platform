@@ -201,6 +201,44 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  Future<bool> bootstrapActivate(
+    String username,
+    String email,
+    String password,
+    String applicationKey,
+  ) async {
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      await _authService.bootstrapActivate(username, email, password, applicationKey);
+
+      final user = await _authService.getCurrentUser();
+      _logger.i('AuthNotifier: User fetched after bootstrap activation: ${user != null ? 'FOUND (${user.username})' : 'NULL'}');
+
+      if (user != null) {
+        state = AuthState.authenticated(user);
+      } else {
+        state = state.copyWith(
+          isAuthenticated: true,
+          isLoading: false,
+          error: null,
+        );
+      }
+      return true;
+    } catch (e) {
+      String errorMessage = 'Bootstrap activation failed';
+      if (e is AuthenticationException) {
+        errorMessage = e.message;
+      }
+
+      state = state.copyWith(
+        isLoading: false,
+        error: errorMessage,
+      );
+      return false;
+    }
+  }
+
   /// Logout user
   Future<void> logout() async {
     state = state.copyWith(isLoading: true, error: null);

@@ -1,15 +1,14 @@
 #!/bin/bash
 
 # PPL Meta Platform - Nginx Local Development Setup Script
-# This script helps set up nginx for local development
+# Starts nginx with LAN-ready HTTPS and auto-generated local certs.
 
-set -e
+set -euo pipefail
 
 echo "🌐 PPL Meta Platform - Nginx Local Development Setup"
 echo "=================================================="
 
-# Check if nginx is installed
-if ! command -v nginx &> /dev/null; then
+if ! command -v nginx >/dev/null 2>&1; then
     echo "❌ Nginx is not installed."
     echo "Please install nginx first:"
     echo "  macOS: brew install nginx"
@@ -20,144 +19,127 @@ fi
 
 echo "✅ Nginx is installed: $(nginx -v 2>&1)"
 
-# Get the current directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NGINX_CONFIG="$REPO_ROOT/docs/deployment/nginx/nginx-local-dev.conf"
+CERT_SCRIPT="$REPO_ROOT/scripts/generate-nginx-local-certs.sh"
+CERT_META_FILE="/tmp/ppl-meta-local-dev-meta.env"
 
-# Check if config file exists
 if [[ ! -f "$NGINX_CONFIG" ]]; then
     echo "❌ Nginx configuration file not found: $NGINX_CONFIG"
     exit 1
 fi
 
-echo "✅ Nginx configuration found: $NGINX_CONFIG"
-
-use_brew_service=0
-if [[ "$(uname -s)" == "Darwin" ]] && command -v brew &> /dev/null; then
-    if brew list nginx &> /dev/null; then
-        use_brew_service=1
-        echo "✅ Homebrew nginx detected - will use 'brew services' to keep it alive across reboots"
-    fi
+if [[ ! -x "$CERT_SCRIPT" ]]; then
+    chmod +x "$CERT_SCRIPT"
 fi
 
-# Test the configuration
-echo "🧪 Testing nginx configuration..."
-if [[ $use_brew_service -eq 1 ]]; then
-    nginx -t -c "$NGINX_CONFIG"
+echo "🔐 Generating local HTTPS cert for current LAN IP..."
+"$CERT_SCRIPT" >/dev/null
+
+if [[ -f "$CERT_META_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$CERT_META_FILE"
 else
-    sudo nginx -t -c "$NGINX_CONFIG"
+    echo "❌ Certificate metadata not found: $CERT_META_FILE"
+    exit 1
 fi
-if [[ $? -eq 0 ]]; then
+
+echo "✅ Nginx configuration found: $NGINX_CONFIG"
+echo "✅ HTTPS certificate mode: ${CERT_MODE}"
+
+echo "🧪 Testing nginx configuration..."
+if sudo nginx -t -c "$NGINX_CONFIG"; then
     echo "✅ Nginx configuration is valid"
 else
     echo "❌ Nginx configuration has errors"
     exit 1
 fi
 
-# Check if any nginx processes are running
-if pgrep nginx > /dev/null; then
+if pgrep nginx >/dev/null 2>&1; then
     echo "⚠️  Nginx is already running. Stopping existing processes..."
     nginx -s quit >/dev/null 2>&1 || true
-    if [[ $use_brew_service -eq 1 ]]; then
+    if command -v brew >/dev/null 2>&1 && brew list nginx >/dev/null 2>&1; then
         brew services stop nginx >/dev/null 2>&1 || true
-    else
-        sudo nginx -s quit 2>/dev/null || sudo pkill nginx
     fi
+    sudo nginx -s quit 2>/dev/null || sudo pkill nginx || true
     sleep 2
 fi
 
-# Check if the services are running
 echo "🔍 Checking if Python services are running..."
-
 services_running=0
 
-if curl -s http://localhost:8001/api/v1/health > /dev/null 2>&1; then
+if curl -s http://localhost:8001/api/v1/health >/dev/null 2>&1; then
     echo "✅ Node Service (8001) is running"
-    ((services_running++))
+    ((services_running++)) || true
 else
     echo "❌ Node Service (8001) is not running"
 fi
 
-if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+if curl -s http://localhost:8000/health >/dev/null 2>&1; then
     echo "✅ Media Service (8000) is running"
-    ((services_running++))
+    ((services_running++)) || true
 else
     echo "❌ Media Service (8000) is not running"
 fi
 
-if curl -s http://localhost:8080/health > /dev/null 2>&1; then
+if curl -s http://localhost:8080/health >/dev/null 2>&1; then
     echo "✅ Gateway Service (8080) is running"
-    ((services_running++))
+    ((services_running++)) || true
 else
     echo "❌ Gateway Service (8080) is not running"
 fi
 
-if curl -s http://localhost:8002/health > /dev/null 2>&1; then
+if curl -s http://localhost:8002/health >/dev/null 2>&1; then
     echo "✅ Orchestrator Service (8002) is running"
-    ((services_running++))
+    ((services_running++)) || true
 else
     echo "❌ Orchestrator Service (8002) is not running"
 fi
 
-if [[ $services_running -eq 0 ]]; then
+if [[ "$services_running" -eq 0 ]]; then
     echo "❌ No services are running. Please start the Python services first."
     echo "You can use VS Code task: '🚀 Start All Local Python Services'"
     exit 1
-elif [[ $services_running -lt 4 ]]; then
+elif [[ "$services_running" -lt 4 ]]; then
     echo "⚠️  Only $services_running out of 4 services are running."
     echo "Nginx will still start, but some routes may not work."
 fi
 
-# Start nginx
 echo "🚀 Starting nginx with local development configuration..."
-if [[ $use_brew_service -eq 1 ]]; then
-    BREW_PREFIX="$(brew --prefix)"
-    mkdir -p "$BREW_PREFIX/etc/nginx/servers"
-    cp "$NGINX_CONFIG" "$BREW_PREFIX/etc/nginx/nginx.conf"
-    if brew services start nginx; then
-        sleep 2
-    else
-        echo "⚠️  Failed to start nginx via brew services; falling back to direct nginx start"
-        if nginx -c "$NGINX_CONFIG"; then
-            use_brew_service=0
-        else
-            echo "❌ Failed to start nginx via direct nginx start after brew services failure"
-            exit 1
-        fi
-    fi
-elif sudo nginx -c "$NGINX_CONFIG"; then
+if sudo nginx -c "$NGINX_CONFIG"; then
     :
 else
     echo "❌ Failed to start nginx"
     exit 1
 fi
 
-if curl -s http://localhost/health > /dev/null 2>&1; then
+if curl -s http://localhost/health >/dev/null 2>&1; then
     echo "✅ Nginx started successfully!"
     echo ""
     echo "🌐 Your services are now available at:"
-    echo "   Main Entry Point: http://localhost"
-    echo "   API Gateway:      http://localhost/api/"
-    echo "   User Management:  http://localhost/api/v1/users/"
-    echo "   Authentication:   http://localhost/api/v1/auth/"
-    echo "   Media Service:    http://localhost/api/v1/media/"
-    echo "   Orchestrator:     http://localhost/api/v1/orchestrate/"
+    echo "   Main Entry Point (HTTP):  http://localhost"
+    echo "   Main Entry Point (HTTPS): https://localhost"
+    echo "   LAN HTTPS (current IP):   https://${LAN_IP}"
     echo ""
     echo "🏥 Health Checks:"
-    echo "   All Services:     http://localhost/health"
-    echo "   Node Service:     http://localhost/health/node"
-    echo "   Media Service:    http://localhost/health/media"
-    echo "   Gateway Service:  http://localhost/health/gateway"
-    echo "   Orchestrator:     http://localhost/health/orchestrator"
+    echo "   HTTP:  http://localhost/health"
+    echo "   HTTPS: https://localhost/health"
     echo ""
-    if [[ $use_brew_service -eq 1 ]]; then
-        echo "📋 To stop nginx: brew services stop nginx"
-        echo "🔄 To reload config: nginx -s reload"
-        echo "♻️  Auto-start on login/reboot is enabled through Homebrew services"
+    echo "📋 To stop nginx: sudo nginx -s quit"
+    echo "🔄 To reload config: sudo nginx -s reload"
+    echo ""
+    if [[ "$CERT_MODE" == "mkcert" ]]; then
+        echo "📱 iPad trust setup (recommended once):"
+        echo "   1) Install mkcert root CA on iPad"
+        echo "      - Find it on Mac: mkcert -CAROOT"
+        echo "      - Transfer rootCA.pem to iPad and install profile"
+        echo "   2) Enable full trust on iPad"
+        echo "      Settings > General > About > Certificate Trust Settings"
     else
-        echo "📋 To stop nginx: sudo nginx -s quit"
-        echo "🔄 To reload config: sudo nginx -s reload"
+        echo "⚠️  OpenSSL self-signed cert was used."
+        echo "   iPad may show certificate warnings and secure-context features can remain restricted."
+        echo "   Install mkcert for trusted local HTTPS: brew install mkcert nss"
     fi
 else
     echo "❌ Nginx started but /health is not reachable"

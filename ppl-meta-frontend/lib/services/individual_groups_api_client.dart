@@ -328,7 +328,9 @@ class IndividualGroupsApiClient {
   /// Get thumbnail URL for an individual
   String getThumbnailUrl(String individualId, {String size = 'medium'}) {
     final baseUrl = _apiClient.baseUrl;
-    return '$baseUrl/api/v1/individuals/$individualId/thumbnail?size=$size';
+    return AppConfig.normalizeBrowserUrl(
+      '$baseUrl/api/v1/individuals/$individualId/thumbnail?size=$size',
+    );
   }
 
   /// Generate thumbnail for an individual

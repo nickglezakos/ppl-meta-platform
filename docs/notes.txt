@@ -7,7 +7,13 @@ NewPassword234!
 curl -X POST 'http://localhost:8001/api/v1/users/login' \§
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=fresh.user@example.com&password=NewPassword234!' 
- 
+
+
+github push
+
+./scripts/git-push-release.sh
+
+
 
 Authority
 https://authority.eyenet-vision.com/admin
@@ -177,6 +183,5 @@ https://levelup.gitconnected.com/python-stop-waiting-for-your-python-code-to-fin
 
 
 ************************************************************************
-
 
 

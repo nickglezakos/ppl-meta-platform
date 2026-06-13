@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 
 import 'package:excel/excel.dart' hide Border;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -984,6 +985,14 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     if (effectiveSessionUuid != null && effectiveSessionUuid.isNotEmpty) {
       sessionResponse = await _apiClient.getSession(effectiveSessionUuid);
       resultResponse = await _apiClient.getResult(effectiveSessionUuid);
+
+      // `getResult` can advance the backend session to a terminal state
+      // (grant/fail/expiry). Re-fetch the live session after that mutation so
+      // the execution card and polling state do not remain stuck on the older
+      // pre-result snapshot.
+      if (resultResponse.success) {
+        sessionResponse = await _apiClient.getSession(effectiveSessionUuid);
+      }
     }
 
     if (!mounted) {
@@ -999,6 +1008,10 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
 
     if (_autoRefreshExecution && _hasTerminalExecutionState()) {
       _setAutoRefreshExecution(false);
+    }
+
+    if (effectiveSessionUuid != null && effectiveSessionUuid.isNotEmpty) {
+      unawaited(_loadSessionsPage(offset: _sessionsPage.offset));
     }
 
     _showTerminalFailureAlertIfNeeded();
@@ -2917,17 +2930,293 @@ class _PresenceQrScannerSheet extends StatefulWidget {
 }
 
 class _PresenceQrScannerSheetState extends State<_PresenceQrScannerSheet> {
+  static final bool _useIosWebScannerFlow =
+      kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
   final TextEditingController _controller = TextEditingController();
   final MobileScannerController _scannerController = MobileScannerController(
+    autoStart: !_useIosWebScannerFlow,
+    facing: _useIosWebScannerFlow ? CameraFacing.front : CameraFacing.back,
     formats: const [BarcodeFormat.qrCode],
   );
   bool _hasDetectedCode = false;
+  bool _isStartingScanner = false;
+  String? _scannerErrorMessage;
+  Future<void>? _pendingScannerStart;
+  CameraFacing _selectedCameraFacing = CameraFacing.front;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_useIosWebScannerFlow) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_startScanner());
+      });
+    }
+  }
 
   @override
   void dispose() {
     _scannerController.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _startScanner({bool force = false}) async {
+    if (_pendingScannerStart != null) {
+      await _pendingScannerStart;
+      return;
+    }
+
+    final pendingStart = _startScannerInternal(force: force);
+    _pendingScannerStart = pendingStart;
+
+    try {
+      await pendingStart;
+    } finally {
+      if (identical(_pendingScannerStart, pendingStart)) {
+        _pendingScannerStart = null;
+      }
+    }
+  }
+
+  Future<void> _startScannerInternal({bool force = false}) async {
+    if (_hasDetectedCode || _isStartingScanner) {
+      return;
+    }
+
+    final state = _scannerController.value;
+    if (!force && (state.isStarting || state.isRunning)) {
+      return;
+    }
+
+    setState(() {
+      _isStartingScanner = true;
+      _scannerErrorMessage = null;
+    });
+
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+
+      if (!mounted) {
+        return;
+      }
+
+      final latestState = _scannerController.value;
+      if (!force && (latestState.isStarting || latestState.isRunning)) {
+        return;
+      }
+
+      await _scannerController.start(cameraDirection: _selectedCameraFacing);
+    } on MobileScannerException catch (error) {
+      if (error.errorCode == MobileScannerErrorCode.controllerInitializing) {
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _scannerErrorMessage = _scannerMessageFromException(error);
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _scannerErrorMessage = 'Unable to start the camera scanner on this device.';
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isStartingScanner = false;
+      });
+    }
+  }
+
+  Future<void> _switchCamera() async {
+    if (!_useIosWebScannerFlow) {
+      return;
+    }
+
+    final nextFacing = _selectedCameraFacing == CameraFacing.front
+        ? CameraFacing.back
+        : CameraFacing.front;
+
+    setState(() {
+      _selectedCameraFacing = nextFacing;
+      _scannerErrorMessage = null;
+    });
+
+    if (_scannerController.value.isRunning) {
+      await _scannerController.stop();
+    }
+
+    await _startScanner(force: true);
+  }
+
+  String _cameraLabel() {
+    return _selectedCameraFacing == CameraFacing.front ? 'Front Camera' : 'Back Camera';
+  }
+
+  String _scannerMessageFromException(MobileScannerException error) {
+    return error.errorDetails?.message ?? 'Unable to start the camera scanner on this device.';
+  }
+
+  void _handleDetect(BarcodeCapture capture) {
+    if (_hasDetectedCode) {
+      return;
+    }
+    for (final barcode in capture.barcodes) {
+      final value = barcode.rawValue;
+      if (value != null && value.trim().isNotEmpty) {
+        _submitValue(value);
+        return;
+      }
+    }
+  }
+
+  Widget _buildDefaultScannerContent() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Web QR Scanner', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        const Text('Scan from the device camera when available, or paste scanned QR data manually. This accepts raw station tokens and full JSON payloads such as owner identity QR data.'),
+        const SizedBox(height: 12),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            height: 280,
+            child: MobileScanner(
+              controller: _scannerController,
+              onDetect: _handleDetect,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIosScannerWidget() {
+    return ValueListenableBuilder<MobileScannerState>(
+      valueListenable: _scannerController,
+      builder: (context, state, _) {
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            MobileScanner(
+              controller: _scannerController,
+              placeholderBuilder: (_) => const ColoredBox(color: Colors.black),
+              errorBuilder: (context, error) {
+                return ColoredBox(
+                  color: Colors.black,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        _scannerMessageFromException(error),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                );
+              },
+              onDetect: _handleDetect,
+            ),
+            _buildScannerOverlay(state),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildIosScannerContent() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Web QR Scanner', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        const Text('Scan from the device camera when available, or paste scanned QR data manually. This accepts raw station tokens and full JSON payloads such as owner identity QR data.'),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Selected camera: ${_cameraLabel()} (both cameras open directly in QR scanning mode)',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: _isStartingScanner ? null : _switchCamera,
+              icon: const Icon(Icons.cameraswitch_outlined),
+              label: const Text('Switch Camera'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            height: 280,
+            child: _buildIosScannerWidget(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScannerOverlay(MobileScannerState state) {
+    final errorMessage = _scannerErrorMessage ?? state.error?.errorDetails?.message;
+    if (!_useIosWebScannerFlow && errorMessage == null) {
+      return const SizedBox.shrink();
+    }
+
+    if (state.isRunning) {
+      return const SizedBox.shrink();
+    }
+
+    final description = errorMessage == null
+        ? 'Starting ${_cameraLabel().toLowerCase()} in QR scanning mode.'
+        : 'Camera access did not start. Check the browser camera permission for this site, then retry.';
+
+    return Positioned.fill(
+      child: ColoredBox(
+        color: Colors.black.withValues(alpha: 0.72),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.qr_code_scanner, color: Colors.white, size: 40),
+              const SizedBox(height: 12),
+              Text(
+                errorMessage ?? 'Camera preview is waiting to start.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                description,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70),
+              ),
+              if (errorMessage != null) ...[
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: _isStartingScanner ? null : () => _startScanner(force: true),
+                  child: Text(_isStartingScanner ? 'Starting camera...' : 'Retry Camera'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _submitValue(String value) {
@@ -2949,31 +3238,10 @@ class _PresenceQrScannerSheetState extends State<_PresenceQrScannerSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Web QR Scanner', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            const Text('Scan from the device camera when available, or paste scanned QR data manually. This accepts raw station tokens and full JSON payloads such as owner identity QR data.'),
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                height: 280,
-                child: MobileScanner(
-                  controller: _scannerController,
-                  onDetect: (capture) {
-                    if (_hasDetectedCode) {
-                      return;
-                    }
-                    for (final barcode in capture.barcodes) {
-                      final value = barcode.rawValue;
-                      if (value != null && value.trim().isNotEmpty) {
-                        _submitValue(value);
-                        return;
-                      }
-                    }
-                  },
-                ),
-              ),
-            ),
+            if (_useIosWebScannerFlow)
+              _buildIosScannerContent()
+            else
+              _buildDefaultScannerContent(),
             const SizedBox(height: 12),
             TextField(
               controller: _controller,

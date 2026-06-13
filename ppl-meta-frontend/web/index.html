@@ -33,6 +33,128 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <script>
+    (function () {
+      // Rewrite hardcoded localhost API calls to the current browser host.
+      // This keeps legacy absolute URLs working when the app is opened from another device.
+      const CURRENT_HOST = window.location.hostname;
+      const LOCALHOST_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+      function rewriteUrl(input) {
+        try {
+          const base = window.location.origin;
+          const url = new URL(input, base);
+          if (!LOCALHOST_HOSTS.has(url.hostname)) {
+            return input;
+          }
+
+          url.hostname = CURRENT_HOST;
+          return url.toString();
+        } catch (_) {
+          return input;
+        }
+      }
+
+      if (typeof window.fetch === 'function') {
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = function (resource, init) {
+          if (typeof resource === 'string') {
+            return originalFetch(rewriteUrl(resource), init);
+          }
+          if (resource && typeof resource.url === 'string') {
+            const rewritten = rewriteUrl(resource.url);
+            if (rewritten !== resource.url) {
+              return originalFetch(rewritten, init);
+            }
+          }
+          return originalFetch(resource, init);
+        };
+      }
+
+      if (window.XMLHttpRequest && window.XMLHttpRequest.prototype) {
+        const xhrOpen = window.XMLHttpRequest.prototype.open;
+        window.XMLHttpRequest.prototype.open = function (method, url) {
+          const args = Array.prototype.slice.call(arguments);
+          args[1] = rewriteUrl(url);
+          return xhrOpen.apply(this, args);
+        };
+      }
+
+      if (typeof window.WebSocket === 'function') {
+        const OriginalWebSocket = window.WebSocket;
+        window.WebSocket = function (url, protocols) {
+          const rewritten = rewriteUrl(url);
+          return protocols
+            ? new OriginalWebSocket(rewritten, protocols)
+            : new OriginalWebSocket(rewritten);
+        };
+        window.WebSocket.prototype = OriginalWebSocket.prototype;
+      }
+
+      const userAgent = window.navigator.userAgent || '';
+      const vendor = window.navigator.vendor || '';
+      const platform = window.navigator.platform || '';
+      const isAppleMobileDevice = /iPad|iPhone|iPod/.test(userAgent)
+        || (platform === 'MacIntel' && typeof window.navigator.maxTouchPoints === 'number' && window.navigator.maxTouchPoints > 1);
+      const isWebKitBrowser = /AppleWebKit/i.test(userAgent) && /Apple/i.test(vendor);
+      const shouldPatchCameraVideo = isAppleMobileDevice && isWebKitBrowser;
+
+      if (!shouldPatchCameraVideo) {
+        return;
+      }
+
+      // iPad Safari is strict about inline camera playback for getUserMedia-backed
+      // video elements. The QR scanner creates these elements dynamically.
+      function prepareCameraVideo(video) {
+        if (!(video instanceof HTMLVideoElement)) {
+          return;
+        }
+
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('webkit-playsinline', 'true');
+        video.setAttribute('autoplay', 'true');
+        video.muted = true;
+        video.autoplay = true;
+        video.playsInline = true;
+
+        const tryPlay = function () {
+          const playResult = video.play();
+          if (playResult && typeof playResult.catch === 'function') {
+            playResult.catch(function () {});
+          }
+        };
+
+        video.addEventListener('loadedmetadata', tryPlay, { passive: true });
+        video.addEventListener('canplay', tryPlay, { passive: true });
+
+        if (video.srcObject) {
+          tryPlay();
+        }
+      }
+
+      const observer = new MutationObserver(function (mutations) {
+        mutations.forEach(function (mutation) {
+          mutation.addedNodes.forEach(function (node) {
+            if (node instanceof HTMLVideoElement) {
+              prepareCameraVideo(node);
+              return;
+            }
+
+            if (node instanceof Element) {
+              node.querySelectorAll('video').forEach(prepareCameraVideo);
+            }
+          });
+        });
+      });
+
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+      });
+
+      document.querySelectorAll('video').forEach(prepareCameraVideo);
+    })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

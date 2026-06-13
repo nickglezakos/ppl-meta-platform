@@ -3966,23 +3966,52 @@ class _PersonObjectsDetailScreenState
         : '${Config.gatewayServiceUrl}${rawImageUrl.startsWith('/') ? rawImageUrl : '/$rawImageUrl'}';
 
     final apiClient = ref.read(apiClientProvider);
+    return FutureBuilder<Uint8List?>(
+      future: _fetchAuthenticatedImageBytes(resolvedUrl),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            color: Colors.grey[300],
+            child: const Center(
+              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+          );
+        }
 
-    return Image.network(
-      resolvedUrl,
-      fit: BoxFit.cover,
-      headers: apiClient.authToken != null
-          ? {'Authorization': 'Bearer ${apiClient.authToken}'}
-          : const {},
-      loadingBuilder: (context, child, loadingProgress) {
-        if (loadingProgress == null) return child;
-        return Container(
-          color: Colors.grey[300],
-          child: const Center(
-            child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-          ),
+        final bytes = snapshot.data;
+        if (bytes == null || bytes.isEmpty) {
+          return fallbackIcon;
+        }
+
+        if (faceData != null && (faceData['bbox'] as List<dynamic>?)?.length == 4) {
+          return FutureBuilder<ui.Image>(
+            future: _decodeImage(bytes),
+            builder: (context, imageSnapshot) {
+              final decodedImage = imageSnapshot.data;
+              return SizedBox.expand(
+                child: CustomPaint(
+                  foregroundPainter: FaceBoundingBoxPainter(
+                    faceData: faceData,
+                    imageWidth: decodedImage?.width.toDouble(),
+                    imageHeight: decodedImage?.height.toDouble(),
+                  ),
+                  child: Image.memory(
+                    bytes,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                  ),
+                ),
+              );
+            },
+          );
+        }
+
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
         );
       },
-      errorBuilder: (context, error, stackTrace) => fallbackIcon,
     );
   }
 
@@ -4148,6 +4177,33 @@ class _PersonObjectsDetailScreenState
       return Uint8List.fromList(bytes);
     } catch (e) {
       print('Error loading authenticated frame bytes: $e');
+      return null;
+    }
+  }
+
+  Future<Uint8List?> _fetchAuthenticatedImageBytes(String url) async {
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final headers = <String, String>{};
+      if (apiClient.authToken != null && apiClient.authToken!.isNotEmpty) {
+        headers['Authorization'] = 'Bearer ${apiClient.authToken}';
+      }
+
+      final response = await apiClient.dio.get<List<int>>(
+        url,
+        options: dio.Options(
+          responseType: dio.ResponseType.bytes,
+          headers: headers,
+        ),
+      );
+
+      final bytes = response.data;
+      if (bytes == null || bytes.isEmpty) {
+        return null;
+      }
+      return Uint8List.fromList(bytes);
+    } catch (e) {
+      print('Error loading authenticated image bytes: $e');
       return null;
     }
   }

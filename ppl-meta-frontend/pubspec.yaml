@@ -93,6 +93,10 @@ dev_dependencies:
   json_serializable: ^6.9.0
   freezed: ^2.4.7
 
+dependency_overrides:
+  mobile_scanner:
+    path: third_party/mobile_scanner
+
 flutter:
   uses-material-design: true
   

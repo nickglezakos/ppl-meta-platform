@@ -9,6 +9,7 @@ import '../models/workflow_widget_models.dart' hide PlaybackMode; // Avoid confl
 import '../models/face_detection_models.dart'; // Use face detection models instead of api_models
 import '../models/api_models.dart' hide FaceDetectionSession; // Import api_models but hide conflicting FaceDetectionSession
 import '../core/api/api_client.dart';
+import '../core/config/app_config.dart';
 import '../widgets/workflow/authenticated_workflow_wrapper.dart';
 import 'face_data_providers.dart';
 
@@ -810,7 +811,7 @@ class MediaWorkflowNotifier extends StateNotifier<MediaWorkflowState> {
       
       // Call orchestrator API to start workflow
       final response = await apiClient.post(
-        'http://localhost:8080/api/v1/orchestrator/workflows/face-detection/bulk-process',
+        '${AppConfig.instance.apiBaseUrl}/api/v1/orchestrator/workflows/face-detection/bulk-process',
         data: {
           'media_ids': [mediaId],
           'methods': [method],
@@ -855,7 +856,7 @@ class MediaWorkflowNotifier extends StateNotifier<MediaWorkflowState> {
     try {
       final apiClient = ref.read(apiClientProvider);
       final response = await apiClient.get(
-        'http://localhost:8080/api/v1/orchestrator/workflows/face-detection/status/${state.workflowId}',
+        '${AppConfig.instance.apiBaseUrl}/api/v1/orchestrator/workflows/face-detection/status/${state.workflowId}',
       );
 
       if (response.statusCode == 200) {
@@ -961,7 +962,7 @@ final workflowStatusProvider = FutureProvider.family<Map<String, dynamic>, Strin
   
   try {
     final response = await apiClient.get(
-      'http://localhost:8080/api/v1/orchestrator/workflows/face-detection/status/$workflowId',
+      '${AppConfig.instance.apiBaseUrl}/api/v1/orchestrator/workflows/face-detection/status/$workflowId',
     );
     
     if (response.statusCode == 200) {

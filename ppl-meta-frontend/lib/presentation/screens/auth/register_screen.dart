@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/providers/bootstrap_provider.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../widgets/common/loading_overlay.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
-  const RegisterScreen({super.key});
+  final bool isBootstrapFlow;
+
+  const RegisterScreen({super.key, this.isBootstrapFlow = false});
 
   @override
   ConsumerState<RegisterScreen> createState() => _RegisterScreenState();
@@ -17,6 +20,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _applicationKeyController = TextEditingController();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
@@ -26,13 +30,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _applicationKeyController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authNotifierProvider);
+    final bootstrapStatus = ref.watch(bootstrapStatusProvider);
     final authNotifier = ref.read(authNotifierProvider.notifier);
+    final requiresBootstrap = widget.isBootstrapFlow;
 
     return Scaffold(
       appBar: AppBar(
@@ -58,7 +65,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
                           // Title
                           Text(
-                            'Join Eyenet Vision',
+                            requiresBootstrap ? 'Activate Your Installation' : 'Join Eyenet Vision',
                             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
@@ -66,13 +73,66 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Create your account to get started',
+                            requiresBootstrap
+                                ? 'Create the first approved owner account for this installation'
+                                : 'Create your account to get started',
                             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                               color: Theme.of(context).textTheme.bodySmall?.color,
                             ),
                             textAlign: TextAlign.center,
                           ),
+                          const SizedBox(height: 16),
+
                           const SizedBox(height: 32),
+
+                          if (requiresBootstrap)
+                            bootstrapStatus.when(
+                              data: (status) {
+                                if (!status.needsOwnerBootstrap) {
+                                  return const SizedBox.shrink();
+                                }
+                                final approvedOwner = status.owner.approvedOwnerEmail;
+                                return Container(
+                                  width: double.infinity,
+                                  margin: const EdgeInsets.only(bottom: 24),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.blue.shade700),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'First-install owner bootstrap',
+                                        style: TextStyle(fontWeight: FontWeight.w600),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        approvedOwner != null && approvedOwner.isNotEmpty
+                                            ? 'Create the approved owner account using $approvedOwner so the platform can complete its first activation.'
+                                            : 'Create the approved owner account so the platform can complete its first activation.',
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              loading: () => const SizedBox.shrink(),
+                              error: (error, __) => Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(bottom: 24),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.red.shade700),
+                                ),
+                                child: Text(
+                                  'Bootstrap status could not be loaded. Check gateway routing and Node availability. Error: $error',
+                                ),
+                              ),
+                            ),
 
                           // Registration form
                           Form(
@@ -126,6 +186,32 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                   },
                                 ),
                                 const SizedBox(height: 16),
+
+                                if (requiresBootstrap) ...[
+                                  TextFormField(
+                                    controller: _applicationKeyController,
+                                    autocorrect: false,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Licence / Application Key',
+                                      hintText: 'Enter the installation key',
+                                      prefixIcon: Icon(Icons.vpn_key_outlined),
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    validator: (value) {
+                                      if (!requiresBootstrap) {
+                                        return null;
+                                      }
+                                      if (value == null || value.trim().isEmpty) {
+                                        return 'Please enter the licence or application key';
+                                      }
+                                      if (value.trim().length < 3) {
+                                        return 'Key must be at least 3 characters';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
 
                                 // Password field
                                 TextFormField(
@@ -255,14 +341,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                 const SizedBox(height: 16),
 
                                 // Terms and privacy
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                                  child: Text(
-                                    'By creating an account, you agree to our Terms of Service and Privacy Policy',
-                                    style: Theme.of(context).textTheme.bodySmall,
-                                    textAlign: TextAlign.center,
+                                if (!requiresBootstrap)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    child: Text(
+                                      'By creating an account, you agree to our Terms of Service and Privacy Policy',
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                      textAlign: TextAlign.center,
+                                    ),
                                   ),
-                                ),
                               ],
                             ),
                           ),
@@ -272,16 +359,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   ),
 
                   // Login link
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text('Already have an account? '),
-                      TextButton(
-                        onPressed: () => context.pop(),
-                        child: const Text('Sign In'),
-                      ),
-                    ],
-                  ),
+                  if (!requiresBootstrap)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('Already have an account? '),
+                        TextButton(
+                          onPressed: () => context.pop(),
+                          child: const Text('Sign In'),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -298,14 +386,27 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Future<void> _handleRegister() async {
     if (_formKey.currentState?.validate() ?? false) {
       final authNotifier = ref.read(authNotifierProvider.notifier);
+      final requiresBootstrap = widget.isBootstrapFlow;
       
-      final success = await authNotifier.register(
-        _usernameController.text.trim(),
-        _emailController.text.trim(),
-        _passwordController.text,
-      );
+      final success = requiresBootstrap
+          ? await authNotifier.bootstrapActivate(
+              _usernameController.text.trim(),
+              _emailController.text.trim(),
+              _passwordController.text,
+              _applicationKeyController.text.trim(),
+            )
+          : await authNotifier.register(
+              _usernameController.text.trim(),
+              _emailController.text.trim(),
+              _passwordController.text,
+            );
 
       if (success && mounted) {
+        if (requiresBootstrap) {
+          context.go('/home');
+          return;
+        }
+
         // Show success message and navigate back to login
         showDialog(
           context: context,

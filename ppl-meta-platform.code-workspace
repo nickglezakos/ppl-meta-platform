@@ -1,80 +1,8 @@
 {
     "folders": [
         {
-            "name": "🏠 PPL Meta Platform (Root)",
+            "name": "PPL Meta Platform",
             "path": "."
-        },
-        {
-            "name": "👥 User Management Service",
-            "path": "./ppl-meta-node"
-        },
-        {
-            "name": "🎬 Media Processing Service", 
-            "path": "./ppl-meta-media"
-        },
-        {
-            "name": "🚪 API Gateway Service",
-            "path": "./ppl-meta-gateway"
-        },
-        {
-            "name": "🎭 Orchestrator Service",
-            "path": "./ppl-meta-orchestrator"
-        },
-        {
-            "name": "📹 Camera Service",
-            "path": "./ppl-meta-cameras"
-        },
-        {
-            "name": "👁️ Vision Service",
-            "path": "./ppl-meta-vision"
-        },
-        {
-            "name": "🔍 Discovery Service",
-            "path": "./ppl-meta-discovery"
-        },
-        {
-            "name": "📱 Frontend (Flutter)",
-            "path": "./ppl-meta-frontend"
-        },
-        {
-            "name": "🏗️ Boot Core",
-            "path": "./ppl-meta-bootcore"
-        },
-        {
-            "name": "📊 VMeta Service",
-            "path": "./ppl-meta-vmeta"
-        },
-        {
-            "name": "🤖 Autonomous Mini",
-            "path": "./autonomous"
-        },
-        {
-            "name": "📱 Mobile Camera",
-            "path": "./ppl_meta_mobile_camera"
-        },
-        {
-            "name": "📄 Documentation",
-            "path": "./docs"
-        },
-        {
-            "name": "🔧 Scripts & Utils",
-            "path": "./scripts"
-        },
-        {
-            "name": "📋 Service Template",
-            "path": "./service-template"
-        },
-        {
-            "name": "🔗 Shared Libraries",
-            "path": "./shared"
-        },
-        {
-            "name": "⚙️ Configuration",
-            "path": "./config"
-        },
-        {
-            "name": "🔒 Secrets",
-            "path": "./secrets"
         }
     ],
     "settings": {

@@ -45,13 +45,8 @@ class _NewLoginScreenState extends ConsumerState<NewLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authNotifierProvider);
     final keyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
-    
-    // Debug: Log current auth state
-    print('🔐 NewLoginScreen build - error: ${authState.error}');
-    print('🔐 NewLoginScreen build - isLoading: ${authState.isLoading}');
-    
+
     // Listen for auth state changes to show error notifications
     ref.listen(authNotifierProvider, (previous, current) {
       if (previous != null && 
@@ -59,7 +54,6 @@ class _NewLoginScreenState extends ConsumerState<NewLoginScreen> {
           !current.isLoading && 
           current.error != null && 
           mounted) {
-        print('🔴 NewLoginScreen: Showing error SnackBar: ${current.error}');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -78,11 +72,10 @@ class _NewLoginScreenState extends ConsumerState<NewLoginScreen> {
       
       // Navigate to home on successful login
       if (current.isAuthenticated && !current.isLoading && mounted) {
-        print('✅ NewLoginScreen: Login successful, navigating to home');
         context.go('/home');
       }
     });
-    
+
     return Scaffold(
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
@@ -137,6 +130,8 @@ class _NewLoginScreenState extends ConsumerState<NewLoginScreen> {
                     ),
                     textAlign: TextAlign.center,
                   ),
+                  const SizedBox(height: 16),
+
                   SizedBox(height: keyboardVisible ? 20 : 48),
 
                   // Login form

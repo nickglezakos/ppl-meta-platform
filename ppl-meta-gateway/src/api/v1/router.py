@@ -4,7 +4,7 @@ API v1 Router - Main API Gateway Router
 
 import os
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -329,6 +329,18 @@ async def get_authority_status(request: Request):
     return await _proxy_to_node_service(request)
 
 
+@api_router.get("/licensing/bootstrap/status")
+async def get_bootstrap_status(request: Request):
+    """Proxy bootstrap status to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.post("/licensing/bootstrap/activate")
+async def activate_bootstrap_owner(request: Request):
+    """Proxy bootstrap activation to Node service."""
+    return await _proxy_to_node_service(request)
+
+
 @api_router.get("/users/storage-preferences")
 async def get_user_storage_preferences(request: Request):
     """Proxy get user storage preferences to Media service."""
@@ -443,7 +455,7 @@ async def get_user_profile_singular(request: Request):
         raise HTTPException(status_code=500, detail=f"Internal proxy error: {str(e)}")
 
 
-async def _proxy_to_media_service(request: Request) -> Response:
+async def _proxy_to_media_service(request: Request, target_path: Optional[str] = None) -> Response:
     """Helper function to proxy requests to the Media service."""
     import logging
     logger = logging.getLogger(__name__)
@@ -453,8 +465,11 @@ async def _proxy_to_media_service(request: Request) -> Response:
         path = str(request.url.path)
         method = request.method
 
+        # Use target_path if provided, otherwise use original path
+        proxy_path = target_path or path
+        
         # Construct the target URL
-        target_url = f"{SERVICES['media']}{path}"
+        target_url = f"{SERVICES['media']}{proxy_path}"
 
         # Get request body if present
         body = None
@@ -467,7 +482,7 @@ async def _proxy_to_media_service(request: Request) -> Response:
         
         # 🔍 DEBUG: Log authorization header status
         auth_header = headers.get("authorization", "MISSING")
-        logger.info(f"🔐 [MEDIA-PROXY] {method} {path} - Auth header: {'Present' if auth_header != 'MISSING' else 'MISSING'}")
+        logger.info(f"🔐 [MEDIA-PROXY] {method} {path} -> {proxy_path} - Auth header: {'Present' if auth_header != 'MISSING' else 'MISSING'}")
 
         # Check if this is a streaming endpoint
         is_streaming = (
@@ -600,6 +615,18 @@ async def upload_media(request: Request):
 @api_router.get("/media/search")
 async def search_media(request: Request):
     """Proxy media search to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/media/items")
+async def list_media_items(request: Request):
+    """Proxy media items list to Media service (/search endpoint)."""
+    return await _proxy_to_media_service(request, target_path="/api/v1/media/search")
+
+
+@api_router.get("/media/items/{media_id}")
+async def get_media_item(request: Request):
+    """Proxy get media item to Media service."""
     return await _proxy_to_media_service(request)
 
 
@@ -2307,7 +2334,7 @@ async def get_person_objects_for_media(request: Request):
 
 
 # vmeta Service Helper Function
-async def _proxy_to_vmeta_service(request: Request) -> Response:
+async def _proxy_to_vmeta_service(request: Request, target_path: Optional[str] = None) -> Response:
     """Helper function to proxy requests to the vmeta service."""
     import logging
     logger = logging.getLogger(__name__)
@@ -2317,8 +2344,11 @@ async def _proxy_to_vmeta_service(request: Request) -> Response:
         path = str(request.url.path)
         method = request.method
 
+        # Use target_path if provided, otherwise use original path
+        proxy_path = target_path or path
+        
         # Construct the target URL
-        target_url = f"{SERVICES['vmeta']}{path}"
+        target_url = f"{SERVICES['vmeta']}{proxy_path}"
 
         # Get request body if present
         body = None
@@ -2334,7 +2364,7 @@ async def _proxy_to_vmeta_service(request: Request) -> Response:
         
         # 🔍 DEBUG: Log authorization header status
         auth_header = headers.get("authorization", "MISSING")
-        logger.info(f"🔐 [VMETA-PROXY] {method} {path} - Auth header: {'Present' if auth_header != 'MISSING' else 'MISSING'}")
+        logger.info(f"🔐 [VMETA-PROXY] {method} {path} -> {proxy_path} - Auth header: {'Present' if auth_header != 'MISSING' else 'MISSING'}")
 
         # Make the proxy request
         async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
@@ -2438,6 +2468,12 @@ async def add_group_members(request: Request):
 async def remove_group_members(request: Request):
     """Proxy remove group members to vmeta service."""
     return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/individuals")
+async def list_individuals(request: Request):
+    """Proxy list individuals (MVR people) to vmeta service."""
+    return await _proxy_to_vmeta_service(request, target_path="/api/v1/mvr-people")
 
 
 @api_router.get("/individuals/{individual_id}/groups")

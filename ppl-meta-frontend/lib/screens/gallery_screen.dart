@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../core/config/app_config.dart';
 import '../core/config.dart';
 import '../core/theme/app_theme.dart';
 import '../core/api/api_client.dart';
@@ -686,9 +687,9 @@ class _MediaDetailsDialog extends ConsumerWidget {
   /// Convert relative URL to absolute URL
   String _getAbsoluteUrl(String relativeUrl) {
     if (relativeUrl.startsWith('http')) {
-      return relativeUrl; // Already absolute
+      return AppConfig.normalizeBrowserUrl(relativeUrl);
     }
-    return '${Config.gatewayServiceUrl}$relativeUrl';
+    return AppConfig.normalizeBrowserUrl('${Config.gatewayServiceUrl}$relativeUrl');
   }
 
   /// Get media type icon

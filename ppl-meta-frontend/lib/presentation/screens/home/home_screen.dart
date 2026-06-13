@@ -293,48 +293,12 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.auto_awesome,
-                        iconColor: AppColors.secondary, // Unified cyan color
-                        title: 'Monitoring',
-                        subtitle: 'System & workflow monitoring',
-                        onTap: () {
-                          context.go('/workflows');
-                        },
-                      ),
-                      _ActionCard(
                         icon: Icons.display_settings,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Signage Management',
                         subtitle: 'Manage digital signage playlists',
                         onTap: () {
                           context.go('/signage');
-                        },
-                      ),
-                      _ActionCard(
-                        icon: Icons.storage,
-                        iconColor: AppColors.secondary, // Unified cyan color
-                        title: 'Storage',
-                        subtitle: 'Manage storage locations & usage',
-                        onTap: () {
-                          context.go('/storage');
-                        },
-                      ),
-                      _ActionCard(
-                        icon: Icons.dns,
-                        iconColor: AppColors.secondary, // Unified cyan color
-                        title: 'Network',
-                        subtitle: 'Network & service connections',
-                        onTap: () {
-                          context.go('/network');
-                        },
-                      ),
-                      _ActionCard(
-                        icon: Icons.monitor_heart,
-                        iconColor: AppColors.secondary,
-                        title: 'Camera Ops',
-                        subtitle: 'Live status, health, and aggregates',
-                        onTap: () {
-                          context.go('/camera-operations');
                         },
                       ),
                       _ActionCard(
@@ -355,6 +319,46 @@ class HomeScreen extends ConsumerWidget {
                           context.go('/upload');
                         },
                       ),
+                      _ActionCard(
+                        icon: Icons.monitor_heart,
+                        iconColor: AppColors.secondary,
+                        title: 'Camera Ops',
+                        subtitle: 'Live status, health, and aggregates',
+                        isHighlighted: false,
+                        onTap: () {
+                          context.go('/camera-operations');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.storage,
+                        iconColor: AppColors.secondary,
+                        title: 'Storage',
+                        subtitle: 'Manage storage locations & usage',
+                        isHighlighted: false,
+                        onTap: () {
+                          context.go('/storage');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.auto_awesome,
+                        iconColor: AppColors.secondary,
+                        title: 'Monitoring',
+                        subtitle: 'System & workflow monitoring',
+                        isHighlighted: false,
+                        onTap: () {
+                          context.go('/workflows');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.dns,
+                        iconColor: AppColors.secondary,
+                        title: 'Network',
+                        subtitle: 'Network & service connections',
+                        isHighlighted: false,
+                        onTap: () {
+                          context.go('/network');
+                        },
+                      ),
                     ],
                   );
                 },
@@ -372,6 +376,7 @@ class _ActionCard extends StatelessWidget {
   final Color iconColor;
   final String title;
   final String subtitle;
+  final bool isHighlighted;
   final VoidCallback onTap;
 
   const _ActionCard({
@@ -379,6 +384,7 @@ class _ActionCard extends StatelessWidget {
     required this.iconColor,
     required this.title,
     required this.subtitle,
+    this.isHighlighted = true,
     required this.onTap,
   });
 
@@ -388,7 +394,22 @@ class _ActionCard extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
     final isCompact = screenWidth < 600; // Mobile
     
+    final theme = Theme.of(context);
+    final resolvedBackgroundColor = isHighlighted
+      ? const Color(0x1622D3EE)
+      : null;
+    final resolvedBorderColor = isHighlighted
+      ? const Color(0x4022D3EE)
+      : theme.colorScheme.outline;
+
     return Card(
+      color: resolvedBackgroundColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: resolvedBorderColor,
+        ),
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),

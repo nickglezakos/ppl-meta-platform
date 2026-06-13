@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import 'dart:typed_data';
+import 'package:dio/dio.dart' as dio;
 import '../core/config.dart';
 import '../core/theme/app_theme.dart';
 import '../models/media_models.dart';
@@ -619,12 +621,6 @@ class _MediaGridItem extends ConsumerWidget {
 
   /// Build media content (thumbnail/preview)
   Widget _buildMediaContent() {
-    // Get authentication headers from ApiClient if available
-    Map<String, String> headers = {};
-    if (apiClient != null && apiClient!.authToken != null) {
-      headers['Authorization'] = 'Bearer ${apiClient!.authToken}';
-    }
-
     // Convert relative URLs to absolute URLs
     String? imageUrl = item.thumbnailUrl ?? item.url;
     if (imageUrl != null && imageUrl.startsWith('/')) {
@@ -639,23 +635,11 @@ class _MediaGridItem extends ConsumerWidget {
 
     return AspectRatio(
       aspectRatio: 1.0,
-      child: Image.network(
-        imageUrl ?? '',
-        headers: headers,
-        fit: BoxFit.contain, // Changed from cover to maintain aspect ratio
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) {
-            return child;
-          }
-          return Container(
-            color: AppColors.gray200,
-            child: const Center(
-              child: CircularProgressIndicator(),
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) {
-          // Show appropriate error handling for non-image files or access denied
+      child: _AuthenticatedThumbnail(
+        imageUrl: imageUrl,
+        apiClient: apiClient,
+        fit: BoxFit.contain,
+        errorBuilder: () {
           return Container(
             color: AppColors.gray200,
             child: Column(
@@ -1008,5 +992,82 @@ class _MediaGridItem extends ConsumerWidget {
       case MediaType.other:
         return AppColors.documentColor; // Use same color as document
     }
+  }
+}
+
+class _AuthenticatedThumbnail extends StatelessWidget {
+  final String? imageUrl;
+  final ApiClient? apiClient;
+  final BoxFit fit;
+  final Widget Function() errorBuilder;
+
+  const _AuthenticatedThumbnail({
+    required this.imageUrl,
+    required this.apiClient,
+    required this.fit,
+    required this.errorBuilder,
+  });
+
+  Future<Uint8List?> _fetchBytes() async {
+    final resolvedUrl = imageUrl;
+    final client = apiClient;
+    if (resolvedUrl == null || resolvedUrl.isEmpty || client == null) {
+      return null;
+    }
+
+    try {
+      final headers = <String, String>{};
+      if (client.authToken != null && client.authToken!.isNotEmpty) {
+        headers['Authorization'] = 'Bearer ${client.authToken}';
+      }
+
+      final response = await client.dio.get<List<int>>(
+        resolvedUrl,
+        options: dio.Options(
+          responseType: dio.ResponseType.bytes,
+          headers: headers,
+        ),
+      );
+
+      final bytes = response.data;
+      if (bytes == null || bytes.isEmpty) {
+        return null;
+      }
+      return Uint8List.fromList(bytes);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (imageUrl == null || imageUrl!.isEmpty) {
+      return errorBuilder();
+    }
+
+    return FutureBuilder<Uint8List?>(
+      future: _fetchBytes(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            color: AppColors.gray200,
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        final bytes = snapshot.data;
+        if (bytes == null || bytes.isEmpty) {
+          return errorBuilder();
+        }
+
+        return Image.memory(
+          bytes,
+          fit: fit,
+          gaplessPlayback: true,
+        );
+      },
+    );
   }
 }

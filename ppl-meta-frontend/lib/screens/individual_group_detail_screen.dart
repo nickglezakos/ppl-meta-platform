@@ -10,6 +10,7 @@ import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import '../core/config/app_config.dart';
 import '../core/config.dart';
 import '../models/individual_group_models.dart';
 import '../services/individual_groups_api_client.dart';
@@ -124,18 +125,28 @@ class _IndividualGroupDetailScreenState
   Future<void> _loadBestImages() async {
     final imageService = ref.read(mvrImageServiceProvider);
     final lookupByMemberId = {
-      for (final member in _members) member.id: (member.mvrPersonUuid ?? member.id),
+      for (final member in _members)
+        if (member.mvrPersonUuid != null) member.id: member.mvrPersonUuid!,
     };
     final imageLookupIds = lookupByMemberId.values.toSet().toList();
 
     debugPrint(
       '[IG-DEBUG][UI] best-image lookup map size=${lookupByMemberId.length} '
-      'uniqueLookupIds=${imageLookupIds.length}',
+      'members=${_members.length} uniqueLookupIds=${imageLookupIds.length}',
     );
     lookupByMemberId.forEach((memberId, lookupId) {
       debugPrint('[IG-DEBUG][UI] best-image map memberId=$memberId -> lookupId=$lookupId');
     });
-    
+
+    if (imageLookupIds.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _bestImages = {};
+        });
+      }
+      return;
+    }
+
     try {
       final imagesByLookupId = await imageService.getBestImagesForMultiple(
         imageLookupIds,
@@ -151,13 +162,16 @@ class _IndividualGroupDetailScreenState
       });
       final imagesByMemberId = {
         for (final member in _members)
-          member.id: imagesByLookupId[lookupByMemberId[member.id]],
+          member.id: member.mvrPersonUuid != null
+              ? imagesByLookupId[member.mvrPersonUuid]
+              : null,
       };
       imagesByMemberId.forEach((memberId, bestImage) {
+        final resolvedLookupId = lookupByMemberId[memberId] ?? 'none';
         debugPrint(
           '[IG-DEBUG][UI] member image memberId=$memberId '
           'hasBestFace=${bestImage?.bestFace != null} '
-          'resolvedLookupId=${lookupByMemberId[memberId]}',
+          'resolvedLookupId=$resolvedLookupId',
         );
       });
       
@@ -202,27 +216,33 @@ class _IndividualGroupDetailScreenState
               ),
             ),
             const SizedBox(height: 8),
-            EditableMVRName(
-              initialName: member.name,
-              mvrPersonUuid: member.mvrPersonUuid ?? member.id,
-              propagate: true,
-              onNameUpdated: (newName) async {
-                // Close the dialog first
-                Navigator.pop(context);
-                // Reload group data to refresh member list with new name
-                await _loadGroupData();
-                // Show success message
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Name updated to "$newName"'),
-                      backgroundColor: Colors.green,
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                }
-              },
-            ),
+            if (member.mvrPersonUuid != null)
+              EditableMVRName(
+                initialName: member.name,
+                mvrPersonUuid: member.mvrPersonUuid!,
+                propagate: true,
+                onNameUpdated: (newName) async {
+                  // Close the dialog first
+                  Navigator.pop(context);
+                  // Reload group data to refresh member list with new name
+                  await _loadGroupData();
+                  // Show success message
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Name updated to "$newName"'),
+                        backgroundColor: Colors.green,
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+              )
+            else
+              const Text(
+                'No MVR UUID available for this member',
+                style: TextStyle(color: Colors.grey),
+              ),
             const SizedBox(height: 16),
             Text(
               'ID: ${member.id}',
@@ -245,8 +265,16 @@ class _IndividualGroupDetailScreenState
         actions: [
           TextButton(
             onPressed: () {
+              if (member.mvrPersonUuid == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Cannot analyse member without an MVR UUID'),
+                  ),
+                );
+                return;
+              }
               Navigator.pop(context);
-              final analysisUuid = member.mvrPersonUuid ?? member.id;
+              final analysisUuid = member.mvrPersonUuid!;
               
               // Generate a proper UUID for the session
               const uuid = Uuid();
@@ -321,7 +349,8 @@ class _IndividualGroupDetailScreenState
 
     final analysisUuids = _members
         .where((member) => _selectedMembers.contains(member.id))
-        .map((member) => member.mvrPersonUuid ?? member.id)
+        .map((member) => member.mvrPersonUuid)
+        .whereType<String>()
         .toSet()
         .toList();
 
@@ -1095,10 +1124,10 @@ class _IndividualGroupDetailScreenState
     }
     final uri = Uri.tryParse(imageUrl);
     if (uri != null && uri.hasScheme) {
-      return imageUrl;
+      return AppConfig.normalizeBrowserUrl(imageUrl);
     }
     final normalizedPath = imageUrl.startsWith('/') ? imageUrl : '/$imageUrl';
-    return '${Config.gatewayServiceUrl}$normalizedPath';
+    return AppConfig.normalizeBrowserUrl('${Config.gatewayServiceUrl}$normalizedPath');
   }
 
   /// Build cropped face image asynchronously - EXACT copy from preview screen
