@@ -184,4 +184,141 @@ https://levelup.gitconnected.com/python-stop-waiting-for-your-python-code-to-fin
 
 ************************************************************************
 
+Product upgrades
+
+01. CI / CD
+
+Study the current status of all eyenet services endpoints.
+
+
+Create CI / CD policy for code and documentation
+
+
+Keep stable documentation in CI / CD
+
+
+02. Create software licences / user capabilities schema per module.
+
+Licence thresholds
+
+eyenet lite
+
+eyenet Node           1 single node, 3 eyenet Users
+eyenet Vradar         5 cameras: embeded/USB cameras, mobile cameras, wifi cameras, eyenet Edge Cameras
+eyenet Logic          1 trigger / 3 actions
+eyenet Media          3 user collections
+eyenet Vprofiles      5 Vprofiles groups of 5 members
+eyenet Insights       Detection Analytics, Basic Metrics, Quality Metrics
+eyenet pplCounters    1 pplCounter per Camera
+eyenet Demographics   Demographics per Camera
+eyenet Heatmaps       Heatmaps per Camera
+eyenet Storage        Internal / External storage
+eyenet Signage        3 eyenet Signage mobile & edge devices
+eyenet Presence       2 factor QR / Visual authentication, Synchronous       
+
+
+eyenet business
+
+eyenet Node           1 single node, Unlimited eyenet Users
+eyenet Vradar         15 cameras: embeded/USB cameras, mobile cameras, wifi cameras, eyenet Edge Cameras
+eyenet Logic          5 trigger / 15 actions, slack & teams connectors, webhooks
+eyenet Media          5 user collections
+eyenet Vprofiles      10 Vprofiles groups of 10 members
+eyenet Insights       Detection Analytics, Basic Metrics, Quality Metrics, Behavioural Metrics
+eyenet pplCounters    pplCounter per Camera & Camera Groups
+eyenet Demographics   Demographics per Camera & Camera Groups
+eyenet Heatmaps       Heatmaps per Camera & Caqmera Groups
+eyenet Storage        Internal / External storage, Cloud Storage, NAS
+eyenet Signage        15 eyenet Signage mobile & edge device
+eyenet Presence       2 factor QR / Visual authentication, Asynchronous
+
+
+eyenet enterprise
+
+eyenet Node           Multiple nodes, Unlimited eyenet Users, eyenet Mesh Dashboard
+eyenet Vradar         Unlimited cameras: embeded/USB cameras, mobile cameras, wifi cameras, eyenet Edge Cameras
+eyenet Logic          Unlimites trigger / actions, slack & teams connectors, webhooks
+eyenet Media          Unilimited user collections
+eyenet Vprofiles      Unilimited Vprofiles groups / members
+eyenet Insights       Detection Analytics, Basic Metrics, Quality Metrics, Behavioural Metrics
+eyenet pplCounters    pplCounter per Camera & Camera Groups
+eyenet Demographics   Demographics per Camera & Camera Groups
+eyenet Heatmaps       Heatmaps per Camera & Caqmera Groups
+eyenet Storage        Internal / External storage, Cloud Storage, NAS
+eyenet Signage        Unilimited eyenet Signage mobile & edge device
+eyenet Presence       2 factor QR / Visual authentication, Asynchronous
+
+
+Default User Roles
+Default User capabilities for default User Roles
+
+
+
+03. Discoverable eyenet compute nodes.
+
+Upgrade the eyenet compute stations to be uniquely discoverable via their software licence.
+Device should also be identified for software licences that are installed in more than one device.
+eyenet node is the code service that takes the licence.
+Upgrade the authority service.
+
+
+04.
+
+Docker installer.
+CI / CD for installers and tracking via authority
+Licences testing with windoes laptop.
+
+
+05.
+Product documentation in th CI / CD
+Pricing documentation & web site update
+
+
+
+06. Presence
+
+The overview tab should be the before settings.
+Grands should also have the installation name and then devie name.
+User lookup at analytics should work with both he user name / email.
+Users should get tags
+Analytics should be also fetched by tags
+Automation should also have a worker trigger that sends presence analytics reports to communications (email, teams, slack)
+Analytics view should also have excel export.
+
+07. Vradar
+
+Instant detection rename to Vradar on UI
+In memory cash for xxx minutes for unique people counting and heatmap (refactor heatmap logic and accuracy)
+Batch store of results of Vradar from memory cah to database for analytics
+
+08. User Vprofiles
+
+Each user should have an individual group linked to their profile.
+These user profile individual groups should be created from the profile view and should be a process with a notificiation if this is not created and also 
+if it is empty.
+Only the user can access these individual groups
+For user profile individual groups the average similarity among all MVR objects that are its members should be viewed in the group
+and also in the user profile. 
+
+09. eyenet compute groups dashboard
+
+Each compute module shoud be able to make their users plus their analytics endpoints available to an autonomus sefvice maned eyenet enterprise hub.
+
+10. eyenet headscale implementation
+
+
+11. Create installers as part of CI/CD
+
+
+12. Update the authority based on the previous 01 - 06 plus 
+  Make ready for paid sibscriptions for licences linked to users.
+  Create the suport lifecuycle (probalby with slack ?  https://www.atlassian.com/collections/service/pricing)
+
+
+13. Update eyenet website for:
+      subscriptions
+      authority
+      support
+
+
 

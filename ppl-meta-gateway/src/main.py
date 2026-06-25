@@ -248,6 +248,7 @@ def create_app() -> FastAPI:
             "/api/v1/password": "3/minute",
             "/api/v1/users": "50/minute",
             "/api/v1/streaming": "1000/minute",  # High limit for cameras
+            "/api/v1/audit": "300/minute",  # Polling endpoint for alert notifications
         },
     )
 

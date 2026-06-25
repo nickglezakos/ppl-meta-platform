@@ -160,7 +160,10 @@ class AdvancedRateLimitMiddleware(BaseHTTPMiddleware):
                     "window": f"{window} seconds",
                     "retry_after": window,
                 },
-                headers={"Retry-After": str(window)},
+                headers={
+                    "Retry-After": str(window),
+                    "Access-Control-Allow-Origin": "*",
+                },
             )
 
         return await call_next(request)

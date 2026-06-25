@@ -202,7 +202,7 @@ class CommunicationLogService:
         if tenant_name:
             query = query.filter(CommunicationLog.tenant_name.ilike(f"%{tenant_name}%"))
         if start_date:
-            query = query.filter(CommunicationLog.created_at >= start_date)
+            query = query.filter(CommunicationLog.created_at > start_date)
         if end_date:
             query = query.filter(CommunicationLog.created_at <= end_date)
 
