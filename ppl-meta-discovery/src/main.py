@@ -50,20 +50,51 @@ def get_machine_ip() -> str:
         return "127.0.0.1"
 
 
-def resolve_service_hosts(services_list: ServiceList) -> ServiceList:
-    """Resolve 0.0.0.0 hosts to actual machine IP for external clients."""
+def get_tailscale_ip() -> Optional[str]:
+    """Get the local Tailscale VPN IP, if connected. (Phase 2)"""
+    try:
+        import subprocess, json
+        result = subprocess.run(
+            ["tailscale", "status", "--json"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            ips = data.get("Self", {}).get("TailscaleIPs", [])
+            if ips:
+                return ips[0]
+    except Exception:
+        pass
+    return None
+
+
+def resolve_service_hosts(services_list: ServiceList, prefer_vpn: bool = False) -> ServiceList:
+    """Resolve 0.0.0.0 hosts to actual machine IP for external clients.
+
+    Phase 2: When prefer_vpn is True and a service has a tailscale_ip,
+    returns the service with its VPN IP as the primary host.
+    """
     machine_ip = get_machine_ip()
+    tailscale_ip = get_tailscale_ip()
 
     resolved_services = []
     for service in services_list.services:
-        if service.host == "0.0.0.0":
-            # Create a new service object with resolved host
+        if prefer_vpn and service.tailscale_ip:
+            # Use Tailscale IP for VPN-connected clients
+            resolved_service = service.model_copy(update={
+                "host": service.tailscale_ip,
+                "port": service.tailscale_port or service.port,
+            })
+            resolved_services.append(resolved_service)
+        elif service.host == "0.0.0.0":
+            # Resolve 0.0.0.0 — prefer Tailscale IP if available, else machine IP
+            resolved_host = tailscale_ip or machine_ip
             resolved_service = ServiceInfo(
                 service_id=service.service_id,
                 name=service.name,
                 service_type=service.service_type,
                 version=service.version,
-                host=machine_ip,  # Replace 0.0.0.0 with actual IP
+                host=resolved_host,
                 port=service.port,
                 health_endpoint=service.health_endpoint,
                 status=service.status,
@@ -72,6 +103,8 @@ def resolve_service_hosts(services_list: ServiceList) -> ServiceList:
                 registered_at=service.registered_at,
                 last_seen=service.last_seen,
                 heartbeat_count=service.heartbeat_count,
+                tailscale_ip=tailscale_ip,
+                tailscale_port=service.port if tailscale_ip else None,
             )
             resolved_services.append(resolved_service)
         else:
@@ -119,7 +152,7 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.\d+\.\d+)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -214,10 +247,20 @@ async def get_device(device_id: str):
 # Discovery endpoints
 # Enhanced discovery endpoints with complete platform topology
 @app.get("/api/v1/discovery/topology", response_model=PlatformTopology)
-async def get_platform_topology():
-    """Get complete platform topology including all services and devices."""
+async def get_platform_topology(vpn: bool = False):
+    """Get complete platform topology including all services and devices.
+
+    Phase 2: When vpn=true, returns services with Tailscale IPs preferred
+    for VPN-connected clients. Adds preferred_network field.
+    """
     services = service_registry.list_services()
     devices = edge_registry.list_devices()
+    preferred_network = None
+
+    if vpn:
+        # Resolve service hosts to Tailscale IPs where available
+        services = resolve_service_hosts(services, prefer_vpn=True)
+        preferred_network = "tailscale"
 
     # Get mobile cameras specifically
     mobile_cameras = edge_registry.get_mobile_cameras()
@@ -258,6 +301,7 @@ async def get_platform_topology():
             "locations": list(edge_registry._location_index.keys()),
         },
         timestamp=datetime.utcnow(),
+        preferred_network=preferred_network,
     )
 
     return topology

@@ -5,6 +5,8 @@ import 'dart:convert';
 import '../../../core/models/camera.dart';
 import '../../../core/providers/camera_providers.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/config/app_config.dart';
+
 
 /// Dialog for editing camera name
 class EditCameraNameDialog extends ConsumerStatefulWidget {
@@ -64,7 +66,7 @@ class _EditCameraNameDialogState extends ConsumerState<EditCameraNameDialog> {
       }
 
       // Call PATCH endpoint to update camera name
-      final baseUrl = 'http://localhost:8005'; // TODO: Get from config
+      final baseUrl = AppConfig.instance.apiBaseUrl; // Routed via Gateway for VPN/remote access
       final url = '$baseUrl/api/v1/cameras/${widget.camera.deviceId}/name';
       
       final response = await http.patch(

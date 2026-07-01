@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/api_models.dart';
-import '../core/services/auth_service.dart';
+import '../core/services/auth_service.dart' show AuthService, authServiceProvider;
 import '../core/api/api_client.dart';
 
 /// HTTP client provider with timeout configuration
@@ -14,8 +14,8 @@ final httpClientProvider = Provider<http.Client>((ref) {
 /// Base API configuration provider
 final apiConfigProvider = Provider<ApiConfig>((ref) {
   final apiClient = ref.watch(apiClientProvider);
-  final gatewayUri = Uri.parse(apiClient.baseUrl);
-  final orchestratorBaseUrl = '${gatewayUri.scheme}://${gatewayUri.host}:8002';
+  // Route through gateway instead of direct orchestrator connection
+  final orchestratorBaseUrl = apiClient.baseUrl;
   return ApiConfig(
     baseUrl: orchestratorBaseUrl,
     timeout: const Duration(seconds: 30),

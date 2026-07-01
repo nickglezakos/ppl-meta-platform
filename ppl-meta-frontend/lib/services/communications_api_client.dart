@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/communication_log_model.dart';
-import '../core/config.dart';
+import '../core/config/app_config.dart';
 
 /// Service for interacting with Communications Service API
 class CommunicationsApiClient {
@@ -9,7 +9,7 @@ class CommunicationsApiClient {
   String? _authToken;
 
   CommunicationsApiClient({String? baseUrl})
-      : baseUrl = baseUrl ?? Config.communicationsServiceUrl;
+      : baseUrl = baseUrl ?? AppConfig.instance.apiBaseUrl;
 
   /// Set authentication token
   void setAuthToken(String? token) {

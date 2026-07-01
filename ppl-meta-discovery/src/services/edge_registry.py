@@ -1,13 +1,18 @@
-"""Edge device registry for mobile and edge devices."""
+"""Edge device registry for mobile and edge devices.
+
+Phase 2: VPN-aware — supports Tailscale IP tracking and trusted-device
+authentication via Tailscale CGNAT IP range + ACL tag validation.
+"""
 
 import asyncio
+import ipaddress
 import json
 import logging
 import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from models import (
     EdgeDeviceInfo,
     EdgeDeviceList,
@@ -18,6 +23,8 @@ from models import (
 )
 
 logger = logging.getLogger(__name__)
+
+TAILSCALE_CGNAT = ipaddress.ip_network("100.64.0.0/10")
 
 
 class EdgeRegistry:
@@ -83,6 +90,10 @@ class EdgeRegistry:
             # Remove old device from indexes
             self._remove_from_indexes(existing_device)
 
+        # Extract Tailscale IP from metadata (Phase 2)
+        tailscale_ip = request.metadata.get("tailscale_ip") if request.metadata else None
+        vpn_reachable = bool(tailscale_ip)
+
         # Enhanced device info with mobile camera specific fields
         device_info = EdgeDeviceInfo(
             device_id=device_id,
@@ -93,6 +104,8 @@ class EdgeRegistry:
             platform_info=request.platform_info or {},
             location=request.location,
             metadata=self._enhance_metadata(request),
+            tailscale_ip=tailscale_ip,
+            vpn_reachable=vpn_reachable,
             status=ServiceStatus.HEALTHY,
             registered_at=datetime.utcnow(),
             last_seen=datetime.utcnow(),

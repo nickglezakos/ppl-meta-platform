@@ -25,8 +25,8 @@ class Config {
   static String get nodeServiceUrl => baseUrl;
   static String get orchestratorServiceUrl => baseUrl;
   static String get visionServiceUrl => baseUrl;
-  static String get camerasServiceUrl => 'http://${_resolvedBackendHost()}:8005';
-  static String get discoveryServiceUrl => 'http://${_resolvedBackendHost()}:8006';
+  static String get camerasServiceUrl => baseUrl;
+  static String get discoveryServiceUrl => baseUrl;
   static String get bootcoreServiceUrl => baseUrl;
   static String get vmetaServiceUrl => baseUrl;
   static String get communicationsServiceUrl => baseUrl;

@@ -13,7 +13,7 @@ class VisionApiClient {
   VisionApiClient({
     String? baseUrl,
     String? authToken,
-  }) : baseUrl = baseUrl ?? 'http://localhost:8003',
+  }) : baseUrl = baseUrl ?? 'http://localhost:8080',
         _dio = Dio() {
     
     // Configure Dio

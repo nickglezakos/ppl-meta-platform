@@ -6,7 +6,9 @@ import '../config/app_config.dart';
 import '../utils/device_info_helper.dart';
 import 'config_service.dart';
 
-/// Service for discovering and registering with ppl-meta-discovery
+/// Service for discovering and registering with ppl-meta-discovery.
+/// Phase 5: VPN-first discovery — when a Tailscale IP is configured, the
+/// player queries the discovery service directly over VPN for zero-config setup.
 class SignageDiscoveryService {
   final Dio _dio;
   final Logger _logger;
@@ -17,6 +19,9 @@ class SignageDiscoveryService {
   String? _serviceId;
   DeviceInfoModel? _deviceInfo;
   String? _lastError;
+
+  /// Cached VPN node IP for direct discovery (Phase 5)
+  String? _vpnNodeIp;
 
   SignageDiscoveryService({
     Dio? dio,
@@ -32,6 +37,46 @@ class SignageDiscoveryService {
             ),
         _logger = logger ?? Logger(),
         _configService = configService;
+
+  /// Set the VPN node IP for direct discovery (Phase 5)
+  void setVpnNodeIp(String? ip) {
+    _vpnNodeIp = ip;
+    if (ip != null && ip.isNotEmpty) {
+      _logger.i('VPN node IP set for direct discovery: $ip');
+    }
+  }
+
+  /// Check if VPN is connected for direct discovery
+  bool get isVpnConnected => _vpnNodeIp != null && _vpnNodeIp!.isNotEmpty;
+
+  /// Attempt VPN-direct discovery of all backend services.
+  /// Phase 5: Calls GET /api/v1/discovery/topology?vpn=true on the primary node.
+  Future<Map<String, dynamic>?> discoverTopology() async {
+    if (!isVpnConnected) return null;
+
+    try {
+      final vpnDiscoveryUrl = 'http://$_vpnNodeIp:8006';
+      _logger.i('Attempting VPN-direct topology discovery at $vpnDiscoveryUrl');
+
+      final response = await _dio.get(
+        '$vpnDiscoveryUrl/api/v1/discovery/topology?vpn=true',
+        options: Options(
+          headers: {'Accept': 'application/json'},
+          sendTimeout: const Duration(seconds: 5),
+          receiveTimeout: const Duration(seconds: 8),
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        _logger.i('VPN-direct topology discovered: ${data['backend_services']?.length ?? 0} services');
+        return data;
+      }
+    } catch (e) {
+      _logger.w('VPN-direct topology discovery failed: $e');
+    }
+    return null;
+  }
 
   /// Initialize and register the service
   Future<bool> initialize() async {

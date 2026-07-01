@@ -9,6 +9,8 @@ import '../../../core/theme/app_theme.dart';
 import '../../../widgets/custom_app_bar.dart';
 import '../../widgets/camera/edge_camera_config_dialog.dart';
 import '../../../services/auth_manager.dart';
+import '../../../core/config/app_config.dart';
+
 
 // Shared preferences provider
 final sharedPreferencesProvider = FutureProvider<SharedPreferences>((ref) async {
@@ -49,7 +51,7 @@ class _EdgeCameraManagementScreenState
   }
 
   Future<void> _initializeClient() async {
-    final baseUrl = 'http://localhost:8005'; // TODO: Get from config
+    final baseUrl = AppConfig.instance.apiBaseUrl; // Routed via Gateway for VPN/remote access
     final token = ref.read(authNotifierProvider).user?.id; // Get user for auth context
     
     // Create a simple auth manager wrapper

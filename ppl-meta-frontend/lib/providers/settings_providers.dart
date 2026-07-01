@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import '../models/settings_models.dart';
 // REMOVED: import '../core/services/multi_camera_service.dart'; // Archived - unused
 import 'api_providers.dart';
+import '../core/config/app_config.dart';
+
 
 // ====================
 // Settings Storage Service
@@ -113,10 +115,11 @@ final generalSettingsProvider = StateNotifierProvider<GeneralSettingsNotifier, A
 class GeneralSettingsNotifier extends StateNotifier<AsyncValue<GeneralSettings>> {
   final SettingsStorageService _storageService;
   static const String _generalSettingsKey = 'general_settings';
-  static const String _workflowSettingsBaseUrl =
-      'http://localhost:8002/api/v1/settings/workflow';
+  static String get _workflowSettingsBaseUrl =>
+      '${AppConfig.instance.apiBaseUrl}/api/v1/settings/workflow';
   static const String _internalToken =
       'internal-service-token-ppl-meta-frontend';
+
 
   GeneralSettingsNotifier(this._storageService) : super(const AsyncValue.loading()) {
     _loadSettings();
@@ -133,7 +136,8 @@ class GeneralSettingsNotifier extends StateNotifier<AsyncValue<GeneralSettings>>
       final backendMergeSettings = await _fetchBackendMvrMergeSettings();
       settings = settings.copyWith(
         mergeIndividualsRule:
-            backendMergeSettings?['merge_rule'] as String? ?? 'semi',
+            backendMergeSettings?['merge_rule'] as String? ?? 'none',
+
         mergeIndividualsThreshold:
             (backendMergeSettings?['merge_threshold'] as num?)?.toDouble() ??
                 0.70,
@@ -878,10 +882,11 @@ class WorkflowSettingsNotifier extends StateNotifier<AsyncValue<WorkflowSettings
     print('🔧 WorkflowSettingsNotifier: Loading settings from orchestrator...');
     try {
       final response = await _client.get(
-        Uri.parse('http://localhost:8002/api/v1/settings/workflow/velocity-sensitivity'),
+        Uri.parse('${AppConfig.instance.apiBaseUrl}/api/v1/settings/workflow/velocity-sensitivity'),
         headers: {'Authorization': 'Bearer internal-service-token-ppl-meta-frontend'},
       );
       print('🔧 WorkflowSettingsNotifier: Response status = ${response.statusCode}');
+
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -909,11 +914,12 @@ class WorkflowSettingsNotifier extends StateNotifier<AsyncValue<WorkflowSettings
     print('🔧 WorkflowSettingsNotifier: Updating velocity sensitivity to $value%...');
     try {
       final response = await _client.put(
-        Uri.parse('http://localhost:8002/api/v1/settings/workflow/velocity-sensitivity'),
+        Uri.parse('${AppConfig.instance.apiBaseUrl}/api/v1/settings/workflow/velocity-sensitivity'),
         headers: {
           'Authorization': 'Bearer internal-service-token-ppl-meta-frontend',
           'Content-Type': 'application/json',
         },
+
         body: jsonEncode({
           'value': value,
           'updated_by': 'frontend_user',

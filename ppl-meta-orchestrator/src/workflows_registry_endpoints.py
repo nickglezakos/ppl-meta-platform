@@ -16,11 +16,15 @@ from workflows_registry import (
 router = APIRouter(prefix="/api/v1/workflows", tags=["Workflows Registry"])
 security = HTTPBearer(auto_error=False)
 
-# Internal service token for inter-service communication
-INTERNAL_SERVICE_TOKEN = os.getenv(
-    "INTERNAL_SERVICE_TOKEN",
-    "ppl-meta-internal-service-secret-key-change-in-production"
-)
+# Internal service token for inter-service communication.
+# Security hardening (Proposal §10.2 C2): must be set via env var.
+# No default value — fails fast if misconfigured.
+INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "")
+if not INTERNAL_SERVICE_TOKEN:
+    raise RuntimeError(
+        "INTERNAL_SERVICE_TOKEN environment variable must be set. "
+        "Generate a unique token for this deployment."
+    )
 
 
 def get_auth_token(

@@ -322,3 +322,37 @@ Each compute module shoud be able to make their users plus their analytics endpo
 
 
 
+******************************************
+
+HARDWARE
+
+Top 3 Recommendations for a 24/7 Server Role
+Model	Best For	Why it's a "Pro" Choice
+
+Minisforum MS-01	
+Performance & Networking	Flagship of 2026. Includes 10GbE SFP+ ports and 
+massive PCIe expansion. If you want to future-proof your NAS/ETL pipelines 
+and run local AI models, this is the gold standard.
+
+ASUS NUC 14 Pro	
+Power Efficiency	Excellent "always-on" choice. It draws very little power 
+at idle (<10W), supports up to 48GB+ of DDR5 RAM, and maintains very 
+stable thermal performance for continuous operation.
+
+
+Refurbished Dell OptiPlex Micro	
+Extreme Budget/Reliability	An enterprise classic. These units are built 
+for office abuse, are extremely well-documented, and cost a fraction of 
+new gear. Highly recommended if you want "set and forget" reliability 
+without premium costs.
+
+
+### To Get VPN + Matrix Running, You Need These Additional Tasks (in order):
+
+
+Start VPN + Matrix Only (Layered)
+Stop VPN + Matrix Only (Layered)
+ 
+
+
+

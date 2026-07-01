@@ -203,6 +203,23 @@ async def lifespan(_app: FastAPI):
                 # Fallback to hostname resolution
                 detected_ip = socket.gethostbyname(socket.gethostname())
 
+            # Phase 4: Detect Tailscale VPN IP
+            tailscale_ip = None
+            try:
+                import json, subprocess
+                result = subprocess.run(
+                    ["tailscale", "status", "--json"],
+                    capture_output=True, text=True, timeout=3,
+                )
+                if result.returncode == 0:
+                    data = json.loads(result.stdout)
+                    ips = data.get("Self", {}).get("TailscaleIPs", [])
+                    tailscale_ip = ips[0] if ips else None
+                if tailscale_ip:
+                    logger.info(f"Detected Tailscale IP: {tailscale_ip}")
+            except Exception:
+                pass
+
             # Create discovery client
             discovery_client = DiscoveryClient("http://localhost:8006")
 
@@ -219,6 +236,7 @@ async def lifespan(_app: FastAPI):
                     "version": "1.0.0",
                     "environment": "development",
                     "features": "camera_management,video_streaming,detection",
+                    "tailscale_ip": tailscale_ip,
                 },
             )
 

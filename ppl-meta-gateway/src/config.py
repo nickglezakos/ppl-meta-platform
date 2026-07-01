@@ -206,7 +206,7 @@ settings = Settings()
 
 # CORS settings
 CORS_SETTINGS = {
-    "allow_origins": ["*"],  # Allow all origins for development
+    "allow_origin_regex": r"https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.\d+\.\d+)(:\d+)?",
     "allow_credentials": True,
     "allow_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     "allow_headers": ["*"],

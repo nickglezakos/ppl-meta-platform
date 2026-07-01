@@ -1171,7 +1171,8 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       print('   Found ${videoUuids.length} videos in collection');
 
       final generalSettings = ref.read(generalSettingsProvider).valueOrNull;
-      final mergeRule = generalSettings?.mergeIndividualsRule ?? 'semi';
+      final mergeRule = generalSettings?.mergeIndividualsRule ?? 'none';
+
       final mergeThreshold =
           generalSettings?.mergeIndividualsThreshold ?? 0.70;
       final autoMerge = mergeRule == 'auto';

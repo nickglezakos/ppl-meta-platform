@@ -21,7 +21,8 @@ GeneralSettings _$GeneralSettingsFromJson(Map<String, dynamic> json) =>
       performanceMonitoring:
           json['performanceMonitoring'] as bool? ?? true,
       mergeIndividualsRule:
-          json['mergeIndividualsRule'] as String? ?? 'semi',
+          json['mergeIndividualsRule'] as String? ?? 'none',
+
       mergeIndividualsThreshold:
           (json['mergeIndividualsThreshold'] as num?)?.toDouble() ??
               0.70,

@@ -61,11 +61,14 @@ except ImportError as e:
 security = HTTPBearer(auto_error=False)  # Don't auto-error, we'll handle validation
 
 # Internal service token for service-to-service auth
+# Security hardening (Proposal §10.2 C2): must be set via env var.
 import os
-INTERNAL_SERVICE_TOKEN = os.getenv(
-    "INTERNAL_SERVICE_TOKEN",
-    "ppl-meta-internal-service-secret-key-change-in-production"
-)
+INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "")
+if not INTERNAL_SERVICE_TOKEN:
+    raise RuntimeError(
+        "INTERNAL_SERVICE_TOKEN environment variable must be set. "
+        "Generate a unique token for this deployment."
+    )
 
 
 def get_auth_token(

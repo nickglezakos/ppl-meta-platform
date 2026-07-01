@@ -2658,7 +2658,7 @@ class _PersonObjectsDetailScreenState
   /// Show actions dialog with available operations for selected individuals
   Future<void> _showActionsDialog() async {
     final generalSettings = ref.read(generalSettingsProvider).valueOrNull;
-    final mergeRule = generalSettings?.mergeIndividualsRule ?? 'semi';
+    final mergeRule = generalSettings?.mergeIndividualsRule ?? 'none';
     final bool canMerge = _selectedIndividuals.length >= 2;
     final bool mergeDisabledByRule = mergeRule == 'none';
     
@@ -2840,7 +2840,7 @@ class _PersonObjectsDetailScreenState
   /// Show confirmation dialog for merging individuals
   Future<void> _showMergeConfirmationDialog() async {
     final generalSettings = ref.read(generalSettingsProvider).valueOrNull;
-    final mergeRule = generalSettings?.mergeIndividualsRule ?? 'semi';
+    final mergeRule = generalSettings?.mergeIndividualsRule ?? 'none';
     if (mergeRule == 'none') {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

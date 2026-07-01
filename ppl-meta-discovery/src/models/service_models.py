@@ -76,7 +76,6 @@ class PlatformLicenseInfo(BaseModel):
         if self.expires_at:
             now = datetime.utcnow()
             expires_at = self.expires_at
-            # Ensure both datetimes are timezone-naive for comparison
             if expires_at.tzinfo is not None:
                 expires_at = expires_at.replace(tzinfo=None)
             if expires_at < now:
@@ -90,7 +89,6 @@ class PlatformLicenseInfo(BaseModel):
             return None
         now = datetime.utcnow()
         expires_at = self.expires_at
-        # Ensure both datetimes are timezone-naive for comparison
         if expires_at.tzinfo is not None:
             expires_at = expires_at.replace(tzinfo=None)
         delta = expires_at - now
@@ -157,6 +155,9 @@ class ServiceInfo(BaseModel):
         default_factory=datetime.utcnow, description="Last heartbeat time"
     )
     heartbeat_count: int = Field(default=0, description="Number of heartbeats received")
+    # Phase 2: VPN-aware fields
+    tailscale_ip: Optional[str] = Field(default=None, description="Tailscale VPN IP address")
+    tailscale_port: Optional[int] = Field(default=None, description="Port reachable via Tailscale IP")
 
     @property
     def base_url(self) -> str:
@@ -167,6 +168,14 @@ class ServiceInfo(BaseModel):
     def health_url(self) -> str:
         """Get the health check URL for this service."""
         return f"{self.base_url}{self.health_endpoint}"
+
+    @property
+    def vpn_url(self) -> Optional[str]:
+        """Get VPN-reachable URL if tailscale IP is set."""
+        if self.tailscale_ip:
+            port = self.tailscale_port or self.port
+            return f"http://{self.tailscale_ip}:{port}"
+        return None
 
 
 class EdgeDeviceInfo(BaseModel):
@@ -198,6 +207,9 @@ class EdgeDeviceInfo(BaseModel):
         default_factory=datetime.utcnow, description="Last seen time"
     )
     heartbeat_count: int = Field(default=0, description="Number of heartbeats received")
+    # Phase 2: VPN-aware fields
+    tailscale_ip: Optional[str] = Field(default=None, description="Tailscale VPN IP address")
+    vpn_reachable: bool = Field(default=False, description="Whether device is reachable via VPN")
 
 
 class RegistrationRequest(BaseModel):
@@ -283,6 +295,10 @@ class PlatformTopology(BaseModel):
     )
     network_config: Dict[str, Any] = Field(
         default_factory=dict, description="Network configuration"
+    )
+    # Phase 2: VPN preference flag
+    preferred_network: Optional[str] = Field(
+        default=None, description="Preferred network: tailscale or local"
     )
 
     @property

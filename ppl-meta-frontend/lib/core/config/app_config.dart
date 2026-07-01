@@ -34,7 +34,8 @@ class AppConfig {
 
   static ({String apiBaseUrl, String cameraServiceUrl}) _webRuntimeDefaults() {
     final uri = Uri.base;
-    final host = uri.host.isNotEmpty ? uri.host : 'localhost';
+    final rawHost = uri.host.isNotEmpty ? uri.host : 'localhost';
+    final host = (rawHost == '0.0.0.0' || rawHost == '::1' || rawHost == '[::1]') ? 'localhost' : rawHost;
     final scheme = uri.scheme.isNotEmpty ? uri.scheme : 'http';
 
     // When served via nginx proxy (80/443), use same-origin API routes.

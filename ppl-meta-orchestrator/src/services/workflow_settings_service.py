@@ -177,11 +177,12 @@ class WorkflowSettingsService:
     async def _ensure_mvr_merge_settings(self) -> None:
         await self._ensure_setting_exists(
             key="mvr_merge_rule",
-            default_value=1.0,
+            default_value=0.0,
             min_value=0.0,
             max_value=2.0,
             description="MVR merge mode: 0=none, 1=semi, 2=auto",
         )
+
         await self._ensure_setting_exists(
             key="mvr_merge_threshold",
             default_value=0.70,
@@ -207,8 +208,9 @@ class WorkflowSettingsService:
             "mvr_stored_comparison_enabled"
         )
 
-        rule_int = int(round(rule_code if rule_code is not None else 1.0))
-        merge_rule = self.MERGE_CODE_TO_RULE.get(rule_int, "semi")
+        rule_int = int(round(rule_code if rule_code is not None else 0.0))
+        merge_rule = self.MERGE_CODE_TO_RULE.get(rule_int, "none")
+
 
         return {
             "merge_rule": merge_rule,

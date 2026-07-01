@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/edge_camera_api_client.dart';
 import '../../../services/auth_manager.dart';
+import '../../../core/config/app_config.dart';
+
 
 /// Dialog for configuring edge camera platform connection
 class EdgeCameraConfigDialog extends ConsumerStatefulWidget {
@@ -398,7 +400,7 @@ class _EdgeCameraConfigDialogState
     setState(() => _isLoading = true);
 
     try {
-      final baseUrl = 'http://localhost:8005'; // TODO: Get from config
+      final baseUrl = AppConfig.instance.apiBaseUrl; // Routed via Gateway for VPN/remote access
       final prefs = await SharedPreferences.getInstance();
       final authManager = AuthManager(prefs);
 

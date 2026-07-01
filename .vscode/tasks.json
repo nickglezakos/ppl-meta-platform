@@ -2,11 +2,11 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "🐍 Start Node Service (Local Python)",
+            "label": "🏥 Health Check via Nginx Proxy",
             "type": "shell",
-            "command": "cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload",
-            "group": "build",
-            "isBackground": true,
+            "command": "echo '🏥 PPL Meta Platform - Health Check via Nginx Proxy' && echo '========================================================' && echo && echo '🔍 Step 1: Checking Gateway (Critical Service)...' && if curl -s --connect-timeout 3 http://localhost:8080/health >/dev/null 2>&1; then echo '✅ Gateway running on port 8080' && echo && echo '🔍 Step 2: Checking Nginx Proxy...' && if curl -s --connect-timeout 2 http://localhost/ >/dev/null 2>&1 || curl -s --connect-timeout 2 http://localhost:80/ >/dev/null 2>&1; then echo '✅ Nginx is running' && echo && echo '📋 Service Status via Nginx Proxy:' && echo && echo '• Gateway (via proxy):' && curl -L -s --connect-timeout 3 http://localhost/health/gateway | python3 -m json.tool 2>/dev/null || curl -L -s --connect-timeout 3 http://localhost:80/health/gateway | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx' && echo && echo '• Node Service:' && curl -L -s --connect-timeout 3 http://localhost/health/node | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx' && echo && echo '• Media Service:' && curl -L -s --connect-timeout 3 http://localhost/health/media | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx' && echo && echo '• Orchestrator:' && curl -L -s --connect-timeout 3 http://localhost/health/orchestrator | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx' && echo && echo '• Cameras:' && curl -L -s --connect-timeout 3 http://localhost/health/cameras | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx'; else echo '❌ Nginx is NOT running on port 80' && echo && echo '💡 Start nginx with: 🌐 Start Nginx Proxy (Local Dev)' && echo '   Or check if nginx config is correct'; fi; else echo '❌ Gateway NOT running on port 8080' && echo && echo '⚠️  The gateway must be running for frontend to work!' && echo '💡 Start gateway with one of these:' && echo '   • ./manage-services.sh start' && echo '   • Task: 🌐 Start Gateway Service (Local Python)' && echo '   • Task: 🚀 Start All Local Python Services' && echo && echo '🔍 Checking if any other services are running...' && for port in 8000 8001 8002 8005; do if lsof -i :$port >/dev/null 2>&1; then echo \"  ✅ Port $port is in use\"; fi; done; fi",
+            "group": "test",
+            "isBackground": false,
             "problemMatcher": []
         },
         {
@@ -622,41 +622,9 @@
             "problemMatcher": []
         },
         {
-            "label": "🌐 Start Nginx Proxy (Local Dev)",
-            "type": "shell",
-            "command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/setup-nginx-local.sh",
-            "group": "build",
-            "isBackground": false,
-            "problemMatcher": []
-        },
-        {
-            "label": "🌐 Stop Nginx Proxy (Local Dev)",
-            "type": "shell",
-            "command": "nginx -s quit 2>/dev/null || true && if command -v brew >/dev/null 2>&1 && brew list nginx >/dev/null 2>&1; then brew services stop nginx || true; fi && sudo nginx -s quit 2>/dev/null || true",
-            "group": "build",
-            "isBackground": false,
-            "problemMatcher": []
-        },
-        {
             "label": "🌐 Reload Nginx Configuration",
             "type": "shell",
             "command": "nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && nginx -s reload || (sudo nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && sudo nginx -s reload)",
-            "group": "build",
-            "isBackground": false,
-            "problemMatcher": []
-        },
-        {
-            "label": "🌐 Test Nginx Configuration",
-            "type": "shell",
-            "command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/test-nginx-local.sh",
-            "group": "test",
-            "isBackground": false,
-            "problemMatcher": []
-        },
-        {
-            "label": "🌐 Reload Nginx Configuration",
-            "type": "shell",
-            "command": "echo '🌐 Reloading Nginx Configuration...' && (nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && nginx -s reload || (sudo nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && sudo nginx -s reload)) && echo '✅ Nginx configuration reloaded!'",
             "group": "build",
             "isBackground": false,
             "problemMatcher": []
@@ -682,14 +650,6 @@
             "type": "shell",
             "command": "echo '🛑 Stopping all local Python services and Nginx...' && sudo nginx -s quit 2>/dev/null || true && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && pkill -f 'uvicorn.*main_minimal:app' 2>/dev/null || true && pkill -f 'ppl-meta-vision.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-cameras.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-node.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-media.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-gateway.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-orchestrator.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-discovery.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-bootcore.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-vmeta.*uvicorn' 2>/dev/null || true && echo 'All services and nginx stopped.'",
             "group": "build",
-            "isBackground": false,
-            "problemMatcher": []
-        },
-        {
-            "label": "🏥 Health Check via Nginx Proxy",
-            "type": "shell",
-            "command": "echo '🏥 PPL Meta Platform - Health Check via Nginx Proxy' && echo '========================================================' && echo && echo '🔍 Checking Nginx status...' && if curl -s --connect-timeout 2 --max-time 4 http://localhost/ >/dev/null 2>&1; then echo '✅ Nginx is running' && echo && echo '📋 Service Status via Nginx (http://localhost):' && echo '• All Services Health:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health | python3 -m json.tool 2>/dev/null || echo '❌ Aggregated health endpoint not responding' && echo && echo '• Node Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/node | python3 -m json.tool 2>/dev/null || echo '❌ Node service not responding via nginx' && echo && echo '• Media Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/media | python3 -m json.tool 2>/dev/null || echo '❌ Media service not responding via nginx' && echo && echo '• Gateway Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/gateway | python3 -m json.tool 2>/dev/null || echo '❌ Gateway service not responding via nginx' && echo && echo '• Orchestrator Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/orchestrator | python3 -m json.tool 2>/dev/null || echo '❌ Orchestrator service not responding via nginx' && echo && echo '• Vision Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/vision | python3 -m json.tool 2>/dev/null || echo '❌ Vision service not responding via nginx' && echo && echo '• Cameras Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/cameras | python3 -m json.tool 2>/dev/null || echo '❌ Cameras service not responding via nginx' && echo && echo '• Bootcore Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/bootcore | python3 -m json.tool 2>/dev/null || echo '❌ Bootcore service not responding via nginx' && echo && echo '• vmeta Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/vmeta | python3 -m json.tool 2>/dev/null || echo '❌ vmeta service not responding via nginx' && echo && echo '• Communications Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/communications | python3 -m json.tool 2>/dev/null || echo '❌ Communications service not responding via nginx'; else echo '❌ Nginx is not running' && echo && echo '🔄 Falling back to direct service checks:' && echo '• Node Service (8001):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Media Service (8000):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Gateway Service (8080):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Orchestrator Service (8002):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Vision Service (8003):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8003/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Cameras Service (8005):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8005/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Bootcore Service (8007):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8007/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• vmeta Service (8008):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8008/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Communications Service (8009):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8009/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '💡 Tip: Start nginx with: 🌐 Start Nginx Proxy (Local Dev)'; fi",
-            "group": "test",
             "isBackground": false,
             "problemMatcher": []
         },
@@ -799,15 +759,7 @@
         },
         {
             "label": "🔧 Start Bootcore Service (Local Python)",
-            "command": "echo '🧪 PPL Meta Platform - Complete Testing Workflow' && echo '========================================================' && echo && echo '1️⃣ Stopping any existing services...' && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && sudo nginx -s quit 2>/dev/null || true && sleep 2 && echo '✅ Cleanup complete' && echo && echo '2️⃣ Starting all services...' && (cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload) & (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & (cd ppl-meta-vision && python src/main_enhanced.py) & (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo '✅ All services starting...' && echo && echo '3️⃣ Waiting for services to initialize...' && sleep 10 && echo && echo '4️⃣ Starting Nginx (will prompt for password)...' && sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && echo '✅ Nginx started' && echo && echo '5️⃣ Running health checks...' && sleep 3 && echo && if curl -s --connect-timeout 2 http://localhost/ >/dev/null 2>&1; then echo '✅ Nginx is running' && echo '📋 Service Status via Nginx:' && for service in health health/node health/media health/gateway health/orchestrator health/vision health/cameras; do echo -n \"  $service: \"; if curl -s --connect-timeout 3 http://localhost/$service >/dev/null 2>&1; then echo '✅ OK'; else echo '❌ FAIL'; fi; done; else echo '❌ Nginx failed to start'; fi && echo && [truncated]",
             "command": "cd ppl-meta-bootcore/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8007 --reload",
-            "isBackground": true,
-            "group": "build"
-        },
-        {
-            "label": "🔧 Start vmeta Service (Local Python)",
-            "type": "shell",
-            "command": "cd ppl-meta-vmeta && source venv/bin/activate && cd src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-vmeta/src uvicorn main:app --host 0.0.0.0 --port 8008 --reload",
             "isBackground": true,
             "group": "build"
         },
@@ -856,6 +808,161 @@
             "type": "shell",
             "command": "echo '🏥 Edge Camera Health Check' && echo '=========================' && curl -s http://localhost:9001/health | python -m json.tool || echo '❌ Edge camera not responding'",
             "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔐 Start Headscale Server (Local Dev)",
+            "type": "shell",
+            "command": "export PATH=\"$HOME/go/bin:$PATH\" && pkill -9 headscale 2>/dev/null; sleep 1; nohup headscale serve > /tmp/headscale.log 2>&1 & sleep 2; if curl -s http://127.0.0.1:8081/health | grep -q pass; then echo '✅ Headscale healthy on http://127.0.0.1:8081'; else echo '⚠️  Headscale may not be running -- check /tmp/headscale.log'; fi",
+            "detail": "Starts the local Headscale VPN coordination server on http://127.0.0.1:8081 (kept alive via nohup so it survives after this task's terminal exits)",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop Headscale Server",
+            "type": "shell",
+            "command": "pkill -9 headscale 2>/dev/null; echo '🛑 Headscale stopped'",
+            "detail": "Stops the local Headscale server",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Headscale Health Check",
+            "type": "shell",
+            "command": "echo '🏥 Headscale Health Check' && echo '========================' && curl -s http://127.0.0.1:8081/health | python3 -m json.tool || echo '❌ Headscale not responding'",
+            "detail": "Checks if the Headscale server is healthy",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔑 Headscale Create Dev Pre-Auth Key",
+            "type": "shell",
+            "command": "export PATH=\"$HOME/go/bin:$PATH\" && headscale users create dev 2>/dev/null; headscale preauthkeys create --user 1 --tags tag:installation,tag:matrix-dev 2>&1 | tee /tmp/last_preauth_key.txt && echo '' && echo '🔑 Key saved to /tmp/last_preauth_key.txt'",
+            "detail": "Creates dev user if needed and generates a pre-auth key with installation + matrix tags. Key saved to /tmp/last_preauth_key.txt",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔗 Enroll Tailscale to Local Headscale",
+            "type": "shell",
+            "command": "export KEY=$(cat /tmp/last_preauth_key.txt 2>/dev/null | tr -d '\\n'); if [ -z \"$KEY\" ]; then echo '❌ No pre-auth key found. Run \"Headscale Create Dev Pre-Auth Key\" first.'; exit 1; fi; pkill -f 'tailscaled --tun=userspace-networking' 2>/dev/null || true; sleep 1; rm -f /tmp/tailscaled.sock; rm -rf /tmp/tailscaled-state; nohup tailscaled --tun=userspace-networking --socket=/tmp/tailscaled.sock --statedir=/tmp/tailscaled-state > /tmp/tailscaled.log 2>&1 & for i in 1 2 3 4 5 6 7 8 9 10; do [ -S /tmp/tailscaled.sock ] && break; sleep 1; done; tailscale --socket=/tmp/tailscaled.sock up --login-server http://127.0.0.1:8081 --authkey \"$KEY\" --accept-routes=false --accept-dns=false --hostname=eyenet-dev 2>&1 && echo '✅ Enrolled!' || echo '❌ Enrollment failed. Check /tmp/tailscaled.log for details.'",
+            "detail": "Starts tailscaled in userspace-networking mode (using a writable /tmp socket to avoid macOS /var/run permission errors) and wipes the previous state dir so each enrollment starts fresh (avoids 'authkey already used' from a stale node identity), then enrolls this machine to the local Headscale (127.0.0.1:8081) using the last generated pre-auth key",
+            "group": "build",
+
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "📊 Tailscale Status",
+            "type": "shell",
+            "command": "echo '📊 Tailscale Status' && echo '==================' && tailscale --socket=/tmp/tailscaled.sock status 2>&1 && echo '' && echo '--- IP Address ---' && tailscale --socket=/tmp/tailscaled.sock ip -4 2>&1",
+            "detail": "Shows current Tailscale connection status and assigned IP address",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔌 Disconnect Tailscale from Local Headscale",
+            "type": "shell",
+            "command": "tailscale --socket=/tmp/tailscaled.sock logout 2>&1 && echo '🔌 Disconnected from Headscale' || echo '⚠️ Logout failed or not connected'",
+            "detail": "Logs out this machine from the local Headscale server",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🌐 Node VPN Status Check",
+            "type": "shell",
+            "command": "echo '🌐 Node VPN Status' && echo '==================' && curl -s http://localhost:8001/api/v1/node/vpn/status 2>&1 | python3 -m json.tool || echo '❌ Node not responding at port 8001'",
+            "detail": "Queries the EyeNet node's VPN enrollment status endpoint",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔐 Generate Dev Secrets (.env)",
+            "type": "shell",
+            "command": "bash ${workspaceFolder}/scripts/generate-dev-secrets.sh",
+            "detail": "Generates a strong random password + UUID tokens for DEV_BOOTSTRAP_PASSWORD, INTERNAL_SERVICE_TOKEN, and SECRET_KEY. Writes to .env and prints to console. Run this before starting the platform for the first time.",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Test Tailscale Utils (Python)",
+            "type": "shell",
+            "command": "cd /Users/nickgklezakos/Documents/ppl-meta-code && PYTHONPATH=shared python3 -c \"\nimport sys; sys.path.insert(0, 'shared')\nfrom networking.tailscale_utils import get_tailscale_ip, is_tailscale_connected, get_tailscale_peer_ips, get_tailscale_tags\n\nprint('🔍 Tailscale Utils Test')\nprint('======================')\nip = get_tailscale_ip()\nprint(f'Tailscale IP: {ip or \\\"None (not enrolled)\\\"}')\nprint(f'Connected: {is_tailscale_connected()}')\nprint(f'Tags: {get_tailscale_tags()}')\npeers = get_tailscale_peer_ips()\nprint(f'Peers: {len(peers)} ({peers[:3]}...)' if len(peers) > 3 else f'Peers: {peers}')\nprint('✅ Utils working!')\n\"",
+            "detail": "Tests the shared/networking/tailscale_utils.py module — verifies IP detection and peer discovery",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔢 Start Matrix Service (Local Python)",
+            "type": "shell",
+            "command": "cd ppl-meta-matrix/src && python -m uvicorn main:app --host 0.0.0.0 --port 8015 --reload",
+            "detail": "Starts the EyeNet Matrix microservice on port 8015. Auto-creates a default single-member Matrix group on first boot.",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop Matrix Service (Local Python)",
+            "type": "shell",
+            "command": "echo '🛑 Stopping Matrix Service...' && pkill -f 'ppl-meta-matrix.*uvicorn.*main:app' 2>/dev/null || true && lsof -ti:8015 | xargs kill -9 2>/dev/null || true && echo 'Matrix service stopped.'",
+            "detail": "Stops the EyeNet Matrix microservice and frees port 8015",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Matrix Service Health Check",
+            "type": "shell",
+            "command": "echo '🏥 Matrix Service Health Check' && echo '=============================' && curl -s http://localhost:8015/health | python3 -m json.tool 2>/dev/null || echo '❌ Matrix service not responding' && echo '' && echo '📋 Matrix Groups:' && curl -s http://localhost:8015/api/v1/matrix/groups | python3 -m json.tool 2>/dev/null || echo '❌ Cannot fetch groups'",
+            "detail": "Checks Matrix service health and lists all Matrix groups",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔐 Start VPN + Matrix Only (Layered)",
+            "type": "shell",
+            "command": "set -a && source ${workspaceFolder}/.env 2>/dev/null; set +a; echo '🔐 PPL Meta -- VPN + Matrix Only Startup' && echo '=====================================================' && echo '(Assumes core services are already running via Start All Local Python Services)' && echo '' && echo '--- Step 1: PostgreSQL for Authority ---' && if command -v brew >/dev/null 2>&1; then brew services start postgresql@16 >/dev/null 2>&1 || brew services start postgresql >/dev/null 2>&1 || true; fi && sleep 1 && if ! command -v psql >/dev/null 2>&1; then echo 'psql not found -- skipping Authority DB setup'; else psql postgres -tAc \"SELECT 1 FROM pg_roles WHERE rolname = 'authority_user'\" 2>/dev/null | grep -q 1 || psql postgres -c \"CREATE ROLE authority_user LOGIN PASSWORD 'authority_password'\" 2>/dev/null; psql postgres -c \"ALTER ROLE authority_user WITH LOGIN PASSWORD 'authority_password'\" 2>/dev/null; psql postgres -tAc \"SELECT 1 FROM pg_database WHERE datname = 'authority_db'\" 2>/dev/null | grep -q 1 || createdb -O authority_user authority_db 2>/dev/null; echo 'Authority PostgreSQL ready'; fi && echo '' && echo '--- Step 2: Headscale VPN Coordinator ---' && export PATH=\"$HOME/go/bin:$PATH\" && pkill -9 headscale 2>/dev/null; sleep 1; nohup headscale serve > /tmp/headscale.log 2>&1 & sleep 2 && if curl -s http://127.0.0.1:8081/health | grep -q pass; then echo 'Headscale healthy on http://127.0.0.1:8081'; else echo 'Headscale may not be running -- check /tmp/headscale.log'; fi && echo '' && echo '--- Step 3: VPN Enrollment ---' && headscale users create dev 2>/dev/null; KEY=$(headscale preauthkeys create --user 1 --tags tag:installation,tag:matrix-dev 2>&1 | tr -d '\\n') && echo \"Pre-auth key: $KEY\" && echo \"$KEY\" > /tmp/last_preauth_key.txt && pkill -f 'tailscaled --tun=userspace-networking' 2>/dev/null || true; sleep 1; rm -f /tmp/tailscaled.sock; rm -rf /tmp/tailscaled-state; nohup tailscaled --tun=userspace-networking --socket=/tmp/tailscaled.sock --statedir=/tmp/tailscaled-state > /tmp/tailscaled.log 2>&1 & for i in 1 2 3 4 5 6 7 8 9 10; do [ -S /tmp/tailscaled.sock ] && break; sleep 1; done; (tailscale --socket=/tmp/tailscaled.sock up --login-server http://127.0.0.1:8081 --authkey \"$KEY\" --accept-routes=false --accept-dns=false --hostname=eyenet-dev 2>&1 && echo 'Tailscale enrolled!') || echo 'Tailscale enrollment failed (continuing anyway -- check /tmp/tailscaled.log)' && echo '' && echo '--- Step 4: Authority + Matrix Services ---' && echo 'Starting Authority Service (port 8010)...' && (cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db nohup python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8010 --reload > /tmp/authority.log 2>&1 &) && echo 'Starting Matrix Service (port 8015)...' && (cd ppl-meta-matrix/src && nohup python -m uvicorn main:app --host 0.0.0.0 --port 8015 --reload > /tmp/matrix.log 2>&1 &) && echo 'Waiting 5s for services to initialize...' && sleep 5 && echo '' && echo '--- Health Verification ---' && for entry in '8010:Authority:/tmp/authority.log' '8015:Matrix:/tmp/matrix.log'; do port=${entry%%:*}; rest=${entry#*:}; name=${rest%%:*}; logfile=${rest#*:}; if curl -s --connect-timeout 3 \"http://localhost:$port/health\" >/dev/null 2>&1; then echo \"  OK: $name (:$port)\"; else echo \"  WARN: $name (:$port) -- still starting, check $logfile\"; fi; done && echo '' && echo '--- VPN Status ---' && { tailscale --socket=/tmp/tailscaled.sock ip -4 2>&1 || echo '(no VPN IP assigned yet)'; tailscale --socket=/tmp/tailscaled.sock status 2>&1 | head -5 || true; true; } && echo '' && echo 'VPN + Matrix startup complete!' && echo '(Make sure core services are already running via Start All Local Python Services)' && echo 'Matrix API: http://localhost:8015/api/v1/matrix/groups' && echo 'Authority:  http://localhost:8010/health' && echo 'VPN IP: run tailscale --socket=/tmp/tailscaled.sock ip -4'",
+            "detail": "Starts ONLY Headscale + VPN enrollment + Authority + Matrix. Does NOT touch the 11 core backend services -- layer this on top of 'Start All Local Python Services' for the full VPN+Matrix experience without the fragility of the all-in-one combined task.",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop VPN + Matrix Only (Layered)",
+            "type": "shell",
+
+            "command": "echo '🛑 PPL Meta -- Stopping VPN + Matrix Only' && echo '=====================================================' && echo '' && echo '--- Step 1: Stop Matrix Service ---' && pkill -f 'ppl-meta-matrix.*uvicorn.*main:app' 2>/dev/null || true && lsof -ti:8015 | xargs kill -9 2>/dev/null || true && echo '  Matrix stopped' && echo '' && echo '--- Step 2: Stop Authority Service ---' && pkill -f 'ppl-meta-authority/src.*uvicorn.*main:app' 2>/dev/null || true && lsof -ti:8010 | xargs kill -9 2>/dev/null || true && echo '  Authority stopped' && echo '' && echo '--- Step 3: Disconnect + Stop Tailscale ---' && tailscale --socket=/tmp/tailscaled.sock logout 2>&1 || true && pkill -f 'tailscaled --tun=userspace-networking' 2>/dev/null || true && echo '  Tailscale stopped' && echo '' && echo '--- Step 4: Stop Headscale ---' && pkill -9 headscale 2>/dev/null || true && echo '  Headscale stopped' && echo '' && echo '--- Verifying ports are free ---' && for port in 8010 8015 8081; do if lsof -i :$port >/dev/null 2>&1; then echo \"  WARN: Port $port still in use\"; else echo \"  OK: Port $port free\"; fi; done && echo '' && echo 'VPN + Matrix stopped! (Core services untouched)'",
+            "detail": "Stops ONLY Headscale, Tailscale VPN, Authority, and Matrix. Leaves the 11 core backend services (started separately via 'Start All Local Python Services') running untouched.",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🚀 Start All Platform (With VPN + Matrix)",
+            "type": "shell",
+            "command": "set -a && source ${workspaceFolder}/.env 2>/dev/null; set +a; echo '🚀 PPL Meta Platform -- Full Startup (VPN + Matrix)' && echo '=====================================================' && echo '' && echo '--- PHASE 1: Infrastructure ---' && echo '' && echo 'Starting PostgreSQL for Authority...' && if command -v brew >/dev/null 2>&1; then brew services start postgresql@16 >/dev/null 2>&1 || brew services start postgresql >/dev/null 2>&1 || true; fi && sleep 1 && if ! command -v psql >/dev/null 2>&1; then echo 'psql not found -- skipping Authority DB setup'; else psql postgres -tAc \"SELECT 1 FROM pg_roles WHERE rolname = 'authority_user'\" 2>/dev/null | grep -q 1 || psql postgres -c \"CREATE ROLE authority_user LOGIN PASSWORD 'authority_password'\" 2>/dev/null; psql postgres -c \"ALTER ROLE authority_user WITH LOGIN PASSWORD 'authority_password'\" 2>/dev/null; psql postgres -tAc \"SELECT 1 FROM pg_database WHERE datname = 'authority_db'\" 2>/dev/null | grep -q 1 || createdb -O authority_user authority_db 2>/dev/null; echo 'Authority PostgreSQL ready'; fi && echo '' && echo 'Starting Headscale VPN Coordinator...' && export PATH=\"$HOME/go/bin:$PATH\" && pkill -9 headscale 2>/dev/null; sleep 1; nohup headscale serve > /tmp/headscale.log 2>&1 & sleep 2 && if curl -s http://127.0.0.1:8081/health | grep -q pass; then echo 'Headscale healthy on http://127.0.0.1:8081'; else echo 'Headscale may not be running -- check /tmp/headscale.log'; fi && echo '' && echo '--- PHASE 2: VPN Enrollment ---' && echo '' && echo 'Creating dev user + pre-auth key...' && export PATH=\"$HOME/go/bin:$PATH\" && headscale users create dev 2>/dev/null; KEY=$(headscale preauthkeys create --user 1 --tags tag:installation,tag:matrix-dev 2>&1 | tr -d '\\n') && echo \"Pre-auth key: $KEY\" && echo \"$KEY\" > /tmp/last_preauth_key.txt && echo 'Key saved to /tmp/last_preauth_key.txt' && echo '' && echo 'Enrolling Tailscale to local Headscale...' && pkill -f 'tailscaled --tun=userspace-networking' 2>/dev/null || true; sleep 1; rm -f /tmp/tailscaled.sock; nohup tailscaled --tun=userspace-networking --socket=/tmp/tailscaled.sock --statedir=/tmp/tailscaled-state > /tmp/tailscaled.log 2>&1 & for i in 1 2 3 4 5 6 7 8 9 10; do [ -S /tmp/tailscaled.sock ] && break; sleep 1; done; (tailscale --socket=/tmp/tailscaled.sock up --login-server http://127.0.0.1:8081 --authkey \"$KEY\" --accept-routes=false --accept-dns=false --hostname=eyenet-dev 2>&1 && echo 'Tailscale enrolled!') || echo 'Tailscale enrollment failed (continuing anyway -- check /tmp/tailscaled.log)' && echo '' && echo '--- PHASE 3: Core Backend Services ---' && echo '' && echo 'Starting 11 backend services...' && (cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload) & (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload) & (cd ppl-meta-media && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & (cd ppl-meta-vision && source venv/bin/activate && python src/main.py) & (cd ppl-meta-cameras && set -a && source .env && set +a && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload) & (cd ppl-meta-bootcore/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8007 --reload) & (cd ppl-meta-vmeta && source venv/bin/activate && cd src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-vmeta/src uvicorn main:app --host 0.0.0.0 --port 8008 --reload) & (cd ppl-meta-communications && /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-communications/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8009 --reload) & (cd ppl-meta-presence/src && source /Users/nickgklezakos/Documents/ppl-meta-code/scripts/load-presence-runtime-env.sh && PRESENCE_DETECTION_BACKEND_MODE=auto PRESENCE_PREFERRED_CAMERA_TYPES=${env:PRESENCE_PREFERRED_CAMERA_TYPES} PRESENCE_PREFERRED_CAMERA_NAMES=${env:PRESENCE_PREFERRED_CAMERA_NAMES} PRESENCE_ALLOWED_CAMERA_STATUSES=${env:PRESENCE_ALLOWED_CAMERA_STATUSES} PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-presence/src python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8011 --reload) & echo 'Waiting 10s for core services to initialize...' && sleep 10 && echo '' && echo '--- PHASE 4: Authority + Matrix ---' && echo '' && echo 'Starting Authority Service (port 8010)...' && (cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8010 --reload) & echo 'Starting Matrix Service (port 8015)...' && (cd ppl-meta-matrix/src && python -m uvicorn main:app --host 0.0.0.0 --port 8015 --reload) & sleep 4 && echo '' && echo '--- PHASE 5: Health Verification ---' && echo '' && echo 'Checking all services...' && sleep 2 && for svc in '8001:Node' '8000:Media' '8080:Gateway' '8002:Orchestrator' '8003:Vision' '8005:Cameras' '8006:Discovery' '8007:Bootcore' '8008:vmeta' '8009:Communications' '8011:Presence' '8010:Authority' '8015:Matrix'; do port=${svc%%:*}; name=${svc##*:}; health_url=\"http://localhost:$port/health\"; if curl -s --connect-timeout 3 \"$health_url\" >/dev/null 2>&1; then echo \"  OK: $name (:$port)\"; else echo \"  WARN: $name (:$port) -- still starting...\"; fi; done && echo '' && echo '--- VPN Status ---' && echo '' && tailscale --socket=/tmp/tailscaled.sock ip -4 2>&1 && tailscale --socket=/tmp/tailscaled.sock status 2>&1 | head -5 && echo '' && echo 'Platform startup complete!' && echo '   Matrix API: http://localhost:8015/api/v1/matrix/groups' && echo '   VPN Status: http://localhost:8001/api/v1/node/vpn/status' && echo '   Topology:   http://localhost:8006/api/v1/discovery/topology?vpn=true' && wait",
+            "detail": "Complete platform startup: PostgreSQL -> Headscale -> VPN enrollment -> 11 backends -> Authority -> Matrix. Runs all phases sequentially with health verification at the end. NOTE: prefer the separate 'Start All Local Python Services' + 'Start VPN + Matrix Only (Layered)' tasks for a more robust two-step startup.",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop All Platform (With VPN + Matrix)",
+            "type": "shell",
+            "command": "echo '🛑 PPL Meta Platform -- Full Shutdown (VPN + Matrix)' && echo '=====================================================' && echo '' && echo '--- Step 1: Stop Matrix Service ---' && pkill -f 'ppl-meta-matrix.*uvicorn.*main:app' 2>/dev/null || true && lsof -ti:8015 | xargs kill -9 2>/dev/null || true && echo '  Matrix stopped' && echo '' && echo '--- Step 2: Stop Authority Service ---' && pkill -f 'ppl-meta-authority/src.*uvicorn.*main:app' 2>/dev/null || true && lsof -ti:8010 | xargs kill -9 2>/dev/null || true && echo '  Authority stopped' && echo '' && echo '--- Step 3: Stop All Backend Services ---' && pkill -9 -f 'python.*ppl-meta' 2>/dev/null || true && pkill -9 -f 'uvicorn.*ppl-meta' 2>/dev/null || true && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && pkill -f 'ppl-meta-vision.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-cameras.*python.*main.py' 2>/dev/null || true && pkill -f 'multiprocessing.*ppl-meta' 2>/dev/null || true && sleep 2 && for port in 8000 8001 8002 8003 8005 8006 8007 8008 8009 8011 8010 8015 8080; do lsof -ti:$port | xargs kill -9 2>/dev/null || true; done && sleep 1 && echo '' && echo '--- Step 4: Disconnect Tailscale VPN ---' && tailscale --socket=/tmp/tailscaled.sock logout 2>&1 || true && pkill -f 'tailscaled --tun=userspace-networking' 2>/dev/null || true && echo '  VPN disconnected' && echo '' && echo '--- Step 5: Stop Headscale ---' && pkill -9 headscale 2>/dev/null || true && echo '  Headscale stopped' && echo '' && echo '--- Step 6: Stop PostgreSQL ---' && if command -v brew >/dev/null 2>&1; then brew services stop postgresql@16 2>/dev/null || brew services stop postgresql 2>/dev/null || true; fi && echo '  PostgreSQL stop command sent' && echo '' && echo '--- Verifying ports are free ---' && for port in 8000 8001 8002 8003 8005 8006 8007 8008 8009 8011 8010 8015 8080; do if lsof -i :$port >/dev/null 2>&1; then echo \"  WARN: Port $port still in use\"; else echo \"  OK: Port $port free\"; fi; done && echo '' && echo 'Platform shutdown complete!'",
+            "detail": "Stops everything: Matrix -> Authority -> 11 backends -> Tailscale VPN -> Headscale -> PostgreSQL. Verifies all ports are freed.",
+            "group": "build",
             "isBackground": false,
             "problemMatcher": []
         }

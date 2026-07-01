@@ -118,6 +118,7 @@ class AuditLogService:
         user_id: Optional[str] = None,
         ip_address: Optional[str] = None,
         severity: str = "info",
+        source_network: Optional[str] = None,
     ) -> tuple[bool, str, UUID]:
         """
         Create an audit log entry.
@@ -130,14 +131,19 @@ class AuditLogService:
             return False, "Audit logging is disabled", None
 
         try:
+            content_parts = [f"User: {user_id}", f"IP: {ip_address}", f"Severity: {severity}"]
+            if source_network:
+                content_parts.append(f"Network: {source_network}")
+
             # Create communication log (audit logs use the same table)
             log = CommunicationLog(
                 type=CommunicationType.AUDIT_LOG,
                 status=CommunicationStatus.DELIVERED,  # Audit logs are immediately "delivered"
                 recipient=event_source,  # Source service/component
                 subject=event_type,  # Event type
-                content=f"User: {user_id}, IP: {ip_address}, Severity: {severity}",
+                content=", ".join(content_parts),
                 payload=event_data,
+
                 triggered_by=user_id,
                 trigger_type="audit_event",
                 trigger_id=event_type,

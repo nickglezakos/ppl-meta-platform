@@ -27,34 +27,49 @@ app_start_time = time.time()
 async def verify_token(credentials: Optional[HTTPAuthorizationCredentials] = Security(security)) -> Optional[str]:
     """
     Verify JWT token for API authentication.
-    
-    For now, accepts any token if platform API key is set.
-    In production, should validate JWT signature with platform's public key.
+
+    Security hardening (Proposal §10.2 C5): validates JWT signature
+    using the platform's SECRET_KEY. Falls back to dev mode only when
+    ENVIRONMENT=development and no API key is configured.
     """
+    import os
     config = get_config()
-    
-    # If no API key configured, allow all requests (development mode)
-    if not config.platform.api_key:
-        logger.warning("⚠️ No API key configured - allowing all requests (development mode)")
-        return None
-    
-    # If credentials not provided
+    is_dev = os.environ.get("ENVIRONMENT") == "development"
+
+    # Dev mode without API key: allow for local testing only
+    if is_dev and not config.platform.api_key:
+        logger.warning("⚠️ Development mode — API key not configured")
+        if not credentials:
+            return None
+        token = credentials.credentials
+        logger.debug("Dev mode: accepting token without validation")
+        return token
+
+    # Production or dev with API key: require valid authorization
     if not credentials:
-        raise HTTPException(
-            status_code=401,
-            detail="Authorization header missing"
-        )
-    
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+
     token = credentials.credentials
-    
-    # Simple token validation - check if it matches platform API key
-    # In production, should validate JWT signature
+
+    # Try JWT validation against platform SECRET_KEY
+    secret_key = os.environ.get("SECRET_KEY", "")
+    if secret_key:
+        try:
+            import jwt as pyjwt
+            pyjwt.decode(token, secret_key, algorithms=["HS256"])
+            return token
+        except Exception as exc:
+            if not is_dev:
+                raise HTTPException(status_code=401, detail=f"Invalid token: {exc}")
+            # Dev fallback: accept token even if JWT validation fails
+            logger.warning("Dev mode: JWT validation failed but accepting token: %s", exc)
+            return token
+
+    # Legacy fallback: simple API key comparison
     if token == config.platform.api_key:
         return token
-    
-    # For development, accept any Bearer token
-    logger.warning("⚠️ Token validation not fully implemented - accepting token")
-    return token
+
+    raise HTTPException(status_code=401, detail="Invalid API key or token")
 
 
 async def get_configuration() -> Dict[str, Any]:

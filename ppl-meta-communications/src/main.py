@@ -53,6 +53,7 @@ from .routes.notification import router as notification_router
 from .routes.audit import router as audit_router
 from .routes.email_settings import router as email_settings_router
 from .api.health import router as health_router
+from .api.vpn import router as vpn_router
 
 # Try to import shared modules
 try:
@@ -85,6 +86,23 @@ async def lifespan(_app: FastAPI):
             except Exception:
                 detected_ip = socket.gethostbyname(socket.gethostname())
 
+            # Phase 3: Detect Tailscale IP for VPN registration
+            tailscale_ip = None
+            try:
+                import json, subprocess
+                result = subprocess.run(
+                    ["tailscale", "status", "--json"],
+                    capture_output=True, text=True, timeout=3,
+                )
+                if result.returncode == 0:
+                    data = json.loads(result.stdout)
+                    ips = data.get("Self", {}).get("TailscaleIPs", [])
+                    tailscale_ip = ips[0] if ips else None
+                if tailscale_ip:
+                    logger.info(f"Detected Tailscale IP: {tailscale_ip}")
+            except Exception:
+                pass
+
             await register_service(
                 name="ppl-meta-communications",
                 service_type="backend",
@@ -97,6 +115,7 @@ async def lifespan(_app: FastAPI):
                     "version": "1.0.0",
                     "environment": config.ENVIRONMENT,
                     "features": "email,webhooks,push_notifications,audit_logging",
+                    "tailscale_ip": tailscale_ip,
                 },
             )
             logger.info("Successfully registered ppl-meta-communications with discovery service")
@@ -169,6 +188,7 @@ app.include_router(webhook_router, prefix="/api/v1")
 app.include_router(notification_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1")
 app.include_router(email_settings_router)
+app.include_router(vpn_router)
 
 
 @app.get("/")

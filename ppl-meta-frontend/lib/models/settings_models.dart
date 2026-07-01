@@ -47,8 +47,9 @@ class GeneralSettings {
       maxLogEntries: 1000,
       debugMode: false,
       performanceMonitoring: true,
-      mergeIndividualsRule: 'semi',
+      mergeIndividualsRule: 'none',
       mergeIndividualsThreshold: 0.70,
+
       mvrStoredComparison: false,
     );
   }

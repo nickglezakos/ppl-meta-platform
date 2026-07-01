@@ -24,10 +24,13 @@ router = APIRouter(prefix="/api/v1/settings/workflow", tags=["workflow-settings"
 # Authentication
 security = HTTPBearer()
 
-INTERNAL_SERVICE_TOKEN = os.getenv(
-    "INTERNAL_SERVICE_TOKEN",
-    "ppl-meta-internal-service-secret-key-change-in-production"
-)
+# Security hardening (Proposal §10.2 C2): must be set via env var.
+INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "")
+if not INTERNAL_SERVICE_TOKEN:
+    raise RuntimeError(
+        "INTERNAL_SERVICE_TOKEN environment variable must be set. "
+        "Generate a unique token for this deployment."
+    )
 
 
 def get_auth_token(

@@ -3442,7 +3442,7 @@ async def search_mvr_people_by_videos(
                         "Detected %s invalid linked MVR rows for merge search; rematerializing target videos",
                         invalid_linked_mvr_rows,
                     )
-                    await _materialize_missing_video_mvr_rows()
+                    await _materialize_missing_video_mvr_rows(video_uuid_objs)
                     individual_rows = await conn.fetch(
                         individuals_query,
                         video_uuid_objs
@@ -3557,7 +3557,7 @@ async def search_mvr_people_by_videos(
                 logger.warning(
                     "No valid merge-ready MVR rows found after filtering invalid embeddings; retrying video materialization"
                 )
-                await _materialize_missing_video_mvr_rows()
+                await _materialize_missing_video_mvr_rows(video_uuid_objs)
                 individual_rows = await conn.fetch(
                     individuals_query,
                     video_uuid_objs

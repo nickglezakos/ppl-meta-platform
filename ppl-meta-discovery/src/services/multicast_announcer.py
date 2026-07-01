@@ -12,7 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 class MulticastAnnouncer:
-    """Handles multicast announcements for service discovery."""
+    """Handles multicast announcements for service discovery.
+
+    Phase 2: VPN-aware — includes Tailscale IP in announcements so
+    VPN-connected clients can discover the platform without multicast.
+    """
 
     def __init__(
         self,
@@ -21,14 +25,7 @@ class MulticastAnnouncer:
         announcement_interval: int = 30,
         discovery_port: int = 8006,
     ):
-        """Initialize multicast announcer.
-
-        Args:
-            multicast_group: Multicast IP address
-            multicast_port: Multicast port
-            announcement_interval: Seconds between announcements
-            discovery_port: Port of discovery service
-        """
+        super().__init__()
         self.multicast_group = multicast_group
         self.multicast_port = multicast_port
         self.announcement_interval = announcement_interval
@@ -41,6 +38,7 @@ class MulticastAnnouncer:
 
         # Local network interfaces cache
         self._local_ips: list[str] = []
+        self._tailscale_ip: Optional[str] = None
 
     async def start(self):
         """Start multicast announcements and listener."""
@@ -49,6 +47,7 @@ class MulticastAnnouncer:
         )
 
         self._running = True
+        self._tailscale_ip = self._get_tailscale_ip()
         self._update_local_ips()
 
         # Start announcement task
@@ -80,6 +79,23 @@ class MulticastAnnouncer:
         if self._sock:
             self._sock.close()
             self._sock = None
+
+    def _get_tailscale_ip(self) -> Optional[str]:
+        """Get the local Tailscale VPN IP, if connected."""
+        try:
+            import subprocess, json
+            result = subprocess.run(
+                ["tailscale", "status", "--json"],
+                capture_output=True, text=True, timeout=3,
+            )
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                ips = data.get("Self", {}).get("TailscaleIPs", [])
+                if ips:
+                    return ips[0]
+        except Exception:
+            pass
+        return None
 
     def _update_local_ips(self):
         """Update list of local IP addresses."""
@@ -150,6 +166,9 @@ class MulticastAnnouncer:
             "timestamp": datetime.utcnow().isoformat(),
             "discovery_port": self.discovery_port,
             "local_ips": self._local_ips,
+            # Phase 2: VPN-aware
+            "tailscale_ip": self._tailscale_ip,
+            "tailscale_network": "100.64.0.0/10",
         }
         return json.dumps(message).encode("utf-8")
 

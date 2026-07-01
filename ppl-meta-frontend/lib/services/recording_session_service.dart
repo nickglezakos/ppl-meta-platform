@@ -4,14 +4,18 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'camera_auth_service.dart';
+import '../core/config/app_config.dart';
 
 /// Phase 4 Recording Session Service
 /// 
 /// Provides comprehensive recording session management with database persistence
 /// Integrates with PPL Meta Orchestrator for session tracking and workflow management
 class RecordingSessionService extends ChangeNotifier {
-  static const String _baseUrl = 'http://localhost:8002/api/v1';
-  static const String _camerasBaseUrl = 'http://localhost:8005/api/v1';
+  // Route through the Gateway (instead of hardcoded direct service ports)
+  // so requests work correctly over VPN/remote access.
+  static String get _baseUrl => '${AppConfig.instance.apiBaseUrl}/api/v1/orchestrator';
+  static String get _camerasBaseUrl => '${AppConfig.instance.apiBaseUrl}/api/v1';
+
   
   final CameraAuthService _authService;
   final Logger _logger = Logger(

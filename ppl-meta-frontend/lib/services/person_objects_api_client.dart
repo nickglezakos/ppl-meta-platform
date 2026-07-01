@@ -31,9 +31,11 @@ class PersonObjectsApiClient {
   PersonObjectsApiClient([ApiClient? apiClient]) {
     // Use provided ApiClient (which has auth token) or create new one
     _apiClient = apiClient ?? ApiClient(AppConfig.instance);
-    final gatewayUri = Uri.parse(_apiClient.baseUrl);
-    final orchestratorBaseUrl = '${gatewayUri.scheme}://${gatewayUri.host}:8002';
-    final visionBaseUrl = '${gatewayUri.scheme}://${gatewayUri.host}:8003';
+    // Route through the Gateway instead of hardcoded direct service ports so
+    // requests work correctly over VPN/remote access (see AppConfig.apiBaseUrl).
+    final orchestratorBaseUrl = _apiClient.baseUrl;
+    final visionBaseUrl = _apiClient.baseUrl;
+
     
     // Create dedicated Dio instances for different services
     // This prevents race conditions from concurrent requests to different services

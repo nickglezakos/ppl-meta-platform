@@ -113,6 +113,7 @@ SERVICES = {
     "orchestrator": "http://localhost:8002",
     "vision": "http://localhost:8003",
     "cameras": "http://localhost:8005",
+    "discovery": "http://localhost:8006",
     "vmeta": "http://localhost:8008",
     "communications": "http://localhost:8009",
     "presence": "http://localhost:8011",
@@ -2131,6 +2132,106 @@ async def get_camera_recording_sessions(request: Request):
     return await _proxy_to_orchestrator_service(request)
 
 
+@api_router.get("/orchestrator/recording-sessions/monitoring/active")
+async def get_active_recording_sessions(request: Request):
+    """Proxy get active recording sessions to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/recording-sessions/statistics")
+async def get_recording_session_statistics(request: Request):
+    """Proxy get recording session statistics to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.put("/orchestrator/recording-sessions/{session_uuid}/status")
+async def update_recording_session_status(request: Request):
+    """Proxy update recording session status to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.delete("/orchestrator/recording-sessions/{session_uuid}")
+async def delete_recording_session(request: Request):
+    """Proxy delete recording session to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/orchestrator/recording-sessions/{session_uuid}/heartbeat")
+async def send_recording_session_heartbeat(request: Request):
+    """Proxy recording session heartbeat to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/orchestrator/recording-sessions/{session_uuid}/face-detection/trigger")
+async def trigger_recording_session_face_detection(request: Request):
+    """Proxy recording session face detection trigger to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+# Workflow Settings Routes (velocity-sensitivity, mvr-merge)
+@api_router.get("/settings/workflow/velocity-sensitivity")
+async def get_workflow_velocity_sensitivity(request: Request):
+    """Proxy get workflow velocity-sensitivity settings to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.put("/settings/workflow/velocity-sensitivity")
+async def update_workflow_velocity_sensitivity(request: Request):
+    """Proxy update workflow velocity-sensitivity settings to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/settings/workflow/mvr-merge")
+async def get_workflow_mvr_merge_settings(request: Request):
+    """Proxy get workflow mvr-merge settings to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.put("/settings/workflow/mvr-merge")
+async def update_workflow_mvr_merge_settings(request: Request):
+    """Proxy update workflow mvr-merge settings to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/settings/workflow/all")
+async def get_all_workflow_settings(request: Request):
+    """Proxy get all workflow settings to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+# Monitoring Dashboard Routes (orchestrator-owned; path forwarded as-is
+# since orchestrator mounts its monitoring router at /api/v1/monitoring)
+@api_router.get("/monitoring/summary")
+async def get_monitoring_summary(request: Request):
+    """Proxy monitoring summary to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/monitoring/charts")
+async def get_monitoring_charts(request: Request):
+    """Proxy monitoring chart data to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/monitoring/workflows/low-level")
+async def get_monitoring_low_level_workflows(request: Request):
+    """Proxy paginated low-level workflows to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/monitoring/workflows/methods")
+async def get_monitoring_workflow_methods(request: Request):
+    """Proxy workflow methods breakdown to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/monitoring/cache/clear")
+async def clear_monitoring_cache(request: Request):
+    """Proxy monitoring cache clear to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+
 # Camera Events Routes
 @api_router.post(
     "/orchestrator/camera-events/cameras/{camera_device_id}/webhook/register"
@@ -2695,3 +2796,136 @@ async def update_mvr_person_name(request: Request):
 async def update_mvr_person_gender(request: Request):
     """Proxy MVR person gender update request to vmeta service."""
     return await _proxy_to_vmeta_service(request)
+
+
+# ============================================================================
+# Discovery Service Routes
+# ============================================================================
+
+async def _proxy_to_discovery_service(request: Request) -> Response:
+    """Helper function to proxy requests to the Discovery service."""
+    try:
+        path = str(request.url.path)
+        method = request.method
+        target_url = f"{SERVICES['discovery']}{path}"
+
+        body = None
+        if request.method in ["POST", "PUT", "PATCH"]:
+            body = await request.body()
+
+        headers = dict(request.headers)
+        headers.pop("host", None)
+
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            response = await client.request(
+                method=method,
+                url=target_url,
+                headers=headers,
+                content=body,
+                params=dict(request.query_params),
+            )
+
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.headers.get("content-type", "application/json"),
+            )
+
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503, detail=f"Discovery service unavailable: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Internal discovery proxy error: {str(e)}"
+        )
+
+
+@api_router.get("/services")
+async def list_discovered_services(request: Request):
+    """Proxy service discovery list to Discovery service."""
+    return await _proxy_to_discovery_service(request)
+
+
+@api_router.get("/services/{service_id}")
+async def get_discovered_service(request: Request):
+    """Proxy get discovered service by ID to Discovery service."""
+    return await _proxy_to_discovery_service(request)
+
+
+# ============================================================================
+# Camera Rename & Edge Camera Management Routes (Cameras Service)
+# ============================================================================
+
+@api_router.patch("/cameras/{device_id}/name")
+async def rename_camera(request: Request):
+    """Proxy camera rename to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/edge-cameras/register-edge")
+async def register_edge_camera(request: Request):
+    """Proxy edge camera registration to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/edge-cameras/{device_id}/config")
+async def get_edge_camera_config(request: Request):
+    """Proxy get edge camera config to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.put("/edge-cameras/{device_id}/config")
+async def update_edge_camera_config(request: Request):
+    """Proxy update edge camera config to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/edge-cameras/{device_id}/config/platform")
+async def push_edge_camera_platform_config(request: Request):
+    """Proxy push edge camera platform config to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/edge-cameras/{device_id}/status")
+async def get_edge_camera_status(request: Request):
+    """Proxy get edge camera status to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/edge-cameras/{device_id}/logs")
+async def get_edge_camera_logs(request: Request):
+    """Proxy get edge camera logs to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/edge-cameras/{device_id}/diagnostics/network")
+async def get_edge_camera_network_diagnostics(request: Request):
+    """Proxy edge camera network diagnostics to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/edge-cameras/{device_id}/control/start")
+async def start_edge_camera(request: Request):
+    """Proxy start edge camera to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/edge-cameras/{device_id}/control/stop")
+async def stop_edge_camera(request: Request):
+    """Proxy stop edge camera to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/edge-cameras/{device_id}/control/restart")
+async def restart_edge_camera(request: Request):
+    """Proxy restart edge camera to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/edge-cameras/{device_id}/control/reconnect")
+async def reconnect_edge_camera(request: Request):
+    """Proxy reconnect edge camera to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+

@@ -57,7 +57,42 @@ EyeNet delivers an integrated vision intelligence platform with:
 
 ## Product Portfolio
 
-### 1. Intelligent Signage
+### 1. Presence
+
+#### Overview
+Presence verification and attendance orchestration module combining mobile interactions, station-side scanning, QR flows, camera-based detection, policy-driven decisions, and operational reporting for secure, explainable presence confirmation.
+
+#### Description
+PPL Meta Presence delivers verified presence outcomes for check-in and related workflows by coordinating mobile device participation, station-side QR interactions, camera or face-detection based validation, and configurable installation and group policies. The module supports multiple session modes — QR-only, camera-only, and QR-plus-camera — enabling deployments from simple check-in scenarios to high-assurance verified presence flows.
+
+#### Key Features
+- **Multi-mode presence flows** - QR-only, camera-only, and QR+camera verification for graduated assurance levels
+- **Session orchestration** - Full lifecycle management from creation through burst upload, QR resolution, instant detection, and final decision
+- **Camera and resource management** - Camera reservation, collection binding, and auto-selection with preferred camera configuration
+- **Policy-driven automation** - Installation-level and group-specific policy configuration with trigger/action mapping per decision state
+- **QR capabilities** - Station challenge QR, owner identity QR, mobile-presented QR with integrity metadata
+- **Audit and traceability** - Decision history, session traces, action plan inspection, and policy source visibility across all sessions
+- **Analytics suite** - Analytics by user, device, installation, session mode, grant type, policy source, and outcome
+- **Privacy-first design** - GDPR-compliant architecture separating presence outcomes from raw face data, focusing on session metadata and automation traces
+
+#### Deployment Modes
+- Spot Mode (fixed check-in/verification points such as entry kiosks and access terminals)
+- Gate Mode (entrances and corridors for presence-based gate security hardening)
+
+#### Target Market
+- Workplaces and corporate offices
+- Controlled premises and secure facilities
+- Enterprise security environments
+- Educational institutions
+- Healthcare facilities
+- Industrial and manufacturing sites
+
+#### Market Positioning
+Reliable, explainable, and configurable presence confirmation platform for regulated and security-conscious environments requiring auditable attendance, policy-driven access decisions, and operational integration readiness.
+
+---
+
+### 2. Intelligent Signage
 
 #### Overview
 Transforms digital displays into intelligent marketing platforms with demographic-driven content delivery and real-time audience analytics.
@@ -89,13 +124,13 @@ Premium positioning in the digital signage market with ROI focus on improved cus
 
 ---
 
-### 2. Gate Activity
+### 3. Gate Activity
 
 #### Overview
-Advanced security monitoring for entrances and corridors with crowd analytics, threat detection, and comprehensive behavioral insights.
+Advanced security monitoring for entrances and corridors with crowd analytics, threat detection, and comprehensive behavioral insights. EyeNet Presence applied on a gate hardens the gate security alongside the existing features.
 
 #### Description
-A robust security and operational tool designed to monitor people activity in gates, entrances, exits, and corridors. It provides real-time data and security alerts, enabling businesses to understand crowd dynamics and respond to security events proactively.
+A robust security and operational tool designed to monitor people activity in gates, entrances, exits, and corridors. It provides real-time data and security alerts, enabling businesses to understand crowd dynamics and respond to security events proactively. When combined with EyeNet Presence, gate deployments gain an additional layer of verified presence-based security hardening.
 
 #### Key Features
 - **Real-time people counters** - Live crowd size monitoring
@@ -106,6 +141,7 @@ A robust security and operational tool designed to monitor people activity in ga
 - **Facial recognition** - Person of interest identification and tracking
 - **Live video streaming** - Annotated real-time feeds
 - **Flexible video storage** - Instant and deep archive options
+- **Presence-hardened gate security** - EyeNet Presence integration adds verified check-in and policy-driven access decisions at gate points
 
 #### Deployment Modes
 - Gate Mode (primary deployment mode)
@@ -119,71 +155,11 @@ A robust security and operational tool designed to monitor people activity in ga
 - Event organizers
 
 #### Market Positioning
-Enterprise-grade security solution offering proactive threat detection and crowd management intelligence for high-security facilities.
+Enterprise-grade security solution offering proactive threat detection and crowd management intelligence for high-security facilities, hardened by presence-based verification at gate access points.
 
 ---
 
-### 3. Room & Gate Protection
-
-#### Overview
-Comprehensive attendance monitoring and access control for educational, healthcare, and corporate environments with automated reporting.
-
-#### Description
-A versatile solution for monitoring attendance and activity in specific areas such as schools, gyms, or industrial spaces. It provides detailed attendance reports and enhanced security by ensuring only authorized individuals are present.
-
-#### Key Features
-- **Schedule and member assignment** - Configure room access schedules and authorized personnel
-- **Attendance tracking** - Real-time monitoring of who enters/exits
-- **Comprehensive reporting** - Automated attendance report generation
-- **Unauthorized access alerts** - Instant notifications if unauthorized persons detected
-- **Integration capability** - Collaboration with EyeNet Gate Activity for end-to-end monitoring
-- **Family notifications** - Automated real-time or recurring attendance reports for minors to family/sponsors
-
-#### Deployment Modes
-- Area Mode (room/space monitoring)
-- Gate Mode (entry/exit points)
-
-#### Target Market
-- Schools and universities
-- Gyms and fitness centers
-- Industrial facilities
-- Corporate offices
-- Healthcare facilities and hospitals
-
-#### Market Positioning
-Comprehensive access control and compliance solution targeting regulated industries requiring attendance documentation and minor protection.
-
----
-
-### 4. Sentinel
-
-#### Overview
-Automated security personnel monitoring ensuring vigilant oversight at watch stations with customizable activity detection and alerts.
-
-#### Description
-This application ensures security personnel remain vigilant by automatically monitoring their activity at a watch station, providing business owners with peace of mind and guaranteeing consistent oversight during all shifts.
-
-#### Key Features
-- **Customizable activity detection** - Configure alert criteria for guard activity/inactivity
-- **Instant alerts and notifications** - Real-time notifications based on configured parameters
-- **Live video streams** - Complete people activity annotations
-- **Shift-based monitoring** - Consistent oversight across all shift periods
-
-#### Deployment Modes
-- Area Mode (watch station monitoring)
-
-#### Target Market
-- Security firms
-- Corporate offices with dedicated security staff
-- Industrial plants
-- Government buildings
-
-#### Market Positioning
-Specialized solution for internal security operations management, ensuring accountability and vigilance of security personnel.
-
----
-
-### 5. Security Officer Agent
+### 4. Security Officer Agent
 
 #### Overview
 Mobile security enhancement through wearable technology, providing real-time alerts and centralized command integration for field operations.
@@ -214,7 +190,7 @@ Next-generation mobile security solution leveraging wearable and drone technolog
 
 ---
 
-### 6. Underage Detector
+### 5. Underage Detector
 
 #### Overview
 Specialized point-of-sale age verification system ensuring compliance with age-restricted sales through intelligent estimation algorithms.
@@ -242,22 +218,50 @@ Specialized compliance solution for point-of-sale environments, reducing liabili
 
 ---
 
+### 6. Sentinel
+
+#### Overview
+Automated security personnel monitoring ensuring vigilant oversight at watch stations with customizable activity detection and alerts.
+
+#### Description
+This application ensures security personnel remain vigilant by automatically monitoring their activity at a watch station, providing business owners with peace of mind and guaranteeing consistent oversight during all shifts.
+
+#### Key Features
+- **Customizable activity detection** - Configure alert criteria for guard activity/inactivity
+- **Instant alerts and notifications** - Real-time notifications based on configured parameters
+- **Live video streams** - Complete people activity annotations
+- **Shift-based monitoring** - Consistent oversight across all shift periods
+
+#### Deployment Modes
+- Area Mode (watch station monitoring)
+
+#### Target Market
+- Security firms
+- Corporate offices with dedicated security staff
+- Industrial plants
+- Government buildings
+
+#### Market Positioning
+Specialized solution for internal security operations management, ensuring accountability and vigilance of security personnel.
+
+---
+
 ## Deployment Modes Analysis
 
 ### Spot Mode
 **Purpose**: Precise monitoring of fixed, close-range areas  
-**Typical Use Cases**: POS counters, product displays, entry gates  
-**Applications**: Intelligent Signage, Underage Detector
+**Typical Use Cases**: POS counters, product displays, entry gates, check-in kiosks  
+**Applications**: Presence, Intelligent Signage, Underage Detector
 
 ### Gate Mode
 **Purpose**: Comprehensive monitoring of entrances, exits, and corridors  
 **Typical Use Cases**: Building entry points, security checkpoints, transit hubs  
-**Applications**: Intelligent Signage, Gate Activity, Room & Gate Protection
+**Applications**: Presence, Intelligent Signage, Gate Activity
 
 ### Area Mode
 **Purpose**: Wide-area surveillance for large spaces including rooms and outdoor environments  
 **Typical Use Cases**: Large retail spaces, gymnasiums, industrial floors, office spaces  
-**Applications**: Intelligent Signage, Room & Gate Protection, Sentinel
+**Applications**: Intelligent Signage, Sentinel
 
 ### Goggles Mode
 **Purpose**: Mobile, first-person monitoring through wearable camera technology  
@@ -304,9 +308,9 @@ Specialized compliance solution for point-of-sale environments, reducing liabili
 
 ### Vertical Market Specialization
 EyeNet employs a specialized product strategy with distinct applications for different vertical markets rather than a single generalized platform:
+- **Presence/Verification**: Presence
 - **Retail/Marketing**: Intelligent Signage
 - **Security/Surveillance**: Gate Activity, Security Officer Agent
-- **Compliance/Access Control**: Room & Gate Protection
 - **Personnel Monitoring**: Sentinel
 - **Regulatory/POS**: Underage Detector
 
@@ -327,16 +331,16 @@ EyeNet employs a specialized product strategy with distinct applications for dif
 
 ## Competitive Comparison Framework
 
-| Feature | Intelligent Signage | Gate Activity | Room & Gate Protection | Sentinel | Security Officer Agent | Underage Detector |
-|---------|-------------------|--------------|----------------------|----------|---------------------|-----------------|
-| **Primary Use Case** | Marketing/Engagement | Security Monitoring | Access Control | Personnel Monitoring | Mobile Security | Compliance |
-| **Demographic Detection** | Yes | Yes | Optional | Limited | Yes | Yes (Age-focused) |
-| **Real-time Alerts** | Limited | Yes | Yes | Yes | Yes | Limited |
-| **Facial Recognition** | No | Yes | No | No | Yes | No |
-| **Video Storage** | Optional | Yes | Yes | Limited | Yes | Limited |
-| **Deployment Complexity** | Low | Medium | High | Medium | High | Low |
-| **ROI Focus** | Conversion/Engagement | Risk Reduction | Compliance | Peace of Mind | Force Multiplier | Liability Reduction |
-| **Integration Potential** | Low | High | High | Medium | High | Low |
+| Feature | Presence | Intelligent Signage | Gate Activity | Sentinel | Security Officer Agent | Underage Detector |
+|---------|----------|-------------------|--------------|----------|---------------------|-----------------|
+| **Primary Use Case** | Presence Verification | Marketing/Engagement | Security Monitoring | Personnel Monitoring | Mobile Security | Compliance |
+| **Demographic Detection** | No | Yes | Yes | Limited | Yes | Yes (Age-focused) |
+| **Real-time Alerts** | Yes (Policy-driven) | Limited | Yes | Yes | Yes | Limited |
+| **Facial Recognition** | Yes (Camera mode) | No | Yes | No | Yes | No |
+| **Video Storage** | Limited (Session traces) | Optional | Yes | Limited | Yes | Limited |
+| **Deployment Complexity** | Medium | Low | Medium | Medium | High | Low |
+| **ROI Focus** | Compliance/Access Control | Conversion/Engagement | Risk Reduction | Peace of Mind | Force Multiplier | Liability Reduction |
+| **Integration Potential** | High | Low | High | Medium | High | Low |
 
 ---
 
@@ -364,10 +368,10 @@ EyeNet employs a specialized product strategy with distinct applications for dif
 - Web interface enables easy content management for marketing teams
 
 **Compliance Automation**
-- **Room & Gate Protection** automates attendance tracking and generates mandatory compliance reports
-- Automated alerts for unauthorized access reduce manual monitoring burden
-- Family notifications for minors provide documented compliance with duty-of-care requirements
-- Audit trails and automated reporting simplify regulatory compliance documentation
+- **Presence** automates attendance verification, check-in workflows, and generates audit-ready decision history with full traceability
+- Policy-driven access decisions with trigger/action automation reduce manual monitoring burden
+- Multi-mode verification (QR-only, camera-only, QR+camera) provides graduated compliance assurance levels
+- Session traces, analytics, and automated reporting simplify regulatory compliance documentation
 
 **Remote Operations**
 - **Security Officer Agent** specifically designed for wearable cameras (Goggles mode) enabling field operations
@@ -420,7 +424,7 @@ EyeNet employs a specialized product strategy with distinct applications for dif
 **Ethical Concerns**
 - **Sentinel** and **Security Officer Agent** applications have clear, defensible compliance purposes (personnel accountability, field officer safety)
 - **Underage Detector** addresses regulatory compliance, positioning as ethical necessity rather than surveillance
-- **Room & Gate Protection** targets authorized access with attendance documentation, positioning as safety rather than surveillance
+- **Presence** targets verified attendance and policy-driven access decisions, positioning as operational integrity rather than surveillance
 - **Gate Activity** for facility management is more defensible than consumer-facing surveillance
 - Transparent use cases and documented ROI metrics counter ethical objections
 - Ability to disable facial recognition in some applications reduces ethical friction
@@ -435,7 +439,7 @@ EyeNet Vision's modular, application-specific approach offers a valuable competi
 1. **Feature Parity Assessment**: Evaluate PPL Meta's capabilities against each EyeNet application
 2. **Vertical Market Focus**: Identify 2-3 highest-value vertical markets for concentrated effort
 3. **Integration Strategy**: Develop partnerships with complementary platforms (e.g., building management systems, retail POS)
-4. **Compliance Automation**: Expand Room & Gate Protection equivalents to capture regulated market segments
+4. **Presence & Compliance Automation**: Expand Presence equivalents to capture regulated market segments requiring verified attendance and policy-driven access control
 5. **Mobile-First Innovation**: Invest in wearable and drone deployment capabilities
 
 ### Differentiation Opportunities

@@ -64,9 +64,11 @@ async def readiness_check():
     services_status = {}
 
     # Check user management service
-    try:
-        if service_discovery_available:
-            # Use service discovery to get service URL
+    health_url = f"{settings.user_service_url}/health"
+    if service_discovery_available:
+        # Use service discovery to get service URL, but never let a failure
+        # here prevent us from falling back to the direct URL below.
+        try:
             service_discovery_client = ServiceDiscoveryClient(
                 consul_host=settings.consul_host, consul_port=settings.consul_port
             )
@@ -75,12 +77,11 @@ async def readiness_check():
             )
             if service_url:
                 health_url = f"{service_url}/health"
-            else:
-                health_url = f"{settings.user_service_url}/health"
-        else:
-            health_url = f"{settings.user_service_url}/health"
+        except Exception:
+            pass
 
-        async with httpx.AsyncClient(timeout=5.0) as client:
+    try:
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
             response = await client.get(health_url)
             services_status["user_service"] = (
                 "healthy" if response.status_code == 200 else "unhealthy"
@@ -89,9 +90,9 @@ async def readiness_check():
         services_status["user_service"] = "unreachable"
 
     # Check media service
-    try:
-        if service_discovery_available:
-            # Use service discovery to get service URL
+    health_url = f"{settings.media_service_url}/health"
+    if service_discovery_available:
+        try:
             service_discovery_client = ServiceDiscoveryClient(
                 consul_host=settings.consul_host, consul_port=settings.consul_port
             )
@@ -100,18 +101,18 @@ async def readiness_check():
             )
             if service_url:
                 health_url = f"{service_url}/health"
-            else:
-                health_url = f"{settings.media_service_url}/health"
-        else:
-            health_url = f"{settings.media_service_url}/health"
+        except Exception:
+            pass
 
-        async with httpx.AsyncClient(timeout=5.0) as client:
+    try:
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
             response = await client.get(health_url)
             services_status["media_service"] = (
                 "healthy" if response.status_code == 200 else "unhealthy"
             )
     except Exception:
         services_status["media_service"] = "unreachable"
+
 
     # Get system metrics
     memory_info = psutil.virtual_memory()

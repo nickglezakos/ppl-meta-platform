@@ -92,6 +92,7 @@ class DiscoveredServiceInfo {
 /// Unified discovery service combining multicast and centralized discovery
 class UnifiedDiscoveryService {
   static const String _defaultDiscoveryUrl = 'http://localhost:8006';
+  static const String _vpnDiscoveryPort = '8006';
   static const Duration _discoveryTimeout = Duration(seconds: 10);
   static const Duration _healthCheckTimeout = Duration(seconds: 5);
 
@@ -101,12 +102,23 @@ class UnifiedDiscoveryService {
   final StreamController<List<DiscoveredServiceInfo>> _servicesController =
       StreamController<List<DiscoveredServiceInfo>>.broadcast();
 
+  /// Cached VPN node IP for direct discovery
+  String? _vpnNodeIp;
+
   UnifiedDiscoveryService() 
     : _dio = Dio(BaseOptions(
         connectTimeout: _healthCheckTimeout,
         receiveTimeout: _healthCheckTimeout,
       )),
       _multicastService = EnhancedNetworkDiscoveryService();
+
+  /// Set the VPN node IP for direct discovery (Phase 5)
+  void setVpnNodeIp(String? ip) {
+    _vpnNodeIp = ip;
+  }
+
+  /// Check if VPN is connected and we have a known node IP
+  bool get _isVpnConnected => _vpnNodeIp != null && _vpnNodeIp!.isNotEmpty;
 
   /// Stream of discovered services
   Stream<List<DiscoveredServiceInfo>> get servicesStream => _servicesController.stream;
@@ -132,13 +144,18 @@ class UnifiedDiscoveryService {
 
     final List<Future<List<DiscoveredServiceInfo>>> discoveryTasks = [];
 
-    // Task 1: Central discovery service
+    // Task 1: VPN-direct discovery (Phase 5 — primary path when VPN is connected)
+    if (_isVpnConnected) {
+      discoveryTasks.add(_discoverFromVpn());
+    }
+
+    // Task 2: Central discovery service
     discoveryTasks.add(_discoverFromCentralService(discoveryUrls));
 
-    // Task 2: Multicast discovery - DISABLED due to infinite loop issues
+    // Task 3: Multicast discovery - DISABLED due to infinite loop issues
     // discoveryTasks.add(_discoverFromMulticast());
 
-    // Task 3: Local network scanning (fallback) - DISABLED due to infinite loop issues  
+    // Task 4: Local network scanning (fallback) - DISABLED due to infinite loop issues  
     // discoveryTasks.add(_discoverFromLocalScan());
 
     try {
@@ -180,6 +197,54 @@ class UnifiedDiscoveryService {
       debugPrint('❌ Unified discovery error: $e');
       return [];
     }
+  }
+
+  /// Discover services via VPN-direct HTTP to the primary node's discovery service.
+  /// Phase 5: Primary discovery path — zero config, auto-discovered via Tailscale IP.
+  Future<List<DiscoveredServiceInfo>> _discoverFromVpn() async {
+    debugPrint('🔐 Attempting VPN-direct discovery via $_vpnNodeIp...');
+    try {
+      final vpnDiscoveryUrl = 'http://$_vpnNodeIp:$_vpnDiscoveryPort';
+      final response = await _dio.get(
+        '$vpnDiscoveryUrl/api/v1/discovery/topology?vpn=true',
+        options: Options(
+          headers: {'Accept': 'application/json'},
+          sendTimeout: const Duration(seconds: 5),
+          receiveTimeout: const Duration(seconds: 8),
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        final backendServices = data['backend_services'] as Map<String, dynamic>? ?? {};
+        final services = backendServices.values
+            .map((s) => DiscoveredServiceInfo.fromDiscoveryService(s as Map<String, dynamic>))
+            .toList();
+
+        // Also include the discovery service itself
+        services.add(DiscoveredServiceInfo(
+          serviceId: 'discovery-service',
+          name: 'ppl-meta-discovery',
+          serviceType: 'backend',
+          version: '2.14.0',
+          host: _vpnNodeIp!,
+          port: 8006,
+          healthEndpoint: '/health',
+          status: 'healthy',
+          capabilities: ['service-discovery'],
+          metadata: {'preferred_network': 'tailscale'},
+          registeredAt: DateTime.now(),
+          lastSeen: DateTime.now(),
+          discoveryMethod: 'vpn_direct',
+        ));
+
+        debugPrint('✅ VPN-direct discovery successful: ${services.length} services');
+        return services;
+      }
+    } catch (e) {
+      debugPrint('⚠️ VPN-direct discovery failed: $e');
+    }
+    return [];
   }
 
   /// Discover services from central PPL Meta Discovery Service

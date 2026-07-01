@@ -1,12 +1,17 @@
 """
 Audit logging and communication log query API routes.
+
+Phase 3: VPN-aware — classifies request source networks as
+tailscale_vpn or local based on CGNAT IP range (100.64.0.0/10).
 """
+
+import ipaddress
 import logging
 import math
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -22,6 +27,30 @@ from ..services.notification_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Tailscale CGNAT range (100.64.0.0/10)
+TAILSCALE_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+
+
+def classify_request_network(request: Request) -> str:
+    """Classify the source network of a request.
+
+    Phase 3: Detects if the request came from a Tailscale VPN IP
+    (100.64.0.0/10) or a local network.
+
+    Args:
+        request: The FastAPI request object.
+
+    Returns:
+        "tailscale_vpn" if from CGNAT range, "local" otherwise.
+    """
+    client_ip = request.client.host if request.client else ""
+    try:
+        if ipaddress.ip_address(client_ip) in TAILSCALE_CGNAT:
+            return "tailscale_vpn"
+    except ValueError:
+        pass
+    return "local"
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -43,8 +72,9 @@ async def create_audit_log(
         event_source=request.event_source,
         event_data=request.event_data,
         user_id=request.user_id,
-        ip_address=request.ip_address,
-        severity=request.severity,
+    ip_address=request.ip_address,
+    severity=request.severity,
+    source_network=request.source_network,
     )
     
     if not success:

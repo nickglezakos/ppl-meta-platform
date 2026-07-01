@@ -30,6 +30,13 @@ class CameraConfig(BaseModel):
     buffer_size: int = 10
 
 
+class VpnConfig(BaseModel):
+    """VPN configuration for zero-login enrollment."""
+    enabled: bool = False
+    authority_url: str = "https://vpn.eyenet-vision.com"
+    application_key: str = ""
+
+
 class PlatformConfig(BaseModel):
     """Platform connection configuration."""
     cameras_url: str
@@ -38,6 +45,7 @@ class PlatformConfig(BaseModel):
     reconnect_interval: int = 5
     max_reconnect_attempts: int = 10
     api_key: Optional[str] = None
+    vpn: VpnConfig = Field(default_factory=VpnConfig)
 
 
 class StreamConfig(BaseModel):
@@ -67,6 +75,7 @@ class AppConfig(BaseSettings):
     stream: StreamConfig
     server: ServerConfig
     logging: LoggingConfig
+    vpn: VpnConfig = Field(default_factory=VpnConfig)
 
     class Config:
         env_file = ".env"

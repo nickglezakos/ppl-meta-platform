@@ -862,15 +862,23 @@ async def admin_set_password(
     log_user_action(db, target_user.username, target_user.email, "admin_password_set")
 
     if body.send_email:
+        # Security hardening (Proposal §10.2 H1): never send plain-text
+        # passwords via email. Instead, send a time-limited reset link
+        # that allows the user to set their own password.
+        reset_token = create_password_reset_token(user_id, target_user.email)
+        reset_link = f"{settings.FRONTEND_URL}/#/reset-password?token={reset_token}"
         email_body = f"""
-            <h3>Your password has been updated</h3>
+            <h3>Your EyeNet account password has been reset</h3>
             <p>Hi {target_user.username},</p>
-            <p>An administrator has set a new password for your EyeNet account.</p>
-            <p>Your new password is: <strong>{body.new_password}</strong></p>
-            <p>Please sign in and change your password as soon as possible.</p>
+            <p>An administrator has reset your EyeNet account password.</p>
+            <p>Click the button below to set your new password:</p>
+            <a href="{reset_link}" style="padding:12px 24px;background:#1a73e8;color:white;
+               text-decoration:none;border-radius:6px;display:inline-block;">Set New Password</a>
+            <p>This link will expire in 1 hour.</p>
+            <p style="color:#666;">If you didn't expect this, please contact your administrator.</p>
         """
         await send_email(
-            subject="Your EyeNet password has been updated",
+            subject="Your EyeNet password has been reset",
             email_to=target_user.email,
             body=email_body,
         )

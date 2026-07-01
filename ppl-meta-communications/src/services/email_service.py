@@ -21,6 +21,23 @@ from ..models.email_template import EmailTemplate
 logger = logging.getLogger(__name__)
 config = get_config()
 
+# Security hardening (Proposal §10.2 H2): decrypt stored credentials at use time
+def _decrypt_password(stored_value: str) -> str:
+    """Decrypt a stored password if encrypted, return as-is if plaintext."""
+    if not stored_value:
+        return stored_value
+    try:
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+        from shared.security.encryption import decrypt_value, is_encrypted
+        if is_encrypted(stored_value):
+            secret = os.environ.get("SECRET_KEY", "default-secret-key-change-in-production")
+            decrypted = decrypt_value(stored_value, secret)
+            return decrypted if decrypted else stored_value
+    except Exception:
+        pass
+    return stored_value
+
 
 class EmailService:
     """Service for sending emails."""
@@ -60,7 +77,7 @@ class EmailService:
                 'server': db_settings.mail_server,
                 'port': db_settings.mail_port,
                 'username': db_settings.mail_username,
-                'password': db_settings.mail_password,
+                'password': _decrypt_password(db_settings.mail_password),
                 'from': db_settings.mail_from,
                 'from_name': db_settings.mail_from_name,
                 'starttls': db_settings.mail_starttls,

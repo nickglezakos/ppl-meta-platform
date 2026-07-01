@@ -91,11 +91,12 @@ class DiscoveryResponse {
 class DiscoveryServiceClient {
   final Dio _dio;
   final String _discoveryServiceUrl;
-  static String _defaultDiscoveryServiceUrl = 'http://localhost:8006';
+  static String _defaultDiscoveryServiceUrl = 'http://localhost:8080';
   
   // Cache for discovered services
   final Map<String, ServiceInfo> _serviceCache = {};
   Timer? _refreshTimer;
+  bool _discoveryDisabled = false;
   
   // Stream controller for service updates
   final StreamController<Map<String, ServiceInfo>> _servicesController = 
@@ -106,11 +107,18 @@ class DiscoveryServiceClient {
     Dio? dio,
   }) : _discoveryServiceUrl = discoveryServiceUrl ?? _defaultDiscoveryServiceUrl,
        _dio = dio ?? Dio() {
-    _dio.options.connectTimeout = const Duration(seconds: 5);
+    _dio.options.connectTimeout = const Duration(seconds: 10);
     _dio.options.receiveTimeout = const Duration(seconds: 10);
-    
-    // Start periodic refresh
-    _startPeriodicRefresh();
+  }
+  
+  /// Disable periodic discovery — call when discovery service is known unavailable
+  void disableDiscovery() {
+    if (kDebugMode) {
+      print('🔌 Service discovery disabled — using static service URLs');
+    }
+    _discoveryDisabled = true;
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
   }
 
   /// Stream of service updates
@@ -119,41 +127,58 @@ class DiscoveryServiceClient {
   /// Get all discovered services
   Map<String, ServiceInfo> get services => Map.unmodifiable(_serviceCache);
   
-  /// Discover all services
-  Future<DiscoveryResponse> discoverServices({String? serviceType}) async {
-    try {
-      final uri = serviceType != null 
-          ? '$_discoveryServiceUrl/api/v1/services?service_type=$serviceType'
-          : '$_discoveryServiceUrl/api/v1/services';
+  /// Discover all services, with optional retry on transient failures
+  Future<DiscoveryResponse> discoverServices({String? serviceType, int retries = 1}) async {
+    Exception? lastError;
+    
+    for (int attempt = 0; attempt <= retries; attempt++) {
+      try {
+        final uri = serviceType != null 
+            ? '$_discoveryServiceUrl/api/v1/services?service_type=$serviceType'
+            : '$_discoveryServiceUrl/api/v1/services';
+            
+        final response = await _dio.get(uri);
+        
+        if (response.statusCode == 200) {
+          final discoveryResponse = DiscoveryResponse.fromJson(response.data);
           
-      final response = await _dio.get(uri);
-      
-      if (response.statusCode == 200) {
-        final discoveryResponse = DiscoveryResponse.fromJson(response.data);
-        
-        // Update cache
-        _serviceCache.clear();
-        for (final service in discoveryResponse.services) {
-          _serviceCache[service.name] = service;
+          // Update cache
+          _serviceCache.clear();
+          for (final service in discoveryResponse.services) {
+            _serviceCache[service.name] = service;
+          }
+          
+          // Notify listeners
+          _servicesController.add(Map.unmodifiable(_serviceCache));
+          
+          if (kDebugMode) {
+            print('📡 Discovered ${discoveryResponse.services.length} services: ${discoveryResponse.services.map((s) => s.name).join(', ')}');
+          }
+          
+          // Start periodic refresh on first successful discovery
+          if (_refreshTimer == null && !_discoveryDisabled) {
+            _startPeriodicRefresh();
+          }
+          
+          return discoveryResponse;
+        } else {
+          throw Exception('Discovery service returned ${response.statusCode}');
         }
-        
-        // Notify listeners
-        _servicesController.add(Map.unmodifiable(_serviceCache));
-        
-        if (kDebugMode) {
-          print('📡 Discovered ${discoveryResponse.services.length} services: ${discoveryResponse.services.map((s) => s.name).join(', ')}');
+      } catch (e) {
+        lastError = e is Exception ? e : Exception(e.toString());
+        if (attempt < retries) {
+          if (kDebugMode) {
+            print('🔄 Discovery attempt ${attempt + 1} failed, retrying... ($e)');
+          }
+          await Future.delayed(const Duration(seconds: 1));
         }
-        
-        return discoveryResponse;
-      } else {
-        throw Exception('Discovery service returned ${response.statusCode}');
       }
-    } catch (e) {
-      if (kDebugMode) {
-        print('❌ Failed to discover services: $e');
-      }
-      rethrow;
     }
+    
+    if (kDebugMode) {
+      print('❌ Failed to discover services after ${retries + 1} attempts: $lastError');
+    }
+    throw lastError!;
   }
   
   /// Get a specific service by name

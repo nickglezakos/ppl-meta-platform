@@ -66,8 +66,11 @@ start_all_services() {
                         nohup bash -c "source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py" > "../logs/${service_name}.log" 2>&1 &
                         ;;
                     "ppl-meta-gateway")
-                        # Gateway runs from src directory
-                        nohup bash -c "source venv/bin/activate && cd src && uvicorn main:app --host 0.0.0.0 --port $port --reload" > "../logs/${service_name}.log" 2>&1 &
+                        # Gateway runs from src directory - need to cd first
+                        (cd src && nohup bash -c "source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port $port --reload" > "../../logs/${service_name}.log" 2>&1 & echo $! > "../../pids/${service_name}.pid")
+                        # Skip the normal PID saving since we did it above
+                        cd ..
+                        continue
                         ;;
                     "ppl-meta-orchestrator")
                         # Orchestrator runs from src directory

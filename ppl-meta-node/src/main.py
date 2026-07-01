@@ -337,41 +337,42 @@ async def lifespan(_app: FastAPI):
                 guid = get_or_create_installation_guid(db)
                 logger.info("Installation GUID: %s", guid)
 
-                # Ensure reference users exist for local development bootstrap.
-                simple_user_email = "nick.glezakos@gmail.com"
-                simple_user = get_user_by_email(db, simple_user_email)
-                if not simple_user:
-                    baseline_user = UserCreate(
-                        username=simple_user_email,
-                        email=simple_user_email,
-                        password="Kodikos@23",
-                    )
-                    create_user(db, baseline_user)
-                    logger.info("Baseline user created with default credentials.")
+                # Security hardening (Proposal §10.2 C1): dev bootstrap users only
+                # created in development mode with env-configurable password.
+                DEV_BOOTSTRAP_PASSWORD = os.environ.get(
+                    "DEV_BOOTSTRAP_PASSWORD",
+                    "" if os.environ.get("ENVIRONMENT") != "development" else "change-me-dev-only",
+                )
+                is_dev = os.environ.get("ENVIRONMENT") == "development"
+
+                if is_dev and DEV_BOOTSTRAP_PASSWORD:
+                    simple_user_email = "nick.glezakos@gmail.com"
+                    simple_user = get_user_by_email(db, simple_user_email)
+                    if not simple_user:
+                        create_user(db, UserCreate(
+                            username=simple_user_email, email=simple_user_email,
+                            password=DEV_BOOTSTRAP_PASSWORD,
+                        ))
+                        logger.info("Dev bootstrap user created (simple).")
+
+                    fresh_email = FRESH_ADMIN_EMAIL
+                    if not get_user_by_email(db, fresh_email):
+                        create_user(db, UserCreate(
+                            username=fresh_email, email=fresh_email,
+                            password=DEV_BOOTSTRAP_PASSWORD,
+                        ))
+                        logger.info("Dev bootstrap user created (fresh).")
+
+                    outlook_email = "nick.glezakos@outlook.com"
+                    if not get_user_by_email(db, outlook_email):
+                        create_user(db, UserCreate(
+                            username=outlook_email, email=outlook_email,
+                            password=DEV_BOOTSTRAP_PASSWORD,
+                        ))
+                        logger.info("Dev bootstrap user created (outlook).")
+                    ensure_exact_system_roles(db, outlook_email, {"user"})
                 else:
-                    logger.info("Baseline user already exists")
-
-                # Seed fresh.user@example.com as the privileged development account.
-                # Owner assignment is converged later so the authority service can decide it.
-                fresh_email = FRESH_ADMIN_EMAIL
-                if not get_user_by_email(db, fresh_email):
-                    create_user(db, UserCreate(
-                        username=fresh_email,
-                        email=fresh_email,
-                        password="Kodikos@23",
-                    ))
-                    logger.info("Fresh admin user created.")
-
-                # Seed nick.glezakos@outlook.com as regular user
-                outlook_email = "nick.glezakos@outlook.com"
-                if not get_user_by_email(db, outlook_email):
-                    create_user(db, UserCreate(
-                        username=outlook_email,
-                        email=outlook_email,
-                        password="Kodikos@23",
-                    ))
-                    logger.info("Outlook test user created.")
-                ensure_exact_system_roles(db, outlook_email, {"user"})
+                    logger.info("Skipping dev bootstrap users (ENVIRONMENT=%s)", os.environ.get("ENVIRONMENT", "not set"))
 
                 # Ensure default capabilities (media:view) assigned to roles
                 ensure_default_capabilities(db)

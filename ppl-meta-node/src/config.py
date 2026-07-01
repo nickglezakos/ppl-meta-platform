@@ -8,6 +8,13 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Security hardening (Proposal §10.2 C3/C4): known default secrets that
+# must never be used in production.
+KNOWN_DEFAULT_SECRETS = {
+    "", "default-secret-key-change-in-production",
+    "change-this-secret-key", "your-secret-key-here",
+}
+
 
 class Settings(BaseSettings):
     # Application Settings
@@ -25,10 +32,9 @@ class Settings(BaseSettings):
     # Security Settings
     SECRET_KEY: str = ""
     JWT_SECRET: str = ""
-    ALGORITHM: str = "HS256"  # For JWT compatibility
+    ALGORITHM: str = "HS256"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_HOURS: int = 24
-    ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     RESET_PASSWORD_SECRET: str = ""
 
@@ -39,6 +45,10 @@ class Settings(BaseSettings):
     MAIL_PORT: int = 587
     MAIL_SERVER: str = ""
     MAIL_FROM_NAME: str = "PPL Meta Node"
+    MAIL_STARTTLS: bool = True
+    MAIL_SSL_TLS: bool = False
+    USE_CREDENTIALS: bool = True
+    VALIDATE_CERTS: bool = True
 
     # SMTP Settings
     SMTP_HOST: str = ""
@@ -65,25 +75,38 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # Platform IP Configuration
-    PLATFORM_IP: str = ""  # Will be dynamically detected if not set
-
-    # Additional standardized mail settings (already has main ones)
-    MAIL_STARTTLS: bool = True
-    MAIL_SSL_TLS: bool = False
-    USE_CREDENTIALS: bool = True
-    VALIDATE_CERTS: bool = True
+    PLATFORM_IP: str = ""
 
     class Config:
         env_file = ".env"
-        extra = "allow"  # Allow extra fields from environment
+        extra = "allow"
 
     def model_post_init(self, __context=None):
-        """Validate critical settings after initialization."""
-        if not self.SECRET_KEY:
+        """Validate critical settings after initialization.
+
+        Security hardening (Proposal §10.2 C3/C4): warns if SECRET_KEY,
+        JWT_SECRET, or RESET_PASSWORD_SECRET are set to known defaults.
+        """
+        super().model_post_init(__context)
+
+        if not self.SECRET_KEY or self.SECRET_KEY in KNOWN_DEFAULT_SECRETS:
             logger.warning(
-                "SECRET_KEY not set, using default (not secure for production)"
+                "SECRET_KEY is a known default. Set a unique SECRET_KEY "
+                "environment variable for production."
             )
-            self.SECRET_KEY = "default-secret-key-change-in-production"
+            if not self.SECRET_KEY:
+                self.SECRET_KEY = "default-secret-key-change-in-production"
+
+        if self.JWT_SECRET in KNOWN_DEFAULT_SECRETS:
+            logger.warning(
+                "JWT_SECRET is a known default. Set a unique JWT_SECRET "
+                "environment variable for production."
+            )
+
+        if self.RESET_PASSWORD_SECRET in KNOWN_DEFAULT_SECRETS:
+            logger.warning(
+                "RESET_PASSWORD_SECRET is a known default."
+            )
 
         if not self.DATABASE_URL:
             logger.error("DATABASE_URL not set")
@@ -95,10 +118,8 @@ class Settings(BaseSettings):
     def is_mail_configured(self) -> bool:
         """Check if mail configuration is properly set."""
         return bool(
-            self.MAIL_USERNAME
-            and self.MAIL_PASSWORD
-            and self.MAIL_FROM
-            and self.MAIL_SERVER
+            self.MAIL_USERNAME and self.MAIL_PASSWORD
+            and self.MAIL_FROM and self.MAIL_SERVER
         )
 
     def log_configuration(self):
@@ -116,32 +137,26 @@ class Settings(BaseSettings):
         """Validate the database connection string format and components."""
         try:
             from urllib.parse import urlparse
-
             parsed = urlparse(self.get_database_url())
 
             if not parsed.scheme.startswith("postgresql"):
                 logger.error("Database URL must use postgresql:// scheme")
                 return False
-
             if not parsed.username:
                 logger.error("Database URL missing username")
                 return False
-
             if not parsed.password:
                 logger.error("Database URL missing password")
                 return False
-
             if not parsed.hostname:
                 logger.error("Database URL missing hostname")
                 return False
-
             if not parsed.path or parsed.path == "/":
                 logger.error("Database URL missing database name")
                 return False
 
             logger.info("Database URL validation passed")
             return True
-
         except ValueError as e:
             logger.error("Database URL validation failed: %s", e)
             return False
@@ -151,7 +166,6 @@ class Settings(BaseSettings):
         url = self.get_database_url()
         try:
             from urllib.parse import urlparse
-
             parsed = urlparse(url)
             return {
                 "host": parsed.hostname,
@@ -160,8 +174,7 @@ class Settings(BaseSettings):
                 "database": parsed.path.lstrip("/"),
                 "url_masked": (
                     url.replace(parsed.password or "", "*****")
-                    if parsed.password
-                    else url
+                    if parsed.password else url
                 ),
             }
         except ValueError:
@@ -169,7 +182,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-# Validate settings after creation
-if hasattr(settings, "model_post_init"):
-    settings.model_post_init()

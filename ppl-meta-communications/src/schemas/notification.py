@@ -22,6 +22,10 @@ class PushNotificationRequest(BaseModel):
     triggered_by: Optional[str] = Field(None, description="Service/user that triggered this notification")
     trigger_type: Optional[str] = Field(None, description="Type of trigger")
     trigger_id: Optional[str] = Field(None, description="ID of trigger")
+    
+    # Phase 3: VPN-aware fields
+    device_tailscale_ip: Optional[str] = Field(None, description="Target device's Tailscale VPN IP")
+    prefer_vpn: bool = Field(default=False, description="Whether to prefer VPN routing for this notification")
 
 
 class PushNotificationResponse(BaseModel):
@@ -46,6 +50,7 @@ class AuditLogRequest(BaseModel):
     event_data: Dict[str, Any] = Field(..., description="Event data payload")
     user_id: Optional[str] = Field(None, description="User ID if applicable")
     ip_address: Optional[str] = Field(None, description="IP address if applicable")
+    source_network: Optional[str] = Field(None, description="Network type: tailscale_vpn or local (Phase 3)")
     severity: str = Field("info", description="Log severity: info, warning, error, critical")
 
 

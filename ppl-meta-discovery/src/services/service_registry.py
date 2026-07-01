@@ -70,6 +70,9 @@ class ServiceRegistry:
             logger.info(f"Updating existing service: {request.name}")
             service_id = existing_service.service_id
 
+        # Extract Tailscale IP from metadata if present (Phase 2: VPN-aware)
+        tailscale_ip = request.metadata.get("tailscale_ip") if request.metadata else None
+
         # Create service info
         service_info = ServiceInfo(
             service_id=service_id,
@@ -79,6 +82,8 @@ class ServiceRegistry:
             host=request.host,
             port=request.port,
             health_endpoint=request.health_endpoint,
+            tailscale_ip=tailscale_ip,
+            tailscale_port=request.port if tailscale_ip else None,
             capabilities=request.capabilities,
             metadata=request.metadata,
             status=ServiceStatus.REGISTERING,
@@ -136,6 +141,10 @@ class ServiceRegistry:
 
         # Update metadata if provided
         if request.metadata:
+            # Extract Tailscale IP from heartbeat metadata (Phase 2)
+            if "tailscale_ip" in request.metadata:
+                service.tailscale_ip = request.metadata["tailscale_ip"]
+                service.tailscale_port = service.tailscale_port or service.port
             service.metadata.update(request.metadata)
 
         logger.info(

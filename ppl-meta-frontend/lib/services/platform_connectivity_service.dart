@@ -22,7 +22,14 @@ class PlatformConnectivityService {
 
   bool get isConfigured => _prefs?.getBool(_configuredKey) ?? false;
 
-  String get backendHost => _prefs?.getString(_backendHostKey) ?? 'localhost';
+  String get backendHost {
+    final raw = _prefs?.getString(_backendHostKey) ?? 'localhost';
+    // Normalize unroutable addresses that may have been stored before the fix
+    if (raw == '0.0.0.0' || raw == '::1' || raw == '[::1]') {
+      return 'localhost';
+    }
+    return raw;
+  }
 
   int get discoveryPort => _prefs?.getInt(_discoveryPortKey) ?? 8006;
 
@@ -99,7 +106,12 @@ class PlatformConnectivityService {
         return null;
       }
 
-      return uri.host;
+      // Normalize unroutable addresses to localhost
+      final host = uri.host;
+      if (host == '0.0.0.0' || host == '::1' || host == '[::1]') {
+        return 'localhost';
+      }
+      return host;
     } catch (_) {
       return null;
     }

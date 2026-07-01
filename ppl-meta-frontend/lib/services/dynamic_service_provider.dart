@@ -148,17 +148,19 @@ final serviceDiscoveryInitProvider = FutureProvider<bool>((ref) async {
     final isAvailable = await discoveryClient.isDiscoveryServiceAvailable();
     
     if (isAvailable) {
-      // Initial discovery
-      await discoveryClient.discoverServices();
+      // Initial discovery with one retry
+      await discoveryClient.discoverServices(retries: 1);
       return true;
     } else {
       // Disable discovery and use static URLs
+      discoveryClient.disableDiscovery();
       final config = ref.read(dynamicServiceConfigProvider.notifier);
       config.state.setDiscoveryEnabled(false);
       return false;
     }
   } catch (e) {
-    // Disable discovery on error
+    // Disable discovery on error — stop retries and use static URLs
+    discoveryClient.disableDiscovery();
     final config = ref.read(dynamicServiceConfigProvider.notifier);
     config.state.setDiscoveryEnabled(false);
     return false;

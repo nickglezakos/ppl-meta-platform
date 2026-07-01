@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import '../core/api/api_client.dart';
+import '../core/config/app_config.dart';
+
 
 // =============================================================================
 // MONITORING DASHBOARD PROVIDERS
@@ -242,9 +244,9 @@ class PaginatedWorkflows {
 // PROVIDERS
 // =============================================================================
 
-/// Base URL for orchestrator service
+/// Base URL for the gateway (routes through Gateway for VPN/remote compatibility)
 final orchestratorBaseUrlProvider = Provider<String>((ref) {
-  return 'http://localhost:8002'; // Direct to orchestrator, not gateway
+  return AppConfig.instance.apiBaseUrl;
 });
 
 /// Dio client for monitoring API
@@ -253,7 +255,21 @@ final monitoringDioProvider = Provider<Dio>((ref) {
   dio.options.baseUrl = ref.watch(orchestratorBaseUrlProvider);
   dio.options.connectTimeout = const Duration(seconds: 10);
   dio.options.receiveTimeout = const Duration(seconds: 10);
-  
+
+  // Attach auth token so requests are authorized when routed through the Gateway
+  dio.interceptors.add(
+    InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        final apiClient = ref.read(apiClientProvider);
+        final token = apiClient.authToken;
+        if (token != null && token.isNotEmpty) {
+          options.headers['Authorization'] = 'Bearer $token';
+        }
+        handler.next(options);
+      },
+    ),
+  );
+
   // Add logging interceptor
   dio.interceptors.add(LogInterceptor(
     requestBody: false,

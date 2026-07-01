@@ -16,11 +16,15 @@ logging:
   level: INFO
 platform:
   api_key: null
-  cameras_url: http://192.168.1.75/cameras
-  discovery_url: http://192.168.1.75/discovery
+  cameras_url: auto
+  discovery_url: auto
   health_check_interval: 30
   max_reconnect_attempts: 10
   reconnect_interval: 5
+vpn:
+  enabled: false
+  authority_url: https://vpn.eyenet-vision.com
+  application_key: "${EYENET_APPLICATION_KEY}"
 server:
   host: 0.0.0.0
   port: 9001

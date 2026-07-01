@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../../core/providers/camera_providers.dart';
+import '../../../core/config/app_config.dart';
+
 
 /// Dialog for adding edge camera manually
 class AddEdgeCameraDialog extends ConsumerStatefulWidget {
@@ -114,8 +116,8 @@ class _AddEdgeCameraDialogState extends ConsumerState<AddEdgeCameraDialog> {
       
       // Register edge camera with platform
       // This creates a camera record in the database
-      final baseUrl = 'http://localhost:8005'; // TODO: Get from config
-      final registerUrl = '$baseUrl/api/v1/cameras/register-edge';
+      final baseUrl = AppConfig.instance.apiBaseUrl; // Routed via Gateway for VPN/remote access
+      final registerUrl = '$baseUrl/api/v1/edge-cameras/register-edge';
       
       final response = await http.post(
         Uri.parse(registerUrl),

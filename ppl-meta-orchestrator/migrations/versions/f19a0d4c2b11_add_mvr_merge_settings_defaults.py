@@ -23,7 +23,8 @@ def upgrade():
             INSERT INTO workflow_settings
                 (setting_key, setting_value, min_value, max_value, description, updated_by)
             VALUES
-                ('mvr_merge_rule', 1.0, 0.0, 2.0, 'MVR merge mode: 0=none, 1=semi, 2=auto', 'system')
+                ('mvr_merge_rule', 0.0, 0.0, 2.0, 'MVR merge mode: 0=none, 1=semi, 2=auto', 'system')
+
             ON CONFLICT (setting_key) DO NOTHING
             """
         )

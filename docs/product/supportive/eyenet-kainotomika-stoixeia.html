@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EyeNet — Καινοτομικά Στοιχεία Πλατφόρμας</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --success: #4caf50;
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    .page {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 32px 24px 72px;
+    }
+
+    .print-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 20px;
+    }
+
+    .print-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--brand-primary);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14);
+      border-radius: 32px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+      color: var(--text);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -80px auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: rgba(25, 118, 210, 0.26);
+    }
+
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1.35fr 0.9fr;
+      gap: 28px;
+      padding: 34px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14);
+      color: var(--brand-secondary);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin: 18px 0 16px;
+      font-size: 42px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      font-size: 18px;
+      color: #1e293b;
+      max-width: 62ch;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .brand-stack {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-stack img {
+      height: 36px;
+      width: auto;
+    }
+
+    .brand-chip {
+      padding: 8px 12px;
+      border: 1px solid rgba(34, 211, 238, 0.24);
+      border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9);
+      color: #eef9ff;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .brand-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      color: var(--brand-secondary);
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .brand-link:hover {
+      color: #8be9f8;
+    }
+
+    .meta-card,
+    .section,
+    .pricing-card,
+    .key-card,
+    .note-card,
+    .summary-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px;
+      align-self: start;
+      color: var(--text);
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 18px;
+    }
+
+    .meta-item {
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .meta-label {
+      display: block;
+      margin-bottom: 6px;
+      color: #9fb0c3;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-value {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .grid-two,
+    .pricing-grid,
+    .stats-grid {
+      display: grid;
+      gap: 22px;
+      margin-top: 24px;
+    }
+
+    .grid-two {
+      grid-template-columns: 1.15fr 0.85fr;
+    }
+
+    .stats-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .grid-three {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 22px;
+      margin-top: 24px;
+    }
+
+    .section {
+      margin-top: 24px;
+      padding: 28px;
+      border-color: var(--panel-line);
+      background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .section-number {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: inline-grid;
+      place-items: center;
+      background: rgba(25, 118, 210, 0.1);
+      color: var(--brand-primary);
+      font-weight: 700;
+    }
+
+    h2 {
+      margin-bottom: 0;
+      font-size: 24px;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+
+    ul,
+    ol {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    li + li {
+      margin-top: 8px;
+    }
+
+    .callout {
+      padding: 18px 20px;
+      border-left: 4px solid var(--brand-secondary);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent);
+      color: #f5fbff;
+      font-weight: 600;
+    }
+
+    .stats-grid {
+      margin-top: 18px;
+    }
+
+    .summary-card,
+    .key-card,
+    .note-card {
+      padding: 22px;
+      border-color: var(--panel-line);
+      background: #ffffff;
+    }
+
+    .summary-card strong,
+    .key-number {
+      color: #0f172a;
+    }
+
+    .summary-card p:last-child,
+    .note-card p:last-child {
+      margin-bottom: 0;
+    }
+
+    .stat-label {
+      color: #64748b;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .stat-value {
+      display: block;
+      margin-top: 10px;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .feature-list {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .feature-list li {
+      padding: 6px 0 6px 24px;
+      position: relative;
+      margin-top: 6px;
+    }
+
+    .feature-list li::before {
+      content: "▸";
+      position: absolute;
+      left: 0;
+      color: var(--brand-primary);
+      font-weight: 700;
+    }
+
+    .sub-section {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid rgba(15, 23, 42, 0.08);
+    }
+
+    .sub-section:first-of-type {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: none;
+    }
+
+    .highlight-box {
+      margin-top: 22px;
+      padding: 20px 24px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, rgba(25, 118, 210, 0.06) 0%, rgba(34, 211, 238, 0.08) 100%);
+      border: 1px solid rgba(25, 118, 210, 0.14);
+    }
+
+    .highlight-box p:last-child {
+      margin-bottom: 0;
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      color: #64748b;
+      font-size: 13px;
+    }
+
+    @page {
+      size: A4;
+      margin: 12mm;
+    }
+
+    @media (max-width: 920px) {
+      .hero-inner,
+      .grid-two,
+      .grid-three,
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+
+      .page {
+        padding: 18px 16px 54px;
+      }
+    }
+
+    @media print {
+      html {
+        background: #fff;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .page {
+        max-width: none;
+        padding: 0;
+      }
+
+      .print-bar {
+        display: none;
+      }
+
+      .hero,
+      .meta-card,
+      .section,
+      .key-card,
+      .note-card,
+      .summary-card {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+
+      .hero {
+        margin-bottom: 12px;
+        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+        color: #ffffff;
+        border-color: rgba(34, 211, 238, 0.14);
+      }
+
+      .meta-card {
+        background: rgba(255, 255, 255, 0.04);
+        color: #ffffff;
+        border-color: rgba(34, 211, 238, 0.12);
+      }
+
+      .brand-chip,
+      .callout {
+        color: #f5fbff;
+      }
+
+      .brand-link,
+      .meta-label,
+      .lead {
+        color: inherit;
+      }
+
+      .section {
+        margin-top: 12px;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="eyenet-dark.svg" alt="EyeNet logo" />
+              <span class="brand-chip">Product Innovation Analysis</span>
+            </div>
+          </div>
+          <span class="eyebrow">Intelligent Vision Technology Platform</span>
+          <h1>EyeNet — Καινοτομικά Στοιχεία Πλατφόρμας</h1>
+          <a class="brand-link" href="https://eyenet-vision.com/">https://eyenet-vision.com/</a>
+        </div>
+
+        <aside class="meta-card">
+          <h3>Περίγραμμα Εγγράφου</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Πλατφόρμα</span>
+              <span class="meta-value">EyeNet Vision</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Τύπος</span>
+              <span class="meta-value">Ανάλυση Καινοτομίας</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Κάθετοι Τομείς</span>
+              <span class="meta-value">Security, Marketing, Compliance, Operations</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Μοντέλο</span>
+              <span class="meta-value">On‑Premises, Μία Συνδρομή</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <!-- ===== ΕΝΟΤΗΤΑ 1: ΓΕΝΙΚΗ ΕΙΣΑΓΩΓΗ ===== -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Γενική Εισαγωγή</h2>
+      </div>
+      <p class="lead">Το EyeNet Vision είναι μία ευφυής πλατφόρμα τεχνολογίας όρασης (intelligent vision technology) η οποία παρέχει έξι εξειδικευμένες εφαρμογές που καλύπτουν τους κάθετους τομείς της ασφάλειας (security), του μάρκετινγκ (marketing), της κανονιστικής συμμόρφωσης (compliance) και των επιχειρησιακών λειτουργιών (operations).</p>
+
+      <div class="grid-two">
+        <div>
+          <p>Η πλατφόρμα EyeNet συνδυάζει ιδιόκτητους αλγορίθμους υπολογιστικής όρασης (proprietary computer vision), δημογραφική ανάλυση (demographic analysis) και αυτοματισμό βασισμένο σε συμβάντα (event-driven automation), μετατρέποντας την παθητική επιτήρηση (passive surveillance) σε ενεργή, άμεσα αξιοποιήσιμη επιχειρησιακή ευφυΐα (active operational intelligence).</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Βασική Αρχή</strong></p>
+          <p>Το σύνολο της πλατφόρμας εκτελείται αποκλειστικά στον δικό σας εξοπλισμό και στις δικές σας εγκαταστάσεις (on‑premises). Μία απλή συνδρομή καλύπτει το σύνολο των δυνατοτήτων, χωρίς κρυφές χρεώσεις από τρίτους παρόχους. Τα δεδομένα σας παραμένουν αποκλειστικά στην κατοχή σας.</p>
+        </div>
+      </div>
+
+      <div class="callout" style="margin-top: 22px;">
+        Το EyeNet Vision αποτελεί μία κορυφαία λύση ολοκληρωμένης ασφάλειας, επιτήρησης και διαχείρισης δεδομένων για οργανισμούς μεγάλης κλίμακας.
+      </div>
+    </section>
+
+    <!-- ===== ΕΝΟΤΗΤΑ 2: ΚΑΤΑΝΕΜΗΜΕΝΗ ΑΡΧΙΤΕΚΤΟΝΙΚΗ & EYENET MATRIX GROUPS ===== -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>Κατανεμημένη Αρχιτεκτονική & EyeNet Matrix Groups</h2>
+      </div>
+
+      <p>Η αρχιτεκτονική του EyeNet έχει σχεδιαστεί ώστε να λειτουργεί κατανεμημένα σε μεγάλους οργανισμούς, επιτρέποντας την εγκατάσταση επιμέρους κόμβων (installations) πλησίον των σημείων ενδιαφέροντος (near‑edge). Οι κόμβοι αυτοί οργανώνονται σε λογικές ομάδες, τα αποκαλούμενα EyeNet Matrix Groups, εξασφαλίζοντας:</p>
+
+      <div class="grid-three">
+        <div class="key-card">
+          <span class="stat-label">Κλιμακωσιμότητα</span>
+          <span class="stat-value">∞</span>
+          <p>Κλιμακωσιμότητα (scalability) χωρίς υποβάθμιση των επιδόσεων, επιτρέποντας την ανάπτυξη από μεμονωμένες εγκαταστάσεις έως παγκόσμια δίκτυα.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Τοπική Επεξεργασία</span>
+          <span class="stat-value">↓</span>
+          <p>Τοπική επεξεργασία δεδομένων με ελάχιστη καθυστέρηση (latency), μειώνοντας την εξάρτηση από κεντρικούς διακομιστές και το διαδικτυακό bandwidth.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Συγχρονισμός</span>
+          <span class="stat-value">↔</span>
+          <p>Απρόσκοπτη επικοινωνία και συγχρονισμό μεταξύ απομακρυσμένων εγκαταστάσεων μέσω του κεντρικού συστήματος EyeNet Matrix.</p>
+        </div>
+      </div>
+
+      <div class="highlight-box">
+        <h3>Αξιοποίηση Υφιστάμενων Υποδομών</h3>
+        <p>Η πλατφόρμα έχει σχεδιαστεί με γνώμονα την αξιοποίηση υφιστάμενων υποδομών. Ο οργανισμός δύναται να χρησιμοποιήσει υπάρχοντες υπολογιστές και εξυπηρετητές, προϋπάρχοντα δίκτυα επικοινωνίας (LAN, WAN, VPN), καθώς και υφιστάμενες κάμερες επιτήρησης — υπό την προϋπόθεση ότι παρέχουν επαρκές οπτικό πεδίο (Field of View – FOV) για την αποτελεσματική λειτουργία των αλγορίθμων αναγνώρισης προσώπου (face recognition). Η δυνατότητα αυτή μειώνει δραστικά το κόστος κτήσης και εγκατάστασης νέου εξοπλισμού, ενώ ταυτόχρονα επιταχύνει την υλοποίηση του έργου.</p>
+      </div>
+    </section>
+
+    <!-- ===== ΕΝΟΤΗΤΑ 3: ΤΟ ΣΥΣΤΗΜΑ EYENET MATRIX ===== -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Το Σύστημα EyeNet Matrix</h2>
+      </div>
+
+      <p>Το EyeNet Matrix αποτελεί τον κεντρικό ενορχηστρωτή της πλατφόρμας EyeNet. Μέσω αυτού επιτυγχάνεται:</p>
+
+      <div class="grid-two">
+        <div>
+          <ul class="feature-list">
+            <li>Ενιαία διαχείριση και παρακολούθηση όλων των κατανεμημένων κόμβων.</li>
+            <li>Κεντρική αποθήκευση, επεξεργασία και ανάκτηση δεδομένων.</li>
+            <li>Διασύνδεση και αδιάλειπτη ροή πληροφορίας μεταξύ διαφορετικών EyeNet Matrix Groups.</li>
+            <li>Ομοιόμορφη εφαρμογή πολιτικών ασφαλείας και κανόνων λειτουργίας σε ολόκληρο τον οργανισμό.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Κεντρική Λειτουργία</strong></p>
+          <p>Το EyeNet Matrix λειτουργεί ως «εγκέφαλος» του συστήματος, διασφαλίζοντας συνοχή, ακεραιότητα και διαθεσιμότητα των δεδομένων ανά πάσα στιγμή.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== ΕΝΟΤΗΤΑ 4: ΚΥΒΕΡΝΟΑΣΦΑΛΕΙΑ ΚΑΙ EYENET PRESENCE ===== -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>Κυβερνοασφάλεια & EyeNet Presence</h2>
+      </div>
+
+      <p>Η ασφάλεια αποτελεί θεμελιώδη πυλώνα του EyeNet. Η πλατφόρμα ενσωματώνει πολλαπλά επίπεδα προστασίας (κρυπτογράφηση δεδομένων εν κινήσει και εν ηρεμία, έλεγχος πρόσβασης βάσει ρόλων, καταγραφή ενεργειών), διασφαλίζοντας ότι μόνο εξουσιοδοτημένο προσωπικό έχει πρόσβαση σε ευαίσθητα δεδομένα και λειτουργίες. Παράλληλα, μία από τις σημαντικότερες καινοτομίες της πλατφόρμας είναι το σύστημα EyeNet Presence — ένα ολοκληρωμένο σύστημα αυτοματοποιημένης επαλήθευσης παρουσίας (check-in / check-out) και παρουσιολογίου, σχεδιασμένο για επιχειρησιακά περιβάλλοντα υψηλών απαιτήσεων.</p>
+
+      <!-- 4.1 Αυτοματοποιημένο Check-in / Check-out -->
+      <div class="sub-section">
+        <h3>4.1 Αυτοματοποιημένο Check-in / Check-out</h3>
+        <p>Το EyeNet Presence λειτουργεί με δύο συσκευές ταυτόχρονα: έναν σταθμό στις εγκαταστάσεις του οργανισμού (station) και την κινητή συσκευή του χρήστη (mobile). Η διαδικασία check-in / check-out εκτελείται αυτόματα, χωρίς χειροκίνητες καταχωρίσεις, μέσω των ακόλουθων τρόπων έκδοσης Presence Grants:</p>
+        <ul>
+          <li>Σάρωση QR κωδικού (Station QR ή Mobile QR).</li>
+          <li>Αναγνώριση προσώπου (Face Detection) από τον σταθμό ή/και από την κινητή συσκευή.</li>
+          <li>Συνδυασμός και των δύο (QR + Face Detection) για επαλήθευση δύο παραγόντων (two-factor authentication), παρέχοντας το υψηλότερο επίπεδο διασφάλισης.</li>
+        </ul>
+        <p>Ιδιαίτερη έμφαση έχει δοθεί στην προστασία της ιδιωτικότητας κατά την αναγνώριση προσώπου: η πλατφόρμα υποστηρίζει <strong>αναγνώριση προσώπου αποκλειστικά στη μνήμη (in‑memory) και σε πραγματικό χρόνο</strong>, χωρίς να απαιτείται η αποθήκευση βίντεο ή εικόνων σε δίσκο. Βίντεο καταγράφεται μόνον εφόσον το επιτρέπει ρητά το εκάστοτε νομικό και κανονιστικό πλαίσιο, δίνοντας στον οργανισμό τον απόλυτο έλεγχο συμμόρφωσης.</p>
+      </div>
+
+      <!-- 4.2 Τρία Λειτουργικά Modes -->
+      <div class="sub-section">
+        <h3>4.2 Τρία Λειτουργικά Modes</h3>
+        <p>Το EyeNet Presence υποστηρίζει τρία ευέλικτα λειτουργικά modes, τα οποία επιλέγονται ανά installation ή ανά ομάδα χρηστών (group), ανάλογα με το επιθυμητό επίπεδο ασφαλείας και την επιχειρησιακή ανάγκη:</p>
+
+        <div class="grid-three">
+          <div class="key-card">
+            <span class="stat-label">QR‑Only</span>
+            <span class="stat-value">📱</span>
+            <p>Απλή και ταχύτατη επιβεβαίωση παρουσίας μέσω σάρωσης QR, ιδανική για καθημερινό check-in σε χώρους γραφείων, εκπαιδευτικά ιδρύματα ή καταστήματα λιανικής.</p>
+          </div>
+          <div class="key-card">
+            <span class="stat-label">Camera‑Only</span>
+            <span class="stat-value">📷</span>
+            <p>Επαλήθευση αποκλειστικά μέσω αναγνώρισης προσώπου, χωρίς να απαιτείται καμία ενέργεια από την πλευρά του χρήστη — ιδανική για περιβάλλοντα όπου η ταχύτητα και η μηδενική τριβή είναι κρίσιμες (π.χ. αποθήκες, logistics, πύλες εισόδου).</p>
+          </div>
+          <div class="key-card">
+            <span class="stat-label">QR + Camera</span>
+            <span class="stat-value">🔐</span>
+            <p>Συνδυασμός QR και αναγνώρισης προσώπου για επαληθευμένη παρουσία (Verified Presence) με το μέγιστο επίπεδο διασφάλισης, κατάλληλο για χώρους υψηλής ασφαλείας, υγειονομικές μονάδες και ελεγχόμενες εισόδους.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4.3 Πολλαπλές Ροές Επαλήθευσης -->
+      <div class="sub-section">
+        <h3>4.3 Πολλαπλές Ροές Επαλήθευσης</h3>
+        <p>Το σύστημα υποστηρίζει ένα ευρύ φάσμα ροών επαλήθευσης, καλύπτοντας κάθε επιχειρησιακό σενάριο:</p>
+        <ul>
+          <li><strong>Station QR:</strong> Ο χρήστης σαρώνει με το κινητό του τον QR κωδικό του σταθμού.</li>
+          <li><strong>Mobile QR:</strong> Ο σταθμός σαρώνει τον QR κωδικό που εμφανίζεται στην οθόνη της κινητής συσκευής του χρήστη.</li>
+          <li><strong>Face Detection:</strong> Το σύστημα εκτελεί άμεση αναγνώριση προσώπου μέσω της κάμερας του σταθμού ή/και της κινητής συσκευής.</li>
+          <li><strong>Owner QR:</strong> Ο εξουσιοδοτημένος χρήστης επιδεικνύει έναν ειδικό κωδικό QR ταυτότητας (Owner Identity QR), ο οποίος αναγνωρίζεται από τον σταθμό και ολοκληρώνει άμεσα τη ροή.</li>
+          <li><strong>QR‑first, camera‑follow‑up:</strong> Ο χρήστης ξεκινά με QR και, εντός παραμετροποιήσιμου χρονικού παραθύρου, ολοκληρώνει με αναγνώριση προσώπου για αναβάθμιση του Presence Grant σε επαληθευμένο.</li>
+        </ul>
+      </div>
+
+      <!-- 4.4 Παραμετροποιήσιμες Πολιτικές και Αυτοματισμός -->
+      <div class="sub-section">
+        <h3>4.4 Παραμετροποιήσιμες Πολιτικές και Αυτοματισμός</h3>
+        <p>Οι αποφάσεις του EyeNet Presence βασίζονται σε πολιτικές (policy-driven), οι οποίες είναι πλήρως παραμετροποιήσιμες:</p>
+        <ul>
+          <li>Πολιτικές σε επίπεδο εγκατάστασης (installation-level) και ανά ομάδα χρηστών (group-level).</li>
+          <li>Δυνατότητα υπερίσχυσης (override) πολιτικών ανά ομάδα.</li>
+          <li>Παραμετροποιήσιμο session timeout, μέγιστος αριθμός ανεπιτυχών προσπαθειών και χρονικό παράθυρο μετάβασης από QR σε κάμερα.</li>
+          <li>Αποφάσεις granted, denied, retry_required και failed με πλήρη ιχνηλασιμότητα (ποια πολιτική εφαρμόστηκε, ποιος κανόνας ενεργοποιήθηκε).</li>
+        </ul>
+        <p>Επιπλέον, το EyeNet Presence είναι πλήρως ενσωματωμένο με το σύστημα triggers και actions του EyeNet, επιτρέποντας αυτοματοποιημένες αποκρίσεις:</p>
+        <ul>
+          <li>Άμεσες ειδοποιήσεις μέσω Email, Slack, Microsoft Teams.</li>
+          <li>Αποστολή Webhooks σε εξωτερικά συστήματα (CRM, ERP, ελεγκτές θυρών, συστήματα ασφαλείας).</li>
+          <li>Αυτόματη κλιμάκωση περιστατικών βάσει προκαθορισμένων σεναρίων.</li>
+        </ul>
+      </div>
+
+      <!-- 4.5 Διαχείριση Καμερών και Πόρων -->
+      <div class="sub-section">
+        <h3>4.5 Διαχείριση Καμερών και Πόρων</h3>
+        <p>Το EyeNet Presence διαθέτει προηγμένη διαχείριση καμερών και πόρων. Ένα από τα ισχυρότερα πλεονεκτήματα της πλατφόρμας είναι ότι <strong>Presence Grants μπορούν να εκδοθούν από οποιαδήποτε κάμερα έχει συνδεθεί στο οικοσύστημα EyeNet</strong>, προσφέροντας απαράμιλλη ευελιξία:</p>
+        <ul>
+          <li><strong>Κάμερες κοντινής λήψης:</strong> Ενσωματωμένες κάμερες σε σταθμούς EyeNet Presence (mini PCs, tablets, front‑desk τερματικά), ιδανικές για ελεγχόμενα σημεία check‑in όπου ο χρήστης βρίσκεται σε μικρή απόσταση.</li>
+          <li><strong>Κάμερες ασφαλείας μακρινής λήψης:</strong> Υφιστάμενες κάμερες ασφαλείας του οργανισμού που διαθέτουν επαρκές οπτικό πεδίο (Field of View – FOV) και προαιρετικά δυναμικό zoom (dynamic zoom), επιτρέποντας την έκδοση Presence Grants ακόμη και από αποστάσεις σε χώρους όπως αποθήκες, πύλες εισόδου, πάρκινγκ και ανοικτούς χώρους.</li>
+        </ul>
+        <p>Επιπλέον, το σύστημα παρέχει:</p>
+        <ul>
+          <li>Αυτόματη ανίχνευση και λίστα διαθέσιμων καμερών της πλατφόρμας.</li>
+          <li>Δέσμευση (reservation) συγκεκριμένης κάμερας για χρήση από το EyeNet Presence.</li>
+          <li>Αυτόματη επιλογή εγγεγραμμένης κάμερας όταν δεν υπάρχει χειροκίνητη δέσμευση.</li>
+          <li>Σύνδεση κάμερας με αντίστοιχο collection (συλλογή δεδομένων).</li>
+          <li>Δυνατότητα αποδέσμευσης και επαναφοράς πόρων με μία ενέργεια.</li>
+          <li>Φιλτράρισμα καμερών βάσει ονόματος, τύπου και κατάστασης λειτουργίας.</li>
+        </ul>
+      </div>
+
+      <!-- 4.6 GDPR Compliance -->
+      <div class="sub-section">
+        <h3>4.6 Πλήρης Συμμόρφωση με GDPR για τα Δεδομένα Αναγνώρισης Προσώπου</h3>
+        <p>Μία από τις σημαντικότερες καινοτομίες του EyeNet Presence είναι ο σχεδιασμός του με γνώμονα την προστασία των προσωπικών δεδομένων και την πλήρη συμμόρφωση με τον GDPR, ακόμη και για τις λειτουργίες αναγνώρισης προσώπου:</p>
+
+        <div class="highlight-box">
+          <ul>
+            <li>Οι τελικοί χρήστες / εργαζόμενοι διατηρούν τον πλήρη έλεγχο των δεδομένων αναγνώρισης προσώπου τους.</li>
+            <li>Τα δεδομένα προσώπου παραμένουν αποκλειστικά στις συσκευές των ίδιων των χρηστών — δεν αποθηκεύονται σε κεντρικούς διακομιστές του οργανισμού.</li>
+            <li>Οι χρήστες έχουν τη δυνατότητα να διαγράψουν ή να ενημερώσουν τα δεδομένα τους ανά πάσα στιγμή.</li>
+            <li>Ακόμη και οι διαχειριστές (admins) του συστήματος δεν έχουν πρόσβαση στα βιομετρικά δεδομένα.</li>
+            <li>Ο οργανισμός έχει πρόσβαση αποκλειστικά και μόνο στα Presence Grants (παρουσίες / απουσίες) και όχι στα δεδομένα προσώπου.</li>
+          </ul>
+          <p>Η προσέγγιση αυτή διασφαλίζει ότι η πλατφόρμα παραμένει απολύτως σύννομη με τους αυστηρότερους ευρωπαϊκούς κανονισμούς προστασίας δεδομένων, ενώ ταυτόχρονα ενισχύει την εμπιστοσύνη των εργαζομένων.</p>
+        </div>
+      </div>
+
+      <!-- 4.7 Reporting & Analytics -->
+      <div class="sub-section">
+        <h3>4.7 Ολοκληρωμένο Reporting και Αναλυτικά Στοιχεία</h3>
+        <p>Το EyeNet Presence παρέχει μία πλήρη σουίτα αναφορών και αναλυτικών στοιχείων, δίνοντας στον οργανισμό πλήρη ορατότητα και έλεγχο:</p>
+
+        <div class="grid-two" style="margin-top: 16px;">
+          <div>
+            <ul>
+              <li>Σύνοψη αναλυτικών στοιχείων (analytics summary).</li>
+              <li>Αναλυτικά ανά χρήστη, ανά συσκευή, ανά εγκατάσταση, ανά session mode, ανά τύπο grant και ανά πηγή πολιτικής.</li>
+              <li>User-per-day Presence Awards (παρουσίες ανά χρήστη ανά ημέρα).</li>
+              <li>Πρόσφατες συνεδρίες (recent sessions) με πλήρη στοιχεία.</li>
+            </ul>
+          </div>
+          <div>
+            <ul>
+              <li>Φίλτρα ανά χρήστη, ημερομηνία/ώρα έναρξης και λήξης.</li>
+              <li>Εξαγωγή αναφορών σε μορφή XLS (υπολογιστικά φύλλα).</li>
+              <li>Πλήρες ιστορικό αποφάσεων (decision history) και ίχνη συνεδριών (session traces).</li>
+              <li>Διαδρομή ελέγχου (audit trail) για κάθε ενέργεια που εκτελέστηκε, με ορατότητα στην πηγή πολιτικής που εφαρμόστηκε.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4.8 Απόρρητο, Ιχνηλασιμότητα, Ασφάλεια -->
+      <div class="sub-section">
+        <h3>4.8 Απόρρητο, Ιχνηλασιμότητα και Ασφάλεια</h3>
+        <p>Το σύνολο της επικοινωνίας και των δεδομένων του EyeNet Presence προστατεύεται από κρυπτογράφηση υψηλού επιπέδου και, όπου απαιτείται, διοχετεύεται μέσω ασφαλών καναλιών VPN. Κάθε συνεδρία καταγράφεται πλήρως (status transitions, QR resolution, completion, retry, failure), εξασφαλίζοντας απόλυτη ιχνηλασιμότητα και λογοδοσία. Οι διαχειριστές μπορούν ανά πάσα στιγμή να γνωρίζουν όχι μόνο εάν εκδόθηκε ένα Presence Grant, αλλά και γιατί εκδόθηκε, ποια πολιτική εφαρμόστηκε και ποια αυτοματοποιημένα assets (triggers, actions, groups) ενεπλάκησαν.</p>
+
+        <div class="callout" style="margin-top: 18px;">
+          Το EyeNet Presence αποτελεί ένα ολοκληρωμένο οικοσύστημα επαλήθευσης παρουσίας που συνδυάζει την ευελιξία πολλαπλών μεθόδων ταυτοποίησης, την ισχυρή ασφάλεια, τον πλήρη σεβασμό της ιδιωτικότητας και τη βαθιά επιχειρησιακή ορατότητα — όλα σε μία ενιαία, ενοποιημένη πλατφόρμα.
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== ΕΝΟΤΗΤΑ 5: ΜΕΤΡΙΚΗ ΠΟΙΟΤΗΤΑΣ ΕΙΚΟΝΑΣ (MVR DATA) ===== -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>Μετρική Ποιότητας Εικόνας (MVR Data)</h2>
+      </div>
+
+      <p>Ένα μοναδικό χαρακτηριστικό της πλατφόρμας είναι η ενσωμάτωση μετρικών ποιότητας εικόνας ως αναπόσπαστο μέρος των δεδομένων MVR (Multimedia Video Records). Το σύστημα αξιολογεί αυτόματα και σε πραγματικό χρόνο:</p>
+
+      <div class="grid-two">
+        <div class="summary-card">
+          <p><strong>Ποιότητα Feed</strong></p>
+          <p>Την ποιότητα του feed που αποστέλλει εκάστη κάμερα.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Καταλληλότητα Κάμερας</strong></p>
+          <p>Το κατά πόσον η συγκεκριμένη κάμερα πληροί τα ελάχιστα κριτήρια (π.χ. ευκρίνεια, γωνία λήψης, συνθήκες φωτισμού) ώστε να είναι κατάλληλη για τις εφαρμογές επιτήρησης και αναγνώρισης προσώπου.</p>
+        </div>
+      </div>
+
+      <div class="note-card" style="margin-top: 22px;">
+        <p><strong>Αδιάλειπτη Λειτουργία:</strong> Σε περίπτωση που το feed δεν πληροί τα απαιτούμενα πρότυπα, το σύστημα ειδοποιεί αυτομάτως τους διαχειριστές και δύναται να ενεργοποιήσει εναλλακτικές πηγές λήψης, διασφαλίζοντας αδιάλειπτη επιχειρησιακή λειτουργία.</p>
+      </div>
+    </section>
+
+    <!-- ===== ΕΝΟΤΗΤΑ 6: ΕΝΟΠΟΙΗΜΕΝΕΣ ΑΝΑΦΟΡΕΣ ===== -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">6</span>
+        <h2>Ενοποιημένες Αναφορές & Απομακρυσμένη Πρόσβαση</h2>
+      </div>
+
+      <p>Το EyeNet παρέχει πλήρως ενοποιημένες αναφορές (reports) μέσω του συστήματος EyeNet Matrix, συγκεντρώνοντας δεδομένα από το σύνολο των κατανεμημένων εγκαταστάσεων.</p>
+
+      <div class="grid-three">
+        <div class="key-card">
+          <span class="stat-label">Παραγωγή</span>
+          <span class="stat-value">⚡</span>
+          <p>Παράγονται σε πραγματικό χρόνο ή βάσει χρονοπρογραμματισμού.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Εύρος</span>
+          <span class="stat-value">📊</span>
+          <p>Καλύπτουν το φάσμα από συμβάντα ασφαλείας έως δείκτες απόδοσης του συστήματος.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Πρόσβαση</span>
+          <span class="stat-value">📲</span>
+          <p>Προωθούνται με ασφάλεια μέσω VPN σε όλες τις φορητές συσκευές (κινητά τηλέφωνα, tablets) των εξουσιοδοτημένων στελεχών.</p>
+        </div>
+      </div>
+
+      <div class="highlight-box" style="margin-top: 22px;">
+        <p>Η απομακρυσμένη πρόσβαση μέσω VPN διασφαλίζει κρυπτογραφημένη επικοινωνία και πλήρη προστασία των δεδομένων κατά τη μετάδοση, επιτρέποντας την άμεση λήψη αποφάσεων ανεξαρτήτως γεωγραφικής θέσης.</p>
+      </div>
+    </section>
+
+    <!-- ===== ΕΝΟΤΗΤΑ 7: CUSTOM TRIGGERS & ACTIONS ===== -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">7</span>
+        <h2>Custom Triggers & Actions</h2>
+      </div>
+
+      <p>Η πλατφόρμα EyeNet υποστηρίζει τη δημιουργία προσαρμοσμένων κανόνων και ενεργειών (custom triggers & actions), επιτρέποντας την απρόσκοπτη ενσωμάτωση με εταιρικά εργαλεία συνεργασίας:</p>
+
+      <div class="grid-three">
+        <div class="key-card">
+          <span class="stat-label">Microsoft Teams</span>
+          <span class="stat-value">🟣</span>
+          <p>Άμεσες ειδοποιήσεις σε κανάλια του Teams κατά την ανίχνευση κρίσιμων συμβάντων.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Slack</span>
+          <span class="stat-value">💬</span>
+          <p>Ειδοποιήσεις σε Slack channels για αυτοματοποιημένη ενημέρωση ομάδων.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Webhooks</span>
+          <span class="stat-value">🔗</span>
+          <p>Σύνδεση με εξωτερικά συστήματα και υπηρεσίες για ενεργοποίηση προκαθορισμένων ενεργειών (π.χ. κλείδωμα θυρών, ενεργοποίηση συναγερμού, CRM/ERP ενημέρωση).</p>
+        </div>
+      </div>
+
+      <div class="highlight-box">
+        <p><strong>Αυτοματοποιημένες Ροές Εργασίας:</strong> Μέσω των triggers, ο οργανισμός δύναται να ορίσει σύνθετες αυτοματοποιημένες ροές εργασίας, συμπεριλαμβανομένης της αυτόματης κλιμάκωσης περιστατικών (incident escalation) βάσει προκαθορισμένων σεναρίων.</p>
+      </div>
+    </section>
+
+    <!-- ===== ΕΝΟΤΗΤΑ 8: ΣΥΜΠΕΡΑΣΜΑ ===== -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">8</span>
+        <h2>Συμπέρασμα</h2>
+      </div>
+
+      <div class="grid-two">
+        <div>
+          <p>Η πλατφόρμα EyeNet συνδυάζει προηγμένη κατανεμημένη αρχιτεκτονική, υψηλού επιπέδου κυβερνοασφάλεια, τεχνητή νοημοσύνη για ανάλυση εικόνας και απρόσκοπτη ενσωμάτωση με τον υφιστάμενο εξοπλισμό και τα εταιρικά εργαλεία συνεργασίας.</p>
+          <p>Το EyeNet Matrix παρέχει τον κεντρικό ενορχηστρωτή, ενώ το EyeNet Presence προσφέρει ένα ολοκληρωμένο οικοσύστημα επαλήθευσης παρουσίας με πλήρη σεβασμό της ιδιωτικότητας και συμμόρφωση με τον GDPR.</p>
+          <p>Το αποτέλεσμα είναι μία λύση που προσφέρει απαράμιλλη ευελιξία, αξιοπιστία και προστασία, καθιστώντας την ιδανική επιλογή για οργανισμούς με υψηλές απαιτήσεις ασφαλείας και γεωγραφικά κατανεμημένες εγκαταστάσεις.</p>
+        </div>
+        <div class="summary-card">
+          <span class="key-number">All‑in‑One</span>
+          <p>Μία πλατφόρμα. Μία συνδρομή. Πλήρες οικοσύστημα. Τα δεδομένα σας παραμένουν αποκλειστικά δικά σας.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
