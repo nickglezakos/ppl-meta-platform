@@ -111,13 +111,18 @@ class Trigger(BaseModel):
         nullable=False,
         default="demographic",
         index=True,
-        comment="Trigger mode: demographic | ppl_match | search"
+        comment="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match"
     )
     ppl_match_group_id = Column(
         String(255),
         nullable=True,
         index=True,
         comment="Target individual group ID for ppl_match mode"
+    )
+    ppl_match_group_ids = Column(
+        Text,
+        nullable=True,
+        comment='JSON array of individual group IDs for vprofile_match mode (e.g., ["group-uuid-1", "group-uuid-2"])'
     )
     ppl_match_similarity_threshold = Column(
         Float,
@@ -136,6 +141,13 @@ class Trigger(BaseModel):
         nullable=False,
         default=False,
         comment="When True, the trigger fires when NO group members are matched (NOT mode)"
+    )
+    
+    # VProfile multi-camera configuration
+    camera_device_ids = Column(
+        Text,
+        nullable=True,
+        comment='JSON array of camera device IDs for vprofile_match multi-camera mode (e.g., ["usb_camera_0", "rtsp_192.168.1.76_554"])'
     )
     
     # Search trigger configuration

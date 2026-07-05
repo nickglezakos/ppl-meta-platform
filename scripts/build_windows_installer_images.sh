@@ -7,6 +7,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 REGISTRY="${REGISTRY:-ghcr.io/nickglezakos/ppl-meta-platform}"
 RELEASE_TAG="${RELEASE_TAG:-$(cat "$PROJECT_ROOT/VERSION" 2>/dev/null || echo latest)}"
+PLATFORM="${PLATFORM:-linux/amd64}"
 MIN_FREE_GB="${MIN_FREE_GB:-12}"
 SERVICES=(node media gateway orchestrator discovery communications frontend vision vmeta)
 
@@ -99,9 +100,10 @@ build_service() {
 
     resolve_service "$service"
 
-    echo "Building $service as $IMAGE_NAME"
+    echo "Building $service as $IMAGE_NAME for platform $PLATFORM"
     check_free_space
     DOCKER_BUILDKIT=1 docker build \
+        --platform "$PLATFORM" \
         --file "$DOCKERFILE" \
         --tag "$IMAGE_NAME" \
         "$SERVICE_DIR"
@@ -111,6 +113,7 @@ build_service() {
 echo "Building Windows installer images with low-disk cleanup"
 echo "Registry: $REGISTRY"
 echo "Release tag: $RELEASE_TAG"
+echo "Platform: $PLATFORM"
 echo "Minimum free space: ${MIN_FREE_GB}GiB"
 
 cleanup_docker_cache

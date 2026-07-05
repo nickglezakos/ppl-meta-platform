@@ -118,12 +118,20 @@ class TriggerBase(BaseModel):
     )
     trigger_mode: str = Field(
         default="demographic",
-        description="Trigger mode: demographic | ppl_match | search | search_demographic"
+        description="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match"
     )
     ppl_match_group_id: Optional[str] = Field(
         None,
         description="Individual group ID used for ppl_match mode",
         max_length=255
+    )
+    ppl_match_group_ids: Optional[List[str]] = Field(
+        None,
+        description="JSON array of individual group IDs for vprofile_match mode"
+    )
+    camera_device_ids: Optional[List[str]] = Field(
+        None,
+        description="JSON array of camera device IDs for vprofile_match multi-camera mode"
     )
     ppl_match_similarity_threshold: float = Field(
         default=0.75,
@@ -153,13 +161,19 @@ class TriggerBase(BaseModel):
     @field_validator('trigger_mode')
     @classmethod
     def validate_trigger_mode(cls, v: str) -> str:
-        valid = ['demographic', 'ppl_match', 'search', 'search_demographic']
+        valid = ['demographic', 'ppl_match', 'search', 'search_demographic', 'vprofile_match']
         if v not in valid:
             raise ValueError(f'trigger_mode must be one of {valid}')
         return v
 
     @model_validator(mode='after')
     def validate_mode_config(self):
+        if self.trigger_mode == 'vprofile_match':
+            if not self.ppl_match_group_ids:
+                raise ValueError('ppl_match_group_ids is required for vprofile_match mode')
+            if not self.camera_device_ids:
+                raise ValueError('camera_device_ids is required for vprofile_match mode')
+            return self
         if self.trigger_mode not in ('search', 'search_demographic') and not self.camera_device_id:
             raise ValueError('camera_device_id is required for demographic and ppl_match trigger modes')
         if self.trigger_mode == 'demographic' and len(self.demographic_conditions) == 0:
@@ -200,6 +214,8 @@ class TriggerUpdate(BaseModel):
     description: Optional[str] = None
     trigger_mode: Optional[str] = None
     ppl_match_group_id: Optional[str] = None
+    ppl_match_group_ids: Optional[List[str]] = None
+    camera_device_ids: Optional[List[str]] = None
     ppl_match_similarity_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     ppl_match_top_k: Optional[int] = Field(default=None, ge=1)
     ppl_match_negate: Optional[bool] = None
@@ -211,7 +227,7 @@ class TriggerUpdate(BaseModel):
     def validate_trigger_mode(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
-        valid = ['demographic', 'ppl_match', 'search', 'search_demographic']
+        valid = ['demographic', 'ppl_match', 'search', 'search_demographic', 'vprofile_match']
         if v not in valid:
             raise ValueError(f'trigger_mode must be one of {valid}')
         return v
@@ -250,6 +266,8 @@ class TriggerResponse(BaseModel):
     last_fired_at: Optional[datetime]
     trigger_mode: str
     ppl_match_group_id: Optional[str]
+    ppl_match_group_ids: Optional[List[str]] = None
+    camera_device_ids: Optional[List[str]] = None
     ppl_match_similarity_threshold: float
     ppl_match_top_k: int
     ppl_match_negate: bool = False
@@ -275,6 +293,22 @@ class TriggerResponse(BaseModel):
     @field_validator('last_match_info', mode='before')
     @classmethod
     def parse_last_match_info(cls, v):
+        if isinstance(v, str):
+            import json
+            return json.loads(v)
+        return v
+
+    @field_validator('ppl_match_group_ids', mode='before')
+    @classmethod
+    def parse_ppl_match_group_ids(cls, v):
+        if isinstance(v, str):
+            import json
+            return json.loads(v)
+        return v
+
+    @field_validator('camera_device_ids', mode='before')
+    @classmethod
+    def parse_camera_device_ids(cls, v):
         if isinstance(v, str):
             import json
             return json.loads(v)

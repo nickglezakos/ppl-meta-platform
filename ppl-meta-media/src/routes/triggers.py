@@ -32,6 +32,7 @@ from ..schemas.trigger import (
     TriggerUpdate,
 )
 from ..services.trigger_evaluation import DemographicData, TriggerEvaluationService
+from ..services.vprofile_match_worker import get_vprofile_worker
 from ..services.communications_client import CommunicationsClient
 from ..services.signage_service import SignagePlaybackService
 from ..schemas.signage import PlaybackControlRequest, PlaybackCommand, PlaybackParameters
@@ -243,6 +244,14 @@ async def create_trigger(
         if 'search_camera_device_ids' in trigger_data and trigger_data['search_camera_device_ids'] is not None:
             trigger_data['search_camera_device_ids'] = json.dumps(trigger_data['search_camera_device_ids'])
         
+        # Convert ppl_match_group_ids list to JSON string for storage
+        if 'ppl_match_group_ids' in trigger_data and trigger_data['ppl_match_group_ids'] is not None:
+            trigger_data['ppl_match_group_ids'] = json.dumps(trigger_data['ppl_match_group_ids'])
+
+        # Convert camera_device_ids list to JSON string for storage
+        if 'camera_device_ids' in trigger_data and trigger_data['camera_device_ids'] is not None:
+            trigger_data['camera_device_ids'] = json.dumps(trigger_data['camera_device_ids'])
+        
         # Convert action_uuids list to JSON string for storage
         action_uuids_list = trigger_data.get('action_uuids')
         if action_uuids_list is not None:
@@ -261,10 +270,22 @@ async def create_trigger(
             trigger_data['uuid'] = trigger_uuid
             trigger_data['camera_device_id'] = f"search:{trigger_uuid}"
         
+        # For vprofile_match triggers, set a synthetic camera_device_id since the column is NOT NULL
+        if trigger_data.get('trigger_mode') == 'vprofile_match' and not trigger_data.get('camera_device_id'):
+            trigger_data['camera_device_id'] = 'vprofile_match'
+        
         db_trigger = Trigger(**trigger_data)
         db.add(db_trigger)
         db.commit()
         db.refresh(db_trigger)
+        
+        # VProfile lifecycle: activate on creation if active
+        if db_trigger.trigger_mode == 'vprofile_match' and db_trigger.is_active:
+            try:
+                worker = get_vprofile_worker()
+                await worker.activate_trigger(db_trigger)
+            except Exception as activate_err:
+                logger.error("Failed to activate vprofile trigger %s on create: %s", db_trigger.uuid, activate_err)
         
         trigger_dict = {
             **{c.name: getattr(db_trigger, c.name) for c in db_trigger.__table__.columns},
@@ -417,9 +438,24 @@ async def toggle_trigger(
     if not db_trigger:
         raise HTTPException(status_code=404, detail="Trigger not found")
     
+    was_active = db_trigger.is_active
     db_trigger.is_active = not db_trigger.is_active
     db.commit()
     db.refresh(db_trigger)
+    
+    # VProfile lifecycle: activate on toggle-on, deactivate on toggle-off
+    if db_trigger.trigger_mode == 'vprofile_match':
+        try:
+            worker = get_vprofile_worker()
+            if db_trigger.is_active and not was_active:
+                await worker.activate_trigger(db_trigger)
+            elif not db_trigger.is_active and was_active:
+                group_ids_raw = db_trigger.ppl_match_group_ids
+                group_ids = json.loads(group_ids_raw) if group_ids_raw else []
+                await worker.deactivate_trigger(str(db_trigger.uuid), group_ids=group_ids)
+        except Exception as lifecycle_err:
+            logger.error("Failed to handle vprofile lifecycle on toggle %s: %s", db_trigger.uuid, lifecycle_err)
+    
     return db_trigger
 
 

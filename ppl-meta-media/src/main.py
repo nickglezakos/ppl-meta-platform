@@ -204,6 +204,16 @@ async def lifespan(_app: FastAPI):
         logger.error(f"Failed to start search trigger scheduler: {e}")
         logger.info("Search trigger scheduling will be unavailable")
 
+    # Restore vprofile_match triggers (in-memory cache is wiped on restart)
+    try:
+        from src.services.vprofile_match_worker import get_vprofile_worker
+        worker = get_vprofile_worker()
+        await worker.load_all_active_triggers()
+        logger.info("VProfile match triggers cache restored")
+    except Exception as e:
+        logger.error(f"Failed to restore vprofile match triggers: {e}")
+        logger.info("VProfile match triggers will load lazily on first activation")
+
     logger.info("Service startup completed successfully")
 
     yield

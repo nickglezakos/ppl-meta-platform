@@ -7,6 +7,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 REGISTRY="${REGISTRY:-ghcr.io/nickglezakos/ppl-meta-platform}"
 RELEASE_TAG="${RELEASE_TAG:-$(cat "$PROJECT_ROOT/VERSION" 2>/dev/null || echo latest)}"
+PLATFORM="${PLATFORM:-linux/amd64}"
 MIN_FREE_GB="${MIN_FREE_GB:-12}"
 SERVICES=("vision" "vmeta")
 
@@ -52,9 +53,10 @@ build_service() {
             ;;
     esac
 
-    echo "Building $service as $image_name"
+    echo "Building $service as $image_name for platform $PLATFORM"
     check_free_space
     DOCKER_BUILDKIT=1 docker build \
+        --platform "$PLATFORM" \
         --file "$dockerfile" \
         --tag "$image_name" \
         "$service_dir"
@@ -64,6 +66,7 @@ build_service() {
 echo "Building protected service images with low-disk cleanup"
 echo "Registry: $REGISTRY"
 echo "Release tag: $RELEASE_TAG"
+echo "Platform: $PLATFORM"
 echo "Minimum free space: ${MIN_FREE_GB}GiB"
 
 cleanup_docker_cache

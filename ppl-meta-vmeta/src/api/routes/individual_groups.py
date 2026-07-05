@@ -4,7 +4,7 @@ RESTful endpoints for managing individual groups.
 """
 
 import logging
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
@@ -27,6 +27,8 @@ from models.individual_group import (
     ListMembersResponse,
     MergeMembersRequest,
     MergeMembersResponse,
+    MultiEmbeddingLoadRequest,
+    MultiEmbeddingLoadResponse,
     RemoveGroupMembersRequest,
     RemoveMembersResponse,
     UpdateIndividualGroupRequest,
@@ -642,4 +644,73 @@ async def merge_members(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to merge members: {str(e)}"
+        )
+
+
+# ================================================================
+# Resolve Embeddings Endpoint (VProfile Match Worker)
+# ================================================================
+
+@router.post("/resolve-embeddings")
+async def resolve_embeddings(
+    request_body: Dict[str, Any],
+    manager: IndividualGroupsManager = Depends(get_groups_manager),
+):
+    """
+    Resolve a list of UUIDs (MVR, individual, or person_object) to their face embeddings.
+    
+    Intelligently resolves each UUID by checking:
+    1. Direct MVR lookup in mvr_people
+    2. individual_mvr_mapping → mvr_people
+    3. individual_video_appearances → individual_mvr_mapping → mvr_people
+    
+    Returns a map of {original_uuid: embedding_list_or_null}.
+    """
+    try:
+        uuids = request_body.get("uuids", [])
+        if not uuids:
+            return {"embeddings": {}, "errors": []}
+        
+        result = await manager.resolve_uuids_to_embeddings(uuids)
+        return result
+    except Exception as e:
+        logger.error(f"Error resolving embeddings: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to resolve embeddings: {str(e)}"
+        )
+
+# ================================================================
+# Multi Embedding Load Endpoint (VProfile Match Worker)
+# ================================================================
+
+@router.post("/multi-embedding-load", response_model=MultiEmbeddingLoadResponse)
+async def load_multi_group_embeddings(
+    request_body: MultiEmbeddingLoadRequest,
+    manager: IndividualGroupsManager = Depends(get_groups_manager),
+) -> MultiEmbeddingLoadResponse:
+    """
+    Load face embeddings for all members of multiple groups in a single call.
+
+    Used by the VProfile Match Worker to pre-load embeddings into memory
+    for fast in-memory comparison against instant detection results,
+    and for periodic background cache refresh.
+
+    Args:
+        request_body: Group IDs to load + options
+
+    Returns:
+        Embedding data for all group members, organized by group
+    """
+    try:
+        result = await manager.load_multi_group_embeddings(
+            group_ids=request_body.group_ids,
+            include_demographics=request_body.include_demographics,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error loading multi-group embeddings: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load group embeddings: {str(e)}"
         )

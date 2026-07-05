@@ -5,7 +5,7 @@ Data models for organizing individuals into user-created groups.
 
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -391,3 +391,46 @@ class MergeMembersResponse(BaseModel):
     group_membership_updated: bool = Field(
         description="Whether group membership was updated to use super-individual"
     )
+
+
+# ============================================================================
+# Multi Embedding Load Models (VProfile Match Worker)
+# ============================================================================
+
+class MultiEmbeddingLoadRequest(BaseModel):
+    """Request to load face embeddings for multiple groups in one call."""
+    
+    group_ids: List[str] = Field(
+        ..., min_length=1, max_length=50,
+        description="List of individual group IDs to load embeddings for"
+    )
+    include_demographics: bool = Field(
+        default=True,
+        description="Whether to include age/gender demographic data"
+    )
+
+
+class GroupMemberEmbedding(BaseModel):
+    """A single group member's embedding data."""
+    
+    mvr_people_uuid: str
+    face_embedding: List[float] = Field(description="512-dimensional FaceNet512 embedding")
+    name: Optional[str] = None
+    member_number: Optional[int] = None
+    demographics: Optional[Dict[str, Any]] = None
+
+
+class GroupEmbeddingData(BaseModel):
+    """Embedding data for all members of a single group."""
+    
+    name: str
+    member_count: int
+    members: List[GroupMemberEmbedding]
+
+
+class MultiEmbeddingLoadResponse(BaseModel):
+    """Response containing embeddings for all requested groups."""
+    
+    groups: Dict[str, GroupEmbeddingData]
+    total_members: int
+    total_groups: int

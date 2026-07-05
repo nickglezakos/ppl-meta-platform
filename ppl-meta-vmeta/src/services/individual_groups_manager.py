@@ -10,7 +10,7 @@ import os
 import numpy as np
 from uuid import UUID
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from models.individual_group import (
     AddGroupMembersRequest,
@@ -2320,3 +2320,207 @@ class IndividualGroupsManager:
             return 0.0
         
         return float(dot_product / (norm1 * norm2))
+
+    # ================================================================
+    # Resolve UUIDs to Embeddings (VProfile Match Worker)
+    # ================================================================
+
+    async def resolve_uuids_to_embeddings(
+        self,
+        uuids: List[str],
+    ) -> Dict[str, Any]:
+        """
+        Resolve a list of UUIDs (MVR, individual, or person_object) to their face embeddings.
+
+        Intelligently resolves each UUID by checking:
+        1. Direct MVR lookup in mvr_people
+        2. individual_mvr_mapping → mvr_people
+        3. individual_video_appearances → individual_mvr_mapping → mvr_people
+
+        Returns a map of {original_uuid: embedding_list} with null for unresolvable UUIDs.
+        """
+        result: Dict[str, Any] = {"embeddings": {}, "errors": []}
+
+        async with self.db.pool.acquire() as conn:
+            for uuid_str in uuids:
+                try:
+                    uuid_obj = UUID(uuid_str)
+                except ValueError:
+                    result["embeddings"][uuid_str] = None
+                    result["errors"].append({"uuid": uuid_str, "error": "invalid_uuid_format"})
+                    continue
+
+                # Step 1: Direct MVR lookup
+                row = await conn.fetchrow(
+                    "SELECT face_embedding FROM mvr_people WHERE mvr_people_uuid = $1 AND face_embedding IS NOT NULL",
+                    uuid_obj,
+                )
+                if row and row["face_embedding"]:
+                    emb = self._parse_pgvector(row["face_embedding"])
+                    # Normalize
+                    norm = np.linalg.norm(emb)
+                    if norm > 0:
+                        emb = emb / norm
+                    result["embeddings"][uuid_str] = emb.tolist()
+                    continue
+
+                # Step 2: individual_mvr_mapping → mvr_people
+                row = await conn.fetchrow(
+                    """
+                    SELECT mp.face_embedding
+                    FROM individual_mvr_mapping imm
+                    JOIN mvr_people mp ON imm.mvr_people_uuid = mp.mvr_people_uuid
+                    WHERE imm.individual_uuid = $1
+                      AND mp.face_embedding IS NOT NULL
+                    ORDER BY imm.is_representative DESC, imm.linked_at DESC
+                    LIMIT 1
+                    """,
+                    uuid_obj,
+                )
+                if row and row["face_embedding"]:
+                    emb = self._parse_pgvector(row["face_embedding"])
+                    norm = np.linalg.norm(emb)
+                    if norm > 0:
+                        emb = emb / norm
+                    result["embeddings"][uuid_str] = emb.tolist()
+                    continue
+
+                # Step 3: individual_video_appearances → individual_mvr_mapping → mvr_people
+                row = await conn.fetchrow(
+                    """
+                    SELECT mp.face_embedding
+                    FROM individual_video_appearances iva
+                    JOIN individual_mvr_mapping imm ON iva.individual_uuid = imm.individual_uuid
+                    JOIN mvr_people mp ON imm.mvr_people_uuid = mp.mvr_people_uuid
+                    WHERE iva.person_object_uuid = $1
+                      AND mp.face_embedding IS NOT NULL
+                    ORDER BY imm.is_representative DESC, iva.start_timestamp DESC, imm.linked_at DESC
+                    LIMIT 1
+                    """,
+                    uuid_obj,
+                )
+                if row and row["face_embedding"]:
+                    emb = self._parse_pgvector(row["face_embedding"])
+                    norm = np.linalg.norm(emb)
+                    if norm > 0:
+                        emb = emb / norm
+                    result["embeddings"][uuid_str] = emb.tolist()
+                    continue
+
+                # Not found
+                result["embeddings"][uuid_str] = None
+                result["errors"].append({"uuid": uuid_str, "error": "not_found"})
+
+        return result
+
+    # ================================================================
+    # Multi Embedding Load (VProfile Match Worker)
+    # ================================================================
+
+    async def load_multi_group_embeddings(
+        self,
+        group_ids: List[str],
+        include_demographics: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Load embeddings for all members across multiple groups in a single DB query.
+
+        Used by the VProfile Match Worker to pre-load embeddings into memory
+        for fast in-memory comparison against instant detection results,
+        and for periodic background cache refresh.
+
+        Args:
+            group_ids: List of individual group IDs
+            include_demographics: Whether to include age/gender data
+
+        Returns:
+            Dict with groups keyed by group_id, total_members, total_groups
+        """
+        if not group_ids:
+            return {"groups": {}, "total_members": 0, "total_groups": 0}
+
+        result: Dict[str, Any] = {"groups": {}, "total_members": 0}
+
+        async with self.db.pool.acquire() as conn:
+            # Single query joining group_membership + mvr_people + individual_groups
+            # Casts pgvector face_embedding to text for JSON serialization
+            query = """
+                SELECT 
+                    gm.group_id,
+                    ig.name as group_name,
+                    COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid)::text as mvr_people_uuid,
+                    COALESCE(m_direct.face_embedding, m_mapped.face_embedding)::text as face_embedding_text,
+                    COALESCE(m_direct.name, m_mapped.name) as member_name,
+                    ROW_NUMBER() OVER (PARTITION BY gm.group_id ORDER BY gm.added_at, gm.individual_id) AS member_number,
+                    COALESCE(m_direct.age_min, m_mapped.age_min) as age_min,
+                    COALESCE(m_direct.age_max, m_mapped.age_max) as age_max,
+                    COALESCE(m_direct.gender, m_mapped.gender) as gender
+                FROM group_memberships gm
+                JOIN individual_groups ig ON gm.group_id = ig.id::text
+                LEFT JOIN LATERAL (
+                    SELECT mp.mvr_people_uuid, mp.face_embedding::text as face_embedding, mp.name, mp.age_min, mp.age_max, mp.gender
+                    FROM mvr_people mp
+                    WHERE mp.mvr_people_uuid::text = gm.individual_id
+                    LIMIT 1
+                ) m_direct ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT mp.mvr_people_uuid, mp.face_embedding::text as face_embedding, mp.name, mp.age_min, mp.age_max, mp.gender
+                    FROM individual_mvr_mapping imm
+                    JOIN mvr_people mp ON imm.mvr_people_uuid = mp.mvr_people_uuid
+                    WHERE imm.individual_uuid::text = gm.individual_id
+                    ORDER BY imm.is_representative DESC, imm.linked_at DESC
+                    LIMIT 1
+                ) m_mapped ON TRUE
+                WHERE gm.group_id = ANY($1::text[])
+                  AND COALESCE(m_direct.face_embedding, m_mapped.face_embedding) IS NOT NULL
+                ORDER BY gm.group_id, member_number
+            """
+
+            rows = await conn.fetch(query, group_ids)
+
+            # Group results by group_id
+            group_members: Dict[str, List[Dict]] = {}
+            group_names: Dict[str, str] = {}
+
+            for row in rows:
+                gid = str(row['group_id'])
+                group_names[gid] = row['group_name'] or gid
+
+                # Parse pgvector text format: '[0.1,0.2,...]'
+                emb_text = row['face_embedding_text']
+                embedding = [float(x) for x in emb_text.strip('[]').split(',')]
+
+                member = {
+                    'mvr_people_uuid': str(row['mvr_people_uuid']),
+                    'face_embedding': embedding,
+                    'name': row['member_name'],
+                    'member_number': row['member_number'],
+                }
+
+                if include_demographics:
+                    member['demographics'] = {
+                        'age_min': row['age_min'],
+                        'age_max': row['age_max'],
+                        'gender': row['gender'],
+                    }
+
+                group_members.setdefault(gid, []).append(member)
+
+            total_members = 0
+            for gid in group_ids:
+                members = group_members.get(gid, [])
+                total_members += len(members)
+                result['groups'][gid] = {
+                    'name': group_names.get(gid, gid),
+                    'member_count': len(members),
+                    'members': members,
+                }
+
+            result['total_members'] = total_members
+            result['total_groups'] = len(group_ids)
+
+        logger.info(
+            "Loaded embeddings for %d groups (%d total members)",
+            len(group_ids), total_members,
+        )
+        return result

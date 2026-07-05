@@ -7,7 +7,7 @@ part of 'signage_models.dart';
 // **************************************************************************
 
 VideoList _$VideoListFromJson(Map<String, dynamic> json) => VideoList(
-  databaseId: (json['id'] as num?)?.toInt(),
+      databaseId: (json['id'] as num?)?.toInt(),
       id: json['uuid'] as String,
       name: json['name'] as String,
       description: json['description'] as String?,
@@ -30,7 +30,7 @@ VideoList _$VideoListFromJson(Map<String, dynamic> json) => VideoList(
     );
 
 Map<String, dynamic> _$VideoListToJson(VideoList instance) => <String, dynamic>{
-  'id': instance.databaseId,
+      'id': instance.databaseId,
       'uuid': instance.id,
       'name': instance.name,
       'description': instance.description,

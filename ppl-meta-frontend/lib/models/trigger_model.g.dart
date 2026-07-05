@@ -47,6 +47,12 @@ TriggerModel _$TriggerModelFromJson(Map<String, dynamic> json) => TriggerModel(
           : DateTime.parse(json['last_fired_at'] as String),
       triggerMode: json['trigger_mode'] as String? ?? 'demographic',
       pplMatchGroupId: json['ppl_match_group_id'] as String?,
+      pplMatchGroupIds: (json['ppl_match_group_ids'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+      cameraDeviceIds: (json['camera_device_ids'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
       pplMatchSimilarityThreshold:
           (json['ppl_match_similarity_threshold'] as num?)?.toDouble() ?? 0.75,
       pplMatchTopK: (json['ppl_match_top_k'] as num?)?.toInt() ?? 1,
@@ -86,6 +92,8 @@ Map<String, dynamic> _$TriggerModelToJson(TriggerModel instance) =>
       'last_fired_at': instance.lastFiredAt?.toIso8601String(),
       'trigger_mode': instance.triggerMode,
       'ppl_match_group_id': instance.pplMatchGroupId,
+      'ppl_match_group_ids': instance.pplMatchGroupIds,
+      'camera_device_ids': instance.cameraDeviceIds,
       'ppl_match_similarity_threshold': instance.pplMatchSimilarityThreshold,
       'ppl_match_top_k': instance.pplMatchTopK,
       'ppl_match_negate': instance.pplMatchNegate,
@@ -117,6 +125,12 @@ TriggerCreateRequest _$TriggerCreateRequestFromJson(
       cooldownSeconds: (json['cooldown_seconds'] as num?)?.toInt() ?? 60,
       triggerMode: json['trigger_mode'] as String? ?? 'demographic',
       pplMatchGroupId: json['ppl_match_group_id'] as String?,
+      pplMatchGroupIds: (json['ppl_match_group_ids'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+      cameraDeviceIds: (json['camera_device_ids'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
       pplMatchSimilarityThreshold:
           (json['ppl_match_similarity_threshold'] as num?)?.toDouble(),
       pplMatchTopK: (json['ppl_match_top_k'] as num?)?.toInt(),
@@ -145,6 +159,10 @@ Map<String, dynamic> _$TriggerCreateRequestToJson(
       'trigger_mode': instance.triggerMode,
       if (instance.pplMatchGroupId case final value?)
         'ppl_match_group_id': value,
+      if (instance.pplMatchGroupIds case final value?)
+        'ppl_match_group_ids': value,
+      if (instance.cameraDeviceIds case final value?)
+        'camera_device_ids': value,
       if (instance.pplMatchSimilarityThreshold case final value?)
         'ppl_match_similarity_threshold': value,
       if (instance.pplMatchTopK case final value?) 'ppl_match_top_k': value,

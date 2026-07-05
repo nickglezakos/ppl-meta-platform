@@ -68,6 +68,12 @@ class TriggerModel {
   @JsonKey(name: 'ppl_match_group_id')
   final String? pplMatchGroupId;
 
+  @JsonKey(name: 'ppl_match_group_ids')
+  final List<String>? pplMatchGroupIds;
+
+  @JsonKey(name: 'camera_device_ids')
+  final List<String>? cameraDeviceIds;
+
   @JsonKey(name: 'ppl_match_similarity_threshold')
   final double pplMatchSimilarityThreshold;
 
@@ -115,6 +121,8 @@ class TriggerModel {
     this.lastFiredAt,
     this.triggerMode = 'demographic',
     this.pplMatchGroupId,
+    this.pplMatchGroupIds,
+    this.cameraDeviceIds,
     this.pplMatchSimilarityThreshold = 0.75,
     this.pplMatchTopK = 1,
     this.pplMatchNegate = false,
@@ -136,6 +144,11 @@ class TriggerModel {
   
   /// Human-readable display for conditions
   String get conditionsDisplay {
+    if (triggerMode == 'vprofile_match') {
+      final groupCount = pplMatchGroupIds?.length ?? 0;
+      final cameraCount = cameraDeviceIds?.length ?? 0;
+      return 'VProfile: $groupCount group(s), $cameraCount camera(s)';
+    }
     if (triggerMode == 'ppl_match') {
       return 'Group: ${pplMatchGroupId ?? 'Not set'}';
     }
@@ -188,6 +201,12 @@ class TriggerCreateRequest {
   @JsonKey(name: 'ppl_match_group_id')
   final String? pplMatchGroupId;
 
+  @JsonKey(name: 'ppl_match_group_ids')
+  final List<String>? pplMatchGroupIds;
+
+  @JsonKey(name: 'camera_device_ids')
+  final List<String>? cameraDeviceIds;
+
   @JsonKey(name: 'ppl_match_similarity_threshold')
   final double? pplMatchSimilarityThreshold;
 
@@ -218,6 +237,8 @@ class TriggerCreateRequest {
     this.cooldownSeconds = 60,
     this.triggerMode = 'demographic',
     this.pplMatchGroupId,
+    this.pplMatchGroupIds,
+    this.cameraDeviceIds,
     this.pplMatchSimilarityThreshold,
     this.pplMatchTopK,
     this.pplMatchNegate,

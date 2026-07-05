@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EyeNet Door Entrance & Staff Monitoring Offer for [Company Name]</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --success: #4caf50;
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    .page {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 32px 24px 72px;
+    }
+
+    .print-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 20px;
+    }
+
+    .print-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--brand-primary);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14);
+      border-radius: 32px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+      color: var(--text);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -80px auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: rgba(25, 118, 210, 0.26);
+    }
+
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1.35fr 0.9fr;
+      gap: 28px;
+      padding: 34px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14);
+      color: var(--brand-secondary);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin: 18px 0 16px;
+      font-size: 42px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      font-size: 18px;
+      color: #334155;
+      max-width: 62ch;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .brand-stack {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-stack img {
+      height: 36px;
+      width: auto;
+    }
+
+    .brand-chip {
+      padding: 8px 12px;
+      border: 1px solid rgba(34, 211, 238, 0.24);
+      border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9);
+      color: #eef9ff;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .brand-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      color: var(--brand-secondary);
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .brand-link:hover {
+      color: #8be9f8;
+    }
+
+    .meta-card,
+    .section,
+    .pricing-card,
+    .key-card,
+    .note-card,
+    .summary-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px;
+      align-self: start;
+      color: var(--text);
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 18px;
+    }
+
+    .meta-item {
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .meta-label {
+      display: block;
+      margin-bottom: 6px;
+      color: #9fb0c3;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-value {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .grid-two,
+    .pricing-grid,
+    .stats-grid {
+      display: grid;
+      gap: 22px;
+      margin-top: 24px;
+    }
+
+    .grid-two {
+      grid-template-columns: 1.15fr 0.85fr;
+      margin-top: 12px;
+    }
+
+    .pricing-grid,
+    .stats-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .section {
+      margin-top: 24px;
+      padding: 28px;
+      border-color: var(--panel-line);
+      background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .section-number {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: inline-grid;
+      place-items: center;
+      background: rgba(25, 118, 210, 0.1);
+      color: var(--brand-primary);
+      font-weight: 700;
+    }
+
+    h2 {
+      margin-bottom: 0;
+      font-size: 24px;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+
+    ul,
+    ol {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    li + li {
+      margin-top: 8px;
+    }
+
+    .callout {
+      padding: 18px 20px;
+      border-left: 4px solid var(--brand-secondary);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent);
+      color: #f5fbff;
+      font-weight: 600;
+    }
+
+    .stats-grid {
+      margin-top: 18px;
+    }
+
+    .summary-card,
+    .key-card,
+    .pricing-card,
+    .note-card {
+      padding: 22px;
+      border-color: var(--panel-line);
+      background: #ffffff;
+    }
+
+    .summary-card strong,
+    .pricing-value,
+    .key-number {
+      color: #0f172a;
+    }
+
+    .summary-card p:last-child,
+    .note-card p:last-child {
+      margin-bottom: 0;
+    }
+
+    .stat-label {
+      color: #64748b;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .stat-value {
+      display: block;
+      margin-top: 10px;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .pricing-card.featured {
+      border-color: rgba(25, 118, 210, 0.3);
+      background: linear-gradient(180deg, rgba(16, 19, 29, 0.04) 0%, rgba(25, 118, 210, 0.08) 38%, #ffffff 100%);
+      position: relative;
+    }
+
+    .pricing-card.featured::before {
+      content: "Recommended";
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: var(--brand-primary);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .pricing-label {
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .pricing-value {
+      margin: 14px 0 8px;
+      font-size: 38px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      font-weight: 800;
+    }
+
+    .pricing-subtext {
+      color: #475569;
+      font-size: 15px;
+      min-height: 44px;
+    }
+
+    .pricing-list {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(15, 23, 42, 0.08);
+    }
+
+    .pricing-list li {
+      margin-top: 10px;
+    }
+
+    .key-number {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      color: #64748b;
+      font-size: 13px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+
+    th,
+    td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    }
+
+    th {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+    }
+
+    td {
+      font-size: 14px;
+    }
+
+    td:last-child {
+      font-weight: 700;
+      text-align: right;
+    }
+
+    @page {
+      size: A4;
+      margin: 12mm;
+    }
+
+    @media (max-width: 920px) {
+      .hero-inner,
+      .grid-two,
+      .pricing-grid,
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+
+      .page {
+        padding: 18px 16px 54px;
+      }
+    }
+
+    @media print {
+      html {
+        background: #fff;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .page {
+        max-width: none;
+        padding: 0;
+      }
+
+      .print-bar {
+        display: none;
+      }
+
+      .hero,
+      .meta-card,
+      .section,
+      .pricing-card,
+      .key-card,
+      .note-card,
+      .summary-card {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+
+      .hero {
+        margin-bottom: 12px;
+        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+        color: #ffffff;
+        border-color: rgba(34, 211, 238, 0.14);
+      }
+
+      .meta-card {
+        background: rgba(255, 255, 255, 0.04);
+        color: #ffffff;
+        border-color: rgba(34, 211, 238, 0.12);
+      }
+
+      .brand-chip,
+      .callout {
+        color: #f5fbff;
+      }
+
+      .brand-link,
+      .meta-label,
+      .lead {
+        color: inherit;
+      }
+
+      .section {
+        margin-top: 12px;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="../ppl-meta-frontend/assets/images/eyenet-dark.svg" alt="EyeNet logo" />
+              <span class="brand-chip">Offer for [Company Name]</span>
+            </div>
+          </div>
+          <span class="eyebrow">Intelligent Door Entrance & Staff Monitoring</span>
+          <h1>EyeNet Door Entrance & Staff Monitoring Solution</h1>
+          <a class="brand-link" href="https://eyenet-vision.com/">https://eyenet-vision.com/</a>
+        </div>
+
+        <aside class="meta-card">
+          <h3>Offer Snapshot</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Customer</span>
+              <span class="meta-value">[Company Name]</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Reg. Number</span>
+              <span class="meta-value">[Insert Reg. Number]</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Address</span>
+              <span class="meta-value">[Insert Address]</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Brand</span>
+              <span class="meta-value">EyeNet</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Offer Ref.</span>
+              <span class="meta-value">EYENET-TEMPLATE-DOOR-2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Prepared On</span>
+              <span class="meta-value">2 July 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">License Scope</span>
+              <span class="meta-value">9 modules for 1 door installation</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Commercial Model</span>
+              <span class="meta-value">Monthly or annual prepaid</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Executive Summary</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 12px; color: #f5fbff;">EyeNet is an on-premises, edge-computing computer vision platform for human activity monitoring and intelligent automation. It transforms standard cameras into powerful machine vision nodes — tracking and regulating human activity, empowering digital signage with real-time triggers, and taking complete control of entrance and exit points.</div>
+      <p class="lead">A complete, on-premises door entrance solution combining real-time people detection, staff identification, automated alerts, digital signage, and full analytics — delivered through nine modularly licensed EyeNet products.</p>
+      <p>This offer addresses a single entrance door at [Company Name]'s offices, equipping it with intelligent monitoring that can distinguish staff from visitors in real time, trigger automated alerts and signage content changes, and provide comprehensive entry analytics.</p>
+      <p>The solution is built on a two-device architecture: an <strong>industrial fanless mini PC</strong> (32 GB RAM) running the full EyeNet backend platform in a secure location, and a <strong>compact, fanless Raspberry Pi Compute Module 5 edge unit</strong> at the door handling camera input, presence verification, and digital signage display on an integrated touch screen.</p>
+      <div class="grid-two">
+        <div>
+          <p>Two cameras serve complementary roles: an <strong>RTSP IP camera (TP-Link Tapo)</strong> for continuous instant detection — counting people, reading demographics, and matching against staff groups — and a <strong>Raspberry Pi Camera Module 3 Wide</strong> dedicated to QR-based and face-detection Presence check-in flows. <strong>Eyenet Vradar</strong> is the camera-based instant detection engine that powers both: it captures people count, demographics, and face data in real time and can be assigned to any trigger-action loop in <strong>Eyenet Logic</strong>.</p>
+        </div>
+        <div class="summary-card">
+            <p><strong>Commercial objective</strong></p>
+          <p>Deliver a complete, production-ready door entrance solution under a single software environment with nine licensed EyeNet products, enabling [Company Name] to monitor, identify, alert, display, and analyze all door activity from day one — with a clear path to expand to additional doors or sites under the same license structure. The platform infrastructure and secure VPN connectivity are covered by Eyenet Matrix at no additional charge.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>Scope of the Offer</h2>
+      </div>
+      <div class="stats-grid">
+        <div class="key-card">
+          <span class="stat-label">Platform Installation</span>
+          <span class="stat-value">1</span>
+          <p>One industrial fanless mini PC (32 GB RAM, 1 TB SSD) running all EyeNet backend services — node, gateway, media, cameras, orchestrator, presence, vmeta, discovery, communications, PostgreSQL, and Redis.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Door Edge Unit</span>
+          <span class="stat-value">1</span>
+          <p>One Raspberry Pi Compute Module 5 (16–32 GB RAM, NVMe SSD) with integrated touch screen at the door — running edge-camera and signage-simple-player for presence verification and content display.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Cameras</span>
+          <span class="stat-value">2</span>
+          <p>One RTSP IP camera (TP-Link Tapo) for continuous instant detection and one Raspberry Pi Camera Module 3 Wide for QR and video-based Presence flows.</p>
+        </div>
+      </div>
+      <p class="footer-note" style="margin-top: 16px;">Note: The hardware items listed above are indicative recommendations. Hardware procurement, pricing, and installation are handled separately — see Hardware Configuration below for details.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Hardware Configuration</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 24px; color: #f5fbff;">Hardware costs are quoted separately by vetted hardware partners. This offer covers software licensing only. The hardware recommendations shown below are indicative — final hardware pricing, procurement, and installation will be provided in a companion hardware offer from an approved EyeNet hardware partner.</div>
+      <div class="grid-two">
+        <div>
+          <h3>Platform Device (Secure Location)</h3>
+          <p>An industrial fanless mini PC with 32 GB DDR4/DDR5 RAM and 1 TB NVMe SSD, running Ubuntu Server 24.04 LTS. This device hosts the complete Docker-based EyeNet backend stack and is placed in a secure IT room or network closet — not at the door itself.</p>
+          <table>
+            <tr><th>Services</th></tr>
+            <tr><td>Core node & user management</td></tr>
+            <tr><td>API gateway & routing</td></tr>
+            <tr><td>Media storage & signage backend</td></tr>
+            <tr><td>Camera management & streams</td></tr>
+            <tr><td>Analytics & demographics</td></tr>
+            <tr><td>Presence verification & sessions</td></tr>
+            <tr><td>Face matching & identity</td></tr>
+            <tr><td>Device & service discovery</td></tr>
+            <tr><td>Email, webhook & messaging</td></tr>
+            <tr><td>Cross-site aggregation (ready)</td></tr>
+            <tr><td>Databases & pub/sub</td></tr>
+          </table>
+        </div>
+        <div>
+          <h3>Door Edge Unit (At the Door)</h3>
+          <p>A compact, fanless Raspberry Pi Compute Module 5 with 16–32 GB RAM and NVMe SSD, integrated with a 7–10" HDMI touch screen. Mounted at the door, this unit runs two lightweight services:</p>
+          <ul>
+            <li><strong>ppl-meta-edge-camera</strong> — Publishes camera frames from the attached Camera Module 3 Wide to the platform for Presence verification.</li>
+            <li><strong>ppl-meta-signage-simple-player</strong> — Full-screen video playback on the touch display; playlist content synced from the platform and cached locally on the SSD.</li>
+            <li>The same touch screen can optionally display a station QR code for mobile-based Presence check-in flows.</li>
+          </ul>
+          <h3 style="margin-top: 22px;">Dual-Camera Setup</h3>
+          <table>
+            <tr><th>Camera</th><th>Purpose</th></tr>
+            <tr><td>RTSP IP Camera (TP-Link Tapo)</td><td>Continuous instant detection — people counting, demographic analysis, and real-time matching against registered staff groups via vmeta</td></tr>
+            <tr><td>RPi Camera Module 3 Wide (102° FOV)</td><td>QR-based and face-detection Presence check-in flows — wide-angle lens captures people approaching from various angles at the door</td></tr>
+          </table>
+          <p class="footer-note">All devices communicate over the same local Gigabit Ethernet network. Remote management is provided through the included EyeNet VPN Mesh (Tailscale/Headscale).</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>The Door Entrance Use Case</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 24px; color: #f5fbff;">A unified platform covering entry verification, staff identification, real-time alerts, analytics, and adaptive door-screen content — all driven by live camera detection and automation rules.</div>
+      <div class="grid-two">
+        <div>
+          <h3>How It Works</h3>
+          <ol>
+            <li><strong>Detection (Eyenet Vradar & Eyenet Gate)</strong> — The Tapo IP camera, powered by <strong>Eyenet Vradar</strong>, continuously monitors the door area. Vradar is EyeNet's camera-based instant detection engine: it captures people count, demographics, and face data in real time and is governed by <strong>Eyenet Gate</strong> which manages up to 5 cameras per installation. Vradar can be assigned to any trigger-action loop in Eyenet Logic.</li>
+            <li><strong>Identification (Eyenet VProfiles)</strong> — Detected faces are matched against [Company Name]'s registered staff profiles via the vmeta service. <strong>Eyenet VProfiles</strong> organizes staff members as individual identity profile objects grouped into collections — each staff member is a VProfile within a VProfile group. The system instantly determines: is this a known staff member or an unknown visitor?</li>
+            <li><strong>Automation (Eyenet Logic)</strong> — <strong>Eyenet Logic</strong> is the event-driven trigger and action automation engine. It connects detection events from Vradar to concrete actions. Triggers fire based on the match outcome:
+              <ul>
+                <li>Staff member detected → switch door signage to internal announcements, log the entry</li>
+                <li>Unknown person detected → alert security via email/Slack, switch signage to visitor instructions, log for audit</li>
+                <li>VIP staff matched → notify executive assistant, show premium welcome screen</li>
+              </ul>
+            </li>
+            <li><strong>Presence Verification (Eyenet Presence)</strong> — Staff can also check in via QR (scanning the station QR on the touch screen or presenting their mobile QR) with optional face-detection confirmation for two-factor assurance. <strong>Eyenet Presence</strong> provides the authoritative log of every person passing through the door, with session traceability, policy-driven grant/deny decisions, and built-in reporting.</li>
+            <li><strong>Analytics (Eyenet Insights & Eyenet Matrix)</strong> — Every entry is logged with session traces: who entered, when, via which method, and under which policy. <strong>Eyenet Insights</strong> dashboards show staff vs visitor ratios, peak hours, demographics, and trigger performance. <strong>Eyenet Matrix</strong> enables cross-site aggregation for future multi-site expansion and covers the platform infrastructure and secure VPN connectivity.</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Key Capabilities</h3>
+          <table>
+            <tr><th>Capability</th><th>EyeNet Product</th></tr>
+            <tr><td>Camera management (1–5 cameras)</td><td>Eyenet Gate</td></tr>
+            <tr><td>Instant detection & demographics</td><td>Eyenet Vradar</td></tr>
+            <tr><td>Staff identity profiles</td><td>Eyenet VProfiles</td></tr>
+            <tr><td>Trigger & action automation</td><td>Eyenet Logic</td></tr>
+            <tr><td>QR & face-based check-in</td><td>Eyenet Presence</td></tr>
+            <tr><td>Door screen content & playback</td><td>Eyenet Signage</td></tr>
+            <tr><td>Entry analytics & reporting</td><td>Eyenet Insights</td></tr>
+            <tr><td>Platform, VPN & multi-site</td><td>Eyenet Matrix</td></tr>
+            <tr><td>Teams, Slack & webhook connectors</td><td>Eyenet API</td></tr>
+          </table>
+          <p class="footer-note">All data stays on-premises. Face data remains on local devices and is never exposed through APIs. Full GDPR-compliant architecture.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>Software Licensing & Commercial Pricing</h2>
+      </div>
+      <div class="pricing-grid">
+        <article class="pricing-card featured">
+          <span class="pricing-label">Monthly Subscription</span>
+          <div class="pricing-value">EUR ---</div>
+          <p class="pricing-subtext">Per month for nine EyeNet products covering one door installation. Platform infrastructure and secure VPN connectivity are included with Eyenet Matrix at no additional charge.</p>
+          <ul class="pricing-list">
+            <li><strong>Eyenet Gate</strong> (1–5 cameras): EUR --- / month</li>
+            <li><strong>Eyenet Vradar</strong> (anonymous instant detection, GDPR): EUR --- / month</li>
+            <li><strong>Eyenet Logic</strong> (automations): EUR --- / month</li>
+            <li><strong>Eyenet VProfiles</strong> (individual identity profiles): EUR --- / month</li>
+            <li><strong>Eyenet Presence</strong> (check-in & verification): EUR --- / month</li>
+            <li><strong>Eyenet Signage</strong> (digital signage): EUR --- / month</li>
+            <li><strong>Eyenet Insights</strong> (analytics): EUR --- / month</li>
+            <li><strong>Eyenet Matrix</strong> (platform + VPN + multi-site): EUR --- / month</li>
+            <li><strong>Eyenet API</strong> (Teams, Slack, webhooks): EUR --- / month</li>
+            <li style="margin-top: 12px; font-weight: 700;">Total monthly: ---</li>
+          </ul>
+        </article>
+        <article class="pricing-card">
+          <span class="pricing-label">Annual Prepaid</span>
+          <div class="pricing-value">EUR ---</div>
+          <p class="pricing-subtext">Equivalent to a 10% discount against the standard 12-month monthly subscription total (EUR ---).</p>
+          <ul class="pricing-list">
+            <li>Standard annualized value: ---.</li>
+            <li>Annual prepayment discount: 10%.</li>
+            <li>All nine EyeNet products included for 12 months.</li>
+            <li>Same license scope as the monthly plan.</li>
+          </ul>
+        </article>
+        <article class="pricing-card">
+          <span class="pricing-label">Optional Services</span>
+          <div class="pricing-value">As Needed</div>
+          <p class="pricing-subtext">Optional commercial services that can be added without changing the software license structure.</p>
+          <ul class="pricing-list">
+            <li>Remote onboarding and deployment support: EUR --- one-time.</li>
+            <li>Administrator training workshop: EUR --- one-time.</li>
+            <li>Premium support package: EUR --- / month.</li>
+            <li>Additional door edge unit license: EUR --- / month per extra door.</li>
+          </ul>
+        </article>
+      </div>
+      <div class="note-card" style="margin-top: 22px;">
+        <p><strong>Pricing note:</strong> The platform infrastructure and secure VPN connectivity are covered by Eyenet Matrix — there is no separate platform or VPN charge. Product pricing shown above is the current commercial rate. The modular structure allows [Company Name] to add or remove EyeNet products as door monitoring needs evolve over time. Pricing can be revisited on contract renewal.</p>
+      </div>
+
+      <h3 style="margin-top: 32px;">Available Deployment Packages</h3>
+      <p style="margin-bottom: 20px;">EyeNet offers four deployment tiers to match organisations of any scale. All tiers support 1–5 cameras per station and include platform infrastructure and secure VPN connectivity via Eyenet Matrix. Final pricing within each range depends on which EyeNet products are activated.</p>
+      <div class="note-card" style="margin-bottom: 20px;">
+        <p><strong>What is a station?</strong> A <strong>station</strong> is an autonomous EyeNet compute (platform) installation that can take up to 1–5 cameras. Via VPN, the cameras may be in different physical locations. In this way, a station can be a single physical location like a building entrance, or it can be cameras distributed anywhere via VPN linked to one single EyeNet compute installation.</p>
+      </div>
+      <div class="pricing-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+        <article class="pricing-card">
+          <span class="pricing-label">Single Door</span>
+          <div class="pricing-value" style="font-size: 28px;">EUR ---</div>
+          <p class="pricing-subtext">This offer. One station, one door, 1–5 cameras, with all nine EyeNet products activated.</p>
+          <ul class="pricing-list">
+            <li>1 station</li>
+            <li>1–5 cameras</li>
+            <li>All modules included</li>
+            <li>Platform & VPN via Matrix</li>
+          </ul>
+        </article>
+        <article class="pricing-card featured">
+          <span class="pricing-label">Professional</span>
+          <div class="pricing-value" style="font-size: 28px;">---</div>
+          <p class="pricing-subtext">For growing organisations with 2–5 stations. Price varies based on active modules selected.</p>
+          <ul class="pricing-list">
+            <li>2–5 stations</li>
+            <li>1–5 cameras per station</li>
+            <li>Modular product selection</li>
+            <li>Platform & VPN via Matrix</li>
+          </ul>
+        </article>
+        <article class="pricing-card">
+          <span class="pricing-label">Business</span>
+          <div class="pricing-value" style="font-size: 28px;">---</div>
+          <p class="pricing-subtext">For larger deployments across 6–20 stations. Price varies based on active modules selected.</p>
+          <ul class="pricing-list">
+            <li>6–20 stations</li>
+            <li>1–5 cameras per station</li>
+            <li>Modular product selection</li>
+            <li>Platform & VPN via Matrix</li>
+          </ul>
+        </article>
+        <article class="pricing-card">
+          <span class="pricing-label">Enterprise</span>
+          <div class="pricing-value" style="font-size: 22px;">Contact Sales</div>
+          <p class="pricing-subtext">Unlimited stations with priority support and custom deployment planning. Tailored pricing for large-scale rollouts.</p>
+          <ul class="pricing-list">
+            <li>Unlimited stations</li>
+            <li>1–5 cameras per station</li>
+            <li>Priority support included</li>
+            <li>Custom deployment planning</li>
+          </ul>
+        </article>
+      </div>
+      <p class="footer-note" style="margin-top: 16px;">All deployment packages include the EyeNet platform infrastructure and secure VPN connectivity via Eyenet Matrix at no additional charge. Hardware is not included — hardware procurement is handled separately through vetted EyeNet hardware partners. For Enterprise pricing or to discuss a tailored deployment, contact your EyeNet account representative.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">6</span>
+        <h2>Value Summary</h2>
+      </div>
+      <div class="grid-two">
+        <div>
+          <h3>Operational Benefits</h3>
+          <ul>
+            <li><strong>Unified platform</strong> — Nine integrated EyeNet products cover entry verification, staff identification, alerts, analytics, and door-screen content under one software environment.</li>
+            <li><strong>Real-time intelligence</strong> — Content and notifications adapt instantly based on who is at the door, powered by Eyenet Vradar instant detection and Eyenet Logic automation rules.</li>
+            <li><strong>Hardware flexibility</strong> — Works with standard cameras and screens; no proprietary kiosk lock-in.</li>
+            <li><strong>Privacy-first</strong> — GDPR-compliant face detection; biometric data stays on local devices, never exposed through APIs.</li>
+            <li><strong>Offline-capable</strong> — Core operation runs locally without internet; internet needed only for remote notifications.</li>
+            <li><strong>Silent door operation</strong> — The fanless edge unit at the door produces zero noise; the platform PC is secured elsewhere.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Commercial Benefits</h3>
+          <ul>
+            <li><strong>Modular licensing</strong> — Pay for the modules you need; add or remove as requirements evolve.</li>
+            <li><strong>Start with one door</strong> — Expand to additional doors or sites under the same license structure.</li>
+            <li><strong>Transparent pricing</strong> — Clear per-product monthly rate with an annual prepayment discount; platform and VPN included in Eyenet Matrix.</li>
+            <li><strong>Integration-ready</strong> — Eyenet API provides ready-made connectors for Microsoft Teams, Slack, and generic webhooks — connecting Logic triggers to existing access control, CRM, ERP, and door controller systems.</li>
+            <li><strong>Single contract</strong> — One software environment, one commercial relationship, clear expansion path.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">7</span>
+        <h2>Assumptions and Exclusions</h2>
+      </div>
+      <ul>
+        <li>The customer provides the display hardware (monitor for the door signage touch screen), local networking equipment (Gigabit Ethernet switch), Ethernet cabling, and any mounting hardware or civil works required for installation.</li>
+        <li>The hardware items listed in this offer (industrial mini PC, RPi Compute Module 5, cameras, SSD, and touch screen) are indicative recommendations. The customer may procure equivalent or alternative hardware; the software licenses are independent of hardware procurement.</li>
+        <li>Taxes such as VAT are not included in the above pricing and will be applied according to applicable Greek tax regulations.</li>
+        <li>On-site installation, screen mounting, cable routing, and custom software development are excluded unless separately quoted.</li>
+        <li>Remote access, management, and support are provided through the included EyeNet VPN Mesh. The customer ensures the platform device and door edge unit have Ethernet connectivity to the local network.</li>
+        <li>Staff face enrollment into Eyenet VProfiles (individual identity profile objects grouped into collections) is a one-time setup activity; training on this process is covered under the optional administrator training workshop.</li>
+        <li>The platform infrastructure and secure VPN connectivity are covered by Eyenet Matrix. There is no separate charge for the platform or VPN components.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">8</span>
+        <h2>Commercial Note</h2>
+      </div>
+      <p>This offer is structured to be printed or exported as PDF for internal review and commercial discussion. It outlines a complete door entrance solution — hardware configuration, nine EyeNet products, use case, and pricing — in a single document suitable for decision-makers and technical stakeholders alike.</p>
+      <p class="footer-note">Prepared by EyeNet for commercial discussion purposes. Pricing can be adjusted after final scope confirmation. Offer reference: EYENET-TEMPLATE-DOOR-2026.</p>
+    </section>
+  </div>
+</body>
+</html>

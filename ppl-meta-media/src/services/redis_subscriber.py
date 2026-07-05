@@ -22,6 +22,7 @@ from src.models.signage import SignageDevice
 from src.services.signage_service import SignageService, SignagePlaybackService
 from src.schemas.signage import PlaybackControlRequest, PlaybackCommand, PlaybackParameters
 from src.services.communications_client import CommunicationsClient
+from src.services.vprofile_match_worker import get_vprofile_worker
 from src.config import get_config
 
 logger = logging.getLogger(__name__)
@@ -326,6 +327,9 @@ class InstantDetectionSubscriber:
         logger.info(f"📊 Demographics: {demographics}")
         logger.info(f"⏰ Timestamp: {timestamp}")
         
+        # Save original event-level source_mvr_uuids before deep extraction
+        event_source_mvr_uuids = list(data.get('source_mvr_uuids', []) or [])
+        
         source_mvr_uuids = self._extract_source_mvr_uuids(data)
         if not source_mvr_uuids:
             metadata_keys = []
@@ -368,6 +372,12 @@ class InstantDetectionSubscriber:
                     Trigger.is_active == True,
                     Trigger.camera_device_id == camera_id
                 ).all()
+                # Also include vprofile_match triggers (they use camera_device_ids array, not camera_device_id)
+                vprofile_triggers = db.query(Trigger).filter(
+                    Trigger.is_active == True,
+                    Trigger.trigger_mode == 'vprofile_match'
+                ).all()
+                triggers = triggers + [t for t in vprofile_triggers if t not in triggers]
             
             if not triggers:
                 logger.info(f"  ℹ️  No active triggers for camera {camera_id}")
@@ -418,6 +428,48 @@ class InstantDetectionSubscriber:
                         )
                         continue
                     logger.info(f"  ✅ ppl_match MET: {reason}")
+                elif trigger_mode == "vprofile_match":
+                    logger.info("  🔎 Evaluating vprofile_match mode (in-memory, multi-camera)")
+                    worker = get_vprofile_worker()
+
+                    # Multi-camera filter: check if this event's camera is allowed
+                    event_camera_id = data.get('camera_id')
+                    allowed_cameras = worker.get_camera_device_ids(trigger)
+                    if allowed_cameras and event_camera_id not in allowed_cameras:
+                        logger.debug("  ⏭️ Camera %s not in trigger's camera list, skipping", event_camera_id)
+                        continue
+
+                    # Fetch source embeddings — use deep-extracted UUIDs (same as legacy ppl_match) because
+                    # Redis event-level source_mvr_uuids may be empty. deep extraction finds MVR UUIDs
+                    # from person_objects, metadata, and individual fields.
+                    source_mvr_uuids_for_vprofile = source_mvr_uuids if source_mvr_uuids else event_source_mvr_uuids
+                    logger.info("  📋 vprofile source UUIDs (deep=%d, event=%d) => using %d", 
+                               len(source_mvr_uuids), len(event_source_mvr_uuids), len(source_mvr_uuids_for_vprofile))
+                    source_embedding_map = await worker.fetch_source_embeddings(source_mvr_uuids_for_vprofile)
+
+                    if not source_embedding_map:
+                        logger.info("  ❌ SKIP: No source embeddings resolved")
+                        self._log_execution(
+                            db=db, trigger=trigger, passed=False,
+                            reason="No source embeddings resolved",
+                            match_info=None, detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+
+                    passed, reason, match_info = await worker.evaluate(trigger, {**data, 'source_mvr_uuids': source_mvr_uuids_for_vprofile}, source_embedding_map)
+
+                    if not passed:
+                        logger.info(f"  ❌ SKIP: {reason}")
+                        self._log_execution(
+                            db=db, trigger=trigger, passed=False,
+                            reason=reason, match_info=match_info,
+                            detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+
+                    logger.info(f"  ✅ vprofile_match MET: {reason}")
                 else:
                     conditions = json.loads(trigger.demographic_conditions)
                     logger.info(f"  📋 Conditions to evaluate: {json.dumps(conditions, indent=4)}")

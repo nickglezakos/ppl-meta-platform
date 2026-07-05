@@ -1,0 +1,35 @@
+"""add_vprofile_match_fields
+
+Adds ppl_match_group_ids and camera_device_ids columns to triggers table
+for vprofile_match trigger mode.
+
+Revision ID: add_vprofile_match_fields
+Revises: add_ppl_match_negate_to_triggers
+Create Date: 2026-07-05
+
+"""
+from alembic import op
+import sqlalchemy as sa
+
+
+# revision identifiers, used by Alembic.
+revision = 'add_vprofile_match_fields'
+down_revision = 'add_ppl_match_negate'
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.add_column('triggers',
+        sa.Column('ppl_match_group_ids', sa.Text(), nullable=True,
+                  comment='JSON array of group IDs for vprofile_match mode')
+    )
+    op.add_column('triggers',
+        sa.Column('camera_device_ids', sa.Text(), nullable=True,
+                  comment='JSON array of camera device IDs for vprofile_match multi-camera mode (e.g., ["usb_camera_0", "rtsp_192.168.1.76_554"])')
+    )
+
+
+def downgrade() -> None:
+    op.drop_column('triggers', 'camera_device_ids')
+    op.drop_column('triggers', 'ppl_match_group_ids')

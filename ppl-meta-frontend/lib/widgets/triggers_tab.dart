@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/trigger_model.dart';
+import '../models/trigger_model.dart'; 
 import '../services/trigger_service.dart';
 import '../core/models/camera.dart';
 import '../core/providers/camera_providers.dart';
@@ -472,7 +472,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
   }
 
   String _latestMatchSummary(TriggerModel trigger) {
-    if (trigger.triggerMode != 'ppl_match') {
+    if (trigger.triggerMode != 'ppl_match' && trigger.triggerMode != 'vprofile_match') {
       return '—';
     }
     final match = trigger.lastMatchInfo;
@@ -677,6 +677,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     'ppl_match': 'Instant People Match',
     'search': 'Search People Match',
     'search_demographic': 'Search Demographic',
+    'vprofile_match': 'VProfile Multi-Group',
   };
 
   static const _modeIcons = {
@@ -684,6 +685,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     'ppl_match': Icons.psychology,
     'search': Icons.search,
     'search_demographic': Icons.analytics,
+    'vprofile_match': Icons.people_outline,
   };
 
   static const _modeColors = {
@@ -691,6 +693,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     'ppl_match': Colors.purple,
     'search': Colors.teal,
     'search_demographic': Colors.deepOrange,
+    'vprofile_match': Colors.indigo,
   };
 
   Widget _buildTriggerCards() {
@@ -993,6 +996,8 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     List<String> selectedSearchCameraIds = trigger?.searchCameraDeviceIds ?? [];
     int searchIntervalSeconds = trigger?.searchIntervalSeconds ?? 300;
     bool pplMatchNegate = trigger?.pplMatchNegate ?? false;
+    List<String> selectedVProfileGroupIds = trigger?.pplMatchGroupIds ?? [];
+    List<String> selectedVProfileCameraIds = trigger?.cameraDeviceIds ?? [];
     final searchIntervalController = TextEditingController(
       text: (trigger?.searchIntervalSeconds ?? 300).toString(),
     );
@@ -1089,12 +1094,17 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                           value: 'search_demographic',
                           child: Text('Search Demographic'),
                         ),
+                        DropdownMenuItem(
+                          value: 'vprofile_match',
+                          child: Text('VProfile Match (Multi-Group, Multi-Camera)'),
+                        ),
                       ],
                       selectedItemBuilder: (context) => const [
                         Text('Instant Demographic', overflow: TextOverflow.ellipsis),
                         Text('Instant People Match', overflow: TextOverflow.ellipsis),
                         Text('Search People Match', overflow: TextOverflow.ellipsis),
                         Text('Search Demographic', overflow: TextOverflow.ellipsis),
+                        Text('VProfile Match (Multi-Group, Multi-Camera)', overflow: TextOverflow.ellipsis),
                       ],
                       onChanged: (value) {
                         if (value == null) return;
@@ -1760,10 +1770,156 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                           ),
                         ),
                       ),
+                    // VProfile Match configuration card
+                    if (triggerMode == 'vprofile_match')
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.people_outline, color: Colors.indigo, size: 20),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'VProfile Match Configuration',
+                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              // Multi-camera selector
+                              const Text('Cameras *', style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 4),
+                              Container(
+                                constraints: const BoxConstraints(maxHeight: 140),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey.shade400),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: availableCameras.isEmpty
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(12),
+                                        child: Text('No cameras available', style: TextStyle(color: Colors.orange)),
+                                      )
+                                    : ListView.builder(
+                                        shrinkWrap: true,
+                                        itemCount: availableCameras.length,
+                                        itemBuilder: (context, index) {
+                                          final camera = availableCameras[index];
+                                          final isSelected = selectedVProfileCameraIds.contains(camera.deviceId);
+                                          return CheckboxListTile(
+                                            dense: true,
+                                            title: Text(camera.name, style: const TextStyle(fontSize: 13)),
+                                            subtitle: Text(camera.deviceId, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                            value: isSelected,
+                                            onChanged: (checked) {
+                                              setDialogState(() {
+                                                if (checked == true) {
+                                                  selectedVProfileCameraIds.add(camera.deviceId);
+                                                } else {
+                                                  selectedVProfileCameraIds.remove(camera.deviceId);
+                                                }
+                                              });
+                                            },
+                                          );
+                                        },
+                                      ),
+                              ),
+                              if (selectedVProfileCameraIds.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text('${selectedVProfileCameraIds.length} camera(s) selected',
+                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                ),
+                              const SizedBox(height: 12),
+                              // Multi-group selector
+                              const Text('Individual Groups *', style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 4),
+                              Container(
+                                constraints: const BoxConstraints(maxHeight: 140),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey.shade400),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: availableGroups.isEmpty
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(12),
+                                        child: Text('No groups available', style: TextStyle(color: Colors.orange)),
+                                      )
+                                    : ListView.builder(
+                                        shrinkWrap: true,
+                                        itemCount: availableGroups.length,
+                                        itemBuilder: (context, index) {
+                                          final group = availableGroups[index];
+                                          final isSelected = selectedVProfileGroupIds.contains(group.id);
+                                          return CheckboxListTile(
+                                            dense: true,
+                                            title: Text(group.name, style: const TextStyle(fontSize: 13)),
+                                            value: isSelected,
+                                            onChanged: (checked) {
+                                              setDialogState(() {
+                                                if (checked == true) {
+                                                  selectedVProfileGroupIds.add(group.id);
+                                                } else {
+                                                  selectedVProfileGroupIds.remove(group.id);
+                                                }
+                                              });
+                                            },
+                                          );
+                                        },
+                                      ),
+                              ),
+                              if (selectedVProfileGroupIds.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text('${selectedVProfileGroupIds.length} group(s) selected',
+                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: similarityThresholdController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Similarity Threshold (0..1)',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: topKController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Top K',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              SwitchListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('NOT mode'),
+                                subtitle: const Text('Fire when NO group members are matched', style: TextStyle(fontSize: 12)),
+                                value: pplMatchNegate,
+                                onChanged: (v) => setDialogState(() => pplMatchNegate = v),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 16),
                     
-                    // Camera selector (hidden for search modes — cameras selected in their panels)
-                    if (triggerMode != 'search' && triggerMode != 'search_demographic') ...[
+                    // Camera selector (hidden for search & vprofile modes — cameras selected in their panels)
+                    if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match') ...[
                     const Text('Camera *', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     availableCameras.isEmpty
@@ -1999,7 +2155,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                     return;
                   }
                   
-                  if (triggerMode != 'search' && triggerMode != 'search_demographic' && selectedCameraDeviceId == null) {
+                  if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match' && selectedCameraDeviceId == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Camera is required')),
                     );
@@ -2087,6 +2243,35 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                       return;
                     }
                   }
+
+                  if (triggerMode == 'vprofile_match') {
+                    if (selectedVProfileCameraIds.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Select at least one camera for VProfile mode')),
+                      );
+                      return;
+                    }
+                    if (selectedVProfileGroupIds.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Select at least one individual group for VProfile mode')),
+                      );
+                      return;
+                    }
+                    final threshold = double.tryParse(similarityThresholdController.text);
+                    if (threshold == null || threshold < 0.0 || threshold > 1.0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Similarity threshold must be between 0 and 1')),
+                      );
+                      return;
+                    }
+                    final topK = int.tryParse(topKController.text);
+                    if (topK == null || topK < 1) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Top K must be at least 1')),
+                      );
+                      return;
+                    }
+                  }
                   
                   Navigator.pop(context, true);
                 },
@@ -2124,7 +2309,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
         description: descriptionController.text.trim().isEmpty ? null : descriptionController.text.trim(),
         demographicConditions: (triggerMode == 'demographic' || triggerMode == 'search_demographic') ? demographicConditions : const [],
         timeSpan: timeSpanController.text.trim(),
-        cameraDeviceId: (triggerMode == 'search' || triggerMode == 'search_demographic') ? null : selectedCameraDeviceId,
+        cameraDeviceId: (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match') ? null : selectedCameraDeviceId,
         cameraName: cameraName,
         actionUuid: selectedActionUuids.isNotEmpty ? selectedActionUuids.first : null,
         actionUuids: selectedActionUuids.isNotEmpty ? selectedActionUuids : null,
@@ -2134,13 +2319,15 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
         triggerMode: triggerMode,
         pplMatchGroupId: (triggerMode == 'ppl_match' || triggerMode == 'search')
           ? selectedPplMatchGroupId : null,
-        pplMatchSimilarityThreshold: (triggerMode == 'ppl_match' || triggerMode == 'search')
+        pplMatchGroupIds: triggerMode == 'vprofile_match' ? selectedVProfileGroupIds : null,
+        cameraDeviceIds: triggerMode == 'vprofile_match' ? selectedVProfileCameraIds : null,
+        pplMatchSimilarityThreshold: (triggerMode == 'ppl_match' || triggerMode == 'search' || triggerMode == 'vprofile_match')
           ? (double.tryParse(similarityThresholdController.text) ?? 0.75)
           : null,
-        pplMatchTopK: triggerMode == 'ppl_match'
+        pplMatchTopK: (triggerMode == 'ppl_match' || triggerMode == 'vprofile_match')
           ? (int.tryParse(topKController.text) ?? 1)
           : null,
-        pplMatchNegate: (triggerMode == 'ppl_match' || triggerMode == 'search')
+        pplMatchNegate: (triggerMode == 'ppl_match' || triggerMode == 'search' || triggerMode == 'vprofile_match')
           ? pplMatchNegate : null,
         searchCameraDeviceIds: (triggerMode == 'search' || triggerMode == 'search_demographic') ? selectedSearchCameraIds : null,
         searchIntervalSeconds: (triggerMode == 'search' || triggerMode == 'search_demographic')
