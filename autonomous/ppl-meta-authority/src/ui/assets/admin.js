@@ -49,6 +49,7 @@ let consoleRowsByFilter = {
   assignments: [],
   audit: [],
   updates: [],
+  vpn: [],
   health: [],
 };
 const viewRoleMap = {
@@ -395,7 +396,17 @@ function setSession(user, token = '') {
     renderActivityList('ownerRecentUpdates', [], 'No lifecycle activity yet.');
     renderActivityList('resellerRecentHealth', [], 'No reseller health activity yet.');
     renderActivityList('ownerRecentHealth', [], 'No owner health activity yet.');
-    resetConsoleRows();
+    consoleRowsByFilter = {
+    users: [],
+    entitlements: [],
+    hierarchy: [],
+    invitations: [],
+    assignments: [],
+    audit: [],
+    updates: [],
+    vpn: [],
+    health: [],
+  };
   }
   updateAuthView();
   syncRoleVisibility();
@@ -1251,6 +1262,30 @@ function renderHierarchyView(model) {
   bindConsoleActions();
 }
 
+function vpnRows(records) {
+  return records.map((record) => ({
+    type: `<span class="pill ${record.matrix_group_id ? 'badge-accepted' : 'badge-pending'}">VPN${record.matrix_group_id ? ' 🔗' : ''}</span>`,
+    primary: `${escapeHtml(record.licence_name || record.tenant_name || record.approved_owner_email || 'Unknown licence')}<br><span class="small"><code class="inline">${escapeHtml(record.entitlement_uuid)}</code></span>`,
+    scope: record.matrix_group_id
+      ? `<code class="inline">${escapeHtml(record.matrix_group_id.substring(0, 14))}...</code><br><span class="small">Mesh active</span>`
+      : '<span class="small" style="color:var(--warning-color);">Not provisioned</span>',
+    owner: escapeHtml(record.approved_owner_email || '-'),
+    keyInfo: record.matrix_group_id
+      ? `<span style="color:var(--success-color);">✓ Enrolled</span><br><span class="small">Headscale: matrix-${escapeHtml(record.matrix_group_id.substring(0, 8))}...</span>`
+      : '<span class="small">Auto-provision on enrolment</span>',
+    details: `${escapeHtml(record.tenant_name || record.licence_name || 'No tenant')}<br><span class="small">Activation: ${escapeHtml(record.activation_status)} · Licence: ${escapeHtml(record.licence_status)}</span>${record.installation_uuid ? '<br><span class="small">Installation: ' + escapeHtml(record.installation_uuid) + '</span>' : ''}`,
+    actions: consoleActionMenu('Actions', [
+      record.matrix_group_id
+        ? `<button type="button" class="mini-button secondary" data-copy-value="${escapeHtml(record.matrix_group_id)}">Copy matrix group</button>`
+        : '',
+      record.installation_uuid && record.application_key
+        ? `<button type="button" class="mini-button secondary" data-vpn-enroll="${escapeHtml(record.installation_uuid)}" data-application-key="${escapeHtml(record.application_key)}">Enrol device</button>`
+        : '',
+      `<button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="entitlement" data-audit-target-entity-uuid="${escapeHtml(record.entitlement_uuid)}">Audit</button>`,
+    ].filter(Boolean).join('')),
+  }));
+}
+
 function noConsoleActionsMarkup() {
   return '<span class="small">No direct actions</span>';
 }
@@ -1332,6 +1367,7 @@ function buildEntitlementConsoleActions(record) {
     actions.push(`<button type="button" class="mini-button secondary" data-entitlement-status="suspended" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Suspend</button>`);
     actions.push(`<button type="button" class="mini-button secondary" data-entitlement-status="revoked" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Revoke</button>`);
   }
+  actions.push(`<button type="button" class="mini-button secondary" data-update-installation-name="${escapeHtml(record.installation_uuid || record.entitlement_uuid)}" data-current-name="${escapeHtml(record.installation_name || '')}">Update name</button>`);
   actions.push(`<button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="entitlement" data-audit-target-entity-uuid="${escapeHtml(record.entitlement_uuid)}">Audit</button>`);
   return consoleActionMenu('Actions', actions.join(''));
 }
@@ -1432,6 +1468,7 @@ function allConsoleRows() {
     ...consoleRowsByFilter.assignments,
     ...consoleRowsByFilter.audit,
     ...consoleRowsByFilter.updates,
+    ...consoleRowsByFilter.vpn,
     ...consoleRowsByFilter.health,
   ];
 }
@@ -1456,6 +1493,7 @@ function renderConsoleFilter() {
     assignments: consoleRowsByFilter.assignments.length,
     audit: consoleRowsByFilter.audit.length,
     updates: consoleRowsByFilter.updates.length,
+    vpn: consoleRowsByFilter.vpn.length,
     health: consoleRowsByFilter.health.length,
   };
   document.querySelectorAll('.console-filter').forEach((button) => {
@@ -1543,8 +1581,8 @@ function stateReportRows(records) {
 function entitlementRows(records) {
   return records.map((record) => ({
     type: '<span class="pill">Entitlement</span>',
-    primary: `${escapeHtml(record.licence_name || record.tenant_name || record.approved_owner_email || 'Unassigned entitlement')}<br><span class="small"><code class="inline">${escapeHtml(record.entitlement_uuid)}</code></span>`,
-    scope: `${statusBadgeMarkup(record.activation_status)}<br><span class="small">${record.licence_name || record.tenant_name || 'No tenant'}</span>`,
+    primary: `${escapeHtml(record.installation_name || record.licence_name || record.tenant_name || record.approved_owner_email || 'Unassigned entitlement')}<br><span class="small"><code class="inline">${escapeHtml(record.entitlement_uuid)}</code></span>`,
+    scope: `${statusBadgeMarkup(record.activation_status)}<br><span class="small">${escapeHtml(record.installation_name || record.licence_name || record.tenant_name || 'No tenant')}</span>`,
     owner: record.approved_owner_email,
     keyInfo: `<code class="inline">${record.application_key}</code><br><span class="small">${record.licence_status}</span>`,
     details: `${record.installation_uuid || 'unbound'}<br><span class="small">grace ${record.offline_grace_days}d</span>`,
@@ -1624,6 +1662,61 @@ function bindConsoleActions() {
         setStatus(`Updated entitlement to ${activationStatus}.`);
         await loadInstallations();
         await loadAuditEvents();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-copy-value]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const value = button.dataset.copyValue || '';
+      try {
+        await navigator.clipboard.writeText(value);
+        setStatus('Copied to clipboard.');
+      } catch (error) {
+        setStatus('Copy failed', true);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-update-installation-name]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const installUuid = button.dataset.updateInstallationName || '';
+      const currentName = button.dataset.currentName || '';
+      const newName = (prompt('Enter installation name:', currentName) || '').trim();
+      if (newName === currentName || (!newName && !currentName)) return;
+      try {
+        await api('/api/v1/admin/installations', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            installation_uuid: installUuid,
+            installation_name: newName || null,
+            approved_owner_email: currentUser?.email || '',
+          }),
+        });
+        setStatus(`Installation name updated.`);
+        await loadInstallations();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-vpn-enroll]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const installationUuid = button.dataset.vpnEnroll || '';
+      const applicationKey = button.dataset.applicationKey || '';
+      if (!installationUuid || !applicationKey) return;
+      try {
+        const payload = await api('/api/v1/vpn/enroll-installation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ installation_uuid: installationUuid, application_key: applicationKey }),
+        });
+        setStatus(`VPN key issued: ${payload.auth_key.substring(0, 16)}... Matrix group: ${payload.matrix_group_id}`);
+        await loadInstallations();
       } catch (error) {
         setStatus(error.message, true);
       }
@@ -2361,6 +2454,7 @@ async function loadInstallations() {
     const records = await api('/api/v1/admin/installations', { headers: authHeaders() });
     setEntitlementSearchCache(records);
     setConsoleRows('entitlements', entitlementRows(records));
+    setConsoleRows('vpn', vpnRows(records));
     renderConsoleFilter();
     setStatus(`Loaded ${records.length} entitlements.`);
   } catch (error) {
@@ -2540,6 +2634,7 @@ async function createEntitlement() {
       offline_grace_days: Number(document.getElementById('offline_grace_days').value || 0),
       tenant_name: document.getElementById('tenant_name').value.trim() || null,
       licence_name: document.getElementById('tenant_name').value.trim() || null,
+      installation_name: document.getElementById('installation_name_admin')?.value.trim() || null,
       notes: document.getElementById('notes').value.trim() || null,
     };
     const record = await api('/api/v1/admin/installations', {
@@ -3089,6 +3184,65 @@ prefillInvitationTokenFromUrl();
 applyAuditFiltersToInputs();
 bindClick('distributorAssignButton', () => assignInstallation('/api/v1/distributor/installation-assignments', 'distributor_assignment_entitlement_uuid', 'distributor_assignment_user_email').catch((error) => setStatus(error.message, true)));
 bindUuidPickerInputs();
+
+bindClick('loadVpnEntitlementsButton', async () => {
+  const listEl = document.getElementById('vpnEntitlementsList');
+  if (!listEl) return;
+  try {
+    const resp = await fetch('/api/v1/dashboard/admin/summary', {
+      headers: authHeaders(),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    const data = await resp.json();
+
+    const entitlements = await fetch('/api/v1/dashboard/owner/installations', {
+      headers: authHeaders(),
+    }).then(r => r.json()).catch(() => []);
+
+    // Combine entitlements with admin summary data
+    let allEntitlements = [];
+    if (Array.isArray(entitlements)) {
+      allEntitlements = entitlements;
+    } else {
+      // Fallback: load entitlements directly
+      const resp2 = await fetch('/api/v1/installations', {
+        headers: authHeaders(),
+      });
+      if (resp2.ok) {
+        const data2 = await resp2.json();
+        allEntitlements = Array.isArray(data2) ? data2 : [];
+      }
+    }
+
+    if (!allEntitlements.length) {
+      listEl.innerHTML = '<div class="activity-item"><div class="activity-title">No entitlements found</div><div class="activity-meta">Create an entitlement first, then VPN mesh will be auto-provisioned.</div></div>';
+      listEl.className = 'activity-list empty-list';
+      return;
+    }
+
+    listEl.className = 'activity-list';
+    listEl.innerHTML = allEntitlements.map(e => `
+      <div class="activity-item" style="padding:0.75rem;border-bottom:1px solid var(--border-light);">
+        <div class="activity-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+          <span>${escapeHtml(e.licence_name || e.tenant_name || e.application_key || 'Untitled')}</span>
+          <span style="font-family:monospace;font-size:0.75rem;background:var(--bg-secondary);padding:0.15rem 0.5rem;border-radius:4px;">${e.matrix_group_id ? '🔗 ' + e.matrix_group_id.substring(0,12) + '...' : '⏳ Not provisioned'}</span>
+        </div>
+        <div class="activity-meta" style="margin-top:0.25rem;">
+          ${e.matrix_group_id ? 
+            '<span style="color:var(--success-color);">✓ VPN mesh active</span> — Installations under this entitlement share a private Tailscale/WireGuard network.' :
+            '<span style="color:var(--warning-color);">No matrix group</span> — VPN mesh will be auto-provisioned on first enrollment.'}
+        </div>
+        <div style="margin-top:0.35rem;font-size:0.7rem;color:var(--muted-text);">
+          Entitlement: ${escapeHtml(e.entitlement_uuid || '—')} | Installation: ${escapeHtml(e.installation_uuid || '—')} | Owner: ${escapeHtml(e.approved_owner_email || '—')}
+        </div>
+      </div>
+    `).join('');
+  } catch (error) {
+    listEl.innerHTML = `<div class="activity-item"><div class="activity-title">Error loading VPN entitlements</div><div class="activity-meta">${escapeHtml(error.message)}</div></div>`;
+    listEl.className = 'activity-list empty-list';
+    setStatus(error.message, true);
+  }
+});
 
 const requestedLoginEmail = searchParams.get('login_email');
 if (requestedLoginEmail) {

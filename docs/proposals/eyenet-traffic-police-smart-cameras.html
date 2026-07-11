@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EyeNet — Συνεισφορά στο Έργο Ευφυών Καμερών Τροχαίας</title>
+  <meta name="author" content="nick@eyenet-vision.com" />
+  <meta name="copyright" content="eyenet-vision.com" />
+  <link rel="canonical" href="https://eyenet-vision.com" />
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+    * { box-sizing: border-box; }
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    body { margin: 0; }
+    .page { max-width: var(--max-width); margin: 0 auto; padding: 32px 24px 72px; }
+    .print-bar { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+    .print-button {
+      border: 0; border-radius: 999px; padding: 12px 18px;
+      background: var(--brand-primary); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                  linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14); border-radius: 32px;
+      box-shadow: var(--shadow); overflow: hidden; position: relative; color: var(--text);
+    }
+    .hero::after {
+      content: ""; position: absolute; inset: auto -80px -80px auto;
+      width: 220px; height: 220px; border-radius: 50%; background: rgba(25, 118, 210, 0.26);
+    }
+    .hero-inner { display: grid; grid-template-columns: 1.35fr 0.9fr; gap: 28px; padding: 34px; position: relative; z-index: 1; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14); color: var(--brand-secondary);
+      font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1 { margin: 18px 0 16px; font-size: 42px; line-height: 1.05; letter-spacing: -0.03em; }
+    .lead { font-size: 18px; color: #334155; max-width: 62ch; }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+    .brand-stack { display: flex; align-items: center; gap: 14px; }
+    .brand-stack img { height: 36px; width: auto; }
+    .brand-chip {
+      padding: 8px 12px; border: 1px solid rgba(34, 211, 238, 0.24); border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9); color: #eef9ff; font-size: 13px; font-weight: 600;
+    }
+    .meta-card, .section {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04); border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px; align-self: start; color: var(--text);
+    }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+    .meta-item { padding-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+    .meta-label { display: block; margin-bottom: 6px; color: #9fb0c3; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .meta-value { font-size: 15px; font-weight: 600; color: #ffffff; }
+    .section { margin-top: 24px; padding: 28px; border-color: var(--panel-line); background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%); }
+    .section-title { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .section-number {
+      width: 34px; height: 34px; border-radius: 50%; display: inline-grid; place-items: center;
+      background: rgba(25, 118, 210, 0.1); color: var(--brand-primary); font-weight: 700;
+    }
+    h2 { margin-bottom: 0; font-size: 24px; letter-spacing: -0.02em; }
+    h3 { margin-bottom: 10px; font-size: 18px; }
+    h4 { margin-bottom: 6px; font-size: 16px; color: #334155; }
+    ul, ol { margin: 0; padding-left: 20px; }
+    li + li { margin-top: 8px; }
+    .callout {
+      padding: 18px 20px; border-left: 4px solid var(--brand-secondary); border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent); color: #f5fbff; font-weight: 600;
+    }
+    .callout.blue { border-left-color: #1976d2; }
+    .footer-note { margin-top: 18px; color: #64748b; font-size: 13px; }
+    .grid-two { display: grid; gap: 22px; margin-top: 24px; grid-template-columns: 1.15fr 0.85fr; }
+    .summary-card {
+      padding: 22px; border-color: var(--panel-line); background: #ffffff;
+      border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .summary-card strong { color: #0f172a; }
+    .summary-card p:last-child { margin-bottom: 0; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .badge {
+      display: inline-flex; align-items: center; padding: 4px 12px;
+      border-radius: 999px; font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
+      background: rgba(25, 118, 210, 0.08); color: var(--brand-primary);
+      border: 1px solid rgba(25, 118, 210, 0.18);
+    }
+    .badge.mode { background: rgba(34, 211, 238, 0.08); color: #0891b2; border-color: rgba(34, 211, 238, 0.18); }
+    .badge.user { background: rgba(245, 158, 11, 0.08); color: #b45309; border-color: rgba(245, 158, 11, 0.18); }
+    .badge.success { background: rgba(34, 197, 94, 0.08); color: #166534; border-color: rgba(34, 197, 94, 0.18); }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid rgba(15, 23, 42, 0.08); }
+    th { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+    td { font-size: 14px; }
+    .arch-diagram {
+      font-family: "Courier New", monospace; font-size: 11px; line-height: 1.35;
+      white-space: pre; color: #f5fbff; margin: 0;
+    }
+    .dimension-card {
+      padding: 20px; margin-top: 16px;
+      border: 1px solid var(--panel-line); border-radius: var(--radius-md);
+      background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%);
+    }
+    .dimension-card h4 { margin-bottom: 8px; color: var(--brand-primary); font-size: 17px; }
+    @page { size: A4; margin: 12mm; }
+    @media (max-width: 920px) {
+      .hero-inner, .grid-two { grid-template-columns: 1fr; }
+      h1 { font-size: 34px; }
+      .page { padding: 18px 16px 54px; }
+    }
+    @media print {
+      html { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page { max-width: none; padding: 0; }
+      .print-bar { display: none; }
+      .hero, .meta-card, .section, .summary-card, .dimension-card { box-shadow: none; break-inside: avoid; }
+      .hero {
+        margin-bottom: 12px;
+        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                    linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+        color: #ffffff; border-color: rgba(34, 211, 238, 0.14);
+      }
+      .meta-card { background: rgba(255, 255, 255, 0.04); color: #ffffff; border-color: rgba(34, 211, 238, 0.12); }
+      .brand-chip, .callout { color: #f5fbff; }
+      .brand-link, .meta-label { color: inherit; }
+      .section { margin-top: 12px; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button" onclick="window.print()">Εκτύπωση / Αποθήκευση ως PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="../../ppl-meta-frontend/assets/images/eyenet-dark.svg" alt="EyeNet logo" />
+              <span class="brand-chip">Application Suite</span>
+            </div>
+          </div>
+          <span class="eyebrow">Πρόταση Συνεισφοράς Πλατφόρμας EyeNet</span>
+          <h1>Συνεισφορά της Πλατφόρμας EyeNet στο Έργο Ευφυών Καμερών Τροχαίας</h1>
+          <p style="color: #d1d9e6; font-size: 15px; margin-top: 8px;">Ολοκληρωμένη πρόταση για την αξιοποίηση της πλατφόρμας EyeNet ως βασικού πληροφοριακού συστήματος και ανεξάρτητου μηχανισμού διασφάλισης ποιότητας</p>
+          <p style="color: #9fb0c3; font-size: 13px; margin-top: 12px;">
+            <span style="margin-right: 20px;">eyenet-vision.com</span>
+            <span>nick@eyenet-vision.com</span>
+          </p>
+        </div>
+        <aside class="meta-card">
+          <h3 style="margin-top: 0;">Στοιχεία Εγγράφου</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Τύπος</span>
+              <span class="meta-value">Πρόταση Συνεισφοράς</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Ημερομηνία</span>
+              <span class="meta-value">Ιούλιος 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Έργο Αναφοράς</span>
+              <span class="meta-value">Ευφυείς Κάμερες Τροχαίας</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Φορέας Λειτουργίας</span>
+              <span class="meta-value">Ελληνική Αστυνομία</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <!-- 1. Αντικείμενο του Έργου -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Αντικείμενο του Έργου</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">
+        Το έργο «Ενιαίο Εθνικό Σύστημα Ψηφιακής Καταγραφής & Διαχείρισης Ελέγχων & Προστίμων Τροχαίας — Ελληνικής Αστυνομίας» αποτελεί μία από τις σημαντικότερες ψηφιακές μεταρρυθμίσεις στον τομέα της οδικής ασφάλειας στην Ελλάδα.
+      </div>
+
+      <h3>Σύνοψη του Έργου</h3>
+      <table>
+        <tr><th>Στοιχείο</th><th>Περιγραφή</th></tr>
+        <tr><td><strong>Τίτλος Έργου</strong></td><td>Ενιαίο Εθνικό Σύστημα Ψηφιακής Καταγραφής & Διαχείρισης Ελέγχων & Προστίμων Τροχαίας — Ελληνικής Αστυνομίας</td></tr>
+        <tr><td><strong>Αναθέτουσα Αρχή</strong></td><td>Κοινωνία της Πληροφορίας Μ.Α.Ε. (ΚτΠ Μ.Α.Ε.)</td></tr>
+        <tr><td><strong>Φορέας Λειτουργίας</strong></td><td>Ελληνική Αστυνομία — Κλάδος Τάξης — Διεύθυνση Τροχαίας</td></tr>
+        <tr><td><strong>Φορέας Χρηματοδότησης</strong></td><td>Υπουργείο Ψηφιακής Διακυβέρνησης — ΤΠΑ Ψηφιακής Διακυβέρνησης 2021-2025</td></tr>
+        <tr><td><strong>Προϋπολογισμός</strong></td><td>10.368.000 € (χωρίς ΦΠΑ) — Αρχικό έργο: 4.800.000 €, Δικαίωμα προαίρεσης φυσικού αντικειμένου: 2.400.000 €, Συντήρηση: 3.168.000 €</td></tr>
+        <tr><td><strong>Διάρκεια</strong></td><td>12 μήνες</td></tr>
+        <tr><td><strong>Κωδικός ΟΠΣ</strong></td><td>5225710</td></tr>
+      </table>
+
+      <h3 style="margin-top: 24px;">Σκοπιμότητα & Βασικά Υποσυστήματα</h3>
+      <p class="lead">Το Ενιαίο Σύστημα θα αποτελεί το κεντρικό σύστημα καταγραφής και διαχείρισης των ελέγχων και προστίμων που διενεργεί η Τροχαία ανά την επικράτεια. Θα διαλειτουργεί με υφιστάμενους και μελλοντικούς οπτικούς αισθητήρες (κάμερες) ελέγχου και αποτροπής τροχαίων παραβάσεων, θα επεξεργάζεται και θα αναλύει τα δεδομένα των αισθητήρων-καμερών, ενώ θα ψηφιοποιεί πλήρως τη διαδικασία ελέγχου και έκδοσης κυρωτικών πράξεων στο πεδίο.</p>
+
+      <p style="margin-top: 16px;">Επιπρόσθετα θα διαλειτουργεί με υφιστάμενα πληροφοριακά συστήματα του Δημοσίου Τομέα (Μητρώο Οχημάτων, Μητρώο Πολιτών κ.α.) για την αυτοματοποιημένη άντληση δεδομένων, θα επιτρέπει την ψηφιακή υποβολή ενστάσεων και την ηλεκτρονική πληρωμή προστίμων, και θα ενημερώνει σε πραγματικό χρόνο συστήματα τρίτων φορέων μέσω ειδικών προγραμματιστικών διεπαφών.</p>
+
+      <div class="grid-two" style="grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 20px;">
+        <div class="summary-card">
+          <p><strong>Κεντρικό Διαχειριστικό Σύστημα</strong></p>
+          <p style="font-size: 13px; color: #475569;">Δημιουργία, επεξεργασία και διαχείριση δεδομένων — η καρδιά του πληροφοριακού συστήματος για το σύνολο των ελέγχων και προστίμων.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Σύστημα Ψηφιακών Ελέγχων στο Πεδίο</strong></p>
+          <p style="font-size: 13px; color: #475569;">Έκδοση προστίμων μέσω φορητών συσκευών (έξυπνες κινητές συσκευές), αυτοματοποιημένη άντληση δεδομένων οχήματος και οδηγού σε πραγματικό χρόνο.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Διαλειτουργικότητα με Οπτικούς Αισθητήρες</strong></p>
+          <p style="font-size: 13px; color: #475569;">Εξειδικευμένο λογισμικό για διαλειτουργικότητα με το σύνολο των υφιστάμενων και μελλοντικών καμερών ελέγχου τροχαίων παραβάσεων ανά την επικράτεια.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Υποσύστημα Ενστάσεων & Βιντεοκλήσεων</strong></p>
+          <p style="font-size: 13px; color: #475569;">Ψηφιακή υποβολή ενστάσεων, διενέργεια ψηφιακών ραντεβού και βιντεοκλήσεων για εξ αποστάσεως εξέταση υποθέσεων.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Στατιστική Ανάλυση & BI</strong></p>
+          <p style="font-size: 13px; color: #475569;">Υποσύστημα στατιστικής ανάλυσης και προβολής επεξεργασμένων δεδομένων για επιχειρησιακή πληροφόρηση.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Διαχείριση Πληρωμών & Διαλειτουργικότητα</strong></p>
+          <p style="font-size: 13px; color: #475569;">Ηλεκτρονική πληρωμή προστίμων, ασφάλεια και προστασία ιδιωτικότητας, ανοικτά πρότυπα και δεδομένα, πολυκαναλική προσέγγιση.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Που Εντάσσεται το EyeNet -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>Που Εντάσσεται το EyeNet στο Έργο</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Το EyeNet προσφέρεται να λειτουργήσει σε δύο θεμελιώδεις διαστάσεις: (α) ως το κεντρικό πληροφοριακό σύστημα-βάση που εξυπηρετεί τα υποσυστήματα οπτικής αναγνώρισης με όλες τις υπηρεσίες της πλατφόρμας, και (β) ως ανεξάρτητο τρίτο σύστημα διασφάλισης ποιότητας για την αυτοματοποίηση των υποψήφιων παραβάσεων.</div>
+
+      <h3>Υφιστάμενες Δυνατότητες της Πλατφόρμας EyeNet που Αξιοποιούνται</h3>
+      <table>
+        <tr><th>Υφιστάμενο Component</th><th>Ρόλος στο Έργο Ευφυών Καμερών Τροχαίας</th></tr>
+        <tr><td><strong>eyenet-cameras</strong></td><td>Καταγραφή και διαχείριση των καμερών τροχαίας — RTSP/ONVIF ingestion, προφίλ εγγραφής, έλεγχος υγείας συνδέσεων, διαχείριση ροών βίντεο από όλους τους οπτικούς αισθητήρες ανά την επικράτεια</td></tr>
+        <tr><td><strong>eyenet-node</strong></td><td>Αυθεντικοποίηση χρηστών (προσωπικό τροχαίας, διοικητικοί χρήστες, πολίτες), έλεγχος αδειών χρήσης (licensing), tenant scoping για πολυ-περιφερειακά περιβάλλοντα</td></tr>
+        <tr><td><strong>eyenet-vision</strong></td><td>Μηχανική όραση — ανίχνευση και αναγνώριση οχημάτων, πινακίδων κυκλοφορίας, καταμέτρηση ατόμων σε εικόνες/βίντεο, ανίχνευση καλύψεων προσώπων, επιβεβαίωση ύπαρξης παράβασης μέσω οπτικής ανάλυσης</td></tr>
+        <tr><td><strong>eyenet-vmeta</strong></td><td>ML orchestration — pipeline εκτέλεσης μοντέλων μηχανικής όρασης για την αυτοματοποιημένη επεξεργασία εικόνων και βίντεο από τις κάμερες τροχαίας</td></tr>
+        <tr><td><strong>eyenet-orchestrator</strong></td><td>Μηχανισμός κανόνων και ενεργειών — "αν εντοπιστεί παράβαση → καταγραφή, ειδοποίηση, διαβίβαση στο Κεντρικό Σύστημα" — πλήρως παραμετροποιήσιμο για τις ανάγκες της τροχαίας</td></tr>
+        <tr><td><strong>eyenet-media</strong></td><td>Αποθήκευση φωτογραφιών και βίντεο που συνοδεύουν κάθε υποψήφια παράβαση, αρχειοθέτηση στιγμιότυπων, διαχείριση συλλογών τεκμηρίων για μελλοντική χρήση</td></tr>
+        <tr><td><strong>eyenet-communications</strong></td><td>Υποσύστημα βιντεοκλήσεων και ψηφιακών ραντεβού — άμεση επικοινωνία πολιτών με τα αρμόδια όργανα για ενστάσεις και διευκρινίσεις</td></tr>
+        <tr><td><strong>eyenet-matrix</strong></td><td>Συγκεντρωτική αναφορά και παρακολούθηση πολλαπλών εγκαταστάσεων — ενιαία εικόνα από όλες τις κάμερες όλης της επικράτειας, στατιστικά και BI dashboards</td></tr>
+        <tr><td><strong>eyenet-gateway</strong></td><td>Προγραμματιστικές διεπαφές (API Gateway) για διαλειτουργικότητα με τρίτα συστήματα (Μητρώο Οχημάτων, Μητρώο Πολιτών, ΟΤΑ, κ.α.) με ασφάλεια και διαχείριση φόρτου</td></tr>
+        <tr><td><strong>eyenet-frontend</strong></td><td>Ενιαίο Dashboard για το προσωπικό της τροχαίας, web εφαρμογή για πολίτες (ενστάσεις, πληρωμές, ραντεβού), mobile εφαρμογές για το προσωπικό στο πεδίο</td></tr>
+        <tr><td><strong>eyenet-authority</strong></td><td>Διαχείριση αδειών χρήσης (licence features όπως <code>traffic_cameras</code>, <code>traffic_violation_qc</code>, <code>traffic_video_calls</code>), έλεγχος πρόσβασης ανά περιφέρεια/διεύθυνση</td></tr>
+      </table>
+
+      <h3 style="margin-top: 24px;">Τι Νέο Φέρνει το EyeNet στο Έργο</h3>
+      <table>
+        <tr><th>Νέο Στοιχείο</th><th>Σκοπός</th></tr>
+        <tr><td><strong>EyeNet Traffic QC Engine</strong></td><td>Ανεξάρτητο υποσύστημα μηχανικής όρασης που λειτουργεί ως δεύτερο επίπεδο επιβεβαίωσης για κάθε υποψήφια παράβαση — αναλύει φωτογραφίες και βίντεο για να επιβεβαιώσει: (α) την ύπαρξη ατόμων στο οπτικό πεδίο, (β) τον μοναδικό αριθμό ατόμων, (γ) την ύπαρξη κάλυψης προσώπων σε άτομα εκτός του πεδίου της υποψήφιας παράβασης</td></tr>
+        <tr><td><strong>EyeNet Video Appointments</strong></td><td>Εξειδικευμένο υποσύστημα βιντεοκλήσεων και ψηφιακών ραντεβού για την εξ αποστάσεως εξέταση ενστάσεων — ο πολίτης συνδέεται μέσω browser ή mobile app, ο αρμόδιος υπάλληλος μέσω του dashboard της τροχαίας</td></tr>
+        <tr><td><strong>EyeNet Traffic Mobile</strong></td><td>Εφαρμογή Android για το προσωπικό της τροχαίας στο πεδίο — ψηφιακή έκδοση προστίμων, σάρωση πινακίδων, άμεση πρόσβαση σε δεδομένα οχήματος/οδηγού, λήψη φωτογραφιών και βίντεο τεκμηρίωσης, εκτύπωση μέσω φορητού θερμικού εκτυπωτή</td></tr>
+        <tr><td><strong>EyeNet Violation Interop Layer</strong></td><td>Εξειδικευμένο διαλειτουργικό επίπεδο που ενώνει το EyeNet με υφιστάμενους και μελλοντικούς οπτικούς αισθητήρες τρίτων κατασκευαστών — ανεξαρτήτως πρωτοκόλλου ή προμηθευτή</td></tr>
+      </table>
+    </section>
+
+    <!-- 3. Οι Τέσσερις Διαστάσεις Συνεισφοράς -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Οι Τέσσερις Διαστάσεις Συνεισφοράς του EyeNet</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Το EyeNet προτείνεται να καλύψει τέσσερις κρίσιμες διαστάσεις του έργου — από την παροχή του βασικού πληροφοριακού συστήματος έως την ανάπτυξη εξειδικευμένων υποσυστημάτων για το προσωπικό στο πεδίο.</div>
+
+      <!-- Διάσταση 1 -->
+      <div class="dimension-card">
+        <h4>Διάσταση 1: Το EyeNet ως Βάση Πληροφοριακού Συστήματος & Διαλειτουργικότητα με Υποσυστήματα Εντοπισμού</h4>
+        <p>Η πλατφόρμα EyeNet μπορεί να παρέχει το σύνολο του πληροφοριακού συστήματος ως βάση για το έργο, καλύπτοντας όλες τις απαιτήσεις του Κεντρικού Διαχειριστικού Συστήματος:</p>
+        <ul>
+          <li><strong>Ενιαία αρχιτεκτονική microservices</strong>: Όλα τα υποσυστήματα (καταγραφή, διαχείριση, επεξεργασία, ενημέρωση) λειτουργούν πάνω στην ίδια πλατφόρμα, εξασφαλίζοντας συνοχή και απρόσκοπτη επικοινωνία.</li>
+          <li><strong>Διαλειτουργικότητα με οπτικούς αισθητήρες</strong>: Το eyenet-cameras υποστηρίζει ήδη RTSP, ONVIF, GigE Vision και λοιπά βιομηχανικά πρωτόκολλα, επιτρέποντας τη σύνδεση με το σύνολο των υφιστάμενων και μελλοντικών καμερών. Το νέο Violation Interop Layer επεκτείνει αυτή τη δυνατότητα με vendor-agnostic αρχιτεκτονική.</li>
+          <li><strong>Διαλειτουργικότητα με τρίτα συστήματα</strong>: Το eyenet-gateway παρέχει ασφαλείς REST/Webhook API για διασύνδεση με το Μητρώο Οχημάτων, το Μητρώο Πολιτών, τα συστήματα ΟΤΑ και λοιπούς φορείς του Δημοσίου.</li>
+          <li><strong>Ασφάλεια & GDPR compliance</strong>: Role-based access control, audit trails, κρυπτογράφηση, on-premises deployment — η πλατφόρμα EyeNet είναι σχεδιασμένη εξ αρχής για ευαίσθητα δεδομένα.</li>
+          <li><strong>Κλιμάκωση</strong>: Η αρχιτεκτονική microservices επιτρέπει οριζόντια κλιμάκωση για την εξυπηρέτηση του συνόλου των καμερών ανά την επικράτεια.</li>
+        </ul>
+      </div>
+
+      <!-- Διάσταση 2 -->
+      <div class="dimension-card">
+        <h4>Διάσταση 2: Το EyeNet ως Ανεξάρτητο Σύστημα Επιβεβαίωσης Υποψήφιων Παραβάσεων</h4>
+        <p>Μία από τις σημαντικότερες καινοτομίες της πρότασης είναι η λειτουργία του EyeNet ως <strong>δεύτερου και ανεξάρτητου συστήματος επιβεβαίωσης</strong> για τις φωτογραφίες και τα βίντεο που συνοδεύουν κάθε υποψήφια παράβαση. Το EyeNet Traffic QC Engine αξιοποιεί την προηγμένη μηχανική όραση της πλατφόρμας για να προσφέρει:</p>
+        <ul>
+          <li><strong>Ανεξάρτητος ποιοτικός έλεγχος από τρίτο σύστημα μηχανικής όρασης</strong>: Το EyeNet λειτουργεί ως ανεξάρτητος κριτής — δεν βασίζεται στο λογισμικό του εκάστοτε προμηθευτή καμερών αλλά εκτελεί τη δική του οπτική ανάλυση. Αυτό διασφαλίζει ότι καμία παράβαση δεν βασίζεται αποκλειστικά σε ένα σύστημα.</li>
+          <li><strong>Οπτική επιβεβαίωση ύπαρξης ατόμων</strong>: Το μοντέλο μηχανικής όρασης του EyeNet (eyenet-vision / eyenet-vmeta) αναλύει κάθε φωτογραφία και βίντεο για να επιβεβαιώσει την παρουσία ατόμων στο πεδίο της παράβασης — καταμετρώντας τον <strong>μοναδικό αριθμό ατόμων</strong> που εμφανίζονται.</li>
+          <li><strong>Ανίχνευση κάλυψης προσώπων</strong>: Το σύστημα εντοπίζει άτομα εκτός του πεδίου της υποψήφιας παράβασης και ελέγχει αν φέρουν κάλυψη προσώπου (π.χ. κράνος, μάσκα) — διασφαλίζοντας τη συμμόρφωση με τη νομοθεσία περί προστασίας προσωπικών δεδομένων.</li>
+          <li><strong>Δραστική μείωση απαίτησης σε προσωπικό</strong>: Με την αυτοματοποιημένη επιβεβαίωση, το προσωπικό της τροχαίας απαλλάσσεται από τη χειροκίνητη επαλήθευση κάθε υποψήφιας παράβασης. Μόνο οι αμφίβολες περιπτώσεις (π.χ. διαφωνία μεταξύ των δύο συστημάτων) προωθούνται για ανθρώπινη κρίση.</li>
+        </ul>
+        <p style="margin-top: 12px; font-size: 14px; color: #475569;"><strong>Παράδειγμα ροής:</strong> Μια κάμερα τροχαίας καταγράφει ένα όχημα να παραβιάζει το όριο ταχύτητας και παράγει μια υποψήφια παράβαση με συνοδευτική φωτογραφία. Το EyeNet Traffic QC Engine αναλύει ανεξάρτητα την εικόνα: (α) επιβεβαιώνει ότι υπάρχει ένα όχημα και ένα άτομο (οδηγός), (β) ελέγχει ότι η πινακίδα κυκλοφορίας είναι ευανάγνωστη, (γ) εντοπίζει τυχόν άλλα άτομα στην εικόνα και ελέγχει αν τα πρόσωπά τους είναι καλυμμένα. Αν όλα τα κριτήρια πληρούνται, η παράβαση προωθείται αυτόματα — χωρίς ανθρώπινη παρέμβαση.</p>
+      </div>
+
+      <!-- Διάσταση 3 -->
+      <div class="dimension-card">
+        <h4>Διάσταση 3: Ανάπτυξη του Υποσυστήματος Βιντεοκλήσεων / Ραντεβού</h4>
+        <p>Το EyeNet, μέσω του eyenet-communications και του νέου EyeNet Video Appointments, προσφέρει ένα ολοκληρωμένο υποσύστημα βιντεοκλήσεων και ψηφιακών ραντεβού που καλύπτει πλήρως τις απαιτήσεις του έργου για την υποβολή και εξέταση ενστάσεων:</p>
+        <ul>
+          <li><strong>Προγραμματισμός ψηφιακών ραντεβού</strong>: Ο πολίτης μπορεί μέσω web ή mobile εφαρμογής να προγραμματίσει ψηφιακό ραντεβού για την εξέταση της ένστασής του, επιλέγοντας διαθέσιμη ημερομηνία και ώρα.</li>
+          <li><strong>Βιντεοκλήσεις με ασφάλεια και καταγραφή</strong>: Οι βιντεοκλήσεις πραγματοποιούνται μέσω κρυπτογραφημένων καναλιών (WebRTC) με δυνατότητα καταγραφής για λόγους τήρησης αρχείου. Το προσωπικό της τροχαίας συνδέεται από το dashboard, ο πολίτης από τον browser ή το κινητό του.</li>
+          <li><strong>Διαμοιρασμός τεκμηρίων σε πραγματικό χρόνο</strong>: Κατά τη διάρκεια της βιντεοκλήσης, ο αρμόδιος υπάλληλος μπορεί να προβάλει στον πολίτη τη φωτογραφία ή το βίντεο της παράβασης, καθώς και τυχόν συνοδευτικά έγγραφα.</li>
+          <li><strong>Ενσωμάτωση με το Κεντρικό Σύστημα</strong>: Κάθε βιντεοκλήση συνδέεται αυτόματα με τον αντίστοιχο φάκελο παράβασης — όλα τα δεδομένα παραμένουν συνεκτικά και ανιχνεύσιμα.</li>
+          <li><strong>Αυτόματες ειδοποιήσεις και υπενθυμίσεις</strong>: Μέσω του eyenet-orchestrator, αποστέλλονται αυτόματες ειδοποιήσεις (email/SMS/push) για επιβεβαίωση, υπενθύμιση και τυχόν αλλαγές στο ραντεβού.</li>
+        </ul>
+      </div>
+
+      <!-- Διάσταση 4 -->
+      <div class="dimension-card">
+        <h4>Διάσταση 4: Ανάπτυξη της Εφαρμογής Android για το Προσωπικό Τροχαίας στο Πεδίο</h4>
+        <p>Το EyeNet Traffic Mobile είναι μια εξειδικευμένη εφαρμογή Android για τις έξυπνες κινητές συσκευές που θα χρησιμοποιεί το προσωπικό της τροχαίας στο πεδίο. Αξιοποιεί την υπάρχουσα τεχνογνωσία του eyenet-frontend (Flutter/Dart) και επεκτείνεται με native Android δυνατότητες:</p>
+        <ul>
+          <li><strong>Ψηφιακή έκδοση προστίμων</strong>: Πλήρης ροή έκδοσης κυρωτικών πράξεων — από τη σάρωση πινακίδας και την αυτόματη άντληση δεδομένων από το Μητρώο Οχημάτων, έως την ψηφιακή υπογραφή και εκτύπωση μέσω φορητού θερμικού εκτυπωτή.</li>
+          <li><strong>Λήψη φωτογραφιών και βίντεο τεκμηρίωσης</strong>: Η εφαρμογή επιτρέπει τη λήψη φωτογραφιών και βίντεο μέσω της κάμερας της συσκευής, τα οποία επισυνάπτονται αυτόματα στον φάκελο της παράβασης και συγχρονίζονται με το Κεντρικό Σύστημα.</li>
+          <li><strong>Offline λειτουργία</strong>: Σε περιοχές με περιορισμένη ή ανύπαρκτη δικτυακή κάλυψη, η εφαρμογή λειτουργεί offline — τα δεδομένα αποθηκεύονται τοπικά και συγχρονίζονται αυτόματα μόλις αποκατασταθεί η σύνδεση.</li>
+          <li><strong>Ασφάλεια και ταυτοποίηση</strong>: Σύνδεση μέσω ασφαλούς VPN (WireGuard/Tailscale) προς τον κεντρικό EyeNet Node, βιομετρική ταυτοποίηση του χρήστη (δακτυλικό αποτύπωμα / face unlock), πλήρες audit trail για κάθε ενέργεια.</li>
+          <li><strong>Άμεση πρόσβαση σε ιστορικό και στατιστικά</strong>: Ο χρήστης έχει άμεση πρόσβαση στο ιστορικό παραβάσεων, στατιστικά και αναφορές — όλα σε πραγματικό χρόνο.</li>
+          <li><strong>Διαλειτουργικότητα με φορητό θερμικό εκτυπωτή</strong>: Ασύρματη σύνδεση (Bluetooth/WiFi) με φορητό εκτυπωτή για άμεση εκτύπωση της βεβαίωσης παράβασης στο πεδίο.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 4. Οι Δύο Γενικές Διαστάσεις Λειτουργίας -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>Οι Δύο Γενικές Διαστάσεις Λειτουργίας του EyeNet</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Το EyeNet λειτουργεί σε δύο γενικές και συμπληρωματικές διαστάσεις: ως τεχνολογικός πάροχος του συνόλου του πληροφοριακού συστήματος και των υπηρεσιών του, και ως ανεξάρτητος τρίτος μηχανισμός διασφάλισης ποιότητας που εγγυάται την ακεραιότητα της διαδικασίας.</div>
+
+      <!-- Γενική Διάσταση Α -->
+      <div class="dimension-card">
+        <h4>Α) Εξυπηρέτηση των Υποσυστημάτων Οπτικής Αναγνώρισης με το Σύνολο των Υπηρεσιών της Πλατφόρμας</h4>
+        <p>Το EyeNet παρέχει την πλήρη υποδομή για την εξυπηρέτηση των υποσυστημάτων οπτικής αναγνώρισης των υποψήφιων παραβάσεων, αξιοποιώντας το σύνολο των υπηρεσιών της πλατφόρμας:</p>
+        <table>
+          <tr><th>Υπηρεσία EyeNet</th><th>Συνεισφορά στο Έργο</th></tr>
+          <tr><td><strong>Υπηρεσίες Διαλειτουργικότητας</strong></td><td>API Gateway (eyenet-gateway) για διασύνδεση με Μητρώο Οχημάτων, Μητρώο Πολιτών, ΟΤΑ, και λοιπά δημόσια συστήματα — με τυποποιημένα REST/Webhook endpoints και πλήρη τεκμηρίωση</td></tr>
+          <tr><td><strong>Εφαρμογές Κινητών Συσκευών</strong></td><td>Flutter-based cross-platform εφαρμογές (Android/iOS) με native δυνατότητες — κάμερα, GPS, offline λειτουργία, εκτύπωση, βιομετρική ταυτοποίηση</td></tr>
+          <tr><td><strong>Άμεση Ειδοποίηση</strong></td><td>eyenet-orchestrator με κανάλια email, SMS, push notifications, webhooks — προγραμματιζόμενοι κανόνες για κάθε σενάριο (νέα παράβαση, ένσταση, πληρωμή, κλιμάκωση)</td></tr>
+          <tr><td><strong>Γενική Αρχιτεκτονική Πλατφόρμας</strong></td><td>Containerized microservices (Docker), on-premises deployment, horizontal scaling, VPN δικτύωση (WireGuard/Tailscale), monitoring (Prometheus/Grafana), encrypted storage, backup & restore</td></tr>
+          <tr><td><strong>Πολυκαναλική Προσέγγιση</strong></td><td>Web dashboard, mobile apps (Android/iOS), API για third-party integrations — ενιαία εμπειρία ανεξαρτήτως καναλιού πρόσβασης</td></tr>
+          <tr><td><strong>Διαχείριση Χρηστών & Ρόλων</strong></td><td>Λεπτομερής έλεγχος πρόσβασης ανά ρόλο (αστυνομικός πεδίου, διοικητικός υπάλληλος, προϊστάμενος, πολίτης) — με πλήρες audit trail για λογοδοσία</td></tr>
+        </table>
+      </div>
+
+      <!-- Γενική Διάσταση Β -->
+      <div class="dimension-card">
+        <h4>Β) Λειτουργία ως Ανεξάρτητου Τρίτου Συστήματος Διασφάλισης Ποιότητας</h4>
+        <p>Πέρα από την παροχή του πληροφοριακού συστήματος, το EyeNet λειτουργεί και ως <strong>ανεξάρτητος τρίτος μηχανισμός διασφάλισης ποιότητας</strong> ως προς τη διαδικασία αυτοματοποίησης των υποψήφιων παραβάσεων, προσφέροντας:</p>
+        <table>
+          <tr><th>Λειτουργία Διασφάλισης Ποιότητας</th><th>Περιγραφή</th></tr>
+          <tr><td><strong>Οπτική επιβεβαίωση ύπαρξης ατόμων</strong></td><td>Το EyeNet (eyenet-vision/vmeta) αναλύει κάθε φωτογραφία και βίντεο υποψήφιας παράβασης για να επιβεβαιώσει την παρουσία ατόμων. Ανιχνεύει ανθρώπινες μορφές, πρόσωπα, και σώματα — διασφαλίζοντας ότι η εικόνα περιέχει πραγματικά άτομα και όχι τεχνουργήματα ή ψευδείς ανιχνεύσεις.</td></tr>
+          <tr><td><strong>Μοναδικός αριθμός ατόμων (People Count)</strong></td><td>Καταμέτρηση του ακριβούς αριθμού ατόμων που εμφανίζονται στην εικόνα ή το βίντεο. Αυτό είναι κρίσιμο για περιπτώσεις όπως η παράβαση ζώνης ασφαλείας (πόσα άτομα φαίνονται στο όχημα) ή η χρήση ΛΕΑ (πόσα άτομα επιβαίνουν).</td></tr>
+          <tr><td><strong>Ύπαρξη κάλυψης προσώπων εκτός πεδίου παράβασης</strong></td><td>Το σύστημα εντοπίζει άτομα που βρίσκονται εκτός του πεδίου της υποψήφιας παράβασης (π.χ. περαστικοί, συνοδηγοί, άλλα οχήματα) και ελέγχει αν τα πρόσωπά τους είναι κατάλληλα καλυμμένα/θολωμένα σύμφωνα με τις απαιτήσεις GDPR — διασφαλίζοντας ότι η εικόνα είναι νομικά έγκυρη πριν προωθηθεί.</td></tr>
+          <tr><td><strong>Ανεξαρτησία από τον προμηθευτή καμερών</strong></td><td>Το EyeNet δεν εξαρτάται από το λογισμικό του εκάστοτε προμηθευτή καμερών. Λειτουργεί ως ανεξάρτητο κανάλι επαλήθευσης — αν το σύστημα του προμηθευτή Α καταγράψει μια παράβαση, το EyeNet την επαληθεύει ανεξάρτητα. Σε περίπτωση διαφωνίας, η υπόθεση προωθείται για ανθρώπινη κρίση.</td></tr>
+          <tr><td><strong>Στατιστικά ποιότητας & αναφορές</strong></td><td>Το EyeNet παράγει αναλυτικά στατιστικά για την απόδοση του κάθε υποσυστήματος καμερών — ποσοστό ψευδών θετικών/αρνητικών, ποσοστό συμφωνίας με το EyeNet, τάσεις ανά πάροχο — επιτρέποντας τεκμηριωμένες αποφάσεις για τη βελτίωση του συστήματος.</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <!-- 5. Αρχιτεκτονική Προσέγγιση -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>Αρχιτεκτονική Προσέγγιση</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Η αρχιτεκτονική του EyeNet για το έργο των ευφυών καμερών τροχαίας ακολουθεί το δοκιμασμένο μοντέλο microservices της πλατφόρμας, με σαφή διαχωρισμό μεταξύ του πρωτογενούς συστήματος (κάμερες τρίτων) και του ανεξάρτητου συστήματος επιβεβαίωσης (EyeNet).</div>
+
+      <h3>Διάγραμμα Αρχιτεκτονικής</h3>
+      <div class="callout blue" style="margin-bottom: 16px; color: #f5fbff;">
+        <pre class="arch-diagram">
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  ΕΠΙΠΕΔΟ ΠΕΔΙΟΥ — Οπτικοί Αισθητήρες & Προσωπικό Τροχαίας                        │
+│                                                                                  │
+│  ┌───────────────────────────────┐   ┌───────────────────────────────────────┐   │
+│  │ Υφιστάμενες Κάμερες Τροχαίας  │   │  Προσωπικό Τροχαίας στο Πεδίο          │   │
+│  │ (διάφοροι προμηθευτές)        │   │                                        │   │
+│  │ • Κάμερες ταχύτητας           │   │  ┌──────────────────────────────────┐  │   │
+│  │ • Κάμερες φαναριών            │   │  │ EyeNet Traffic Mobile (Android)  │  │   │
+│  │ • Κάμερες ΛΕΑ                  │   │  │ • Ψηφιακή έκδοση προστίμων       │  │   │
+│  │ • Μελλοντικές εγκαταστάσεις   │   │  │ • Λήψη φωτογραφιών/βίντεο        │  │   │
+│  └───────────────┬───────────────┘   │  │ • Offline λειτουργία              │  │   │
+│                  │                   │  │ • Σύνδεση με θερμικό εκτυπωτή     │  │   │
+│                  │ Πρωτογενές        │  └──────────────────┬───────────────┘  │   │
+│                  │ Σύστημα           │                     │ VPN (WireGuard)  │   │
+│                  │ Προμηθευτή        │                     │                  │   │
+└──────────────────┼───────────────────┴─────────────────────┼──────────────────┘   │
+                   │                                         │                      │
+┌──────────────────┼─────────────────────────────────────────┼──────────────────────┐
+│  ΕΠΙΠΕΔΟ ΔΙΑΛΕΙΤΟΥΡΓΙΚΟΤΗΤΑΣ                              │                      │
+│                                                             │                      │
+│  ┌──────────────────────────────┐   ┌──────────────────────┴──────────────────┐  │
+│  │ Violation Interop Layer      │   │  VPN / Secure Channel                    │  │
+│  │ • RTSP/ONVIF ingestion       │   │  • WireGuard / Tailscale                 │  │
+│  │ • Vendor SDK adapters        │   │  • End-to-end encryption                 │  │
+│  │ • Vendor-agnostic pipeline   │   │  • Role-based access                     │  │
+│  └──────────────┬───────────────┘   └──────────────────────┬──────────────────┘  │
+│                 │                                          │                     │
+└─────────────────┼──────────────────────────────────────────┼─────────────────────┘
+                  │                                          │
+┌─────────────────┼──────────────────────────────────────────┼─────────────────────┐
+│  ΚΕΝΤΡΙΚΟΣ EYENET NODE — Πληροφοριακό Σύστημα & Σύστημα Επιβεβαίωσης           │
+│                                                                                  │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │  eyenet-cameras — Camera Registry, Stream Management, Recording         │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                  │
+│  ┌──────────────────────────────┐   ┌──────────────────────────────────────┐   │
+│  │ Πρωτογενές Σύστημα           │   │ ΑΝΕΞΑΡΤΗΤΟ ΣΥΣΤΗΜΑ ΕΠΙΒΕΒΑΙΩΣΗΣ     │   │
+│  │ (Δεδομένα από κάμερες        │   │ (EyeNet Traffic QC Engine)           │   │
+│  │  τρίτων προμηθευτών)         │   │                                      │   │
+│  │                              │   │  eyenet-vision / eyenet-vmeta    │   │
+│  │  Παραλαβή υποψήφιας          │──▶│  • Ανίχνευση ατόμων                  │   │
+│  │  παράβασης + εικόνας/βίντεο  │   │  • Καταμέτρηση ατόμων                │   │
+│  │                              │   │  • Έλεγχος κάλυψης προσώπων           │   │
+│  │                              │   │  • GDPR compliance check             │   │
+│  │                              │   │  • Απόφαση: ΕΠΙΒΕΒΑΙΩΣΗ / ΑΜΦΙΒΟΛΟ │   │
+│  └──────────────────────────────┘   └──────────────────┬───────────────────┘   │
+│                                                        │                       │
+│  ┌─────────────────────────────────────────────────────┴─────────────────────┐  │
+│  │  eyenet-orchestrator — Rule Engine & Notification Pipeline              │  │
+│  │  • ΕΠΙΒΕΒΑΙΩΣΗ → Αυτόματη προώθηση, καταγραφή, ειδοποίηση                  │  │
+│  │  • ΑΜΦΙΒΟΛΟ  → Προώθηση σε ανθρώπινο χειριστή για manual review            │  │
+│  │  • ΔΙΑΦΩΝΙΑ  → Alert σε προϊστάμενο, καταγραφή για στατιστικά              │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                  │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │  eyenet-gateway — Διαλειτουργικότητα με Τρίτα Συστήματα                  │  │
+│  │  • Μητρώο Οχημάτων (REST API)  • Μητρώο Πολιτών (REST API)                 │  │
+│  │  • Συστήματα ΟΤΑ (Webhook)     • Λοιποί φορείς Δημοσίου                     │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                  │
+│  ┌───────────────┐  ┌──────────────────┐  ┌─────────────────────────────────┐  │
+│  │ eyenet-media│  │ eyenet-matrix  │  │ eyenet-communications         │  │
+│  │ Φωτογραφίες   │  │ Στατιστικά, BI,  │  │ Βιντεοκλήσεις, ψηφιακά          │  │
+│  │ Βίντεο,       │  │ Αναφορές,        │  │ ραντεβού, ειδοποιήσεις          │  │
+│  │ Τεκμήρια      │  │ Dashboards       │  │ (email/SMS/push)                │  │
+│  └───────────────┘  └──────────────────┘  └─────────────────────────────────┘  │
+│                                                                                  │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │  eyenet-frontend — Ενιαία Διεπαφή Χρήστη                                 │  │
+│  │  • Dashboard Τροχαίας (web)  • Mobile App (Android/iOS)                     │  │
+│  │  • Πύλη Πολιτών (web)        • Διαχείριση ενστάσεων, πληρωμών, ραντεβού    │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────┘
+        </pre>
+      </div>
+
+      <h3 style="margin-top: 24px;">Ροή Επιβεβαίωσης Υποψήφιας Παράβασης</h3>
+      <ol>
+        <li><strong>Λήψη υποψήφιας παράβασης</strong>: Μια κάμερα τροχαίας τρίτου προμηθευτή καταγράφει ένα συμβάν και παράγει μια υποψήφια παράβαση. Τα δεδομένα (φωτογραφία/βίντεο, χρονοσήμανση, τύπος παράβασης, δεδομένα οχήματος) αποστέλλονται στο EyeNet μέσω του Violation Interop Layer.</li>
+        <li><strong>Πρωτογενής καταγραφή</strong>: Το eyenet-cameras καταγράφει το συμβάν και το eyenet-media αποθηκεύει τα τεκμήρια.</li>
+        <li><strong>Ανεξάρτητη ανάλυση από το EyeNet Traffic QC Engine</strong>: Το eyenet-vision αναλύει την εικόνα/βίντεο με τα μοντέλα μηχανικής όρασης του EyeNet — ανεξάρτητα από τον αλγόριθμο του προμηθευτή της κάμερας.</li>
+        <li><strong>Απόφαση επιβεβαίωσης</strong>: Το σύστημα παράγει μία από τις εξής αποφάσεις:
+          <ul>
+            <li><strong>ΕΠΙΒΕΒΑΙΩΣΗ</strong>: Το EyeNet συμφωνεί με το πρωτογενές σύστημα — η παράβαση προωθείται αυτόματα.</li>
+            <li><strong>ΑΜΦΙΒΟΛΟ</strong>: Το EyeNet δεν μπορεί να επιβεβαιώσει με βεβαιότητα — η υπόθεση προωθείται σε ανθρώπινο χειριστή για manual review.</li>
+            <li><strong>ΑΠΟΡΡΙΨΗ</strong>: Το EyeNet διαφωνεί με το πρωτογενές σύστημα — η υπόθεση απορρίπτεται αυτόματα και καταγράφεται για στατιστικούς σκοπούς.</li>
+          </ul>
+        </li>
+        <li><strong>Ενέργειες βάσει απόφασης</strong>: Ο eyenet-orchestrator εκτελεί τις προκαθορισμένες ενέργειες — προώθηση, ειδοποίηση, κλιμάκωση.</li>
+        <li><strong>Ενημέρωση στατιστικών</strong>: Το eyenet-matrix ενημερώνει τα στατιστικά ποιότητας ανά προμηθευτή καμερών, επιτρέποντας συνεχή βελτίωση.</li>
+      </ol>
+    </section>
+
+    <!-- 6. Οφέλη -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">6</span>
+        <h2>Τεκμηρίωση Οφέλους</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Η συνεισφορά του EyeNet στο έργο των ευφυών καμερών τροχαίας αποφέρει μετρήσιμα οφέλη σε πολλαπλά επίπεδα — από τη δραστική μείωση του απαιτούμενου προσωπικού έως την εγγύηση ανεξάρτητου ποιοτικού ελέγχου.</div>
+
+      <div class="grid-two" style="grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
+        <div class="summary-card">
+          <p><strong>Δραστική Μείωση Απαίτησης σε Προσωπικό</strong></p>
+          <p style="font-size: 13px; color: #475569;">Με την αυτοματοποιημένη επιβεβαίωση από το EyeNet Traffic QC Engine, εκτιμάται ότι <strong>80–90%</strong> των υποψήφιων παραβάσεων θα επιβεβαιώνονται ή θα απορρίπτονται αυτόματα, χωρίς ανθρώπινη παρέμβαση. Μόνο οι αμφίβολες περιπτώσεις (10–20%) θα απαιτούν χειροκίνητη επαλήθευση από το προσωπικό της τροχαίας.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Ανεξάρτητος Ποιοτικός Έλεγχος</strong></p>
+          <p style="font-size: 13px; color: #475569;">Το EyeNet λειτουργεί ως ανεξάρτητος τρίτος κριτής — δεν εξαρτάται από το λογισμικό του εκάστοτε προμηθευτή καμερών. Αυτό διασφαλίζει ακεραιότητα και διαφάνεια στη διαδικασία, ενώ παράλληλα παρέχει συγκριτικά στατιστικά για την απόδοση κάθε προμηθευτή.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Πλήρης Ψηφιοποίηση της Διαδικασίας</strong></p>
+          <p style="font-size: 13px; color: #475569;">Από τη λήψη της εικόνας έως την πληρωμή του προστίμου — όλη η διαδικασία είναι ψηφιακή. Το EyeNet παρέχει το ενιαίο πληροφοριακό σύστημα που ενοποιεί κάμερες, φορητές συσκευές, βιντεοκλήσεις, πληρωμές και διαλειτουργικότητα με τρίτα συστήματα.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>GDPR & Νομική Συμμόρφωση</strong></p>
+          <p style="font-size: 13px; color: #475569;">Το EyeNet ενσωματώνει αυτοματοποιημένους ελέγχους για κάλυψη προσώπων εκτός πεδίου παράβασης, διασφαλίζοντας ότι κάθε εικόνα που προωθείται είναι νομικά έγκυρη. On-premises deployment, κρυπτογράφηση, audit trails — σχεδιασμένο εξ αρχής για ευαίσθητα δεδομένα.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Διαφάνεια & Λογοδοσία</strong></p>
+          <p style="font-size: 13px; color: #475569;">Κάθε απόφαση (αυτόματη ή ανθρώπινη) καταγράφεται με πλήρες audit trail. Το EyeNet παράγει αναλυτικές αναφορές για τη διαφάνεια της διαδικασίας — ποιος αποφάσισε, πότε, με ποια κριτήρια.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Κλιμάκωση & Μελλοντική Επέκταση</strong></p>
+          <p style="font-size: 13px; color: #475569;">Η αρχιτεκτονική microservices επιτρέπει την προσθήκη νέων καμερών, νέων τύπων παραβάσεων, και νέων προμηθευτών χωρίς αλλαγές στον πυρήνα του συστήματος. Το δικαίωμα προαίρεσης αύξησης φυσικού αντικειμένου (2.400.000 €) καλύπτεται πλήρως από την επεκτάσιμη αρχιτεκτονική του EyeNet.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. Επίλογος -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">7</span>
+        <h2>Σύνοψη</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Η πλατφόρμα EyeNet προσφέρει μια ολοκληρωμένη, δοκιμασμένη και επεκτάσιμη λύση για το έργο των ευφυών καμερών τροχαίας — συνδυάζοντας την παροχή του βασικού πληροφοριακού συστήματος με τη λειτουργία ανεξάρτητου μηχανισμού διασφάλισης ποιότητας.</div>
+
+      <p>Η πρόταση συνεισφοράς του EyeNet καλύπτει και τις τέσσερις διαστάσεις που απαιτεί το έργο:</p>
+      <ol>
+        <li><strong>Πληροφοριακό σύστημα-βάση και διαλειτουργικότητα</strong> με τα υποσυστήματα εντοπισμού — αξιοποιώντας την υπάρχουσα αρχιτεκτονική microservices και το δοκιμασμένο stack της πλατφόρμας.</li>
+        <li><strong>Ανεξάρτητο σύστημα επιβεβαίωσης</strong> που εγγυάται ανεξάρτητο ποιοτικό έλεγχο και δραστική μείωση της ανάγκης για χειροκίνητη επιβεβαίωση — μέσω προηγμένης μηχανικής όρασης.</li>
+        <li><strong>Υποσύστημα βιντεοκλήσεων και ψηφιακών ραντεβού</strong> για την εξ αποστάσεως εξέταση ενστάσεων — με ασφάλεια, καταγραφή και πλήρη ενσωμάτωση.</li>
+        <li><strong>Εφαρμογή Android για το προσωπικό στο πεδίο</strong> — ψηφιακή έκδοση προστίμων, σάρωση πινακίδων, offline λειτουργία, άμεση εκτύπωση.</li>
+      </ol>
+
+      <p style="margin-top: 20px;">Το EyeNet δεν είναι απλώς ένας ακόμη προμηθευτής λογισμικού — είναι μια <strong>ολοκληρωμένη πλατφόρμα</strong> που μπορεί να λειτουργήσει τόσο ως το κεντρικό πληροφοριακό σύστημα του έργου όσο και ως ο ανεξάρτητος εγγυητής της ποιότητας και της ακεραιότητας της διαδικασίας. Η διττή αυτή φύση — πάροχος υπηρεσιών και ανεξάρτητος κριτής — καθιστά το EyeNet τον ιδανικό τεχνολογικό συνεργάτη για ένα έργο εθνικής εμβέλειας που απαιτεί αξιοπιστία, διαφάνεια και κλιμάκωση.</p>
+
+      <p class="footer-note">Το παρόν έγγραφο συντάχθηκε από την ομάδα της πλατφόρμας EyeNet για ενημερωτικούς σκοπούς και αποτελεί πρόταση τεχνικής συνεισφοράς. Οι προδιαγραφές και η διαθεσιμότητα των υπηρεσιών υπόκεινται σε αλλαγές.</p>
+    </section>
+  </div>
+</body>
+</html>

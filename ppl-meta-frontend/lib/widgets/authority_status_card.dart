@@ -155,6 +155,36 @@ class _AuthorityStatusContent extends StatelessWidget {
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 8),
+              // VPN Mesh section
+              Row(
+                children: [
+                  Icon(status.vpnEnrolled ? Icons.vpn_lock : Icons.vpn_lock_outlined,
+                    color: status.vpnEnrolled ? Colors.green : Colors.grey,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    status.vpnEnrolled ? 'VPN Mesh Active' : 'VPN Not Enrolled',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: status.vpnEnrolled ? Colors.green : Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+              if (status.matrixGroupId != null && status.matrixGroupId!.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Matrix: ${status.matrixGroupId!.substring(0, 12)}...',
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Server: ${status.headscaleServer ?? "vpn.eyenet-vision.com"}',
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+              ],
+              const SizedBox(height: 12),
               _DetailRow(label: 'Authority enabled', value: _boolLabel(status.enabled)),
               _DetailRow(label: 'Authority configured', value: _boolLabel(status.configured)),
               _DetailRow(

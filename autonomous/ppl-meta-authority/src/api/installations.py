@@ -29,6 +29,7 @@ class InstallationRecord(BaseModel):
     offline_grace_days: int
     tenant_name: str | None = None
     notes: str | None = None
+    installation_name: str | None = None
 
 
 class EntitlementRecord(BaseModel):
@@ -59,6 +60,7 @@ class InstallationUpsertRequest(BaseModel):
     warning_started_at: str | None = None
     offline_grace_days: int = Field(default=14, ge=0)
     tenant_name: str | None = None
+    installation_name: str | None = None
     notes: str | None = None
 
 

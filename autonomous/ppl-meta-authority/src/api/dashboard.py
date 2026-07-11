@@ -31,6 +31,7 @@ class DashboardInstallation(BaseModel):
     entitlement_uuid: str
     installation_uuid: str | None = None
     application_key: str
+    licence_name: str | None = None
     approved_owner_email: str
     owner_enabled: bool
     licence_status: str
@@ -40,6 +41,7 @@ class DashboardInstallation(BaseModel):
     tenant_name: str | None = None
     activation_status: str
     notes: str | None = None
+    matrix_group_id: str | None = None
 
 
 class ResellerOwnerSummary(BaseModel):

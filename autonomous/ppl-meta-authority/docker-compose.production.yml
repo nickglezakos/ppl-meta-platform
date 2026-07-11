@@ -14,6 +14,25 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - authority-net
+
+  headscale:
+    image: headscale/headscale:0.28.0
+    container_name: authority-headscale
+    restart: unless-stopped
+    command: headscale serve
+    volumes:
+      - headscale-config:/etc/headscale
+      - headscale-data:/var/lib/headscale
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:50443:50443"
+      - "127.0.0.1:9090:9090"
+    environment:
+      - TZ=UTC
+    networks:
+      - authority-net
 
   ppl-meta-authority:
     image: ${AUTHORITY_IMAGE}
@@ -22,12 +41,17 @@ services:
     depends_on:
       authority-postgres:
         condition: service_healthy
+      headscale:
+        condition: service_started
     environment:
       AUTHORITY_DATABASE_URL: ${AUTHORITY_DATABASE_URL}
       AUTHORITY_ADMIN_TOKEN: ${AUTHORITY_ADMIN_TOKEN}
       AUTHORITY_BOOTSTRAP_ADMIN_ENABLED: ${AUTHORITY_BOOTSTRAP_ADMIN_ENABLED:-false}
       AUTHORITY_BASE_URL: ${AUTHORITY_BASE_URL:-}
       AUTHORITY_PUBLIC_BASE_URL: ${AUTHORITY_PUBLIC_BASE_URL:-}
+      HEADSCALE_CLI: ${HEADSCALE_CLI:-docker exec authority-headscale headscale}
+      HEADSCALE_API_KEY: ${HEADSCALE_API_KEY:-}
+      HEADSCALE_ACL_PATH: ${HEADSCALE_ACL_PATH:-/etc/headscale/acl.json}
       MAIL_SERVER: ${MAIL_SERVER:-}
       MAIL_PORT: ${MAIL_PORT:-587}
       MAIL_USERNAME: ${MAIL_USERNAME:-}
@@ -37,8 +61,19 @@ services:
       MAIL_STARTTLS: ${MAIL_STARTTLS:-true}
       MAIL_SSL_TLS: ${MAIL_SSL_TLS:-false}
       USE_CREDENTIALS: ${USE_CREDENTIALS:-true}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - headscale-config:/etc/headscale:ro
     ports:
       - "${AUTHORITY_PORT:-8000}:8000"
+    networks:
+      - authority-net
 
 volumes:
   authority-postgres-data:
+  headscale-config:
+  headscale-data:
+
+networks:
+  authority-net:
+    driver: bridge

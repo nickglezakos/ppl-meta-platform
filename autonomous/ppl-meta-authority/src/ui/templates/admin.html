@@ -304,6 +304,7 @@
                       </label>
                     </div>
                     <label>Tenant name<input id="tenant_name" value="New Tenant"></label>
+                    <label>Installation name<input id="installation_name_admin" placeholder="e.g. Athens HQ Gateway"></label>
                     <label>Notes<textarea id="notes">Created from the authority control shell.</textarea></label>
                     <div class="actions">
                       <button type="button" id="createEntitlementButton">Create entitlement</button>
@@ -424,6 +425,15 @@
               <div class="actions">
                 <button type="button" id="updateEntitlementStatusButton">Update entitlement status</button>
               </div>
+            </div>
+
+            <div class="feature-card">
+              <h3>VPN Mesh</h3>
+              <div class="small">Each entitlement is linked to a Matrix group (VPN mesh). Devices enrolled under the same entitlement can communicate peer-to-peer via Tailscale/WireGuard.</div>
+              <div class="actions" style="margin-bottom:0.5rem;">
+                <button type="button" id="loadVpnEntitlementsButton">Load entitlements with VPN status</button>
+              </div>
+              <div id="vpnEntitlementsList" class="activity-list empty-list">No entitlements loaded yet. Click the button above to load.</div>
             </div>
 
             <div class="feature-card">

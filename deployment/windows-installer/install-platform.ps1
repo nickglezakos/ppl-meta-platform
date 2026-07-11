@@ -161,33 +161,9 @@ $env:POSTGRES_PASSWORD = Get-RequiredEnvValue \
     -Secure \
     -PersistPath $EnvFile
 
-$env:REGISTRY_USERNAME = Get-RegistryCredentialValue \
-    -CurrentValue $env:REGISTRY_USERNAME \
-    -Prompt "Enter registry username" \
-    -DefaultValue "nickglezakos"
-
-$env:REGISTRY_PASSWORD = Get-RegistryCredentialValue \
-    -CurrentValue $env:REGISTRY_PASSWORD \
-    -Prompt "Enter registry token or password" \
-    -Secure
-
-if (-not $env:REGISTRY_USERNAME -or -not $env:REGISTRY_PASSWORD) {
-    throw "Registry username and token are required to continue."
-}
-
-if (-not $env:REGISTRY_USERNAME) {
-    throw "Registry username is required to continue."
-}
-
-Set-Or-ReplaceEnvValue -Path $EnvFile -Key "REGISTRY_USERNAME" -Value $env:REGISTRY_USERNAME
-
-$registryHost = $registry -replace '/.*$', ''
 $env:COMPOSE_PROJECT_NAME = "pplmeta"
 
-Write-Host "Logging into registry $registryHost"
-$env:REGISTRY_PASSWORD | docker login $registryHost --username $env:REGISTRY_USERNAME --password-stdin
-
-Write-Host "Pulling pinned images"
+Write-Host "Pulling images (public registry, no login required)"
 docker compose --env-file $EnvFile -f $ComposeFile pull
 
 Write-Host "Starting stack"

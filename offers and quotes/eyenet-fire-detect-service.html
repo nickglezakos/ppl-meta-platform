@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EyeNet Fire Detect — Σύστημα Πυρανίχνευσης Δασικών Περιοχών</title>
+  <meta name="author" content="nick@eyenet-vision.com" />
+  <meta name="copyright" content="eyenet-vision.com" />
+  <link rel="canonical" href="https://eyenet-vision.com" />
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+    * { box-sizing: border-box; }
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    body { margin: 0; }
+    .page { max-width: var(--max-width); margin: 0 auto; padding: 32px 24px 72px; }
+    .print-bar { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+    .print-button {
+      border: 0; border-radius: 999px; padding: 12px 18px;
+      background: var(--brand-primary); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                  linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14); border-radius: 32px;
+      box-shadow: var(--shadow); overflow: hidden; position: relative; color: var(--text);
+    }
+    .hero::after {
+      content: ""; position: absolute; inset: auto -80px -80px auto;
+      width: 220px; height: 220px; border-radius: 50%; background: rgba(25, 118, 210, 0.26);
+    }
+    .hero-inner { display: grid; grid-template-columns: 1.35fr 0.9fr; gap: 28px; padding: 34px; position: relative; z-index: 1; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14); color: var(--brand-secondary);
+      font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1 { margin: 18px 0 16px; font-size: 42px; line-height: 1.05; letter-spacing: -0.03em; }
+    .lead { font-size: 18px; color: #334155; max-width: 62ch; }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+    .brand-stack { display: flex; align-items: center; gap: 14px; }
+    .brand-stack img { height: 36px; width: auto; }
+    .brand-chip {
+      padding: 8px 12px; border: 1px solid rgba(34, 211, 238, 0.24); border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9); color: #eef9ff; font-size: 13px; font-weight: 600;
+    }
+    .meta-card, .section {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04); border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px; align-self: start; color: var(--text);
+    }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+    .meta-item { padding-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+    .meta-label { display: block; margin-bottom: 6px; color: #9fb0c3; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .meta-value { font-size: 15px; font-weight: 600; color: #ffffff; }
+    .section { margin-top: 24px; padding: 28px; border-color: var(--panel-line); background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%); }
+    .section-title { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .section-number {
+      width: 34px; height: 34px; border-radius: 50%; display: inline-grid; place-items: center;
+      background: rgba(25, 118, 210, 0.1); color: var(--brand-primary); font-weight: 700;
+    }
+    h2 { margin-bottom: 0; font-size: 24px; letter-spacing: -0.02em; }
+    h3 { margin-bottom: 10px; font-size: 18px; }
+    ul, ol { margin: 0; padding-left: 20px; }
+    li + li { margin-top: 8px; }
+    .callout {
+      padding: 18px 20px; border-left: 4px solid var(--brand-secondary); border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent); color: #f5fbff; font-weight: 600;
+    }
+    .footer-note { margin-top: 18px; color: #64748b; font-size: 13px; }
+    .grid-two { display: grid; gap: 22px; margin-top: 24px; grid-template-columns: 1.15fr 0.85fr; }
+    .summary-card {
+      padding: 22px; border-color: var(--panel-line); background: #ffffff;
+      border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .summary-card strong { color: #0f172a; }
+    .summary-card p:last-child { margin-bottom: 0; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .badge {
+      display: inline-flex; align-items: center; padding: 4px 12px;
+      border-radius: 999px; font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
+      background: rgba(25, 118, 210, 0.08); color: var(--brand-primary);
+      border: 1px solid rgba(25, 118, 210, 0.18);
+    }
+    .badge.mode { background: rgba(34, 211, 238, 0.08); color: #0891b2; border-color: rgba(34, 211, 238, 0.18); }
+    .badge.user { background: rgba(245, 158, 11, 0.08); color: #b45309; border-color: rgba(245, 158, 11, 0.18); }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid rgba(15, 23, 42, 0.08); }
+    th { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+    td { font-size: 14px; }
+    .arch-diagram {
+      font-family: "Courier New", monospace; font-size: 11px; line-height: 1.35;
+      white-space: pre; color: #f5fbff; margin: 0;
+    }
+    @page { size: A4; margin: 12mm; }
+    @media (max-width: 920px) {
+      .hero-inner, .grid-two { grid-template-columns: 1fr; }
+      h1 { font-size: 34px; }
+      .page { padding: 18px 16px 54px; }
+    }
+    @media print {
+      html { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page { max-width: none; padding: 0; }
+      .print-bar { display: none; }
+      .hero, .meta-card, .section, .summary-card { box-shadow: none; break-inside: avoid; }
+      .hero {
+        margin-bottom: 12px;
+        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                    linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+        color: #ffffff; border-color: rgba(34, 211, 238, 0.14);
+      }
+      .meta-card { background: rgba(255, 255, 255, 0.04); color: #ffffff; border-color: rgba(34, 211, 238, 0.12); }
+      .brand-chip, .callout { color: #f5fbff; }
+      .brand-link, .meta-label { color: inherit; }
+      .section { margin-top: 12px; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button" onclick="window.print()">Εκτύπωση / Αποθήκευση ως PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="../ppl-meta-frontend/assets/images/eyenet-dark.svg" alt="EyeNet logo" />
+              <span class="brand-chip">Application Suite</span>
+            </div>
+          </div>
+          <span class="eyebrow">Εξειδικευμένη Εφαρμογή Πυρανίχνευσης</span>
+          <h1>EyeNet Fire Detect</h1>
+          <p style="color: #d1d9e6; font-size: 15px; margin-top: 8px;">Ολοκληρωμένο Σύστημα Έγκαιρης Προειδοποίησης Δασικής Πυρκαγιάς με Τεχνητή Νοημοσύνη</p>
+          <p style="color: #9fb0c3; font-size: 13px; margin-top: 12px;">
+            <span style="margin-right: 20px;">eyenet-vision.com</span>
+            <span>nick@eyenet-vision.com</span>
+          </p>
+        </div>
+        <aside class="meta-card">
+          <h3>Στοιχεία Εγγράφου</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Τύπος</span>
+              <span class="meta-value">Πρόταση Υλοποίησης</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Ημερομηνία</span>
+              <span class="meta-value">Ιούλιος 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Τοποθεσία</span>
+              <span class="meta-value">Τοποθεσία</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Σταθμοί</span>
+              <span class="meta-value">3 Αυτόνομοι Σταθμοί</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <!-- 1. Αντικείμενο του Έργου -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Αντικείμενο του Έργου</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Δημιουργία ενός ολοκληρωμένου συστήματος πυρανίχνευσης για την έγκαιρη προειδοποίηση δασικής πυρκαγιάς στη δομή προσφύγων που κατασκευάζεται στη δασική περιοχή στην τοποθεσία του έργου.</div>
+      <p class="lead">Το έργο αφορά την εγκατάσταση τριών (3) αυτόνομων συστημάτων επιτήρησης και εντοπισμού πυρκαγιάς που θα εξασφαλίζουν την έγκαιρη προειδοποίηση και την αποτροπή επέκτασης πυρκαγιάς. Κάθε σταθμός λειτουργεί ως ανεξάρτητος κόμβος επιτήρησης, αξιοποιώντας κάμερες πολύ υψηλής ανάλυσης, αλγόριθμους Τεχνητής Νοημοσύνης και αυτόνομα συστήματα ενέργειας και επικοινωνιών.</p>
+
+      <h3>Κύρια Χαρακτηριστικά των Συστημάτων</h3>
+      <div class="grid-two" style="grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
+        <div class="summary-card">
+          <p><strong>Θερμική Κάμερα PTZ</strong></p>
+          <p style="font-size: 13px; color: #475569;">Πολύ υψηλής ανάλυσης, με δυνατότητες περιστροφής (Pan-Tilt-Zoom) και υψηλές επιδόσεις μεγέθυνσης εικόνας για εντοπισμό θερμικών υπογραφών σε μεγάλες αποστάσεις.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Οπτική Κάμερα Ανίχνευσης Καπνού</strong></p>
+          <p style="font-size: 13px; color: #475569;">Εντοπίζει και αναγνωρίζει καπνό σε απόσταση τουλάχιστον 7 χλμ. περιμετρικά από τη θέση εγκατάστασης, επιτρέποντας έγκαιρη ανίχνευση πριν η φωτιά γίνει ορατή.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Σταθμός Εντοπισμού Πυρκαγιών</strong></p>
+          <p style="font-size: 13px; color: #475569;">Δυνατότητες αυτόματης σάρωσης, ιχνηλασία πιθανής απειλής, επεξεργασία εικόνας και ροής βίντεο με αλγόριθμους Τεχνητής Νοημοσύνης για άμεση ανίχνευση και ταξινόμηση συμβάντων.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Σύστημα Επικοινωνιών</strong></p>
+          <p style="font-size: 13px; color: #475569;">Υποστηρίζει συστήματα κινητής τηλεφωνίας (4G/5G) και δορυφορική σύνδεση ως εφεδρικό κανάλι, διασφαλίζοντας αδιάλειπτη μετάδοση δεδομένων ακόμα και σε απομακρυσμένες περιοχές.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Σύστημα Παροχής Ενέργειας</strong></p>
+          <p style="font-size: 13px; color: #475569;">Αυτόνομη ηλεκτρική τροφοδοσία όλων των συσκευών του σταθμού και του συστήματος αποτροπής κλοπών με αυτονομία τουλάχιστον τριών (3) ημερών μέσω φωτοβολταϊκών και συσσωρευτών.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Σύστημα Ασφαλείας</strong></p>
+          <p style="font-size: 13px; color: #475569;">Πίνακας συναγερμού, συσκευές επιτήρησης του χώρου και περιμετρική περίφραξη για αποτροπή βανδαλισμών και κλοπών του εξοπλισμού.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Που Εντάσσεται το EyeNet -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>Που Εντάσσεται το EyeNet στο Έργο</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Το EyeNet λειτουργεί ως το κεντρικό λογισμικό πλατφόρμα που ενοποιεί το σύνολο του συστήματος πυρανίχνευσης — από τη λήψη εικόνας μέχρι την αυτοματοποιημένη ειδοποίηση των αρμόδιων αρχών.</div>
+
+      <h3>Υφιστάμενες Δυνατότητες της Πλατφόρμας που Αξιοποιούνται</h3>
+      <table>
+        <tr><th>Υφιστάμενο Component</th><th>Ρόλος στο EyeNet Fire Detect</th></tr>
+        <tr><td><strong>eyenet-cameras</strong></td><td>Καταγραφή και διαχείριση των θερμικών και οπτικών καμερών — RTSP/ONVIF ingestion, προφίλ εγγραφής, έλεγχος υγείας συνδέσεων, διαχείριση ροών βίντεο</td></tr>
+        <tr><td><strong>eyenet-node</strong></td><td>Αυθεντικοποίηση χρηστών, έλεγχος αδειών χρήσης (licensing), tenant scoping για πολυ-εγκαταστασιακά περιβάλλοντα</td></tr>
+        <tr><td><strong>eyenet-orchestrator</strong></td><td>Μηχανισμός κανόνων και ενεργειών — "αν εντοπιστεί φωτιά → στείλε ειδοποίηση σε Slack/Email/SMS, ενεργοποίησε σειρήνα, ενημέρωσε την Πυροσβεστική"</td></tr>
+        <tr><td><strong>eyenet-media</strong></td><td>Αποθήκευση εικόνων και βίντεο, αρχειοθέτηση στιγμιότυπων συμβάντων πυρκαγιάς, διαχείριση συλλογών για εκπαίδευση μοντέλων AI</td></tr>
+        <tr><td><strong>eyenet-matrix</strong></td><td>Συγκεντρωτική αναφορά και παρακολούθηση πολλαπλών εγκαταστάσεων — ενιαία εικόνα και για τους τρεις σταθμούς από ένα dashboard</td></tr>
+        <tr><td><strong>eyenet-authority</strong></td><td>Διαχείριση αδειών χρήσης (licence features όπως <code>eyenet_fire_detect</code>, <code>fire_detect_multi_station</code>)</td></tr>
+        <tr><td><strong>eyenet-frontend</strong></td><td>Dashboard παρακολούθησης, ζωντανή απεικόνιση ροών με επισημάνσεις, gallery συμβάντων, αναφορές, ειδοποιήσεις σε πραγματικό χρόνο</td></tr>
+        <tr><td><strong>eyenet-edge-camera</strong> (πρότυπο)</td><td>Edge client για προ-επεξεργασία εικόνας και αναμετάδοση ροής από τον κάθε απομακρυσμένο σταθμό προς τον κεντρικό κόμβο</td></tr>
+        <tr><td><strong>eyenet-vmeta</strong> (πρότυπο)</td><td>Πρότυπο ML orchestration — το EyeNet Fire Detect ακολουθεί ανάλογη αρχιτεκτονική για την εκτέλεση μοντέλων ανίχνευσης φωτιάς και καπνού</td></tr>
+      </table>
+
+      <h3 style="margin-top: 24px;">Τι Νέο Φέρνει το EyeNet Fire Detect</h3>
+      <table>
+        <tr><th>Νέο Στοιχείο</th><th>Σκοπός</th></tr>
+        <tr><td><strong>eyenet-fire-detect</strong></td><td>Φιλοξενεί το μοντέλο ανίχνευσης φωτιάς και καπνού, διαχειρίζεται τον έλεγχο PTZ για αυτόματη σάρωση, εκτελεί inference σε πραγματικό χρόνο, αποθηκεύει καταγραφές συμβάντων πυρκαγιάς</td></tr>
+        <tr><td><strong>Μοντέλο ανίχνευσης φωτιάς/καπνού</strong></td><td>Εξειδικευμένο μοντέλο βαθιάς μάθησης (CNN/Transformer) εκπαιδευμένο σε δεδομένα δασικών πυρκαγιών — ανιχνεύει καπνό έως και 7 km απόσταση και θερμικές υπογραφές φλόγας</td></tr>
+        <tr><td><strong>Λογική αυτόματης σάρωσης PTZ</strong></td><td>Προγραμματιζόμενες διαδρομές σάρωσης 360°, δυναμική εστίαση σε ύποπτες περιοχές, επιβεβαίωση συναγερμού με zoom-in, αυτόματη ιχνηλασία κινούμενου καπνού</td></tr>
+        <tr><td><strong>Sensor fusion engine</strong></td><td>Συνδυασμός δεδομένων από θερμική και οπτική κάμερα για μείωση ψευδών συναγερμών — ένα συμβάν επιβεβαιώνεται μόνο όταν ανιχνεύεται και από τα δύο κανάλια</td></tr>
+        <tr><td><strong>Fire Detect dashboard</strong></td><td>Ειδική προβολή στο EyeNet frontend: χάρτης με θέσεις σταθμών, ζωντανή εικόνα από όλους τους σταθμούς σε πλέγμα, λίστα ενεργών ειδοποιήσεων, ιστορικό συμβάντων, αναφορές επικινδυνότητας</td></tr>
+        <tr><td><strong>Edge Fire Detect Client</strong> (προαιρετικό, βασισμένο στο πρότυπο του <code>eyenet-edge-camera</code>)</td><td>Υπολογιστική μονάδα (Jetson Orin ή βιομηχανικό mini PC) εγκατεστημένη σε κάθε σταθμό — τρέχει το μοντέλο AI τοπικά, μειώνοντας την ανάγκη για συνεχή μετάδοση βίντεο υψηλής ανάλυσης μέσω δικτύου</td></tr>
+      </table>
+    </section>
+
+    <!-- 3. Αρχιτεκτονική Συστήματος -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Αρχιτεκτονική Συστήματος</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Το σύστημα οργανώνεται σε τρία διακριτά επίπεδα: τους Σταθμούς Πεδίου (3 σημεία επιτήρησης), το Επίπεδο Επικοινωνιών (4G/5G και δορυφορική σύνδεση), και τον Κεντρικό EyeNet Node (εγκατεστημένο στο κέντρο ελέγχου της δομής).</div>
+
+      <h3>Διάγραμμα Τοπολογίας</h3>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff; border-left-color: #1976d2;">
+        <pre class="arch-diagram">
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ΕΠΙΠΕΔΟ ΠΕΔΙΟΥ — Τρεις (3) Αυτόνομοι Σταθμοί Επιτήρησης                     │
+│                                                                              │
+│  ΣΤΑΘΜΟΣ 1 (Δυτικά)          ΣΤΑΘΜΟΣ 2 (Βόρεια)         ΣΤΑΘΜΟΣ 3 (Νότια)   │
+│  ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐ │
+│  │ Θερμική PTZ      │       │ Θερμική PTZ      │       │ Θερμική PTZ      │ │
+│  │ Οπτική (7km)     │       │ Οπτική (7km)     │       │ Οπτική (7km)     │ │
+│  │ Edge PC (AI)     │       │ Edge PC (AI)     │       │ Edge PC (AI)     │ │
+│  │ 4G/5G + Δορυφ.   │       │ 4G/5G + Δορυφ.   │       │ 4G/5G + Δορυφ.   │ │
+│  │ Φ/Β + Μπαταρίες  │       │ Φ/Β + Μπαταρίες  │       │ Φ/Β + Μπαταρίες  │ │
+│  │ Αντικλεπτική     │       │ Αντικλεπτική     │       │ Αντικλεπτική     │ │
+│  └────────┬─────────┘       └────────┬─────────┘       └────────┬─────────┘ │
+│           │                          │                          │           │
+└───────────┼──────────────────────────┼──────────────────────────┼───────────┘
+            │                          │                          │
+            │  4G/5G (κύριο)           │  4G/5G (κύριο)           │  4G/5G (κύριο)
+            │  Δορυφορική (εφεδρικό)   │  Δορυφορική (εφεδρικό)   │  Δορυφορική (εφεδρικό)
+            │                          │                          │
+┌───────────┼──────────────────────────┼──────────────────────────┼───────────┐
+│  ΕΠΙΠΕΔΟ ΕΠΙΚΟΙΝΩΝΙΩΝ              │                          │           │
+│                                      │                          │           │
+│  ┌──────────────────────────────────┴──────────────────────────┴─────────┐  │
+│  │  VPN Tunnel (WireGuard / Tailscale) — Ασφαλές κρυπτογραφημένο δίκτυο │  │
+│  └──────────────────────────────────┬────────────────────────────────────┘  │
+│                                     │                                      │
+└─────────────────────────────────────┼──────────────────────────────────────┘
+                                      │
+┌─────────────────────────────────────┼──────────────────────────────────────┐
+│  ΚΕΝΤΡΙΚΟΣ EYENET NODE (Κέντρο Ελέγχου Δομής)                             │
+│                                     │                                      │
+│  ┌──────────────────────────────────┴──────────────────────────────────┐  │
+│  │  eyenet-node (Auth, Licensing, Tenant Management)                    │ │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │  eyenet-cameras (Camera Registry, Stream Management, Recording)      │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │  eyenet-fire-detect (Fire Detection Engine, PTZ Control, AI Model)  │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │  eyenet-orchestrator (Alert Rules, Notification Pipeline)            │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │  eyenet-media (Event Storage, Snapshot Archive, Training Data)       │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │  eyenet-matrix (Multi-Station Aggregated Dashboard)                  │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │  eyenet-frontend (Live Monitoring, Alerts, Reports, Maps)            │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│                                                                          │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │  Εξωτερικές Διασυνδέσεις:                                            │ │
+│  │  • Email / SMS Gateway → Αυτόματες ειδοποιήσεις σε αρμόδιους φορείς │ │
+│  │  • API Webhook → Διασύνδεση με Πυροσβεστική / Πολιτική Προστασία    │ │
+│  │  • Mobile Push → Εφαρμογή EyeNet Mobile για επιτόπιους χειριστές    │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+        </pre>
+      </div>
+
+      <h3>Ροή Λειτουργίας</h3>
+      <ol>
+        <li><strong>Συνεχής σάρωση</strong>: Κάθε σταθμός εκτελεί προγραμματισμένη σάρωση 360° με την κάμερα PTZ, εναλλάσσοντας μεταξύ θερμικής και οπτικής λήψης.</li>
+        <li><strong>Τοπική ανάλυση (Edge AI)</strong>: Ο ενσωματωμένος υπολογιστής (Edge PC) κάθε σταθμού αναλύει τοπικά τις εικόνες σε πραγματικό χρόνο, αναζητώντας ενδείξεις καπνού ή θερμικές ανωμαλίες.</li>
+        <li><strong>Ανίχνευση & Επαλήθευση</strong>: Όταν το μοντέλο AI εντοπίσει ύποπτο συμβάν, ο σταθμός εκτελεί αυτόματα zoom-in στην περιοχή ενδιαφέροντος και διασταυρώνει το εύρημα μέσω sensor fusion (θερμικό + οπτικό).</li>
+        <li><strong>Μετάδοση συμβάντος</strong>: Εφόσον το συμβάν επιβεβαιωθεί, αποστέλλεται άμεσα στον Κεντρικό EyeNet Node μέσω του VPN tunnel, μαζί με στιγμιότυπα, συντεταγμένες και μεταδεδομένα.</li>
+        <li><strong>Ειδοποίηση & Δράση</strong>: Ο orchestrator ενεργοποιεί το προκαθορισμένο πλάνο ειδοποιήσεων — email/SMS/τηλεφωνική κλήση προς τους υπεύθυνους, webhook προς Πυροσβεστική, ενεργοποίηση σειρήνας στη δομή.</li>
+        <li><strong>Συνεχής ιχνηλασία</strong>: Ο σταθμός που εντόπισε το συμβάν συνεχίζει να παρακολουθεί την εξέλιξη του φαινομένου, παρέχοντας ζωντανή ενημέρωση για την κατεύθυνση και την ταχύτητα εξάπλωσης.</li>
+      </ol>
+    </section>
+
+    <!-- 4. Το EyeNet Fire Detect ως Εξειδικευμένο Service -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>Το EyeNet Fire Detect ως Εξειδικευμένο Service</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Το EyeNet Fire Detect είναι ένα νέο microservice της πλατφόρμας EyeNet, σχεδιασμένο ειδικά για εφαρμογές πυρανίχνευσης δασικών περιοχών. Ακολουθεί την ίδια αρχιτεκτονική φιλοσοφία με το EyeNet Inspect — δύο επίπεδα επεξεργασίας (hot path για real-time ανίχνευση, warm path για API και διαχείριση) — προσαρμοσμένη στις μοναδικές απαιτήσεις της ανίχνευσης φωτιάς σε μεγάλες αποστάσεις.</div>
+
+      <h3>Αρχιτεκτονική Δύο Επιπέδων</h3>
+      <table>
+        <tr><th>Επίπεδο</th><th>Διαδρομή</th><th>Περιγραφή</th></tr>
+        <tr><td><strong>Hot Path — Μηχανή Ανίχνευσης</strong></td><td>Άμεση (real-time)</td><td>Τρέχει στον Edge PC κάθε σταθμού. Λαμβάνει ροές από τη θερμική και την οπτική κάμερα, εκτελεί προ-επεξεργασία εικόνας και inference μέσω του μοντέλου AI. Ελέγχει την PTZ για αυτόματη σάρωση και ιχνηλασία. Παράγει άμεσα συμβάντα ανίχνευσης χωρίς εξάρτηση από το δίκτυο.</td></tr>
+        <tr><td><strong>Warm Path — API Διαχείρισης</strong></td><td>Ασύγχρονη</td><td>REST API (FastAPI/Python) που εκτελείται είτε στον Edge PC είτε στον κεντρικό EyeNet Node. Διαχειρίζεται τη ρύθμιση των σταθμών, την αποθήκευση συμβάντων, την παραγωγή αναφορών και την επικοινωνία με τον orchestrator για την ενεργοποίηση ειδοποιήσεων.</td></tr>
+      </table>
+
+      <h3 style="margin-top: 24px;">Συνοπτικές Λειτουργίες EyeNet Fire Detect</h3>
+      <p>Το EyeNet Fire Detect προσφέρει ένα ολοκληρωμένο σύνολο δυνατοτήτων σχεδιασμένων ειδικά για την ανίχνευση και έγκαιρη προειδοποίηση δασικών πυρκαγιών σε απομακρυσμένες περιοχές:</p>
+      <table>
+        <tr><th>Χαρακτηριστικό</th><th>Περιγραφή</th></tr>
+        <tr><td><strong>Αντικείμενο ανίχνευσης</strong></td><td>Καπνός, φλόγα, θερμικές ανωμαλίες σε φυσικό δασικό περιβάλλον</td></tr>
+        <tr><td><strong>Απόσταση ανίχνευσης</strong></td><td>Έως 7 km με οπτική κάμερα υψηλής ανάλυσης και τηλεσκοπικό zoom</td></tr>
+        <tr><td><strong>Τύπος καμερών</strong></td><td>1× Θερμική PTZ υψηλής ανάλυσης + 1× Οπτική κάμερα με δυνατότητα μεγέθυνσης για ανίχνευση καπνού σε μεγάλη απόσταση</td></tr>
+        <tr><td><strong>Συγχρονισμός</strong></td><td>Διαδοχική σάρωση 360° με PTZ, χρονική συσχέτιση θερμικών και οπτικών δεδομένων μέσω sensor fusion</td></tr>
+        <tr><td><strong>Ταχύτητα inference</strong></td><td>~100–300 ms ανά frame — επαρκές για την ανίχνευση φαινομένων που εξελίσσονται σε λεπτά, όχι σε χιλιοστά του δευτερολέπτου</td></tr>
+        <tr><td><strong>Επικοινωνίες</strong></td><td>4G/5G κινητή τηλεφωνία (κύριο) + Δορυφορική σύνδεση (εφεδρικό) — σχεδιασμένο για απομακρυσμένες περιοχές χωρίς σταθερή δικτυακή υποδομή</td></tr>
+        <tr><td><strong>Ενέργεια</strong></td><td>Αυτόνομο φωτοβολταϊκό σύστημα με συσσωρευτές βαθέως κύκλου, αυτονομία 3+ ημερών χωρίς ηλιοφάνεια</td></tr>
+        <tr><td><strong>Ασφάλεια σταθμού</strong></td><td>Περιμετρική περίφραξη, κάμερες ασφαλείας, πίνακας συναγερμού, ενσωμάτωση με EyeNet Vradar και Presence για απομακρυσμένη επιτήρηση</td></tr>
+        <tr><td><strong>Περιβαλλοντική αντοχή</strong></td><td>Σχεδιασμένο για εξωτερική λειτουργία — αντοχή σε καιρικά φαινόμενα, σκόνη, υγρασία και ακραίες θερμοκρασίες</td></tr>
+      </table>
+    </section>
+
+    <!-- 5. Συστηματική Ροή AI & Ανίχνευσης -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>Συστηματική Ροή Τεχνητής Νοημοσύνης & Ανίχνευσης</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Η καρδιά του συστήματος είναι η συστηματική ροή AI που συνδυάζει δεδομένα από δύο κανάλια (θερμικό και οπτικό), τα επεξεργάζεται με μοντέλα βαθιάς μάθησης και παράγει αξιόπιστες ειδοποιήσεις με ελάχιστους ψευδείς συναγερμούς.</div>
+
+      <h3>Ανίχνευση Καπνού σε Μεγάλη Απόσταση</h3>
+      <p>Η οπτική κάμερα υψηλής ανάλυσης με δυνατότητα zoom αναλύει συνεχώς τον ορίζοντα για ενδείξεις καπνού. Το μοντέλο AI έχει εκπαιδευτεί σε χιλιάδες εικόνες δασικών πυρκαγιών και μπορεί να διακρίνει τον καπνό από άλλα φαινόμενα όπως σύννεφα, σκόνη, ή ομίχλη. Βασικά χαρακτηριστικά:</p>
+      <ul>
+        <li>Ανίχνευση καπνού σε απόσταση έως 7 χιλιόμετρα υπό κανονικές συνθήκες ορατότητας.</li>
+        <li>Διάκριση μεταξύ λευκού καπνού (πρώιμη φάση, καύση βλάστησης) και μαύρου καπνού (ενεργή φωτιά με υψηλή θερμοκρασία).</li>
+        <li>Ανάλυση κίνησης του καπνού για εκτίμηση κατεύθυνσης και ταχύτητας εξάπλωσης.</li>
+        <li>Μηχανισμός χρονικής επιβεβαίωσης: ο καπνός πρέπει να ανιχνευθεί σε τουλάχιστον 3 διαδοχικά frames πριν ενεργοποιηθεί συναγερμός — μειώνοντας τους ψευδείς συναγερμούς από παροδικά φαινόμενα.</li>
+      </ul>
+
+      <h3 style="margin-top: 24px;">Θερμική Ανάλυση</h3>
+      <p>Η θερμική κάμερα PTZ σαρώνει τον περιβάλλοντα χώρο αναζητώντας θερμικές ανωμαλίες — σημεία με θερμοκρασία σημαντικά υψηλότερη από το περιβάλλον. Βασικά χαρακτηριστικά:</p>
+      <ul>
+        <li>Ανίχνευση θερμικών hotspots ακόμα και πριν γίνουν ορατές φλόγες.</li>
+        <li>Αυτόματη βαθμονόμηση θερμοκρασιακού κατωφλίου με βάση την ώρα της ημέρας, την εποχή και τις καιρικές συνθήκες.</li>
+        <li>Παρακολούθηση εξέλιξης θερμικού αποτυπώματος για διάκριση μεταξύ πραγματικής φωτιάς και άλλων θερμών αντικειμένων (π.χ. εκτεθειμένος βράχος που θερμαίνεται από τον ήλιο).</li>
+        <li>Δυνατότητα μέτρησης θερμοκρασίας σε συγκεκριμένα σημεία ενδιαφέροντος μέσω του zoom της PTZ.</li>
+      </ul>
+
+      <h3 style="margin-top: 24px;">Sensor Fusion — Διασταύρωση Δεδομένων</h3>
+      <p>Ο αλγόριθμος sensor fusion συνδυάζει τα δεδομένα από τα δύο κανάλια για να επιβεβαιώσει ή να απορρίψει ένα πιθανό συμβάν:</p>
+      <ul>
+        <li><strong>Κανάλι 1 (Οπτικό)</strong>: Ανιχνεύει καπνό μέσω ανάλυσης υφής, χρώματος και κίνησης.</li>
+        <li><strong>Κανάλι 2 (Θερμικό)</strong>: Επιβεβαιώνει την ύπαρξη θερμικής ανωμαλίας στην ίδια γεωγραφική θέση.</li>
+        <li><strong>Μηχανισμός απόφασης</strong>: Συμβάν επιβεβαιώνεται μόνο όταν και τα δύο κανάλια συμφωνούν. Αν ένα μόνο κανάλι ανιχνεύσει κάτι, το συμβάν χαρακτηρίζεται ως "ύποπτο" και ο σταθμός εκτελεί επιπλέον σάρωση της περιοχής πριν ενεργοποιηθεί συναγερμός.</li>
+      </ul>
+
+      <h3 style="margin-top: 24px;">Αυτόματη Σάρωση & Ιχνηλασία</h3>
+      <p>Ο σταθμός εκτελεί προγραμματισμένη σάρωση 360° με την PTZ κάμερα, ακολουθώντας μια προκαθορισμένη διαδρομή που καλύπτει το σύνολο της περιμέτρου επιτήρησης. Χαρακτηριστικά:</p>
+      <ul>
+        <li>Πλήρης περιστροφή 360° σε προγραμματιζόμενα χρονικά διαστήματα (π.χ. κάθε 2–5 λεπτά).</li>
+        <li>Δυνατότητα ορισμού ζωνών προτεραιότητας — περιοχές υψηλότερου κινδύνου σαρώνονται συχνότερα.</li>
+        <li>Όταν ανιχνευθεί ύποπτο συμβάν, η σάρωση διακόπτεται και η PTZ εστιάζει αυτόματα στην περιοχή ενδιαφέροντος, εκτελώντας zoom-in για λεπτομερή ανάλυση.</li>
+        <li>Αν το συμβάν επιβεβαιωθεί, ο σταθμός εισέρχεται σε λειτουργία ιχνηλασίας — ακολουθεί την κίνηση του καπνού ή της φλόγας, παρέχοντας συνεχή ενημέρωση για την εξέλιξη του φαινομένου.</li>
+      </ul>
+
+      <h3 style="margin-top: 24px;">Εκπαίδευση και Βελτίωση του Μοντέλου AI</h3>
+      <p>Το μοντέλο AI βελτιώνεται συνεχώς μέσω ενός κύκλου ανατροφοδότησης:</p>
+      <ul>
+        <li>Κάθε επιβεβαιωμένο συμβάν καταγράφεται πλήρως (εικόνες, βίντεο, μεταδεδομένα) και τροφοδοτεί τη βάση δεδομένων εκπαίδευσης.</li>
+        <li>Οι ψευδείς συναγερμοί αναλύονται για να εντοπιστούν μοτίβα που πρέπει να αποκλειστούν.</li>
+        <li>Περιοδική επανεκπαίδευση του μοντέλου (ανά 3–6 μήνες) με τα νέα δεδομένα, βελτιώνοντας σταδιακά την ακρίβεια και μειώνοντας τους ψευδείς συναγερμούς.</li>
+        <li>Δυνατότητα χρήσης μεταφορικής μάθησης (transfer learning) για γρήγορη προσαρμογή του μοντέλου σε νέες γεωγραφικές περιοχές με διαφορετική βλάστηση και κλιματικές συνθήκες.</li>
+      </ul>
+    </section>
+
+    <!-- 6. Υποδομή Επικοινωνιών & Ενέργειας -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">6</span>
+        <h2>Υποδομή Επικοινωνιών & Ενέργειας</h2>
+      </div>
+
+      <h3>Σύστημα Επικοινωνιών</h3>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Η αδιάλειπτη επικοινωνία μεταξύ των σταθμών πεδίου και του κεντρικού EyeNet Node είναι κρίσιμη για την αξιοπιστία του συστήματος. Για αυτό υλοποιείται μια υβριδική αρχιτεκτονική με δύο ανεξάρτητα κανάλια επικοινωνίας.</div>
+
+      <table>
+        <tr><th>Κανάλι</th><th>Τεχνολογία</th><th>Ρόλος</th></tr>
+        <tr><td><strong>Κύριο</strong></td><td>4G / 5G κινητή τηλεφωνία</td><td>Μετάδοση δεδομένων σε πραγματικό χρόνο: εικόνες συμβάντων, μεταδεδομένα, ζωντανή ροή βίντεο χαμηλής ανάλυσης για το dashboard. Το 5G προσφέρει υψηλό bandwidth και χαμηλό latency όπου είναι διαθέσιμο.</td></tr>
+        <tr><td><strong>Εφεδρικό</strong></td><td>Δορυφορική σύνδεση (LEO — Starlink ή γεωστατικός δορυφόρος)</td><td>Ενεργοποιείται αυτόματα όταν το κύριο κανάλι δεν είναι διαθέσιμο. Μεταδίδει κρίσιμα δεδομένα συναγερμού και μεταδεδομένα — όχι συνεχή ροή βίντεο — για εξοικονόμηση bandwidth.</td></tr>
+        <tr><td><strong>VPN</strong></td><td>WireGuard / Tailscale</td><td>Όλη η επικοινωνία δρομολογείται μέσω κρυπτογραφημένου VPN tunnel, διασφαλίζοντας την ασφάλεια και την ιδιωτικότητα των δεδομένων ανεξαρτήτως καναλιού.</td></tr>
+      </table>
+
+      <p>Η εναλλαγή μεταξύ κυρίου και εφεδρικού καναλιού γίνεται αυτόματα και απρόσκοπτα χωρίς απώλεια δεδομένων. Όλα τα δεδομένα αποθηκεύονται τοπικά στον Edge PC του σταθμού και συγχρονίζονται μόλις αποκατασταθεί η σύνδεση.</p>
+
+      <h3 style="margin-top: 24px;">Σύστημα Παροχής Ενέργειας</h3>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Κάθε σταθμός είναι πλήρως ενεργειακά αυτόνομος, απαλλαγμένος από την ανάγκη σύνδεσης στο ηλεκτρικό δίκτυο — κρίσιμο χαρακτηριστικό για απομακρυσμένες δασικές περιοχές.</div>
+
+      <table>
+        <tr><th>Στοιχείο</th><th>Προδιαγραφές</th></tr>
+        <tr><td><strong>Φωτοβολταϊκά πάνελ</strong></td><td>Ισχύς κατάλληλη για την κάλυψη της ημερήσιας κατανάλωσης όλων των συσκευών του σταθμού και φόρτιση των συσσωρευτών με επαρκές περιθώριο ασφαλείας. Κλίση και προσανατολισμός βελτιστοποιημένα για τη γεωγραφική θέση της τοποθεσίας του έργου.</td></tr>
+        <tr><td><strong>Συσσωρευτές (μπαταρίες)</strong></td><td>Χωρητικότητα που εξασφαλίζει αυτονομία τουλάχιστον τριών (3) πλήρων ημερών λειτουργίας χωρίς ηλιοφάνεια. Τεχνολογία βαθέως κύκλου (deep cycle AGM ή LiFePO₄) για μακροχρόνια αξιοπιστία.</td></tr>
+        <tr><td><strong>Ρυθμιστής φόρτισης</strong></td><td>MPPT (Maximum Power Point Tracking) για μέγιστη απόδοση των φωτοβολταϊκών, με προστασία από υπερφόρτιση και βαθιά εκφόρτιση των συσσωρευτών.</td></tr>
+        <tr><td><strong>Inverter</strong></td><td>Καθαρό ημιτονοειδές κύμα για την τροφοδοσία ευαίσθητων ηλεκτρονικών συσκευών (κάμερες, Edge PC, δρομολογητές).</td></tr>
+        <tr><td><strong>Παρακολούθηση ενέργειας</strong></td><td>Αισθητήρες τάσης και ρεύματος συνδεδεμένοι στο EyeNet για απομακρυσμένη παρακολούθηση της κατάστασης φόρτισης, της παραγωγής και της κατανάλωσης σε πραγματικό χρόνο. Ειδοποιήσεις όταν η στάθμη των μπαταριών πέσει κάτω από κρίσιμο όριο.</td></tr>
+      </table>
+    </section>
+
+    <!-- 7. Σύστημα Ασφαλείας Σταθμών -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">7</span>
+        <h2>Σύστημα Ασφαλείας Σταθμών</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Η προστασία του εξοπλισμού από βανδαλισμούς και κλοπές είναι ουσιώδης για την αδιάλειπτη λειτουργία του συστήματος πυρανίχνευσης. Κάθε σταθμός ενσωματώνει ένα ολοκληρωμένο υποσύστημα φυσικής ασφάλειας, άμεσα συνδεδεμένο με την πλατφόρμα EyeNet.</div>
+
+      <h3>Στοιχεία του Συστήματος Ασφαλείας</h3>
+      <table>
+        <tr><th>Στοιχείο</th><th>Περιγραφή</th></tr>
+        <tr><td><strong>Περιμετρική περίφραξη</strong></td><td>Μεταλλική περίφραξη βαρέως τύπου γύρω από τον ιστό και τον εξοπλισμό του σταθμού, με ύψος τουλάχιστον 2 μέτρων και αντιαναρριχητική σχεδίαση.</td></tr>
+        <tr><td><strong>Πίνακας συναγερμού</strong></td><td>Κεντρική μονάδα ελέγχου ασφαλείας με ενσωματωμένη επικοινωνία προς τον Edge PC του σταθμού. Διαχειρίζεται όλους τους αισθητήρες και ενεργοποιεί την ηχητική/οπτική σήμανση.</td></tr>
+        <tr><td><strong>Αισθητήρες παραβίασης</strong></td><td>Μαγνητικές επαφές στην πύλη εισόδου, αισθητήρες κραδασμών στον ιστό, ανιχνευτές κίνησης (PIR) στον περιμετρικό χώρο. Κάθε παραβίαση καταγράφεται και ενεργοποιεί άμεση ειδοποίηση.</td></tr>
+        <tr><td><strong>Κάμερες επιτήρησης χώρου</strong></td><td>Επιπλέον κάμερες σταθερής εστίασης (διαφορετικές από τις κάμερες πυρανίχνευσης) που καλύπτουν τον χώρο του σταθμού. Συνδέονται στο eyenet-cameras και ενεργοποιούν καταγραφή με την ανίχνευση κίνησης.</td></tr>
+        <tr><td><strong>Συναγερμός ήχου & φωτός</strong></td><td>Ισχυρή σειρήνα και φάρος LED που ενεργοποιούνται σε περίπτωση παραβίασης, αποτρέποντας τον εισβολέα και ειδοποιώντας την γύρω περιοχή.</td></tr>
+        <tr><td><strong>Ενσωμάτωση με το EyeNet</strong></td><td>Το υποσύστημα ασφαλείας είναι πλήρως ενσωματωμένο στην πλατφόρμα EyeNet. Συμβάντα παραβίασης εμφανίζονται στο dashboard, ενεργοποιούν ειδοποιήσεις μέσω του orchestrator και καταγράφονται στο ιστορικό. Επιπλέον, οι υπηρεσίες <strong>EyeNet Vradar</strong> και <strong>EyeNet Presence</strong> μπορούν να αξιοποιηθούν για την απομακρυσμένη φύλαξη των σταθμών — το Vradar για κινητές περιπολίες με wearable κάμερες και το Presence για έλεγχο πρόσβασης και καταγραφή παρουσίας εξουσιοδοτημένου προσωπικού στον χώρο του σταθμού. Σε περίπτωση συναγερμού ασφαλείας, ο σταθμός συνεχίζει κανονικά τη λειτουργία πυρανίχνευσης — τα δύο υποσυστήματα είναι ανεξάρτητα.</td></tr>
+      </table>
+    </section>
+
+    <!-- 8. Φάσεις Υλοποίησης -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">8</span>
+        <h2>Φάσεις Υλοποίησης</h2>
+      </div>
+
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Οι παρακάτω φάσεις υλοποίησης είναι ενδεικτικές και θα διαμορφωθούν σύμφωνα με τις απαιτήσεις κάθε έργου και εγκατάστασης, λαμβάνοντας υπόψη τις ιδιαιτερότητες της τοποθεσίας, τη διαθεσιμότητα εξοπλισμού και τις ανάγκες του φορέα υλοποίησης.</div>
+
+      <h3>Φάση 1 — Μελέτη Εφαρμογής & Προμήθεια Εξοπλισμού (4–6 εβδομάδες)</h3>
+      <ul>
+        <li>Επιτόπια επίσκεψη και αξιολόγηση των τριών θέσεων εγκατάστασης στη δασική περιοχή της τοποθεσίας του έργου.</li>
+        <li>Ανάλυση ορατότητας και κάλυψης — προσδιορισμός των βέλτιστων σημείων τοποθέτησης για μέγιστη περιμετρική κάλυψη των 7 km.</li>
+        <li>Μελέτη ηλιακής ακτινοβολίας για διαστασιολόγηση των φωτοβολταϊκών συστημάτων.</li>
+        <li>Έλεγχος διαθεσιμότητας σήματος κινητής τηλεφωνίας και δορυφορικής κάλυψης σε κάθε θέση.</li>
+        <li>Προμήθεια εξοπλισμού: θερμικές κάμερες PTZ, οπτικές κάμερες υψηλής ανάλυσης, Edge PC (βιομηχανικά mini PC ή Jetson Orin), ιστοί και βάσεις στήριξης, φωτοβολταϊκά πάνελ και συσσωρευτές, εξοπλισμός δικτύου (4G/5G routers, δορυφορικά τερματικά), υλικά περίφραξης, πίνακες συναγερμού και αισθητήρες ασφαλείας.</li>
+        <li>Προετοιμασία του κεντρικού EyeNet Node (server) στο κέντρο ελέγχου της δομής.</li>
+      </ul>
+
+      <h3 style="margin-top: 24px;">Φάση 2 — Εγκατάσταση & Παραμετροποίηση (3–4 εβδομάδες)</h3>
+      <ul>
+        <li>Εγκατάσταση ιστών και περιμετρικής περίφραξης στις τρεις θέσεις.</li>
+        <li>Τοποθέτηση φωτοβολταϊκών πάνελ, συσσωρευτών και ηλεκτρολογικού εξοπλισμού.</li>
+        <li>Εγκατάσταση καμερών (θερμικών και οπτικών) στους ιστούς, ρύθμιση εστίασης και βαθμονόμηση.</li>
+        <li>Εγκατάσταση Edge PC, δρομολογητών 4G/5G και δορυφορικών τερματικών.</li>
+        <li>Εγκατάσταση και σύνδεση των υποσυστημάτων ασφαλείας (πίνακας συναγερμού, αισθητήρες, κάμερες επιτήρησης).</li>
+        <li>Εγκατάσταση και παραμετροποίηση του λογισμικού EyeNet στον κεντρικό Node και στους Edge PCs.</li>
+        <li>Δημιουργία του VPN δικτύου (WireGuard/Tailscale) που συνδέει όλους τους σταθμούς με τον κεντρικό Node.</li>
+        <li>Έλεγχος επικοινωνίας και μετάδοσης δεδομένων από κάθε σταθμό προς το κέντρο ελέγχου.</li>
+      </ul>
+
+      <h3 style="margin-top: 24px;">Φάση 3 — Εκπαίδευση Μοντέλου AI & Δοκιμές (3–4 εβδομάδες)</h3>
+      <ul>
+        <li>Συλλογή δεδομένων εκπαίδευσης: λήψη εικόνων από τις εγκατεστημένες κάμερες σε διάφορες συνθήκες (πρωί, μεσημέρι, απόγευμα, συννεφιά, βροχή).</li>
+        <li>Εμπλουτισμός του dataset με εικόνες δασικών πυρκαγιών και καπνού από δημόσιες βάσεις δεδομένων.</li>
+        <li>Εκπαίδευση του μοντέλου ανίχνευσης φωτιάς/καπνού με δεδομένα προσαρμοσμένα στο συγκεκριμένο περιβάλλον (μεσογειακή βλάστηση, νησιωτικό κλίμα).</li>
+        <li>Παραμετροποίηση των αλγορίθμων sensor fusion (θερμικό + οπτικό) και του μηχανισμού μείωσης ψευδών συναγερμών.</li>
+        <li>Δοκιμές πεδίου: προσομοίωση πυρκαγιών μικρής κλίμακας (ελεγχόμενες εστίες με άδεια των αρχών) για επαλήθευση της ανίχνευσης.</li>
+        <li>Ρύθμιση των διαδρομών σάρωσης PTZ και των ζωνών προτεραιότητας.</li>
+        <li>Διαμόρφωση των κανόνων ειδοποιήσεων στον orchestrator και δοκιμή όλων των καναλιών επικοινωνίας.</li>
+      </ul>
+
+      <h3 style="margin-top: 24px;">Φάση 4 — Θέση σε Λειτουργία & Υποστήριξη (2–3 εβδομάδες + συνεχιζόμενη)</h3>
+      <ul>
+        <li>Πιλοτική λειτουργία 2 εβδομάδων με παράλληλη ανθρώπινη επιτήρηση για επιβεβαίωση της αξιοπιστίας.</li>
+        <li>Εκπαίδευση του προσωπικού της δομής στη χρήση του dashboard, στην ερμηνεία των ειδοποιήσεων και στις διαδικασίες απόκρισης.</li>
+        <li>Παράδοση εγχειριδίων λειτουργίας και συντήρησης (στα Ελληνικά).</li>
+        <li>Επίσημη έναρξη λειτουργίας.</li>
+        <li>Παροχή τεχνικής υποστήριξης με συγκεκριμένο SLA (βλ. Ενότητα 9).</li>
+        <li>Περιοδική αξιολόγηση της απόδοσης του συστήματος και προτάσεις βελτίωσης.</li>
+      </ul>
+    </section>
+
+    <!-- 9. Υποστήριξη Τεχνικής Υπηρεσίας -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">9</span>
+        <h2>Υποστήριξη Τεχνικής Υπηρεσίας</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Το έργο περιλαμβάνει υποστήριξη Τεχνικής Υπηρεσίας από Σύμβουλο σε όλα τα στάδια της υλοποίησής του — από την αρχική μελέτη έως τη συνεχή λειτουργία.</div>
+
+      <h3>Ρόλος του Τεχνικού Συμβούλου</h3>
+      <table>
+        <tr><th>Στάδιο</th><th>Υπηρεσίες Συμβούλου</th></tr>
+        <tr><td><strong>Μελέτη & Σχεδιασμός</strong></td><td>Τεχνική καθοδήγηση για την επιλογή εξοπλισμού, αξιολόγηση θέσεων εγκατάστασης, σύνταξη τεχνικών προδιαγραφών, διασφάλιση συμβατότητας με την πλατφόρμα EyeNet.</td></tr>
+        <tr><td><strong>Προμήθεια</strong></td><td>Έλεγχος προσφορών προμηθευτών, τεχνική αξιολόγηση εναλλακτικών λύσεων, διασφάλιση ότι ο εξοπλισμός πληροί τις προδιαγραφές του έργου.</td></tr>
+        <tr><td><strong>Υλοποίηση</strong></td><td>Επίβλεψη της εγκατάστασης, επιτόπια υποστήριξη κατά την παραμετροποίηση, επίλυση τεχνικών προβλημάτων που προκύπτουν, διασφάλιση ποιότητας εργασιών.</td></tr>
+        <tr><td><strong>Θέση σε Λειτουργία</strong></td><td>Διενέργεια δοκιμών αποδοχής, εκπαίδευση προσωπικού, σύνταξη τεκμηρίωσης, υποστήριξη κατά την πιλοτική φάση.</td></tr>
+        <tr><td><strong>Συνεχής Λειτουργία</strong></td><td>Παρακολούθηση απόδοσης συστήματος, προληπτική συντήρηση λογισμικού, ενημερώσεις ασφαλείας, επανεκπαίδευση μοντέλων AI, τηλεφωνική και απομακρυσμένη υποστήριξη, επιτόπιες επισκέψεις όταν απαιτείται.</td></tr>
+      </table>
+
+      <h3 style="margin-top: 24px;">Επίπεδα Υποστήριξης (SLA)</h3>
+      <table>
+        <tr><th>Επίπεδο</th><th>Χρόνος Απόκρισης</th><th>Περιγραφή</th></tr>
+        <tr><td><strong>Κρίσιμο</strong></td><td>< 2 ώρες</td><td>Απώλεια λειτουργίας σταθμού ή αδυναμία ανίχνευσης — άμεση απομακρυσμένη διάγνωση και καθοδήγηση, επιτόπια επίσκεψη εντός 24 ωρών εάν απαιτείται.</td></tr>
+        <tr><td><strong>Υψηλό</strong></td><td>< 8 ώρες</td><td>Υποβάθμιση λειτουργίας (π.χ. ένα κανάλι κάμερας εκτός λειτουργίας, το εφεδρικό κανάλι αναλαμβάνει) — απομακρυσμένη διάγνωση και επίλυση.</td></tr>
+        <tr><td><strong>Μεσαίο</strong></td><td>< 24 ώρες</td><td>Μη κρίσιμα ζητήματα λογισμικού, ερωτήσεις χρήσης, αιτήματα ρύθμισης.</td></tr>
+        <tr><td><strong>Χαμηλό</strong></td><td>< 72 ώρες</td><td>Βελτιώσεις, προτάσεις, προγραμματισμένες εργασίες συντήρησης.</td></tr>
+      </table>
+    </section>
+
+    <!-- 10. Επίλογος -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">10</span>
+        <h2>Σύνοψη & Πλεονεκτήματα</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Το EyeNet Fire Detect προσφέρει μια ολοκληρωμένη, αξιόπιστη και δοκιμασμένη αρχιτεκτονικά λύση για την προστασία της δομής προσφύγων στην τοποθεσία του έργου από τον κίνδυνο δασικής πυρκαγιάς.</div>
+
+      <div class="grid-two" style="grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
+        <div class="summary-card">
+          <p><strong>Δοκιμασμένη Αρχιτεκτονική</strong></p>
+          <p style="font-size: 13px; color: #475569;">Το EyeNet Fire Detect βασίζεται στην ίδια αρχιτεκτονική microservices που χρησιμοποιείται ήδη σε εγκαταστάσεις EyeNet για βιομηχανικό έλεγχο — προσαρμοσμένη στις ανάγκες της πυρανίχνευσης.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>AI Αιχμής</strong></p>
+          <p style="font-size: 13px; color: #475569;">Μοντέλα βαθιάς μάθησης ειδικά εκπαιδευμένα για ανίχνευση καπνού σε μεγάλες αποστάσεις, με μηχανισμό sensor fusion για ελάχιστους ψευδείς συναγερμούς.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>On-Premises, Πλήρως Ιδιωτικό</strong></p>
+          <p style="font-size: 13px; color: #475569;">Καμία εξάρτηση από cloud υπηρεσίες για βίντεο ή δεδομένα. Όλη η επεξεργασία γίνεται τοπικά — στους Edge PCs των σταθμών και στον κεντρικό Node της δομής.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Πλήρης Αυτονομία</strong></p>
+          <p style="font-size: 13px; color: #475569;">Κάθε σταθμός είναι ενεργειακά αυτόνομος με φωτοβολταϊκά και μπαταρίες 3+ ημερών, με διπλό κανάλι επικοινωνίας (4G/5G + δορυφορικό) — σχεδιασμένος για απομακρυσμένες περιοχές χωρίς υποδομές.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Ολοκληρωμένη Ασφάλεια</strong></p>
+          <p style="font-size: 13px; color: #475569;">Περιμετρική περίφραξη, αισθητήρες, κάμερες ασφαλείας και πίνακας συναγερμού ενσωματωμένα στην πλατφόρμα EyeNet — ο εξοπλισμός προστατεύεται από βανδαλισμούς και κλοπές.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Ενιαία Εικόνα</strong></p>
+          <p style="font-size: 13px; color: #475569;">Όλοι οι σταθμοί παρακολουθούνται από ένα ενιαίο dashboard. Το EyeNet Matrix επιτρέπει συγκεντρωτική αναφορά, ενώ το σύστημα ειδοποιήσεων διασφαλίζει ότι κανένα συμβάν δεν περνά απαρατήρητο.</p>
+        </div>
+      </div>
+
+      <p style="margin-top: 24px;">Η πλατφόρμα EyeNet, με το εξειδικευμένο service Fire Detect, αποτελεί τον ιδανικό τεχνολογικό συνεργάτη για αυτό το έργο — συνδυάζοντας την τεχνογνωσία στην ανάπτυξη λογισμικού υπολογιστικής όρασης και Τεχνητής Νοημοσύνης με μια ολοκληρωμένη, δοκιμασμένη αρχιτεκτονική πλατφόρμα που καλύπτει όλες τις πτυχές του έργου: από τη λήψη εικόνας έως την αυτοματοποιημένη ειδοποίηση.</p>
+
+      <p class="footer-note">Το παρόν έγγραφο συντάχθηκε από την ομάδα της πλατφόρμας EyeNet για ενημερωτικούς σκοπούς και αποτελεί πρόταση τεχνικής λύσης. Οι προδιαγραφές και η διαθεσιμότητα των υπηρεσιών υπόκεινται σε αλλαγές.</p>
+    </section>
+  </div>
+</body>
+</html>

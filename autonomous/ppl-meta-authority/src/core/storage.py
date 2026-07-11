@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+import os
+import shlex
+import subprocess
 import uuid
 import json
 import secrets
@@ -9,6 +13,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from core.database import connect_database, get_database_settings
+
+logger = logging.getLogger(__name__)
 
 
 APPLICATION_KEY_PATTERN = re.compile(r"^lic_[0-9a-f]{32}$")
@@ -54,6 +60,7 @@ def _schema_statements() -> list[str]:
             installation_uuid TEXT,
             activation_status TEXT NOT NULL DEFAULT 'pending_activation',
             notes TEXT,
+            matrix_group_id TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -71,6 +78,7 @@ def _schema_statements() -> list[str]:
             offline_grace_days INTEGER NOT NULL DEFAULT 14,
             tenant_name TEXT,
             notes TEXT,
+            installation_name TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -185,12 +193,14 @@ def initialize_database() -> None:
         _ensure_column(connection, "authority_invitations", "email_delivery_attempted", "BOOLEAN NOT NULL DEFAULT FALSE")
         _ensure_column(connection, "authority_invitations", "email_delivered", "BOOLEAN NOT NULL DEFAULT FALSE")
         _ensure_column(connection, "authority_invitations", "email_delivery_message", "TEXT")
+        _ensure_column(connection, "entitlements", "matrix_group_id", "TEXT")
         _ensure_column(connection, "entitlements", "licence_name", "TEXT")
         _ensure_column(connection, "entitlements", "warning_period_days", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(connection, "entitlements", "warning_started_at", "TIMESTAMPTZ")
         _ensure_column(connection, "installations", "licence_name", "TEXT")
         _ensure_column(connection, "installations", "warning_period_days", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(connection, "installations", "warning_started_at", "TIMESTAMPTZ")
+        _ensure_column(connection, "installations", "installation_name", "TEXT")
         connection.execute(
             "UPDATE entitlements SET licence_name = COALESCE(licence_name, tenant_name, application_key)"
         )
@@ -200,6 +210,64 @@ def initialize_database() -> None:
         connection.commit()
 
     _migrate_installations_to_entitlements()
+
+
+def _ensure_matrix_group(entitlement_uuid: str) -> str:
+    """Ensure an entitlement has a matrix_group_id.
+
+    If the entitlement already has one, return it.
+    Otherwise, generate a new UUID, persist it, and provision
+    the corresponding Headscale user.
+
+    The headscale CLI is accessed via the HEADSCALE_CLI env var
+    (docker exec wrapper) or direct binary for local dev.
+    """
+    entitlement = get_entitlement_by_uuid(entitlement_uuid)
+    if entitlement is None:
+        raise ValueError(f"Entitlement not found: {entitlement_uuid}")
+
+    existing = entitlement.get("matrix_group_id")
+    if existing:
+        return existing
+
+    matrix_group_id = str(uuid.uuid4())
+
+    # Persist the matrix_group_id
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE entitlements SET matrix_group_id = ?, updated_at = CURRENT_TIMESTAMP WHERE entitlement_uuid = ?",
+            (matrix_group_id, entitlement_uuid),
+        )
+        connection.commit()
+
+    # Provision Headscale user namespace
+    headscale_cli = shlex.split(os.environ.get("HEADSCALE_CLI", "docker exec authority-headscale headscale"))
+    headscale_user = f"matrix-{matrix_group_id}"
+    try:
+        subprocess.run(
+            headscale_cli + ["users", "create", headscale_user],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=True,
+        )
+        logger.info("Headscale user created: %s", headscale_user)
+    except subprocess.CalledProcessError as exc:
+        logger.warning(
+            "Failed to create Headscale user %s (may already exist): %s",
+            headscale_user,
+            exc.stderr.strip() if exc.stderr else "no output",
+        )
+    except FileNotFoundError:
+        logger.warning("headscale CLI not available — user creation skipped")
+
+    logger.info(
+        "Matrix group %s auto-provisioned for entitlement %s",
+        matrix_group_id,
+        entitlement_uuid,
+    )
+
+    return matrix_group_id
 
 
 def _ensure_column(connection: Any, table_name: str, column_name: str, column_definition: str) -> None:
@@ -1320,6 +1388,19 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
     )
     if installation_uuid is None and existing_entitlement is not None:
         installation_uuid = existing_entitlement.get("installation_uuid")
+    # Auto-generate systemic UUID if no installation_uuid provided
+    if installation_uuid is None:
+        owner_email = record.get("approved_owner_email", "").lower()
+        if owner_email:
+            with _connect() as conn:
+                count_row = conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM entitlements WHERE lower(approved_owner_email) = lower(?)",
+                    (owner_email,),
+                ).fetchone()
+                existing_count = count_row["cnt"] if count_row else 0
+            installation_uuid = f"{owner_email}-{existing_count}"
+        else:
+            installation_uuid = None
     installation_uuid = installation_uuid or None
     licence_name = (
         record.get("licence_name")
@@ -1409,8 +1490,9 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                     warning_started_at,
                     offline_grace_days,
                     tenant_name,
-                    notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    notes,
+                    installation_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(installation_uuid) DO UPDATE SET
                     application_key = excluded.application_key,
                     licence_name = excluded.licence_name,
@@ -1422,6 +1504,7 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                     offline_grace_days = excluded.offline_grace_days,
                     tenant_name = excluded.tenant_name,
                     notes = excluded.notes,
+                    installation_name = COALESCE(excluded.installation_name, installations.installation_name),
                     updated_at = CURRENT_TIMESTAMP
                 """,
                 (
@@ -1436,6 +1519,7 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                     record["offline_grace_days"],
                     record.get("tenant_name"),
                     record.get("notes"),
+                    record.get("installation_name"),
                 ),
             )
 
@@ -1453,6 +1537,13 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
     stored_record = get_entitlement_by_uuid(entitlement_uuid)
     if stored_record is None:
         raise RuntimeError("Entitlement upsert failed")
+
+    # Auto-provision matrix group if not present
+    if not stored_record.get("matrix_group_id"):
+        try:
+            _ensure_matrix_group(stored_record["entitlement_uuid"])
+        except ValueError:
+            pass
 
     return stored_record
 
@@ -1625,6 +1716,23 @@ def delete_entitlement(entitlement_uuid: str) -> bool:
     entitlement = get_entitlement_by_uuid(entitlement_uuid)
     if entitlement is None:
         return False
+
+    # Clean up VPN mesh (headscale user) if matrix group exists
+    matrix_group_id = entitlement.get("matrix_group_id")
+    if matrix_group_id:
+        headscale_cli = shlex.split(os.environ.get("HEADSCALE_CLI", "docker exec authority-headscale headscale"))
+        headscale_user = f"matrix-{matrix_group_id}"
+        try:
+            subprocess.run(
+                headscale_cli + ["users", "destroy", headscale_user, "--force"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            logger.info("Headscale user %s destroyed (entitlement deleted)", headscale_user)
+        except Exception as exc:
+            logger.warning("Failed to destroy Headscale user %s: %s", headscale_user, exc)
 
     with _connect() as connection:
         if entitlement["installation_uuid"]:
@@ -2004,6 +2112,7 @@ def _row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "offline_grace_days": row["offline_grace_days"],
         "tenant_name": row["tenant_name"],
         "notes": row["notes"],
+        "installation_name": row["installation_name"] if "installation_name" in row.keys() else None,
     }
 
 
@@ -2025,6 +2134,7 @@ def _entitlement_row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "tenant_name": row["tenant_name"],
         "activation_status": row["activation_status"],
         "notes": row["notes"],
+        "matrix_group_id": row["matrix_group_id"] if "matrix_group_id" in row.keys() else None,
     }
 
 

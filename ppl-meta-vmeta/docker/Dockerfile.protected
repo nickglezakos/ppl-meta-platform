@@ -14,18 +14,20 @@ RUN apt-get update && apt-get install -y \
     make \
     pkg-config \
     python3-dev \
-    libgl1-mesa-glx \
+    libgl1-mesa-dri \
+    libglx-mesa0 \
+    libglx0 \
     libglib2.0-0 \
     libgomp1 \
     libsm6 \
     libxext6 \
     libxrender-dev \
+    libx11-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/ requirements/
-RUN grep -v '^dlib' requirements/base.txt > /tmp/requirements-no-dlib.txt \
-    && pip install --no-cache-dir -r /tmp/requirements-no-dlib.txt \
-    && pip install --no-cache-dir --no-build-isolation "dlib>=19.24.0" \
+# dlib-bin provides pre-built wheels (no source compilation needed)
+RUN pip install --no-cache-dir -r requirements/base.txt \
     && pip install --no-cache-dir cython setuptools wheel
 
 COPY src/ ./src/
@@ -38,12 +40,15 @@ FROM python:3.11.11-slim-bookworm AS runtime
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+    libgl1-mesa-dri \
+    libglx-mesa0 \
+    libglx0 \
     libglib2.0-0 \
     libgomp1 \
     libsm6 \
     libxext6 \
     libxrender-dev \
+    libx11-6 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local /usr/local

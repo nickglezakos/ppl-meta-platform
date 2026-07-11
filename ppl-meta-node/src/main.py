@@ -85,6 +85,7 @@ from src.api.v1.routes import router as v1_router
 from src.models.installation_info import InstallationInfo
 from src.schemas.user import UserCreate
 from src.services.multicast_discovery import MulticastServiceDiscoveryBroadcaster
+from src.services.vpn_service import enroll_once
 from src.services.role_service import ensure_default_capabilities, ensure_exact_system_roles
 
 # Try to import the shared service discovery module
@@ -525,6 +526,15 @@ async def lifespan(_app: FastAPI):
                 multicast_broadcaster = None
 
         await run_in_threadpool(start_multicast_broadcaster)
+
+        # VPN mesh enrollment (one-time bootstrap, non-blocking)
+        try:
+            vpn_ok = await asyncio.to_thread(enroll_once)
+            if vpn_ok:
+                logger.info("✅ VPN mesh enrollment complete")
+        except Exception:
+            pass  # Non-fatal — VPN is optional
+
         logger.info("Service startup completed successfully")
 
     except (OSError, RuntimeError) as e:

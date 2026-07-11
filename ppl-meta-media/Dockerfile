@@ -20,23 +20,24 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     libffi-dev \
     libssl-dev \
-    libgl1-mesa-glx \
+    libgl1-mesa-dri \
+    libglx-mesa0 \
+    libglx0 \
     libglib2.0-0 \
     libgomp1 \
     libsm6 \
     libxext6 \
     libxrender-dev \
     curl \
+    libx11-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Copy and install Python dependencies
+# Copy and install Python dependencies (dlib-bin provides pre-built wheels, no source compilation needed)
 COPY requirements.txt .
-RUN grep -v '^dlib' requirements.txt > /tmp/requirements-no-dlib.txt \
-    && pip install --user --no-warn-script-location -r /tmp/requirements-no-dlib.txt \
-    && pip install --user --no-warn-script-location --no-build-isolation "dlib>=19.24.0"
+RUN pip install --user --no-warn-script-location -r requirements.txt
 
 # Stage 2: Runtime stage with minimal footprint
 FROM python:3.11-slim-bookworm AS runtime
@@ -50,12 +51,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y \
     libpq5 \
     curl \
-    libgl1-mesa-glx \
+    libgl1-mesa-dri \
+    libglx-mesa0 \
+    libglx0 \
     libglib2.0-0 \
     libgomp1 \
     libsm6 \
     libxext6 \
     libxrender-dev \
+    libx11-6 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 1001 app \
     && useradd -m -u 1001 -g app -s /usr/sbin/nologin app

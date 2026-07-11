@@ -30,6 +30,9 @@ class AuthorityStatus {
   final bool canOperate;
   final DateTime? warningDeadline;
   final int? warningDaysRemaining;
+  final bool vpnEnrolled;
+  final String? matrixGroupId;
+  final String? headscaleServer;
 
   const AuthorityStatus({
     required this.success,
@@ -58,6 +61,9 @@ class AuthorityStatus {
     required this.canOperate,
     required this.warningDeadline,
     required this.warningDaysRemaining,
+    this.vpnEnrolled = false,
+    this.matrixGroupId,
+    this.headscaleServer,
   });
 
   factory AuthorityStatus.fromJson(Map<String, dynamic> json) {
@@ -91,6 +97,9 @@ class AuthorityStatus {
       canOperate: authority['can_operate'] == true,
       warningDeadline: DateTime.tryParse(authority['warning_deadline']?.toString() ?? ''),
       warningDaysRemaining: authority['warning_days_remaining'] as int?,
+      vpnEnrolled: authority['vpn_enrolled'] == true,
+      matrixGroupId: authority['matrix_group_id']?.toString(),
+      headscaleServer: authority['headscale_server']?.toString(),
     );
   }
 

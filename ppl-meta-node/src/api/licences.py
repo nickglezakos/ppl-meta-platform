@@ -6,6 +6,8 @@ with the bootcore licensing system and manage local platform identity.
 """
 
 import logging
+import os
+import subprocess
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
@@ -29,6 +31,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/licensing", tags=["licensing"])
 
 APPLICATION_KEY_PATTERN = r"^lic_[0-9a-f]{32}$"
+
+
+def _check_tailscale_enrolled() -> bool:
+    """Check if tailscale is enrolled AND connected to EyeNet headscale."""
+    try:
+        result = subprocess.run(
+            ["tailscale", "status", "--json"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return False
+        import json
+        status = json.loads(result.stdout)
+        self_data = status.get("Self", {})
+        ips = self_data.get("TailscaleIPs")
+        if not ips:
+            return False
+        # Verify this is connected to EyeNet, not the default tailscale.com
+        backend = self_data.get("BackendState", "").lower()
+        hostname = self_data.get("HostName", "").lower()
+        # Default tailscale.com nodes typically don't have vpn.eyenet-vision.com in BackendState
+        # EyeNet nodes have it in BackendState or use a hostname pattern
+        return "eyenet" in backend or "eyenet" in hostname
+    except Exception:
+        return False
 
 
 class BootstrapActivationRequest(BaseModel):
@@ -284,6 +311,9 @@ async def get_authority_status(
                 "can_operate": runtime_state["can_operate"],
                 "warning_deadline": runtime_state["warning_deadline"],
                 "warning_days_remaining": runtime_state["warning_days_remaining"],
+                "vpn_enrolled": _check_tailscale_enrolled(),
+                "matrix_group_id": os.environ.get("EYENET_MATRIX_GROUP_ID", ""),
+                "headscale_server": os.environ.get("AUTHORITY_BASE_URL", "https://authority.eyenet-vision.com").replace("https://authority.", "https://vpn."),
             },
         }
     except RuntimeError as e:

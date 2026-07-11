@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EyeNet PPL Meta Platform — Windows Installation Guide</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --success: #4caf50;
+      --warning: #ff9800;
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    .page {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 32px 24px 72px;
+    }
+
+    .print-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 20px;
+    }
+
+    .print-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--brand-primary);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14);
+      border-radius: 32px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+      color: var(--text);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -80px auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: rgba(25, 118, 210, 0.26);
+    }
+
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1.35fr 0.9fr;
+      gap: 28px;
+      padding: 34px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14);
+      color: var(--brand-secondary);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin: 18px 0 16px;
+      font-size: 42px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      font-size: 18px;
+      color: #334155;
+      max-width: 62ch;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .brand-stack {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-stack img {
+      height: 36px;
+      width: auto;
+    }
+
+    .brand-chip {
+      padding: 8px 12px;
+      border: 1px solid rgba(34, 211, 238, 0.24);
+      border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9);
+      color: #eef9ff;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .brand-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      color: var(--brand-secondary);
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .brand-link:hover {
+      color: #8be9f8;
+    }
+
+    .meta-card,
+    .section,
+    .pricing-card,
+    .key-card,
+    .note-card,
+    .summary-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px;
+      align-self: start;
+      color: var(--text);
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 18px;
+    }
+
+    .meta-item {
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .meta-label {
+      display: block;
+      margin-bottom: 6px;
+      color: #9fb0c3;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-value {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .grid-two,
+    .pricing-grid,
+    .stats-grid {
+      display: grid;
+      gap: 22px;
+      margin-top: 24px;
+    }
+
+    .grid-two {
+      grid-template-columns: 1.15fr 0.85fr;
+      margin-top: 12px;
+    }
+
+    .pricing-grid,
+    .stats-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .section {
+      margin-top: 24px;
+      padding: 28px;
+      border-color: var(--panel-line);
+      background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .section-number {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: inline-grid;
+      place-items: center;
+      background: rgba(25, 118, 210, 0.1);
+      color: var(--brand-primary);
+      font-weight: 700;
+    }
+
+    h2 {
+      margin-bottom: 0;
+      font-size: 24px;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+
+    ul,
+    ol {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    li + li {
+      margin-top: 8px;
+    }
+
+    .callout {
+      padding: 18px 20px;
+      border-left: 4px solid var(--brand-secondary);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent);
+      color: #f5fbff;
+      font-weight: 600;
+    }
+
+    .warning-callout {
+      padding: 18px 20px;
+      border-left: 4px solid var(--warning);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: linear-gradient(135deg, #1a1205 0%, #1d1708 55%, #1f1909 100%);
+      color: #fff3e0;
+      font-weight: 600;
+    }
+
+    .success-callout {
+      padding: 18px 20px;
+      border-left: 4px solid var(--success);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: linear-gradient(135deg, #0a1a0a 0%, #0d1f0d 55%, #0f220f 100%);
+      color: #e8f5e9;
+      font-weight: 600;
+    }
+
+    .stats-grid {
+      margin-top: 18px;
+    }
+
+    .summary-card,
+    .key-card,
+    .pricing-card,
+    .note-card {
+      padding: 22px;
+      border-color: var(--panel-line);
+      background: #ffffff;
+    }
+
+    .summary-card strong,
+    .pricing-value,
+    .key-number {
+      color: #0f172a;
+    }
+
+    .summary-card p:last-child,
+    .note-card p:last-child {
+      margin-bottom: 0;
+    }
+
+    .stat-label {
+      color: #64748b;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .stat-value {
+      display: block;
+      margin-top: 10px;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      color: #64748b;
+      font-size: 13px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+
+    th,
+    td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    }
+
+    th {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+    }
+
+    td {
+      font-size: 14px;
+    }
+
+    td:last-child {
+      font-weight: 700;
+      text-align: right;
+    }
+
+    code {
+      display: inline-block;
+      padding: 2px 8px;
+      margin: 2px 0;
+      background: #1e293b;
+      color: #e2e8f0;
+      border-radius: 6px;
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+      font-size: 13px;
+      word-break: break-all;
+    }
+
+    pre {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 18px 20px;
+      border-radius: var(--radius-sm);
+      overflow-x: auto;
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      margin: 16px 0 0;
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      margin: 0;
+      color: inherit;
+      font-size: inherit;
+    }
+
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--brand-primary);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      margin-right: 10px;
+      flex-shrink: 0;
+    }
+
+    @page {
+      size: A4;
+      margin: 12mm;
+    }
+
+    @media (max-width: 920px) {
+      .hero-inner,
+      .grid-two,
+      .pricing-grid,
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+
+      .page {
+        padding: 18px 16px 54px;
+      }
+    }
+
+    @media print {
+      html {
+        background: #fff;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .page {
+        max-width: none;
+        padding: 0;
+      }
+
+      .print-bar {
+        display: none;
+      }
+
+      .hero,
+      .meta-card,
+      .section,
+      .pricing-card,
+      .key-card,
+      .note-card,
+      .summary-card {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+
+      .hero {
+        margin-bottom: 12px;
+        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+        color: #ffffff;
+        border-color: rgba(34, 211, 238, 0.14);
+      }
+
+      .meta-card {
+        background: rgba(255, 255, 255, 0.04);
+        color: #ffffff;
+        border-color: rgba(34, 211, 238, 0.12);
+      }
+
+      .brand-chip,
+      .callout,
+      .warning-callout,
+      .success-callout {
+        color: #f5fbff;
+      }
+
+      .brand-link,
+      .meta-label,
+      .lead {
+        color: inherit;
+      }
+
+      .section {
+        margin-top: 12px;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="../../ppl-meta-frontend/assets/images/eyenet-dark.svg" alt="EyeNet logo" onerror="this.style.display='none'" />
+              <span class="brand-chip">Installation Guide</span>
+            </div>
+          </div>
+          <span class="eyebrow">Windows Deployment — Docker Desktop</span>
+          <h1>EyeNet PPL Meta Platform<br />Windows Installation Guide</h1>
+          <a class="brand-link" href="https://eyenet-vision.com/">https://eyenet-vision.com/</a>
+        </div>
+
+        <aside class="meta-card">
+          <h3>Guide Snapshot</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Target OS</span>
+              <span class="meta-value">Windows 10 / 11 (AMD64)</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Architecture</span>
+              <span class="meta-value">linux/amd64 (via Docker)</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Release Version</span>
+              <span class="meta-value">2.25.40</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Image Registry</span>
+              <span class="meta-value">ghcr.io/nickglezakos/ppl-meta-platform</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Prerequisites</span>
+              <span class="meta-value">Docker Desktop</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Disk Space</span>
+              <span class="meta-value">~15 GB free</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Services</span>
+              <span class="meta-value">9 microservices + DB & Redis</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Updated</span>
+              <span class="meta-value">6 July 2026</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <!-- SECTION 1: Overview -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Overview</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">This guide covers installing the complete EyeNet PPL Meta Platform on a Windows 10 or 11 PC with an Intel or AMD processor. All services run inside Docker containers managed by Docker Desktop — no manual Python, PostgreSQL, or Node.js installations required.</div>
+      <p>The installation uses three files from the <code>deployment/windows-installer/</code> directory. The PowerShell installer script automates the entire process: it creates configuration, pulls pre-built AMD64 Docker images from the public GitHub Container Registry, and starts all services.</p>
+      <div class="grid-two">
+        <div>
+          <h3>Services Installed</h3>
+          <table>
+            <tr><th>Service</th><th>Port</th><th>Purpose</th></tr>
+            <tr><td>PostgreSQL 15</td><td>5433</td><td>Shared database</td></tr>
+            <tr><td>Redis 7</td><td>6379</td><td>Cache & pub/sub</td></tr>
+            <tr><td>ppl-meta-node</td><td>8001</td><td>User management & auth</td></tr>
+            <tr><td>ppl-meta-media</td><td>8000</td><td>Media storage & processing</td></tr>
+            <tr><td>ppl-meta-gateway</td><td>8080</td><td>API gateway & routing</td></tr>
+            <tr><td>ppl-meta-orchestrator</td><td>8002</td><td>Workflow orchestration</td></tr>
+            <tr><td>ppl-meta-vision</td><td>8003</td><td>Computer vision engine</td></tr>
+            <tr><td>ppl-meta-vmeta</td><td>8008</td><td>Face matching & identity</td></tr>
+            <tr><td>ppl-meta-discovery</td><td>8004</td><td>Device & service discovery</td></tr>
+            <tr><td>ppl-meta-communications</td><td>8009</td><td>Email, webhook & messaging</td></tr>
+            <tr><td>ppl-meta-frontend</td><td>3000</td><td>Web UI</td></tr>
+          </table>
+        </div>
+        <div class="summary-card">
+          <p><strong>Files You'll Need</strong></p>
+          <p>Copy these three files from the project's <code>deployment/windows-installer/</code> directory to a folder on the Windows machine (e.g. <code>C:\EyeNet</code>):</p>
+          <ol style="padding-left: 18px;">
+            <li><code>install-platform.ps1</code> — PowerShell installer</li>
+            <li><code>docker-compose.windows-installer.yml</code> — Compose configuration</li>
+            <li><code>.env.windows.template</code> — Environment template</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: Prerequisites -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>Prerequisites</h2>
+      </div>
+      <div class="stats-grid">
+        <div class="key-card">
+          <span class="stat-label">Operating System</span>
+          <span class="stat-value">Win 10/11</span>
+          <p>Windows 10 or Windows 11 (64-bit). Must have an Intel or AMD processor — ARM-based Windows devices (like Surface Pro X) are not supported.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Docker Desktop</span>
+          <span class="stat-value">Req.</span>
+          <p>Docker Desktop must be installed and running. Download from <a href="https://www.docker.com/products/docker-desktop/" target="_blank">docker.com</a>. The free tier is sufficient.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Disk Space</span>
+          <span class="stat-value">~15 GB</span>
+          <p>Approximately 12 GB for Docker images and 3+ GB for database and application data. An SSD is strongly recommended.</p>
+        </div>
+      </div>
+      <div class="warning-callout" style="margin-top: 24px;">
+        <strong>Important:</strong> Before running the installer, ensure Docker Desktop is fully started (the whale icon in the system tray is steady, not animating). The installer verifies Docker availability and will fail if Docker is not running.
+      </div>
+    </section>
+
+    <!-- SECTION 3: Step-by-Step -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Step-by-Step Installation</h2>
+      </div>
+
+      <h3 style="margin-top: 8px;"><span class="step-number">1</span> Prepare the Installer Folder</h3>
+      <p>Create a folder on the Windows machine (e.g. <code>C:\EyeNet</code>) and copy the three installer files into it:</p>
+      <pre><code>C:\EyeNet\
+├── install-platform.ps1
+├── docker-compose.windows-installer.yml
+└── .env.windows.template</code></pre>
+
+      <h3 style="margin-top: 24px;"><span class="step-number">2</span> Open PowerShell as Administrator</h3>
+      <p>Right-click the Start button and select <strong>"Terminal (Admin)"</strong> or <strong>"PowerShell (Admin)"</strong>. If PowerShell's execution policy blocks scripts, first run:</p>
+      <pre><code>Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser</code></pre>
+      <p>Confirm the prompt with <strong>Y</strong> when asked.</p>
+
+      <h3 style="margin-top: 24px;"><span class="step-number">3</span> Navigate to the Installer Folder</h3>
+      <pre><code>cd C:\EyeNet</code></pre>
+
+      <h3 style="margin-top: 24px;"><span class="step-number">4</span> Run the Installer</h3>
+      <pre><code>.\install-platform.ps1</code></pre>
+      <p>The installer will prompt you for three values (only if they're not already in your <code>.env.windows</code> file):</p>
+      <table>
+        <tr><th>Prompt</th><th>Description</th></tr>
+        <tr><td><strong>Installation UUID</strong></td><td>Your unique platform installation identifier — obtained from the EyeNet Authority dashboard</td></tr>
+        <tr><td><strong>Application Key</strong></td><td>The secret application key linked to your installation — also from the Authority dashboard</td></tr>
+        <tr><td><strong>PostgreSQL Password</strong></td><td>Choose a strong password for the local PostgreSQL database (typed securely, no visible characters)</td></tr>
+      </table>
+
+      <h3 style="margin-top: 24px;"><span class="step-number">5</span> Wait for Pull & Startup</h3>
+      <p>The script will automatically:</p>
+      <ol>
+        <li>Create <code>.env.windows</code> from the template (if it doesn't exist yet)</li>
+        <li>Pull all 9 Docker images from the public GHCR registry (~2.3 GB total)</li>
+        <li>Start the full stack with Docker Compose</li>
+      </ol>
+      <p>This may take 5–15 minutes depending on your internet connection speed. You'll see progress bars during the pull.</p>
+
+      <h3 style="margin-top: 24px;"><span class="step-number">6</span> Verify the Installation</h3>
+      <pre><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml ps</code></pre>
+      <p>All 11 services should show <strong>Status: Up</strong>. If any service shows <strong>Restarting</strong> or <strong>Exited</strong>, check the logs:</p>
+      <pre><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml logs <service-name></code></pre>
+    </section>
+
+    <!-- SECTION 4: Access Points -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>Access Points & Ports</h2>
+      </div>
+      <p>Once all services are running, the platform is accessible at:</p>
+      <table>
+        <tr><th>Service</th><th>URL</th><th>Port</th></tr>
+        <tr><td>Web Frontend</td><td><code>http://localhost:3000</code></td><td>3000</td></tr>
+        <tr><td>API Gateway</td><td><code>http://localhost:8080</code></td><td>8080</td></tr>
+        <tr><td>Node Service (Auth)</td><td><code>http://localhost:8001</code></td><td>8001</td></tr>
+        <tr><td>Media Service</td><td><code>http://localhost:8000</code></td><td>8000</td></tr>
+        <tr><td>Orchestrator</td><td><code>http://localhost:8002</code></td><td>8002</td></tr>
+        <tr><td>Vision</td><td><code>http://localhost:8003</code></td><td>8003</td></tr>
+        <tr><td>Discovery</td><td><code>http://localhost:8004</code></td><td>8004</td></tr>
+        <tr><td>VMeta</td><td><code>http://localhost:8008</code></td><td>8008</td></tr>
+        <tr><td>Communications</td><td><code>http://localhost:8009</code></td><td>8009</td></tr>
+      </table>
+      <div class="success-callout" style="margin-top: 24px;">
+        <strong>Ready!</strong> Open <code>http://localhost:3000</code> in your browser. Log in with your EyeNet administrator credentials (configured through the Authority dashboard during onboarding).
+      </div>
+    </section>
+
+    <!-- SECTION 5: Day-to-day Operations -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>Day-to-Day Operations</h2>
+      </div>
+      <div class="grid-two">
+        <div>
+          <h3>Starting and Stopping</h3>
+          <p>All commands must be run from <strong>PowerShell (Admin)</strong> in the <code>C:\EyeNet</code> folder.</p>
+          <table>
+            <tr><th>Action</th><th>Command</th></tr>
+            <tr><td>Start all services</td><td><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml up -d</code></td></tr>
+            <tr><td>Stop all services</td><td><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml stop</code></td></tr>
+            <tr><td>Restart all services</td><td><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml restart</code></td></tr>
+            <tr><td>View service status</td><td><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml ps</code></td></tr>
+            <tr><td>View logs (all)</td><td><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml logs -f</code></td></tr>
+            <tr><td>View logs (one service)</td><td><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml logs -f ppl-meta-node</code></td></tr>
+          </table>
+        </div>
+        <div>
+          <h3>Updates</h3>
+          <p>To update to a new release:</p>
+          <ol>
+            <li>Stop the stack: <code>docker compose ... stop</code></li>
+            <li>Edit <code>.env.windows</code> and change <code>RELEASE_TAG</code> to the new version number</li>
+            <li>Pull new images: <code>docker compose ... pull</code></li>
+            <li>Start again: <code>docker compose ... up -d</code></li>
+          </ol>
+          <h3 style="margin-top: 22px;">Backup</h3>
+          <p>All persistent data is stored in Docker volumes (<code>postgres_data</code> and <code>redis_data</code>). To backup:</p>
+          <ol>
+            <li>Stop the stack</li>
+            <li>Copy the Docker volumes from Docker Desktop's data directory</li>
+            <li>Alternatively, use <code>pg_dump</code> against <code>localhost:5433</code> to export the database</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 6: Troubleshooting -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">6</span>
+        <h2>Troubleshooting</h2>
+      </div>
+      <div class="grid-two">
+        <div>
+          <h3>Common Issues</h3>
+          <table>
+            <tr><th>Issue</th><th>Solution</th></tr>
+            <tr><td>Docker not found</td><td>Ensure Docker Desktop is installed and running (check system tray)</td></tr>
+            <tr><td>"Script not digitally signed"</td><td>Run <code>Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser</code></td></tr>
+            <tr><td>Port already in use</td><td>Check if another app is using ports 3000, 5433, 6379, or 8000–8009. Edit <code>.env.windows</code> to change port assignments</td></tr>
+            <tr><td>Container keeps restarting</td><td>Check logs: <code>docker compose ... logs <service></code>. Often caused by missing <code>INSTALLATION_UUID</code> or <code>APPLICATION_KEY</code></td></tr>
+            <tr><td>Not enough disk space</td><td>Free at least 15 GB. Run Docker Desktop's "Clean up" tool to remove unused images</td></tr>
+            <tr><td>Cannot pull images</td><td>Ensure internet access. If behind a corporate proxy, configure Docker Desktop's proxy settings</td></tr>
+          </table>
+        </div>
+        <div>
+          <h3>Health Checks</h3>
+          <p>Each service exposes a health check endpoint:</p>
+          <table>
+            <tr><th>Service</th><th>Health Check URL</th></tr>
+            <tr><td>Node</td><td><code>http://localhost:8001/api/v1/health/</code></td></tr>
+            <tr><td>Gateway</td><td><code>http://localhost:8080/health</code></td></tr>
+            <tr><td>Media</td><td><code>http://localhost:8000/health/</code></td></tr>
+            <tr><td>Vision</td><td><code>http://localhost:8003/health</code></td></tr>
+          </table>
+          <p class="footer-note">Test from PowerShell with: <code>curl http://localhost:8001/api/v1/health/</code></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 7: Reference -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">7</span>
+        <h2>Reference</h2>
+      </div>
+      <div class="stats-grid">
+        <div class="key-card">
+          <span class="stat-label">Image Registry</span>
+          <span class="stat-value" style="font-size: 18px;">GHCR</span>
+          <p><code>ghcr.io/nickglezakos/ppl-meta-platform</code><br />(public, no authentication required)</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Total Images</span>
+          <span class="stat-value">9</span>
+          <p>Node, Media, Gateway, Orchestrator, Discovery, Communications, Vision, VMeta, Frontend</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Documentation</span>
+          <span class="stat-value" style="font-size: 18px;">README</span>
+          <p>See <code>deployment/windows-installer/README.md</code> for build instructions, architecture details, and low-disk strategy.</p>
+        </div>
+      </div>
+      <div class="note-card" style="margin-top: 22px;">
+        <p><strong>Note:</strong> The platform runs entirely on-premises. No data is sent to external servers. The only internet requirement is the initial Docker image pull from GHCR and the optional connection to the EyeNet Authority server at <code>https://authority.eyenet-vision.com</code> for license validation.</p>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

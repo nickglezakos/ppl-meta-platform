@@ -303,7 +303,13 @@ class TriggerResponse(BaseModel):
     def parse_ppl_match_group_ids(cls, v):
         if isinstance(v, str):
             import json
-            return json.loads(v)
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                v = v.strip()
+                if v.startswith('{') and v.endswith('}'):
+                    items = v[1:-1].split(',')
+                    return [item.strip().strip('"') for item in items if item.strip()]
         return v
 
     @field_validator('camera_device_ids', mode='before')
@@ -311,7 +317,13 @@ class TriggerResponse(BaseModel):
     def parse_camera_device_ids(cls, v):
         if isinstance(v, str):
             import json
-            return json.loads(v)
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                v = v.strip()
+                if v.startswith('{') and v.endswith('}'):
+                    items = v[1:-1].split(',')
+                    return [item.strip().strip('"') for item in items if item.strip()]
         return v
 
     @field_validator('search_camera_device_ids', mode='before')

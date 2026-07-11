@@ -8,7 +8,7 @@ Provides:
 - VProfileMatchWorker: Lifecycle management, evaluation, multi-camera support,
   and periodic background cache refresh
 """
-
+ 
 import asyncio
 import os
 import time
@@ -338,8 +338,13 @@ class VProfileMatchWorker:
         try:
             group_ids = json.loads(group_ids_raw) if isinstance(group_ids_raw, str) else group_ids_raw
         except (json.JSONDecodeError, TypeError):
-            logger.error("Invalid ppl_match_group_ids for trigger %s: %s", trigger.uuid, group_ids_raw)
-            return
+            # Handle PostgreSQL array notation: {val1,val2}
+            if isinstance(group_ids_raw, str) and group_ids_raw.strip().startswith('{') and group_ids_raw.strip().endswith('}'):
+                items = group_ids_raw.strip()[1:-1].split(',')
+                group_ids = [item.strip().strip('"') for item in items if item.strip()]
+            else:
+                logger.error("Invalid ppl_match_group_ids for trigger %s: %s", trigger.uuid, group_ids_raw)
+                return
 
         if not group_ids:
             return
@@ -591,10 +596,16 @@ class VProfileMatchWorker:
                 if ids and isinstance(ids, list):
                     return ids
             except (json.JSONDecodeError, TypeError):
-                pass
+                # Handle PostgreSQL array notation: {val1,val2}
+                raw = camera_ids_raw if isinstance(camera_ids_raw, str) else str(camera_ids_raw)
+                if raw.strip().startswith('{') and raw.strip().endswith('}'):
+                    items = raw.strip()[1:-1].split(',')
+                    ids = [item.strip().strip('"') for item in items if item.strip()]
+                    if ids:
+                        return ids
 
         legacy_id = getattr(trigger, 'camera_device_id', None)
-        if legacy_id:
+        if legacy_id and legacy_id != 'vprofile_match':
             return [legacy_id]
 
         return []

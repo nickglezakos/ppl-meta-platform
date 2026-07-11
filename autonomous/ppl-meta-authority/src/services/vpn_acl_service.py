@@ -24,7 +24,7 @@ ACL_POLICY_PATH = os.environ.get(
     "/etc/headscale/acl.json",
 )
 
-HEADSCALE_CLI = "headscale"
+HEADSCALE_CLI = os.environ.get("HEADSCALE_CLI", "docker exec authority-headscale headscale")
 
 
 class VpnACLService:

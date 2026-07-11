@@ -85,14 +85,15 @@ On the Windows target, only run pulls for exact tags.
 
 ## Recommended Flow
 
-1. Build `ppl-meta-vision-protected` and `ppl-meta-vmeta-protected` on a build machine.
-2. Push those images and the rest of the platform images to the private registry.
+1. Build all images for `linux/amd64` on a build machine and push to GHCR.
+2. Copy the 3 installer files to the Windows machine:
+   - `install-platform.ps1`
+   - `docker-compose.windows-installer.yml`
+   - `.env.windows.template`
 3. Run `install-platform.ps1` on the Windows machine.
 4. If `.env.windows` does not exist, the installer creates it from `.env.windows.template`.
 5. Enter `INSTALLATION_UUID`, `APPLICATION_KEY`, and `POSTGRES_PASSWORD` when prompted if they are missing.
-6. Enter `REGISTRY_USERNAME` and the GHCR token when prompted if they are missing.
+6. The installer pulls images from the public GHCR registry (no login required).
 7. Run platform health checks after startup.
 
 For the current published release, the generated `.env.windows` should keep `RELEASE_TAG=2.25.40` unless you are intentionally deploying a different pinned release.
-
-For a safer operator flow, leave `REGISTRY_PASSWORD` blank and paste the token only when the installer prompts for it.

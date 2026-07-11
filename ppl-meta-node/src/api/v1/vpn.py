@@ -5,9 +5,12 @@ connectivity information consumed by the frontend and discovery service.
 """
 
 import logging
+import os
 
+import httpx
 from fastapi import APIRouter, HTTPException
 
+from src.config import settings
 from src.services.mesh_vpn_service import mesh_vpn_service
 
 logger = logging.getLogger(__name__)
@@ -17,12 +20,7 @@ router = APIRouter(prefix="/node/vpn", tags=["vpn"])
 
 @router.get("/status")
 async def vpn_status():
-    """Get the node's VPN enrollment status and peer connectivity.
-
-    Returns:
-        Dict with enrollment state, Tailscale IP, peer count,
-        matrix peer list, and server info.
-    """
+    """Get the node's VPN enrollment status and peer connectivity."""
     try:
         status = await mesh_vpn_service.get_status()
     except Exception as exc:
@@ -31,25 +29,17 @@ async def vpn_status():
             status_code=503,
             detail=f"VPN status unavailable: {exc}",
         )
-
     return status
 
 
 @router.get("/peers")
 async def vpn_peers():
-    """Get all VPN peers visible to this node.
-
-    Returns:
-        List of peer info dicts with IP, hostname, online status, and tags.
-    """
+    """Get all VPN peers visible to this node."""
     try:
         peers = await mesh_vpn_service.get_peers()
     except Exception as exc:
         logger.error("Failed to get VPN peers: %s", exc)
-        raise HTTPException(
-            status_code=503,
-            detail=f"VPN peer list unavailable: {exc}",
-        )
+        raise HTTPException(status_code=503, detail=f"VPN peer list unavailable: {exc}")
 
     return {
         "peers": [
@@ -67,37 +57,106 @@ async def vpn_peers():
 
 @router.get("/tags")
 async def vpn_tags():
-    """Get the local node's Tailscale ACL tags.
-
-    Returns:
-        List of tag strings (e.g., ["tag:installation", "tag:matrix-abc123"]).
-    """
+    """Get the local node's Tailscale ACL tags."""
     try:
         tags = await mesh_vpn_service.get_tailscale_tags()
     except Exception as exc:
         logger.error("Failed to get VPN tags: %s", exc)
+        raise HTTPException(status_code=503, detail=f"VPN tag lookup failed: {exc}")
+    return {"tags": tags, "count": len(tags)}
+
+
+@router.post("/enroll")
+async def vpn_enroll():
+    """Full VPN enrollment — logout from other networks, fetch key, run tailscale up.
+
+    Returns enrollment success status, assigned IP, and matrix group ID.
+    If automatic enrollment fails, returns the manual tailscale up command.
+    """
+    installation_uuid = os.environ.get(
+        "EYENET_INSTALLATION_UUID",
+        settings.AUTHORITY_INSTALLATION_UUID,
+    )
+    application_key = os.environ.get(
+        "EYENET_APPLICATION_KEY",
+        settings.AUTHORITY_APPLICATION_KEY,
+    )
+    authority_url = os.environ.get(
+        "AUTHORITY_BASE_URL",
+        settings.AUTHORITY_SERVICE_URL,
+    )
+
+    if not installation_uuid or not application_key:
         raise HTTPException(
-            status_code=503,
-            detail=f"VPN tag lookup failed: {exc}",
+            status_code=400,
+            detail="Installation UUID and application key must be configured "
+                    "(set EYENET_INSTALLATION_UUID and EYENET_APPLICATION_KEY env vars)",
         )
 
-    return {"tags": tags, "count": len(tags)}
+    # Check if connected to a different server — logout first
+    try:
+        status = await mesh_vpn_service.get_status()
+        if status.get("connected_to_other_server") or (
+            status.get("has_tailscale_installed") and not status.get("enrolled")
+        ):
+            await mesh_vpn_service._run_tailscale_command(["logout"])
+            logger.info("Logged out from previous tailscale network")
+    except Exception as exc:
+        logger.warning("Could not logout from previous tailscale: %s", exc)
+
+    # Fetch key from authority
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                f"{authority_url.rstrip('/')}/api/v1/vpn/enroll-installation",
+                json={
+                    "installation_uuid": installation_uuid,
+                    "application_key": application_key,
+                },
+            )
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Authority enrollment failed: HTTP {resp.status_code} - {resp.text}",
+                )
+            data = resp.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Authority unreachable: {e}")
+
+    auth_key = data["auth_key"]
+    headscale_server = data["headscale_server"]
+    matrix_group_id = data.get("matrix_group_id")
+    tailscale_up_command = f'tailscale up --login-server {headscale_server} --auth-key {auth_key} --accept-routes'
+
+    # Attempt to run tailscale up
+    enrolled = False
+    assigned_ip = None
+    try:
+        success = await mesh_vpn_service._run_tailscale_up(auth_key, "eyenet-node")
+        if success:
+            assigned_ip = await mesh_vpn_service._get_tailscale_ip_async()
+            if assigned_ip:
+                mesh_vpn_service.enrolled = True
+                mesh_vpn_service.tailscale_ip = assigned_ip
+                enrolled = True
+                logger.info("VPN enrollment succeeded: %s", assigned_ip)
+    except Exception as exc:
+        logger.warning("tailscale up failed: %s", exc)
+
+    return {
+        "enrolled": enrolled,
+        "tailscale_ip": assigned_ip,
+        "auth_key": auth_key,
+        "headscale_server": headscale_server,
+        "matrix_group_id": matrix_group_id,
+        "tags": data.get("tags", []),
+        "tailscale_up_command": tailscale_up_command,
+    }
 
 
 @router.get("/matrix-peers/{matrix_group_id}")
 async def vpn_matrix_peers(matrix_group_id: str):
-    """Get all VPN peers in a specific Matrix group.
-
-    Phase 6: Matrix-ready peer discovery endpoint.
-    Returns member installations' Tailscale IPs and service URLs
-    for consumption by the future ppl-meta-matrix service.
-
-    Args:
-        matrix_group_id: UUID of the Matrix group.
-
-    Returns:
-        Dict with peers list, service URLs, and group info.
-    """
+    """Get all VPN peers in a specific Matrix group."""
     try:
         peers = await mesh_vpn_service.get_matrix_peers(matrix_group_id)
         node_service_urls = await mesh_vpn_service.get_matrix_peer_service_urls(

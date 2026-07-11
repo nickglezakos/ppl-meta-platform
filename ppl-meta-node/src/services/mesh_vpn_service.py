@@ -10,6 +10,7 @@ Manages Tailscale client lifecycle on the node:
 import asyncio
 import json
 import logging
+import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -363,24 +364,59 @@ class MeshVPNService:
         return None
 
     async def get_status(self) -> dict:
-        """Get VPN connection status.
+        """Get VPN connection status — dynamically checks tailscale on every call.
 
         Returns:
-            Dict with enrollment state, IP, and peer count.
+            Dict with enrollment state, IP, peer count, and connectivity info.
         """
+        available = False
+        has_tailscale_installed = bool(self.tailscale_binary)
+        enrolled = False
+        tailscale_ip = None
+        vpn_ips = []
         peer_count = 0
+        online_count = 0
         matrix_peers = []
+        current_server = None
+        headscale_server = self._headscale_server
+        hostname = None
 
-        if self.enrolled:
-            peers = await self.get_peers()
-            peer_count = len(peers)
-            matrix_peers = peers  # All peers in dev; filtered by tag in production
+        if has_tailscale_installed:
+            result = await self._run_tailscale_json(["status", "--json"])
+            if result:
+                available = True
+                self_data = result.get("Self", {})
+                current_server = self._resolve_server_from_status(self_data)
+                tailscale_ip = (self_data.get("TailscaleIPs") or [None])[0]
+                if tailscale_ip:
+                    enrolled = True
+                vpn_ips = list(self_data.get("TailscaleIPs") or [])
+                hostname = self_data.get("HostName", "")
+
+                peers = result.get("Peer") or {}
+                all_peers = list(peers.values())
+                peer_count = len(all_peers)
+                online_count = sum(1 for p in all_peers if p.get("Online"))
+                matrix_peers = all_peers
+
+        if enrolled and not self.enrolled:
+            self.enrolled = True
+            self.tailscale_ip = tailscale_ip
 
         return {
-            "enrolled": self.enrolled,
-            "tailscale_ip": self.tailscale_ip,
-            "online": self.enrolled,
-            "headscale_server": self._headscale_server,
+            "enrolled": enrolled,
+            "available": available,
+            "has_tailscale_installed": has_tailscale_installed,
+            "tailscale_ip": tailscale_ip,
+            "vpn_ips": vpn_ips,
+            "online": enrolled,
+            "current_server": current_server,
+            "expected_server": "https://vpn.eyenet-vision.com",
+            "headscale_server": headscale_server or "https://vpn.eyenet-vision.com",
+            "matrix_group_id": os.environ.get("EYENET_MATRIX_GROUP_ID", ""),
+            "hostname": hostname,
+            "peer_count": peer_count,
+            "online_count": online_count,
             "peers_count": peer_count,
             "matrix_peers": [
                 {
@@ -389,10 +425,39 @@ class MeshVPNService:
                     "online": p.get("Online", False),
                     "tags": p.get("Tags", []),
                 }
-                for p in matrix_peers[:20]  # Limit to 20 peers
+                for p in matrix_peers[:20]
             ],
             "checked_at": datetime.now(timezone.utc).isoformat(),
         }
+
+    async def _run_tailscale_command(self, args: list[str]) -> bool:
+        """Run an arbitrary tailscale command (e.g., logout, up, down).
+
+        Returns:
+            True if command succeeded (exit 0), False otherwise.
+        """
+        try:
+            cmd = [self.tailscale_binary] + args
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=TAILSCALE_STATUS_TIMEOUT)
+            return proc.returncode == 0
+        except Exception as exc:
+            logger.warning("tailscale %s failed: %s", " ".join(args), exc)
+            return False
+
+    def _resolve_server_from_status(self, self_data: dict) -> Optional[str]:
+        """Extract the coordination server URL from tailscale status data."""
+        try:
+            backend_state = self_data.get("BackendState", "")
+            if "https://" in backend_state:
+                return backend_state.split("https://")[1].split()[0].rstrip("/")
+        except Exception:
+            pass
+        return None
 
     async def get_tailscale_tags(self) -> list[str]:
         """Get the local node's Tailscale ACL tags.

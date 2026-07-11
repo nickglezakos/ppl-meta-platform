@@ -9,10 +9,14 @@ services:
       - PORT=8001
       - DEBUG=false
       - PPL_MEDIA_SERVICE_URL=http://ppl-meta-media:8000
+      - AUTHORITY_BASE_URL=https://authority.eyenet-vision.com
+      - EYENET_INSTALLATION_UUID=${EYENET_INSTALLATION_UUID:-tenant-a}
+      - EYENET_APPLICATION_KEY=${EYENET_APPLICATION_KEY:-lic_6f3c8d1e2b4a5c7d8e9f0a1b2c3d4e5f}
     depends_on:
       - postgres
     volumes:
       - ./src/logs:/app/src/logs
+      - tailscale_state:/var/lib/tailscale
     networks:
       - ppl-network
     restart: unless-stopped
@@ -44,6 +48,7 @@ services:
 
 volumes:
   postgres_data:
+  tailscale_state:
 
 networks:
   ppl-network:

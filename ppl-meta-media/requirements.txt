@@ -35,7 +35,7 @@ moviepy>=1.0.3
 # Face detection dependencies
 opencv-python>=4.8.0
 numpy>=1.24.0
-dlib>=19.24.0
+dlib-bin>=19.24.0
 
 # Security dependencies (Issue #009)
 PyJWT>=2.8.0  # JWT token handling

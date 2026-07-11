@@ -8,6 +8,8 @@ All endpoints require authority admin authentication (session-based).
 """
 
 import logging
+import os
+import shlex
 import subprocess
 import uuid
 from datetime import datetime, timezone
@@ -37,6 +39,7 @@ class EnrollInstallationResponse(BaseModel):
     auth_key: str
     tailscale_ip_range: str = "100.64.0.0/10"
     headscale_server: str = ""
+    matrix_group_id: str = ""
     tags: list[str] = []
     expires_in_seconds: int = 3600  # 1 hour
 
@@ -64,7 +67,12 @@ class VpnMatrixAclResponse(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-HEADSCALE_CLI = "headscale"
+# Option B (Docker Compose): authority calls headscale via docker exec.
+# HEADSCALE_CLI env var is set in docker-compose.production.yml.
+# Format: "docker exec authority-headscale headscale"
+HEADSCALE_CLI = os.environ.get(
+    "HEADSCALE_CLI", "docker exec authority-headscale headscale"
+)
 
 # Pre-auth key TTL: 1 hour (matches proposal Section 10.2 M7 hardening)
 PREAUTH_KEY_EXPIRY_HOURS = 1
@@ -73,8 +81,11 @@ PREAUTH_KEY_EXPIRY_HOURS = 1
 def _run_headscale(args: list[str]) -> str:
     """Run a headscale CLI command and return stdout.
 
+    Uses docker exec when HEADSCALE_CLI is set to a docker wrapper.
+    Falls back to direct `headscale` binary call for local development.
+
     Args:
-        args: Headscale subcommand arguments.
+        args: Headscale subcommand arguments (e.g. ["users", "list"]).
 
     Returns:
         stdout as string.
@@ -82,7 +93,7 @@ def _run_headscale(args: list[str]) -> str:
     Raises:
         RuntimeError: If headscale command fails.
     """
-    cmd = [HEADSCALE_CLI] + args
+    cmd = shlex.split(HEADSCALE_CLI) + args
     try:
         result = subprocess.run(
             cmd,
@@ -96,38 +107,81 @@ def _run_headscale(args: list[str]) -> str:
         return result.stdout.strip()
     except FileNotFoundError:
         raise RuntimeError(
-            "headscale binary not found. Install headscale on the authority VPS."
+            "headscale not available. Ensure the authority container has "
+            "access to the Docker socket or the headscale binary."
         )
     except subprocess.TimeoutExpired:
         raise RuntimeError("headscale command timed out")
 
 
+def _resolve_user_id(name: str) -> str:
+    """Resolve a headscale user name to its numeric (uint) ID.
+
+    Args:
+        name: Headscale user name (e.g., "matrix-<uuid>").
+
+    Returns:
+        Numeric user ID as string.
+
+    Raises:
+        RuntimeError: If user not found or resolution fails.
+    """
+    try:
+        output = _run_headscale(["users", "list", "--output", "json"])
+        import json
+        users = json.loads(output)
+        for user in users:
+            if user.get("name") == name:
+                return str(user["id"])
+    except Exception:
+        pass
+
+    raise RuntimeError(f"Headscale user '{name}' not found")
+
+
 def _generate_preauth_key(user: str, tags: list[str]) -> str:
     """Generate a pre-authorized key via headscale CLI.
 
-    The key is scoped to the given user and ACL tags.
+    The key is scoped to the given user (name) and ACL tags.
 
     Args:
-        user: Headscale user namespace (e.g., "eyenet-platform").
+        user: Headscale user name (e.g., "matrix-<uuid>").
         tags: ACL tags to scope the key to
                (e.g., ["tag:installation", "tag:matrix-<uuid>"]).
 
     Returns:
         The pre-auth key string (tskey-auth-...).
     """
-    # headscale preauthkeys create --user <user> --tags tag:installation,tag:matrix-xxx
-    cmd = ["preauthkeys", "create", "--user", user]
+    user_id = _resolve_user_id(user)
+    cmd = ["preauthkeys", "create", "--user", user_id]
     for tag in tags:
         cmd.extend(["--tags", tag])
 
     output = _run_headscale(cmd)
-    # Output format: "tskey-auth-xxxxxxxxxxxx"
+    # Output format: "hskey-auth-xxxxxxxxxxxx" (headscale v0.28+)
     for line in output.splitlines():
         line = line.strip()
-        if line.startswith("tskey-auth-"):
+        # Skip JSON log lines (headscale sends warnings to stdout)
+        if line.startswith("{"):
+            continue
+        if line.startswith("hskey-auth-") or line.startswith("tskey-auth-"):
             return line
 
     raise RuntimeError(f"No pre-auth key found in headscale output: {output}")
+
+
+def _ensure_user(user: str) -> None:
+    """Ensure a headscale user namespace exists, creating it if necessary.
+
+    Args:
+        user: Headscale user namespace (e.g., "matrix-<uuid>").
+    """
+    try:
+        _run_headscale(["users", "create", user])
+        logger.info("Headscale user created: %s", user)
+    except RuntimeError:
+        # User likely already exists — headscale returns non-zero for duplicates
+        logger.debug("Headscale user already exists (or creation skipped): %s", user)
 
 
 def _list_nodes(user: str) -> list[dict]:
@@ -157,7 +211,10 @@ async def enroll_installation(payload: EnrollInstallationRequest):
     entitlement registry. Only approved, active installations receive keys.
 
     The issued key is scoped with ACL tags that cryptographically bind
-    the node to its Matrix group. Key expires after 1 hour.
+    the node to its Matrix group. Each Matrix group gets its own
+    headscale user namespace (matrix-<uuid>) for mesh isolation.
+
+    Key expires after 1 hour.
 
     Security (per Section 10.2 M7): Keys have short TTL. Every issuance
     is logged to the audit trail.
@@ -183,13 +240,37 @@ async def enroll_installation(payload: EnrollInstallationRequest):
             payload.installation_uuid,
         )
 
-    # Determine ACL tags
-    tags = ["tag:installation"]
+    # Determine ACL tags and user namespace (per-matrix isolation)
     matrix_group_id = installation.get("matrix_group_id")
     if matrix_group_id:
-        tags.append(f"tag:matrix-{matrix_group_id}")
+        tags = [f"tag:matrix-{matrix_group_id}"]
+        headscale_user = f"matrix-{matrix_group_id}"
+    else:
+        # Legacy installations without a matrix group — auto-provision one
+        from core.storage import _ensure_matrix_group
+        entitlement_uuid = installation.get("entitlement_uuid", "")
+        if entitlement_uuid:
+            matrix_group_id = _ensure_matrix_group(entitlement_uuid)
+        else:
+            matrix_group_id = str(uuid.uuid4())
+            logger.warning(
+                "Installation %s has no entitlement_uuid — using generated matrix group %s",
+                payload.installation_uuid,
+                matrix_group_id,
+            )
+        tags = [f"tag:matrix-{matrix_group_id}"]
+        headscale_user = f"matrix-{matrix_group_id}"
 
-    headscale_user = "eyenet-platform"
+    # Always include the base installation tag
+    if "tag:installation" not in tags:
+        tags.insert(0, "tag:installation")
+
+    # Ensure headscale user namespace exists
+    try:
+        _ensure_user(headscale_user)
+    except RuntimeError as exc:
+        logger.error("Failed to ensure headscale user %s: %s", headscale_user, exc)
+        raise HTTPException(status_code=503, detail=f"VPN user setup failed: {exc}")
 
     try:
         auth_key = _generate_preauth_key(headscale_user, tags)
@@ -198,16 +279,17 @@ async def enroll_installation(payload: EnrollInstallationRequest):
         raise HTTPException(status_code=503, detail=f"VPN key generation failed: {exc}")
 
     logger.info(
-        "VPN enrollment: installation=%s application_key=%s tags=%s",
+        "VPN enrollment: installation=%s matrix_group=%s tags=%s",
         payload.installation_uuid,
-        payload.application_key[:16] + "...",
+        matrix_group_id,
         tags,
     )
 
     return EnrollInstallationResponse(
         auth_key=auth_key,
         tags=tags,
-        headscale_server="https://vpn.eyenet-vision.com:50443",
+        matrix_group_id=matrix_group_id,
+        headscale_server="https://vpn.eyenet-vision.com",
         expires_in_seconds=PREAUTH_KEY_EXPIRY_HOURS * 3600,
     )
 
@@ -219,6 +301,8 @@ async def list_vpn_nodes(_request: Request):
     Requires admin session authentication.
     """
     # TODO: require_admin_session dependency
+    # Legacy endpoint — lists nodes for the default platform user.
+    # For per-matrix queries, use GET /matrix-groups/{matrix_id}/nodes.
     headscale_user = "eyenet-platform"
 
     try:
@@ -231,6 +315,36 @@ async def list_vpn_nodes(_request: Request):
         nodes.append(VpnNodeInfo(
             node_id=node.get("ID", node.get("NodeKey", "")),
             installation_uuid="",  # Not directly mapped in headscale data
+            tailscale_ip=(
+                node.get("IPAddresses", [None])[0] if node.get("IPAddresses") else None
+            ),
+            online=node.get("Online", False),
+            last_seen=node.get("LastSeen"),
+        ))
+
+    return VpnNodeListResponse(nodes=nodes)
+
+
+@router.get("/matrix-groups/{matrix_id}/nodes", response_model=VpnNodeListResponse)
+async def list_matrix_group_nodes(matrix_id: str, _request: Request):
+    """List all enrolled VPN nodes for a specific Matrix group.
+
+    Returns only nodes tagged with tag:matrix-{matrix_id}.
+    Requires admin session authentication.
+    """
+    # TODO: require_admin_session dependency
+    headscale_user = f"matrix-{matrix_id}"
+
+    try:
+        nodes_data = _list_nodes(headscale_user)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=f"Failed to list nodes: {exc}")
+
+    nodes = []
+    for node in nodes_data:
+        nodes.append(VpnNodeInfo(
+            node_id=node.get("ID", node.get("NodeKey", "")),
+            installation_uuid="",
             tailscale_ip=(
                 node.get("IPAddresses", [None])[0] if node.get("IPAddresses") else None
             ),
