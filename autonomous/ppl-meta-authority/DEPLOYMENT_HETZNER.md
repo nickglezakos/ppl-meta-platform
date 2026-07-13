@@ -45,6 +45,12 @@ The workflow assumes the Hetzner host uses this directory structure:
 - `/home/deploy/apps/ppl-meta-authority/cicd/env/authority.env`
 - `/home/deploy/apps/ppl-meta-authority/cicd/scripts/check_authority_deployment.sh`
 
+Caddy runs as a standalone systemd service (not in Docker). Its config is deployed separately:
+
+- `/etc/caddy/Caddyfile` (source: `autonomous/ppl-meta-authority/Caddyfile`)
+  - Reload: `sudo systemctl reload caddy`
+  - Validate: `caddy validate --config /etc/caddy/Caddyfile`
+
 ## Required Remote Env File
 
 Create the remote env file from [autonomous/ppl-meta-authority/.env.production.example](/Users/nickgklezakos/Documents/ppl-meta-code/autonomous/ppl-meta-authority/.env.production.example).

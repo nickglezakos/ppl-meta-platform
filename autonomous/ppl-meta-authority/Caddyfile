@@ -1,0 +1,34 @@
+# Caddy configuration for EyeNet Authority + VPN Mesh
+# Deployed to: /etc/caddy/Caddyfile on Hetzner VPS (138.201.245.219)
+#
+# Reload after changes: sudo systemctl reload caddy
+# Check config: caddy validate --config /etc/caddy/Caddyfile
+
+# Global options: also listen on port 50443 for headscale gRPC
+{
+    servers :50443 {
+        protocols h1 h2 h2c
+    }
+}
+
+# Authority web app + API
+authority.eyenet-vision.com {
+    reverse_proxy 127.0.0.1:8000
+}
+
+# Headscale HTTP API (serve/config endpoint used during tailscale up)
+vpn.eyenet-vision.com {
+    reverse_proxy 127.0.0.1:8080
+}
+
+# Headscale gRPC (coordination protocol, Tailscale client uses :50443)
+# Port 443 does NOT proxy gRPC — Cloudflare free plan blocks it.
+# This separate port is DNS-only (grey cloud) so gRPC traffic reaches
+# the VPS directly. Caddy terminates TLS here and proxies h2c to headscale.
+vpn.eyenet-vision.com:50443 {
+    reverse_proxy 127.0.0.1:50443 {
+        transport http {
+            versions h2c
+        }
+    }
+}

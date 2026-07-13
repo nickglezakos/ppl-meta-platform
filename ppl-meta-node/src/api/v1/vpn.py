@@ -143,6 +143,9 @@ async def vpn_enroll():
     except Exception as exc:
         logger.warning("tailscale up failed: %s", exc)
 
+    # Tailscale Android deep link — bypasses the hidden "custom server" menu
+    deep_link = f"tailscale://login?server={headscale_server}&key={auth_key}"
+
     return {
         "enrolled": enrolled,
         "tailscale_ip": assigned_ip,
@@ -151,6 +154,7 @@ async def vpn_enroll():
         "matrix_group_id": matrix_group_id,
         "tags": data.get("tags", []),
         "tailscale_up_command": tailscale_up_command,
+        "deep_link": deep_link,
     }
 
 

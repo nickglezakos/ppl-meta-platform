@@ -123,12 +123,29 @@ When a device enrolls, the authority adds accept rules scoped to the matrix grou
 **File:** `/etc/caddy/Caddyfile` (applied via Caddy admin API on port 2019)
 
 ```
+# Global options: also listen on port 50443 for headscale gRPC
+{
+    servers :50443 {
+        protocols h1 h2 h2c
+    }
+}
+
+# Headscale HTTP API (serve/config endpoint used during tailscale up)
 vpn.eyenet-vision.com {
     reverse_proxy 127.0.0.1:8080
 }
+
+# Headscale gRPC — DNS-only (grey cloud), Cloudflare free plan blocks gRPC on :443
+vpn.eyenet-vision.com:50443 {
+    reverse_proxy 127.0.0.1:50443 {
+        transport http {
+            versions h2c
+        }
+    }
+}
 ```
 
-TLS certificates are auto-managed by Caddy via Let's Encrypt.
+TLS certificates are auto-managed by Caddy via Let's Encrypt. Caddy terminates TLS on port 50443 and proxies to headscale via clear-text HTTP/2 (h2c) over localhost.
 
 ### 2.4 Authority Container
 

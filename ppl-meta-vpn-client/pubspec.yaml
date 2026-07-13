@@ -1,5 +1,5 @@
-name: ppl_meta_mobile_camera
-description: "Eyenet Vision - Transform Android devices into intelligent vision cameras"
+name: ppl_meta_vpn_client
+description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -30,42 +30,14 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  camera: ^0.10.6  # Using stable version with better Camera2 support
   http: ^1.5.0
-  permission_handler: ^12.0.1
-  device_info_plus: ^11.5.0
-  network_info_plus: ^6.1.4
   shared_preferences: ^2.5.3
   provider: ^6.1.2
-  path_provider: ^2.1.4
-  path: ^1.9.1
-  crypto: ^3.0.5
-  uuid: ^4.5.1  # UUID generation for device identification
-  web_socket_channel: ^3.0.2
-  json_annotation: ^4.9.0
-  qr_flutter: ^4.1.0
-  mobile_scanner: ^7.0.1
-  # For orientation detection
-  flutter_riverpod: ^2.6.1
-  sensors_plus: ^6.1.2
-  image: ^4.3.0  # For MJPEG frame processing
-  logging: ^1.2.0  # Professional logging system
-  dio: ^5.4.0  # Enhanced HTTP client for service discovery
-  riverpod: ^2.5.1  # State management for service discovery
-  # Mobile streaming dependencies for Phase 2
-  wakelock_plus: ^1.2.8  # Keep screen on during streaming
-  connectivity_plus: ^6.0.5  # Network connectivity monitoring
-  http_parser: ^4.0.2  # For multipart HTTP streaming
-  # Background streaming dependencies
-  flutter_background_service: ^5.0.10  # Background execution support
-  flutter_local_notifications: ^17.2.1+2  # Notification support for foreground service
-  battery_plus: ^6.0.3  # Battery monitoring
-  url_launcher: ^6.2.0  # Deep link to Tailscale app for VPN enrollment
-
+  tailscale: ^0.5.0
+  path_provider: ^2.1.6
+  flutter_background_service: ^5.0.0
+  flutter_local_notifications: ^17.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -76,29 +48,22 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
-  build_runner: ^2.6.0
-  json_serializable: ^6.10.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
 # The following section is specific to Flutter packages.
 flutter:
-  assets:
-    - assets/logo.png
-    - assets/images/eyenet-logo.png
-    - assets/images/eye-icon.png
-    - assets/images/favicon.ico
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
 
-  # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - assets/logo.png
+    - assets/images/eyenet-logo.png
+    - assets/images/eye-icon.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/core.dart';
 import '../../../services/camera_settings_service.dart';
 import '../../../services/offline_queue_service.dart';
 import '../../../services/device_identifier_service.dart';
+import '../../../services/vpn_enrollment_service.dart';
 import 'dart:async';
 
 /// Camera settings screen for mobile-first settings management
@@ -355,6 +357,10 @@ class _CameraSettingsScreenState extends State<CameraSettingsScreen> {
                   // Sync Status Card
                   _buildSyncStatusCard(),
                   const SizedBox(height: 24),
+
+                  // VPN Mesh Card
+                  _buildVpnMeshCard(),
+                  const SizedBox(height: 24),
                   
                   // Basic Settings
                   _buildSectionHeader('Basic Settings'),
@@ -441,6 +447,120 @@ class _CameraSettingsScreenState extends State<CameraSettingsScreen> {
               ),
             ),
     );
+  }
+
+  /// VPN Mesh enrollment card — lets user connect to EyeNet VPN anytime.
+  Widget _buildVpnMeshCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.vpn_lock, color: Colors.green, size: 22),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'VPN Mesh',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Connect to the EyeNet VPN mesh for secure remote access to all platform services.',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _connectVpn,
+                icon: const Icon(Icons.vpn_lock, size: 18),
+                label: const Text('Connect to VPN Mesh'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _connectVpn() async {
+    // Try stored deep link first
+    final deepLink = await VpnEnrollmentService.getDeepLink();
+    if (deepLink != null) {
+      final uri = Uri.parse(deepLink);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+        return;
+      }
+    }
+
+    // No stored deep link — try to fetch one from the node
+    try {
+      final authProvider = context.read<AuthenticationProvider>();
+      final baseUrl = authProvider.baseUrl;
+      if (baseUrl == null) {
+        _showWarning('Not connected to backend. Set up network connection first.');
+        return;
+      }
+      final uri = Uri.parse(baseUrl);
+      final result = await VpnEnrollmentService.fetchKeyFromNode(
+        nodeIp: uri.host,
+        nodePort: 8001,  // Node always runs on port 8001, not the cameras service port
+      );
+
+      if (result != null) {
+        final dl = result['deep_link'] as String?;
+        final authKey = result['auth_key'] as String?;
+        final headscaleServer = result['headscale_server'] as String?;
+
+        if (dl != null && dl.isNotEmpty) {
+          // Store for future use
+          await VpnEnrollmentService.saveEnrollment(
+            authKey: authKey ?? '',
+            headscaleServer: headscaleServer ?? '',
+            deepLink: dl,
+          );
+          final dlUri = Uri.parse(dl);
+          if (await canLaunchUrl(dlUri)) {
+            await launchUrl(dlUri);
+            return;
+          }
+        }
+
+        // Fallback: copy key to clipboard via snackbar
+        if (authKey != null && headscaleServer != null && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Open Tailscale → Custom server → $headscaleServer → paste key'),
+              backgroundColor: Colors.blue,
+              duration: const Duration(seconds: 8),
+              action: SnackBarAction(
+                label: 'Key: ${authKey.substring(0, 16)}...',
+                textColor: Colors.white,
+                onPressed: () {},
+              ),
+            ),
+          );
+          return;
+        }
+      }
+    } catch (e) {
+      print('VPN connect error: $e');
+    }
+
+    // Last resort: guide user to install Tailscale
+    _showWarning('Install the Tailscale app from Google Play to connect to VPN mesh.');
   }
 
   Widget _buildSyncStatusCard() {

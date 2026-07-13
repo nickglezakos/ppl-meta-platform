@@ -21,13 +21,13 @@ services:
     image: headscale/headscale:0.28.0
     container_name: authority-headscale
     restart: unless-stopped
-    command: headscale serve
+    command: serve
     volumes:
       - headscale-config:/etc/headscale
       - headscale-data:/var/lib/headscale
     ports:
       - "127.0.0.1:8080:8080"
-      - "127.0.0.1:50443:50443"
+      - "50443:50443"
       - "127.0.0.1:9090:9090"
     environment:
       - TZ=UTC

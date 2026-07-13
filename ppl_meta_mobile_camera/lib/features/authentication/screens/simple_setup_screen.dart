@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../../services/simplified_discovery_client.dart';
 import '../../../services/discovery_based_authentication_service.dart';
 import '../../../core/providers/authentication_provider.dart';
+import '../../../services/vpn_enrollment_service.dart';
 import '../../../home_screen.dart';
 
 class SimpleSetupScreen extends StatefulWidget {
@@ -107,6 +109,9 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
           print('📱 Authentication provider updated successfully');
           // Camera registration will be automatically handled by MainNavigator
           // via the requiresCameraRegistration getter
+
+          // Try VPN enrollment in background (won't block login)
+          _tryVpnEnrollment(nodeService.host, nodeService.port);
         } else {
           throw Exception('Failed to update authentication provider');
         }
@@ -177,6 +182,44 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
     } catch (e) {
       print('❌ Node service authentication error: $e');
       throw Exception('Failed to authenticate with Node service: $e');
+    }
+  }
+
+  /// Try to fetch a VPN enrollment key from the node in background.
+  /// Does NOT block the login flow — failure is silent.
+  Future<void> _tryVpnEnrollment(String nodeHost, int nodePort) async {
+    try {
+      final result = await VpnEnrollmentService.fetchKeyFromNode(
+        nodeIp: nodeHost,
+        nodePort: nodePort,
+      );
+      if (result != null) {
+        final authKey = result['auth_key'] as String?;
+        final headscaleServer = result['headscale_server'] as String?;
+        if (authKey != null && headscaleServer != null) {
+          await VpnEnrollmentService.saveEnrollment(
+            authKey: authKey,
+            headscaleServer: headscaleServer,
+          );
+          print('🔒 VPN enrollment key stored');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('✅ VPN Mesh enrollment ready — install Tailscale to connect'),
+                backgroundColor: Colors.green,
+                action: SnackBarAction(
+                  label: 'OK',
+                  textColor: Colors.white,
+                  onPressed: () {},
+                ),
+                duration: const Duration(seconds: 6),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      print('⚠️ VPN enrollment skipped: $e');
     }
   }
 
