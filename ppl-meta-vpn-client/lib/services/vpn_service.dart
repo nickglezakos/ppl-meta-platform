@@ -246,6 +246,22 @@ class VpnService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Delete a node from the VPN mesh via the authority API.
+  Future<bool> deleteNode(String nodeId) async {
+    try {
+      final url = Uri.parse(
+        '${_authorityUrl}/api/v1/vpn/nodes/$nodeId',
+      );
+      final response = await http.delete(url).timeout(
+        const Duration(seconds: 15),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('[EyeNetVPN] Failed to delete node: $e');
+      return false;
+    }
+  }
+
   /// Rename a peer node via the authority API.
   Future<bool> renamePeer(String nodeId, String newHostname) async {
     try {

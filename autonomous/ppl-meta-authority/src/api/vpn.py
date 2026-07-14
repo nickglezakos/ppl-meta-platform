@@ -305,31 +305,52 @@ async def enroll_installation(payload: EnrollInstallationRequest):
 async def list_vpn_nodes(_request: Request):
     """List all enrolled VPN nodes (admin only).
 
-    Lists nodes across ALL headscale users, not just one namespace.
+    Queries per-user because headscale's global ``nodes list`` (without
+    ``--user``) does not include ``online`` / ``last_seen`` fields.
     Requires admin session authentication.
     """
     # TODO: require_admin_session dependency
+    import json
 
-    # Query ALL nodes without user filter — most reliable
+    # 1. Get all headscale user names
+    user_names: list[str] = []
     try:
-        output = _run_headscale(["nodes", "list", "--output", "json"])
-        import json
-        nodes_data = json.loads(output) or []
+        users_output = _run_headscale(["users", "list", "--output", "json"])
+        users_data = json.loads(users_output) or []
+        user_names = [
+            u.get("name", "") for u in users_data
+            if isinstance(u, dict) and u.get("name")
+        ]
     except Exception:
-        nodes_data = []
+        pass
 
+    # 2. Collect nodes from every user namespace
+    all_nodes_data: list[dict] = []
+    for user_name in user_names:
+        try:
+            output = _run_headscale(
+                ["nodes", "list", "--user", user_name, "--output", "json"]
+            )
+            nodes_data = json.loads(output) or []
+            if isinstance(nodes_data, list):
+                all_nodes_data.extend(nodes_data)
+        except Exception:
+            continue
+
+    # 3. Build response — per-user listing includes online / last_seen
     nodes = []
-    for node in nodes_data:
+    for node in all_nodes_data:
         nodes.append(VpnNodeInfo(
             node_id=str(node.get("id", node.get("node_key", ""))),
-            hostname=str(node.get("given_name", node.get("name", ""))),
+            hostname=str(node.get("name", node.get("given_name", ""))),
             installation_uuid=str(
-                (node.get("pre_auth_key") or {}).get("user", {}).get("name", "")
+                (node.get("user") or {}).get("name", "")
             ).replace("matrix-", ""),
             tailscale_ip=(
-                (node.get("ip_addresses") or [None])[0] if node.get("ip_addresses") else None
+                (node.get("ip_addresses") or [None])[0]
+                if node.get("ip_addresses") else None
             ),
-            online=node.get("online", False),
+            online=bool(node.get("online", False)),
             last_seen=str(node.get("last_seen", "")),
         ))
 
@@ -410,12 +431,12 @@ async def revoke_vpn_node(node_id: str, _request: Request):
     """Revoke a node's VPN access (admin only).
 
     Requires admin session authentication.
+    Node IDs are globally unique so no --user filter needed.
     """
     # TODO: require_admin_session dependency
-    headscale_user = "eyenet-platform"
 
     try:
-        _run_headscale(["nodes", "delete", "--user", headscale_user, node_id])
+        _run_headscale(["nodes", "delete", "--identifier", node_id])
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=f"Failed to revoke node: {exc}")
 

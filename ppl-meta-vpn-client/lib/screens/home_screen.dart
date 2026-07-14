@@ -186,10 +186,44 @@ class _HomeScreenState extends State<HomeScreen> {
                               '$name.eyenet-vpn.local',
                               style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
                             ),
-                            subtitle: Text('$ip'),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.edit, size: 18),
-                              onPressed: () => _showRenamePeerDialog(context, vpn, nodeId, name),
+                            subtitle: Row(
+                              children: [
+                                Text(ip, style: const TextStyle(fontSize: 12)),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: online ? Colors.green[50] : Colors.red[50],
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: online ? Colors.green[300]! : Colors.red[300]!,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    online ? 'Online' : 'Offline',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: online ? Colors.green[700] : Colors.red[700],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit, size: 18),
+                                  tooltip: 'Rename',
+                                  onPressed: () => _showRenamePeerDialog(context, vpn, nodeId, name),
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline, size: 18, color: Colors.red[400]),
+                                  tooltip: 'Remove',
+                                  onPressed: () => _showDeletePeerDialog(context, vpn, nodeId, name),
+                                ),
+                              ],
                             ),
                           ),
                         );
@@ -356,6 +390,58 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             },
             child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show confirmation dialog before removing a device from the VPN mesh.
+  void _showDeletePeerDialog(
+    BuildContext context,
+    VpnService vpn,
+    String nodeId,
+    String name,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Device'),
+        content: Text(
+          'Remove $name.eyenet-vpn.local from the VPN mesh?\n\n'
+          'This device will lose VPN access. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final success = await vpn.deleteNode(nodeId);
+              if (success && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('$name removed from VPN mesh'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                vpn.fetchPeers();
+              } else if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Remove failed — check authority status'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            child: const Text('Remove'),
           ),
         ],
       ),
