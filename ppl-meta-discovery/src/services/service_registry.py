@@ -260,6 +260,27 @@ class ServiceRegistry:
             if service.status == ServiceStatus.HEALTHY
         ]
 
+    async def get_vpn_peers(
+        self, matrix_group_id: Optional[str] = None
+    ) -> List[ServiceInfo]:
+        """Get VPN-addressable peers, optionally filtered by matrix group.
+        
+        Returns services that have a tailscale_ip set, meaning they
+        are reachable via the VPN mesh.
+        """
+        results = []
+        for svc in self._services.values():
+            if svc.tailscale_ip and svc.status == ServiceStatus.HEALTHY:
+                # Optionally filter by matrix group
+                if matrix_group_id:
+                    svc_matrix = svc.metadata.get("matrix_group_id", "")
+                    if svc_matrix != matrix_group_id:
+                        continue
+                results.append(svc)
+        # Sort by name for consistent output
+        results.sort(key=lambda s: s.name)
+        return results
+
     async def health_check_all(self) -> Dict[str, ServiceStatus]:
         """Perform health check on all registered services.
 

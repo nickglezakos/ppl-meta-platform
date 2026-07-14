@@ -96,6 +96,25 @@ async def get_service(
     return service
 
 
+@router.get("/vpn-peers", response_model=ServiceList)
+async def list_vpn_peers(
+    matrix_group_id: str = Query(None, description="Optional matrix group filter"),
+    service_registry: ServiceRegistry = Depends(get_service_registry),
+) -> ServiceList:
+    """List VPN-addressable peers with MagicDNS hostnames.
+
+    Returns all healthy services that have a tailscale_ip set.
+    Optionally filter by matrix_group_id for mesh isolation.
+    """
+    peers = await service_registry.get_vpn_peers(matrix_group_id=matrix_group_id)
+    healthy = len(peers)
+    return ServiceList(
+        services=peers,
+        total_count=healthy,
+        healthy_count=healthy,
+    )
+
+
 @router.get("/health/check")
 async def health_check_all_services(
     service_registry: ServiceRegistry = Depends(get_service_registry),

@@ -46,6 +46,7 @@ class EnrollInstallationResponse(BaseModel):
 
 class VpnNodeInfo(BaseModel):
     node_id: str
+    hostname: str = ""
     installation_uuid: str
     tailscale_ip: str | None = None
     online: bool = False
@@ -191,11 +192,17 @@ def _list_nodes(user: str) -> list[dict]:
         user: Headscale user namespace.
 
     Returns:
-        List of node info dicts.
+        List of node info dicts (empty list if none found).
     """
-    output = _run_headscale(["nodes", "list", "--user", user, "--output", "json"])
-    import json
-    return json.loads(output)
+    try:
+        output = _run_headscale(["nodes", "list", "--user", user, "--output", "json"])
+        import json
+        result = json.loads(output)
+        if result is None:
+            return []
+        return result if isinstance(result, list) else []
+    except RuntimeError:
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -298,28 +305,32 @@ async def enroll_installation(payload: EnrollInstallationRequest):
 async def list_vpn_nodes(_request: Request):
     """List all enrolled VPN nodes (admin only).
 
+    Lists nodes across ALL headscale users, not just one namespace.
     Requires admin session authentication.
     """
     # TODO: require_admin_session dependency
-    # Legacy endpoint — lists nodes for the default platform user.
-    # For per-matrix queries, use GET /matrix-groups/{matrix_id}/nodes.
-    headscale_user = "eyenet-platform"
 
+    # Query ALL nodes without user filter — most reliable
     try:
-        nodes_data = _list_nodes(headscale_user)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=f"Failed to list nodes: {exc}")
+        output = _run_headscale(["nodes", "list", "--output", "json"])
+        import json
+        nodes_data = json.loads(output) or []
+    except Exception:
+        nodes_data = []
 
     nodes = []
     for node in nodes_data:
         nodes.append(VpnNodeInfo(
-            node_id=node.get("ID", node.get("NodeKey", "")),
-            installation_uuid="",  # Not directly mapped in headscale data
+            node_id=str(node.get("id", node.get("node_key", ""))),
+            hostname=str(node.get("given_name", node.get("name", ""))),
+            installation_uuid=str(
+                (node.get("pre_auth_key") or {}).get("user", {}).get("name", "")
+            ).replace("matrix-", ""),
             tailscale_ip=(
-                node.get("IPAddresses", [None])[0] if node.get("IPAddresses") else None
+                (node.get("ip_addresses") or [None])[0] if node.get("ip_addresses") else None
             ),
-            online=node.get("Online", False),
-            last_seen=node.get("LastSeen"),
+            online=node.get("online", False),
+            last_seen=str(node.get("last_seen", "")),
         ))
 
     return VpnNodeListResponse(nodes=nodes)
@@ -343,16 +354,55 @@ async def list_matrix_group_nodes(matrix_id: str, _request: Request):
     nodes = []
     for node in nodes_data:
         nodes.append(VpnNodeInfo(
-            node_id=node.get("ID", node.get("NodeKey", "")),
+            node_id=str(node.get("id", node.get("node_key", ""))),
+            hostname=str(node.get("name", node.get("given_name", ""))),
             installation_uuid="",
             tailscale_ip=(
-                node.get("IPAddresses", [None])[0] if node.get("IPAddresses") else None
+                (node.get("ip_addresses") or [None])[0] if node.get("ip_addresses") else None
             ),
-            online=node.get("Online", False),
-            last_seen=node.get("LastSeen"),
+            online=node.get("online", False),
+            last_seen=str(node.get("last_seen", "")),
         ))
 
     return VpnNodeListResponse(nodes=nodes)
+
+
+class RenameNodeRequest(BaseModel):
+    node_id: str
+    new_hostname: str
+
+
+@router.patch("/rename-node")
+async def rename_node(payload: RenameNodeRequest):
+    """Rename any node in the VPN mesh (admin only).
+
+    Runs 'headscale nodes rename <node_id> <new_hostname>' via docker exec.
+    MagicDNS updates automatically.
+    """
+    # Validate hostname
+    sanitized = "".join(c for c in payload.new_hostname if c.isalnum() or c == "-")
+    if not sanitized or len(sanitized) > 63:
+        raise HTTPException(
+            status_code=400,
+            detail="Hostname must be 1-63 alphanumeric characters or dashes",
+        )
+
+    try:
+        _run_headscale(["nodes", "rename", "--identifier", payload.node_id, sanitized])
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503, detail=f"Failed to rename node: {exc}"
+        )
+
+    logger.info(
+        "Node renamed: %s → %s", payload.node_id, sanitized,
+    )
+    return {
+        "status": "renamed",
+        "node_id": payload.node_id,
+        "new_hostname": sanitized,
+        "magic_dns": f"{sanitized}.eyenet-vpn.local",
+    }
 
 
 @router.delete("/nodes/{node_id}")

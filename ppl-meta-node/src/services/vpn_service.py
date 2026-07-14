@@ -29,6 +29,18 @@ AUTHORITY_URL = os.environ.get(
 INSTALLATION_UUID = os.environ.get("EYENET_INSTALLATION_UUID", "")
 APPLICATION_KEY = os.environ.get("EYENET_APPLICATION_KEY", "")
 
+# Optional: set a custom hostname for MagicDNS.
+# If not set, derived from INSTALLATION_UUID (sanitized).
+VPN_HOSTNAME = os.environ.get("EYENET_VPN_HOSTNAME", "")
+
+
+def _derive_hostname(install_uuid: str) -> str:
+    """Derive a unique MagicDNS hostname from the installation UUID."""
+    sanitized = install_uuid.replace("@", "-").replace(".", "-")
+    # Strip anything not alphanumeric, dash, or underscore
+    sanitized = "".join(c for c in sanitized if c.isalnum() or c in "-_")
+    return sanitized if sanitized else "eyenet-node"
+
 
 def _is_tailscale_installed() -> bool:
     """Check if tailscale CLI is available."""
@@ -108,7 +120,7 @@ def enroll_once() -> bool:
                 "--login-server", headscale_server,
                 "--auth-key", auth_key,
                 "--accept-routes",
-                "--hostname", INSTALLATION_UUID.replace("@", "-").replace(".", "-"),
+                "--hostname", VPN_HOSTNAME or _derive_hostname(INSTALLATION_UUID),
             ],
             capture_output=True,
             text=True,

@@ -124,6 +124,28 @@ class VpnStatusClient {
     final response = await _nodeClient.post('/node/vpn/enroll');
     return EnrollmentKey.fromJson(Map<String, dynamic>.from(response.data as Map));
   }
+
+  /// Update the node's Tailscale hostname (MagicDNS name).
+  /// Uses the node API to update both daemon and headscale atomically.
+  Future<Map<String, dynamic>> updateHostname(String newHostname) async {
+    final response = await _nodeClient.patch(
+      '/node/vpn/hostname',
+      data: {'hostname': newHostname},
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Disconnect Tailscale (keep identity for reconnect).
+  Future<Map<String, dynamic>> disconnect() async {
+    final response = await _nodeClient.post('/node/vpn/disconnect');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Reconnect Tailscale with existing identity.
+  Future<Map<String, dynamic>> connect() async {
+    final response = await _nodeClient.post('/node/vpn/connect');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
 }
 
 final vpnStatusClientProvider = Provider<VpnStatusClient>((ref) {

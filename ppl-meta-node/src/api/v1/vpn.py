@@ -32,6 +32,62 @@ async def vpn_status():
     return status
 
 
+from pydantic import BaseModel, Field
+
+
+class HostnameRequest(BaseModel):
+    hostname: str = Field(
+        ..., min_length=1, max_length=63,
+        pattern=r'^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$',
+        description="New MagicDNS hostname (alphanumeric, dashes, max 63 chars)",
+    )
+
+
+@router.post("/disconnect")
+async def vpn_disconnect():
+    """Disconnect Tailscale without losing identity. Can reconnect later."""
+    try:
+        result = await mesh_vpn_service.disconnect()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        logger.error("Failed to disconnect: %s", exc)
+        raise HTTPException(status_code=503, detail=f"Disconnect failed: {exc}")
+    return result
+
+
+@router.post("/connect")
+async def vpn_connect():
+    """Reconnect Tailscale with existing identity."""
+    try:
+        result = await mesh_vpn_service.connect()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        logger.error("Failed to connect: %s", exc)
+        raise HTTPException(status_code=503, detail=f"Connect failed: {exc}")
+    return result
+
+
+@router.patch("/hostname")
+async def vpn_hostname(request: HostnameRequest):
+    """Change the node's Tailscale hostname (MagicDNS name).
+
+    Preserves the existing VPN IP and WireGuard identity.
+    """
+    try:
+        result = await mesh_vpn_service.set_hostname(request.hostname)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except Exception as exc:
+        logger.error("Failed to set hostname: %s", exc)
+        raise HTTPException(status_code=503, detail=f"Hostname update failed: {exc}")
+
+    return result
+
+
 @router.get("/peers")
 async def vpn_peers():
     """Get all VPN peers visible to this node."""

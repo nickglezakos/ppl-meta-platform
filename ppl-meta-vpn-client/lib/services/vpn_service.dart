@@ -20,13 +20,14 @@ class VpnService extends ChangeNotifier {
   String _headscaleUrl = 'https://vpn.eyenet-vision.com';
   String _applicationKey = '';
   String _installationUuid = '';
-  String _hostname = 'eyenet-android';
+  String _hostname = '';
 
   // Connection state
   bool _isConnected = false;
   bool _isConnecting = false;
   String? _vpnIp;
   String? _error;
+  String? _matrixGroupId;
   bool _initialized = false;
 
   // Getters
@@ -141,6 +142,9 @@ class VpnService extends ChangeNotifier {
         await prefs.setString(_keyHostname, _hostname);
         await prefs.setString(_keyServerUrl, _authorityUrl);
         await prefs.setString(_keyInstallationUuid, _installationUuid);
+
+        // Auto-fetch mesh peers on successful connection
+        fetchPeers();
       } else {
         _error = 'Connected but no IP assigned.';
         _isConnected = false;
@@ -208,6 +212,75 @@ class VpnService extends ChangeNotifier {
     }
   }
 
+  /// Peer info for the mesh dashboard.
+  List<Map<String, dynamic>> _peers = [];
+
+  List<Map<String, dynamic>> get peers => _peers;
+
+  /// Refresh the list of peers visible to this device.
+  /// Calls the authority API which queries all headscale users.
+  Future<void> fetchPeers() async {
+    if (!_isConnected) return;
+    try {
+      final url = Uri.parse('${_authorityUrl}/api/v1/vpn/nodes');
+      final response = await http.get(url).timeout(
+        const Duration(seconds: 10),
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        final rawNodes = List<Map<String, dynamic>>.from(data['nodes'] ?? []);
+        // Filter out self (own VPN IP)
+        _peers = rawNodes.where((node) {
+          return node['tailscale_ip'] != _vpnIp;
+        }).map((node) => {
+          'hostname': node['hostname'] ?? '',
+          'tailscale_ip': node['tailscale_ip'] ?? '',
+          'online': node['online'] ?? false,
+          'node_id': node['node_id'] ?? '',
+        }).toList();
+        debugPrint('[EyeNetVPN] Fetched ${_peers.length} peers');
+      }
+    } catch (e) {
+      debugPrint('[EyeNetVPN] Failed to fetch peers: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Rename a peer node via the authority API.
+  Future<bool> renamePeer(String nodeId, String newHostname) async {
+    try {
+      final url = Uri.parse(
+        '${_authorityUrl}/api/v1/vpn/rename-node',
+      );
+      final response = await http.patch(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'node_id': nodeId,
+          'new_hostname': newHostname,
+        }),
+      ).timeout(const Duration(seconds: 15));
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('[EyeNetVPN] Failed to rename peer: $e');
+      return false;
+    }
+  }
+
+  /// Derive a unique hostname from the installation UUID.
+  /// Extracts the last meaningful segment and prefixes with 'eyenet-'.
+  /// Example: 'nick.glezakos@gmail.com-0' → 'eyenet-nick.glezakos-0'
+  static String _deriveHostname(String installationUuid) {
+    // Sanitize: replace '@' with '.', strip non-alphanumeric except '.' and '-'
+    var sanitized = installationUuid.replaceAll('@', '.');
+    sanitized = sanitized.replaceAll(RegExp(r'[^a-zA-Z0-9.\-]'), '');
+    // Truncate to reasonable length for DNS compatibility
+    if (sanitized.length > 40) {
+      sanitized = sanitized.substring(0, 40);
+    }
+    return 'eyenet-$sanitized';
+  }
+
   /// Load saved credentials from SharedPreferences.
   Future<void> _loadCredentials() async {
     final prefs = await SharedPreferences.getInstance();
@@ -217,6 +290,14 @@ class VpnService extends ChangeNotifier {
     if (_installationUuid.isEmpty) {
       _installationUuid = prefs.getString(_keyInstallationUuid) ?? '';
     }
-    _hostname = prefs.getString(_keyHostname) ?? 'eyenet-android';
+    // Load saved hostname, or derive one from the installation_uuid
+    final savedHostname = prefs.getString(_keyHostname);
+    if (savedHostname != null && savedHostname.isNotEmpty) {
+      _hostname = savedHostname;
+    } else if (_installationUuid.isNotEmpty) {
+      _hostname = _deriveHostname(_installationUuid);
+    } else {
+      _hostname = 'eyenet-android';
+    }
   }
 }

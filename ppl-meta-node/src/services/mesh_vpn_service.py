@@ -391,7 +391,17 @@ class MeshVPNService:
                 if tailscale_ip:
                     enrolled = True
                 vpn_ips = list(self_data.get("TailscaleIPs") or [])
+                # Read local hostname but prefer canonical from headscale via authority
                 hostname = self_data.get("HostName", "")
+
+                # Try to resolve canonical hostname from authority API
+                if tailscale_ip:
+                    try:
+                        resolved = await self._resolve_hostname_from_authority(tailscale_ip)
+                        if resolved:
+                            hostname = resolved
+                    except Exception:
+                        pass
 
                 peers = result.get("Peer") or {}
                 all_peers = list(peers.values())
@@ -455,6 +465,128 @@ class MeshVPNService:
             backend_state = self_data.get("BackendState", "")
             if "https://" in backend_state:
                 return backend_state.split("https://")[1].split()[0].rstrip("/")
+        except Exception:
+            pass
+        return None
+
+    async def set_hostname(self, new_hostname: str) -> dict:
+        """Change the node's Tailscale hostname (MagicDNS name).
+
+        Runs `tailscale up --hostname=<new>` which preserves the existing
+        IP address and WireGuard identity while updating the DNS name.
+
+        Args:
+            new_hostname: New hostname (alphanumeric, dashes, max 63 chars).
+
+        Returns:
+            Dict with success, old_hostname, new_hostname, and vpn_ip.
+        """
+        # Check if Tailscale is actually running and enrolled
+        result = await self._run_tailscale_json(["status", "--json"])
+        if not result:
+            raise RuntimeError(
+                "Tailscale is not running. Install and enroll the node first."
+            )
+
+        self_data = result.get("Self", {})
+        tailscale_ips = self_data.get("TailscaleIPs", [])
+        if not tailscale_ips:
+            raise RuntimeError(
+                "Node is not enrolled in the VPN mesh. Enroll first, then change hostname."
+            )
+
+        old_hostname = self_data.get("HostName", "unknown")
+
+        # Validate hostname
+        sanitized = "".join(c for c in new_hostname if c.isalnum() or c == "-")
+        if not sanitized or len(sanitized) > 63:
+            raise ValueError(
+                "Hostname must be 1-63 alphanumeric characters or dashes"
+            )
+
+        # Run tailscale up with new hostname (preserve existing DNS/routes)
+        cmd = [
+            self.tailscale_binary, "up",
+            "--hostname", sanitized,
+            "--accept-routes=false",
+            "--accept-dns=false",
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=TAILSCALE_UP_TIMEOUT,
+        )
+
+        if proc.returncode != 0:
+            error_msg = stderr.decode().strip() if stderr else "Unknown error"
+            raise RuntimeError(f"tailscale up failed (exit {proc.returncode}): {error_msg}")
+
+        logger.info(
+            "Hostname changed: %s → %s", old_hostname, sanitized,
+        )
+
+        return {
+            "success": True,
+            "old_hostname": old_hostname,
+            "new_hostname": sanitized,
+            "vpn_ip": self.tailscale_ip,
+        }
+
+    async def disconnect(self) -> dict:
+        """Disconnect Tailscale without losing identity."""
+        success = await self._run_tailscale_command(["down"])
+        self.enrolled = False
+        self.tailscale_ip = None
+        if not success:
+            raise RuntimeError("tailscale down failed")
+        return {"status": "disconnected", "previous_ip": self.tailscale_ip}
+
+    async def connect(self, hostname: str | None = None) -> dict:
+        """Reconnect Tailscale with existing identity."""
+        cmd = [self.tailscale_binary, "up"]
+        if hostname:
+            cmd.extend(["--hostname", hostname])
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=TAILSCALE_UP_TIMEOUT,
+        )
+        if proc.returncode != 0:
+            error_msg = stderr.decode().strip() if stderr else "Unknown error"
+            raise RuntimeError(f"tailscale up failed: {error_msg}")
+        self.tailscale_ip = await self._get_tailscale_ip_async()
+        self.enrolled = bool(self.tailscale_ip)
+        return {"status": "connected", "tailscale_ip": self.tailscale_ip}
+
+    async def _resolve_hostname_from_authority(self, host_ip: str) -> Optional[str]:
+        """Try to resolve canonical hostname from authority API.
+
+        Looks up the node by IP in headscale's database via the authority.
+        Returns the canonical hostname if found, None otherwise.
+        """
+        authority_url = os.environ.get(
+            "AUTHORITY_BASE_URL",
+            os.environ.get("AUTHORITY_SERVICE_URL", ""),
+        )
+        if not authority_url:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(
+                    f"{authority_url.rstrip('/')}/api/v1/vpn/nodes",
+                )
+                if resp.status_code != 200:
+                    return None
+                data = resp.json()
+                for node in data.get("nodes", []):
+                    if node.get("tailscale_ip") == host_ip:
+                        return node.get("hostname", "")
         except Exception:
             pass
         return None

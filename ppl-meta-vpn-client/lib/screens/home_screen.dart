@@ -126,6 +126,76 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
 
+                  const SizedBox(height: 24),
+
+                  // Mesh Peers
+                  if (vpn.isConnected) ...[
+                    Row(
+                      children: [
+                        const Icon(Icons.hub, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Mesh Peers',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: () => vpn.fetchPeers(),
+                          icon: const Icon(Icons.refresh, size: 16),
+                          label: const Text('Refresh', style: TextStyle(fontSize: 12)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (vpn.peers.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, size: 16, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Tap Refresh to load peers',
+                              style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      ...vpn.peers.map((peer) {
+                        final ip = peer['tailscale_ip'] ?? '';
+                        final name = peer['hostname'] ?? peer['node_id']?.toString() ?? 'Unknown';
+                        final online = peer['online'] == true;
+                        final nodeId = peer['node_id']?.toString() ?? '';
+                        return Card(
+                          child: ListTile(
+                            leading: Icon(
+                              online ? Icons.check_circle : Icons.cancel,
+                              color: online ? Colors.green : Colors.red[300],
+                              size: 24,
+                            ),
+                            title: Text(
+                              '$name.eyenet-vpn.local',
+                              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                            ),
+                            subtitle: Text('$ip'),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.edit, size: 18),
+                              onPressed: () => _showRenamePeerDialog(context, vpn, nodeId, name),
+                            ),
+                          ),
+                        );
+                      }),
+                  ],
+
                   // Error message
                   if (vpn.error != null) ...[
                     const SizedBox(height: 16),
@@ -159,6 +229,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final uuidController = TextEditingController(text: vpn.installationUuid);
     final keyController = TextEditingController(text: vpn.applicationKey);
     final urlController = TextEditingController(text: vpn.authorityUrl);
+    final hostnameController = TextEditingController(text: vpn.hostname);
 
     showDialog(
       context: context,
@@ -195,6 +266,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 obscureText: true,
               ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: hostnameController,
+                decoration: const InputDecoration(
+                  labelText: 'Device Name',
+                  hintText: 'eyenet-node-01',
+                  border: OutlineInputBorder(),
+                  helperText: 'Unique name for MagicDNS (disconnect first)',
+                ),
+              ),
             ],
           ),
         ),
@@ -208,9 +289,73 @@ class _HomeScreenState extends State<HomeScreen> {
               vpn.installationUuid = uuidController.text.trim();
               vpn.applicationKey = keyController.text.trim();
               vpn.authorityUrl = urlController.text.trim();
+              vpn.hostname = hostnameController.text.trim();
               Navigator.pop(ctx);
             },
             child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRenamePeerDialog(
+    BuildContext context,
+    VpnService vpn,
+    String nodeId,
+    String currentName,
+  ) {
+    final controller = TextEditingController(text: currentName);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Device'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'New hostname',
+                helperText: 'Alphanumeric + dashes',
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final newName = controller.text.trim();
+              if (newName.isEmpty || newName == currentName) {
+                Navigator.pop(ctx);
+                return;
+              }
+              Navigator.pop(ctx);
+              final success = await vpn.renamePeer(nodeId, newName);
+              if (success && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('$currentName → $newName.eyenet-vpn.local'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                vpn.fetchPeers();
+              } else if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Rename failed — check authority status'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            child: const Text('Rename'),
           ),
         ],
       ),

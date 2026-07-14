@@ -542,7 +542,7 @@ class NetworkSettingsSection extends ConsumerWidget {
         final vpnState = ref.watch(vpnStatusProvider);
 
         return vpnState.when(
-          data: (status) => _buildVpnContent(status),
+          data: (status) => _buildVpnContent(context, ref, status),
           loading: () => _buildVpnLoading(),
           error: (error, _) => _buildVpnNotAvailable(error.toString()),
         );
@@ -550,7 +550,7 @@ class NetworkSettingsSection extends ConsumerWidget {
     );
   }
 
-  Widget _buildVpnContent(VpnStatus status) {
+  Widget _buildVpnContent(BuildContext context, WidgetRef ref, VpnStatus status) {
     if (!status.available && !status.hasTailscaleInstalled) {
       return _buildVpnNotAvailable('Tailscale not installed on this device');
     }
@@ -560,10 +560,10 @@ class NetworkSettingsSection extends ConsumerWidget {
     if (!status.enrolled) {
       return _buildVpnNotEnrolled();
     }
-    return _buildVpnActive(status);
+    return _buildVpnActive(context, ref, status);
   }
 
-  Widget _buildVpnActive(VpnStatus status) {
+  Widget _buildVpnActive(BuildContext context, WidgetRef ref, VpnStatus status) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -601,7 +601,33 @@ class NetworkSettingsSection extends ConsumerWidget {
             _vpnInfoRow('Server', status.headscaleServer!),
           _vpnInfoRow('Peers', '${status.peerCount} (${status.onlineCount} online)'),
           if (status.hostname != null)
-            _vpnInfoRow('Hostname', status.hostname!),
+            _vpnInfoRow('MagicDNS', '${status.hostname!}.eyenet-vpn.local'),
+          const SizedBox(height: 12),
+          // Tailscale status indicator (read-only)
+          Row(
+            children: [
+              const Text('Tailscale',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+              const Spacer(),
+              Container(
+                width: 8, height: 8,
+                decoration: BoxDecoration(
+                  color: status.enrolled ? AppColors.success : Colors.grey,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                status.enrolled ? 'Connected' : 'Disconnected',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: status.enrolled ? AppColors.success : Colors.grey,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -745,6 +771,74 @@ class NetworkSettingsSection extends ConsumerWidget {
             child: Text(value,
               style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showHostnameEditDialog(BuildContext context, WidgetRef ref, String currentHostname) {
+    final controller = TextEditingController(text: currentHostname);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit MagicDNS Hostname'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'Hostname',
+                helperText: 'Alphanumeric + dashes, max 63 chars',
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'MagicDNS: ${controller.text}.eyenet-vpn.local',
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final newHostname = controller.text.trim();
+              if (newHostname.isEmpty || newHostname == currentHostname) {
+                Navigator.pop(ctx);
+                return;
+              }
+              Navigator.pop(ctx);
+              try {
+                final client = ref.read(vpnStatusClientProvider);
+                await client.updateHostname(newHostname);
+                ref.invalidate(vpnStatusProvider);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Hostname changed to $newHostname'),
+                      backgroundColor: AppColors.success,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed: $e'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Save'),
           ),
         ],
       ),
