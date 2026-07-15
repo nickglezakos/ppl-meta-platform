@@ -122,8 +122,12 @@ async def vpn_tags():
     return {"tags": tags, "count": len(tags)}
 
 
+class EnrollRequest(BaseModel):
+    node_type: str = "client"  # "node" for self-enrollment, "client" for cameras/apps
+
+
 @router.post("/enroll")
-async def vpn_enroll():
+async def vpn_enroll(payload: EnrollRequest = EnrollRequest()):
     """Full VPN enrollment — logout from other networks, fetch key, run tailscale up.
 
     Returns enrollment success status, assigned IP, and matrix group ID.
@@ -168,7 +172,7 @@ async def vpn_enroll():
                 json={
                     "installation_uuid": installation_uuid,
                     "application_key": application_key,
-                    "node_type": "node",
+                    "node_type": payload.node_type,
                 },
             )
             if resp.status_code != 200:

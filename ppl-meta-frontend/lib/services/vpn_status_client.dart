@@ -158,7 +158,8 @@ class VpnStatusClient {
 
   /// Request a fresh enrollment key from the authority via the node.
   Future<EnrollmentKey> enroll() async {
-    final response = await _nodeClient.post('/node/vpn/enroll');
+    final response = await _nodeClient.post('/node/vpn/enroll',
+        data: {'node_type': 'node'});
     return EnrollmentKey.fromJson(Map<String, dynamic>.from(response.data as Map));
   }
 
