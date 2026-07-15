@@ -35,6 +35,7 @@ router = APIRouter(prefix="/api/v1/vpn", tags=["vpn"])
 class EnrollInstallationRequest(BaseModel):
     installation_uuid: str
     application_key: str
+    node_type: str = "client"  # "node" for platform nodes, "client" for cameras/apps
 
 
 class EnrollInstallationResponse(BaseModel):
@@ -53,6 +54,7 @@ class VpnNodeInfo(BaseModel):
     tailscale_ip: str | None = None
     online: bool = False
     last_seen: str | None = None
+    tags: list[str] = []
 
 
 class VpnNodeListResponse(BaseModel):
@@ -282,6 +284,7 @@ def _fetch_all_nodes() -> VpnNodeListResponse:
             ),
             online=online,
             last_seen=last_seen_str,
+            tags=list(node.get("tags") or []),
         ))
 
     return VpnNodeListResponse(nodes=nodes)
@@ -353,6 +356,11 @@ async def enroll_installation(payload: EnrollInstallationRequest):
     # Always include the base installation tag
     if "tag:installation" not in tags:
         tags.insert(0, "tag:installation")
+
+    # Add node type tag for service discovery (tag:node or tag:client)
+    type_tag = f"tag:{payload.node_type}"
+    if type_tag not in tags:
+        tags.append(type_tag)
 
     # Ensure headscale user namespace exists
     try:
