@@ -103,12 +103,13 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('MagicDNS Connection Failed'),
         content: const Text(
-          'This device is not enrolled in the EyeNet VPN mesh.\n\n'
-          'To use MagicDNS auto-discovery:\n'
-          '1. Install the EyeNet VPN client app\n'
-          '2. Enroll this device in the VPN mesh\n'
-          '3. Return here and use the MagicDNS name\n\n'
-          'You can also connect via LAN IP instead.',
+          'Cannot reach the node via MagicDNS.\n\n'
+          'Possible causes:\n'
+          '• This device is not enrolled in the VPN mesh\n'
+          '• The node\'s MagicDNS name has been changed\n'
+          '• The node is offline or unreachable\n\n'
+          'Check the MagicDNS name above and try again, '
+          'or switch to LAN IP connection below.',
         ),
         actions: [
           TextButton(
