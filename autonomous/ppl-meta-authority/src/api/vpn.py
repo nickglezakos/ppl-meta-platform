@@ -462,6 +462,10 @@ async def rename_node(payload: RenameNodeRequest):
             status_code=503, detail=f"Failed to rename node: {exc}"
         )
 
+    # Invalidate cache so next GET /nodes returns fresh data
+    global _nodes_cache
+    _nodes_cache = None
+
     logger.info(
         "Node renamed: %s → %s", payload.node_id, sanitized,
     )
@@ -483,9 +487,13 @@ async def revoke_vpn_node(node_id: str, _request: Request):
     # TODO: require_admin_session dependency
 
     try:
-        _run_headscale(["nodes", "delete", "--identifier", node_id])
+        _run_headscale(["nodes", "delete", "--identifier", node_id, "--force"])
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=f"Failed to revoke node: {exc}")
+
+    # Invalidate cache so next GET /nodes returns fresh data
+    global _nodes_cache
+    _nodes_cache = None
 
     logger.info("VPN node revoked: %s", node_id)
     return {"status": "revoked", "node_id": node_id}
