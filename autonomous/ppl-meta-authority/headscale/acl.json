@@ -2,5 +2,10 @@
   "hosts": {},
   "acls": [],
   "groups": {},
-  "tagOwners": {}
+  "tagOwners": {
+    "tag:installation": ["*"],
+    "tag:node": ["*"],
+    "tag:client": ["*"],
+    "tag:camera": ["*"]
+  }
 }
