@@ -276,9 +276,19 @@ def _fetch_all_nodes() -> VpnNodeListResponse:
             else:
                 last_seen_str = str(last_seen_raw)
 
+        hostname = str(node.get("given_name", node.get("name", "")))
+        raw_tags = list(node.get("tags") or [])
+
+        # Derive node/client tag from hostname convention
+        # Node installations: contain "node" or "hetzner" in hostname
+        # Client devices: all others (cameras, mobile apps, etc.)
+        if not any("tag:node" in t or "tag:client" in t for t in raw_tags):
+            derived = "tag:node" if hostname.startswith("eyenet-node") or "node" in hostname else "tag:client"
+            raw_tags.append(derived)
+
         nodes.append(VpnNodeInfo(
             node_id=node_id,
-            hostname=str(node.get("given_name", node.get("name", ""))),
+            hostname=hostname,
             installation_uuid=str(
                 (node.get("pre_auth_key") or {}).get("user", {}).get("name", "")
             ).replace("matrix-", ""),
@@ -288,7 +298,7 @@ def _fetch_all_nodes() -> VpnNodeListResponse:
             ),
             online=bool(node.get("online", False)),
             last_seen=last_seen_str,
-            tags=list(node.get("tags") or []),
+            tags=raw_tags,
         ))
 
     return VpnNodeListResponse(nodes=nodes)
