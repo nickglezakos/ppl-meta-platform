@@ -14,7 +14,7 @@ import shlex
 import subprocess
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -218,71 +218,75 @@ def _list_nodes(user: str) -> list[dict]:
 
 
 def _fetch_all_nodes() -> VpnNodeListResponse:
-    """Query all headscale users and build the full node list response.
+    """Query all headscale users and build the node list response.
 
-    Queries per-user because headscale's global ``nodes list`` (without
-    ``--user``) does not include ``last_seen`` fields.
+    Uses the global listing (fast, includes ``online`` and ``tags``)
+    and supplements with per-user ``last_seen`` timestamps.
     """
-    # 1. Get all headscale user names
-    user_names: list[str] = []
+    # 1. Get all nodes via global listing (fast, includes online + tags)
+    global_nodes: dict[str, dict] = {}
     try:
-        users_output = _run_headscale(["users", "list", "--output", "json"])
-        users_data = json.loads(users_output) or []
-        user_names = [
-            u.get("name", "") for u in users_data
-            if isinstance(u, dict) and u.get("name")
-        ]
+        output = _run_headscale(["nodes", "list", "--output", "json"])
+        global_data = json.loads(output) or []
+        for n in global_data:
+            node_id = str(n.get("id", ""))
+            if node_id:
+                global_nodes[node_id] = n
     except Exception:
         pass
 
-    # 2. Collect nodes from every user namespace
-    all_nodes_data: list[dict] = []
-    for user_name in user_names:
-        try:
-            output = _run_headscale(
-                ["nodes", "list", "--user", user_name, "--output", "json"]
-            )
-            nodes_data = json.loads(output) or []
-            if isinstance(nodes_data, list):
-                all_nodes_data.extend(nodes_data)
-        except Exception:
-            continue
+    # 2. Get per-user listings for last_seen (not in global listing)
+    last_seen_by_id: dict[str, dict] = {}
+    try:
+        users_output = _run_headscale(["users", "list", "--output", "json"])
+        users_data = json.loads(users_output) or []
+        for user in users_data:
+            user_name = user.get("name", "")
+            if not user_name:
+                continue
+            try:
+                user_output = _run_headscale(
+                    ["nodes", "list", "--user", user_name, "--output", "json"]
+                )
+                user_nodes = json.loads(user_output) or []
+                for n in (user_nodes if isinstance(user_nodes, list) else []):
+                    node_id = str(n.get("id", ""))
+                    if node_id and n.get("last_seen"):
+                        last_seen_by_id[node_id] = n.get("last_seen")
+            except Exception:
+                continue
+    except Exception:
+        pass
 
-    # 3. Build response — derive online from protobuf last_seen timestamp
+    # 3. Build response — combine global online/tags with per-user last_seen
     nodes = []
-    for node in all_nodes_data:
-        # Parse protobuf timestamp: {"seconds": 1783935373, "nanos": 185189452}
-        last_seen_raw = node.get("last_seen")
+    for node_id, node in global_nodes.items():
+        last_seen_raw = last_seen_by_id.get(
+            node_id, node.get("last_seen")
+        )
         last_seen_str = ""
-        last_seen_dt = None
         if isinstance(last_seen_raw, dict):
             secs = last_seen_raw.get("seconds")
             if isinstance(secs, (int, float)):
                 try:
-                    last_seen_dt = datetime.fromtimestamp(float(secs), tz=timezone.utc)
-                    last_seen_str = last_seen_dt.isoformat()
+                    dt = datetime.fromtimestamp(float(secs), tz=timezone.utc)
+                    last_seen_str = dt.isoformat()
                 except (ValueError, OSError):
                     last_seen_str = str(last_seen_raw)
             else:
                 last_seen_str = str(last_seen_raw)
 
-        # Online = last_seen within 5 minutes
-        online = False
-        if last_seen_dt is not None:
-            now_utc = datetime.now(timezone.utc)
-            online = (now_utc - last_seen_dt) < timedelta(minutes=5)
-
         nodes.append(VpnNodeInfo(
-            node_id=str(node.get("id", node.get("node_key", ""))),
-            hostname=str(node.get("name", node.get("given_name", ""))),
+            node_id=node_id,
+            hostname=str(node.get("given_name", node.get("name", ""))),
             installation_uuid=str(
-                (node.get("user") or {}).get("name", "")
+                (node.get("pre_auth_key") or {}).get("user", {}).get("name", "")
             ).replace("matrix-", ""),
             tailscale_ip=(
                 (node.get("ip_addresses") or [None])[0]
                 if node.get("ip_addresses") else None
             ),
-            online=online,
+            online=bool(node.get("online", False)),
             last_seen=last_seen_str,
             tags=list(node.get("tags") or []),
         ))
