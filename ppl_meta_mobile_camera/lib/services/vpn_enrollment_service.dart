@@ -10,6 +10,8 @@ class VpnEnrollmentService {
   static const String _keyTailscaleIp = 'vpn_tailscale_ip';
   static const String _keyEnrolled = 'vpn_enrolled';
   static const String _keyDeepLink = 'vpn_deep_link';
+  static const String _keyDiscoveryUrl = 'vpn_discovery_url';
+  static const String _keyMagicDns = 'vpn_magic_dns';
 
   /// Fetch a pre-auth key from the node, using the node's own installation
   /// credentials. This requires the camera to already be connected to the
@@ -90,6 +92,30 @@ class VpnEnrollmentService {
     return prefs.getString(_keyTailscaleIp);
   }
 
+  /// Save the node's MagicDNS discovery URL for VPN-based service discovery.
+  static Future<void> saveDiscoveryUrl(String url) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyDiscoveryUrl, url);
+  }
+
+  /// Get the stored discovery URL (e.g. http://eyenet-office.eyenet-vpn.local:8002).
+  static Future<String?> getDiscoveryUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyDiscoveryUrl);
+  }
+
+  /// Save the node's MagicDNS hostname.
+  static Future<void> saveMagicDns(String dns) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyMagicDns, dns);
+  }
+
+  /// Get the stored MagicDNS hostname.
+  static Future<String?> getMagicDns() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyMagicDns);
+  }
+
   /// Clear all VPN enrollment data (for reset/switch installations).
   static Future<void> clearEnrollment() async {
     final prefs = await SharedPreferences.getInstance();
@@ -97,6 +123,8 @@ class VpnEnrollmentService {
     await prefs.remove(_keyHeadscaleServer);
     await prefs.remove(_keyTailscaleIp);
     await prefs.remove(_keyEnrolled);
+    await prefs.remove(_keyDiscoveryUrl);
+    await prefs.remove(_keyMagicDns);
     AppLogger.instance.info('VPN enrollment cleared');
   }
 }

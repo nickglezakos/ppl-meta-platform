@@ -184,11 +184,17 @@ async def vpn_enroll():
     matrix_group_id = data.get("matrix_group_id")
     tailscale_up_command = f'tailscale up --login-server {headscale_server} --auth-key {auth_key} --accept-routes'
 
+    # Derive hostname from installation identity for unique MagicDNS
+    hostname = os.environ.get("EYENET_VPN_HOSTNAME", f"eyenet-{installation_uuid[:20]}")
+    sanitized_hostname = "".join(c for c in hostname if c.isalnum() or c == "-").rstrip("-")[:63]
+    magic_dns = f"{sanitized_hostname}.eyenet-vpn.local"
+    discovery_url = f"http://{magic_dns}:8002"
+
     # Attempt to run tailscale up
     enrolled = False
     assigned_ip = None
     try:
-        success = await mesh_vpn_service._run_tailscale_up(auth_key, "eyenet-node")
+        success = await mesh_vpn_service._run_tailscale_up(auth_key, sanitized_hostname)
         if success:
             assigned_ip = await mesh_vpn_service._get_tailscale_ip_async()
             if assigned_ip:
@@ -211,6 +217,9 @@ async def vpn_enroll():
         "tags": data.get("tags", []),
         "tailscale_up_command": tailscale_up_command,
         "deep_link": deep_link,
+        "hostname": sanitized_hostname,
+        "magic_dns": magic_dns,
+        "discovery_url": discovery_url,
     }
 
 

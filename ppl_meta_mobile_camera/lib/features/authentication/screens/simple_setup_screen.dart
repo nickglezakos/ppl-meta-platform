@@ -201,7 +201,17 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
             authKey: authKey,
             headscaleServer: headscaleServer,
           );
+          // Save MagicDNS discovery URL for future VPN-based connections
+          final discoveryUrl = result['discovery_url'] as String?;
+          if (discoveryUrl != null) {
+            await VpnEnrollmentService.saveDiscoveryUrl(discoveryUrl);
+          }
+          final magicDns = result['magic_dns'] as String?;
+          if (magicDns != null) {
+            await VpnEnrollmentService.saveMagicDns(magicDns);
+          }
           print('🔒 VPN enrollment key stored');
+          print('   Discovery URL: $discoveryUrl');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
