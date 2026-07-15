@@ -168,6 +168,7 @@ async def vpn_enroll():
                 json={
                     "installation_uuid": installation_uuid,
                     "application_key": application_key,
+                    "node_type": "node",
                 },
             )
             if resp.status_code != 200:
