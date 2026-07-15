@@ -189,12 +189,17 @@ class VpnStatusClient {
   // Authority VPN API — Peer Management
   // -----------------------------------------------------------------------
 
-  /// Fetch all VPN peers from the authority API.
+  /// Fetch all VPN peers from the node API (same origin, no CORS).
   Future<List<VpnPeerInfo>> fetchPeers() async {
-    final response = await _authorityClient.get('/api/v1/vpn/nodes');
+    final response = await _nodeClient.get('/node/vpn/peers');
     final data = Map<String, dynamic>.from(response.data as Map);
-    final rawNodes = List<Map<String, dynamic>>.from(data['nodes'] ?? []);
-    return rawNodes.map((n) => VpnPeerInfo.fromJson(n)).toList();
+    final rawPeers = List<Map<String, dynamic>>.from(data['peers'] ?? []);
+    return rawPeers.map((p) => VpnPeerInfo(
+      nodeId: (p['ip']?.toString() ?? '').replaceAll('.', ''),
+      hostname: p['hostname']?.toString() ?? 'Unknown',
+      tailscaleIp: p['ip']?.toString() ?? '',
+      online: p['online'] == true,
+    )).toList();
   }
 
   /// Rename a peer node via the authority API.
