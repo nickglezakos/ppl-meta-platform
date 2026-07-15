@@ -76,7 +76,7 @@ HEADSCALE_CLI = os.environ.get(
 )
 
 # Pre-auth key TTL: 1 hour (matches proposal Section 10.2 M7 hardening)
-PREAUTH_KEY_EXPIRY_HOURS = 1
+PREAUTH_KEY_EXPIRY_HOURS = 24
 
 
 def _run_headscale(args: list[str]) -> str:
