@@ -1,6 +1,6 @@
 # EyeNet Headscale VPN — Authority Integration Guide
 
-**Last Updated:** 2026-07-08  
+**Last Updated:** 2026-07-15
 **Status:** Production — deployed on `authority.eyenet-vision.com`
 
 ---
@@ -14,6 +14,7 @@
 5. [Admin UI Features](#5-admin-ui-features)
 6. [Installation Integration](#6-installation-integration)
 7. [Verification & Testing](#7-verification--testing)
+8. [Enrolling a Device](#8-enrolling-a-device)
 
 ---
 
@@ -41,9 +42,9 @@
 │  │  ┌─────────────────┐  │ │ /api/v1/vpn/             │ │   │  │
 │  │  │ authority-       │  │ │   enroll-installation    │ │   │  │
 │  │  │ headscale        │◄─┤ │   nodes                 │ │   │  │
-│  │  │ (headscale:0.28) │  │ │   matrix-groups/{id}/*  │ │   │  │
-│  │  │ ports 8080/50443  │  │ └──────────────────────────┘ │   │  │
-│  │  └─────────────────┘  └──────────────────────────────┘   │  │
+│  │  │ (headscale:0.28) │  │ │   rename-node           │ │   │  │
+│  │  │ ports 8080/50443  │  │ │   nodes/{id} (DELETE)    │ │   │  │
+│  │  └─────────────────┘  │ └──────────────────────────┘ │   │  │
 │  └───────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
          │                                          │
@@ -65,6 +66,8 @@
 | **Mesh Isolation** | Headscale ACL tags (`tag:matrix-<uuid>`) enforce per-entitlement isolation |
 | **Peer-to-Peer** | After enrollment, device traffic is direct WireGuard (DERP-relayed if behind NAT) |
 | **No Periodic Re-Enrollment** | Pre-auth key is one-time bootstrap. WireGuard keypair persists until explicitly revoked |
+| **Online Status Detection** | Authority API derives online/offline from headscale's per-user `last_seen` protobuf timestamps (5-minute recency window) |
+| **Device Removal** | Nodes can be removed from the VPN mesh via `DELETE /api/v1/vpn/nodes/{node_id}` or from the mobile VPN client app |
 
 ---
 
@@ -72,9 +75,9 @@
 
 ### 2.1 Headscale Container
 
-**Image:** `headscale/headscale:0.28.0`  
-**Container name:** `authority-headscale`  
-**Network:** `ppl-meta-authority_default` (shared bridge)  
+**Image:** `headscale/headscale:0.28.0`
+**Container name:** `authority-headscale`
+**Network:** `ppl-meta-authority_default` (shared bridge)
 **Ports:** `127.0.0.1:8080` (HTTP), `127.0.0.1:50443` (gRPC), `127.0.0.1:9090` (metrics)
 
 **Config:** `headscale/config.yaml` (bind-mounted from `/home/deploy/apps/ppl-meta-authority/cicd/headscale/`)
@@ -149,8 +152,8 @@ TLS certificates are auto-managed by Caddy via Let's Encrypt. Caddy terminates T
 
 ### 2.4 Authority Container
 
-**Image:** `ghcr.io/nickglezakos/ppl-meta-authority:authority-headscale-v1`  
-**Headscale CLI access:** Via `docker exec authority-headscale headscale` (Docker socket mounted)  
+**Image:** `ghcr.io/nickglezakos/ppl-meta-authority:authority-headscale-v1`
+**Headscale CLI access:** Via `docker exec authority-headscale headscale` (Docker socket mounted)
 **Environment:** `HEADSCALE_CLI=docker exec authority-headscale headscale`
 
 ### 2.5 Docker Compose
@@ -190,7 +193,7 @@ POST /api/v1/vpn/enroll-installation
   "headscale_server": "https://vpn.eyenet-vision.com",
   "matrix_group_id": "366c396d-fb40-4dbc-8c2e-a10cd67323b0",
   "tags": ["tag:installation", "tag:matrix-366c396d-fb40-4dbc-8c2e-a10cd67323b0"],
-  "expires_in_seconds": 3600
+  "expires_in_seconds": 86400
 }
 ```
 
@@ -203,7 +206,8 @@ POST /api/v1/vpn/enroll-installation
 **Auto-provisioning:**
 - If installation has no `matrix_group_id`, it is auto-generated
 - Headscale user `matrix-<uuid>` is created if it doesn't exist
-- Key expires in 1 hour (for bootstrapping; WireGuard keys are permanent)
+- **Key expires in 24 hours** (bumped from 1 hour for manual enrollment convenience; WireGuard keys are permanent)
+- Headscale preauth keys auto-approve by default — no manual `nodes register` needed
 
 ### 3.2 List All Nodes
 
@@ -211,7 +215,16 @@ POST /api/v1/vpn/enroll-installation
 GET /api/v1/vpn/nodes
 ```
 
-Returns all enrolled VPN nodes for the default platform user.
+Returns all enrolled VPN nodes across all headscale users, with online status.
+
+**Response includes:**
+- `hostname` — MagicDNS hostname
+- `tailscale_ip` — 100.64.x.x IP address
+- `online` — derived from `last_seen` recency (within 5 minutes)
+- `last_seen` — ISO 8601 timestamp
+- `node_id` — headscale node ID
+
+**Implementation note:** Queries per-user (`--user matrix-<uuid>`) because headscale's global `nodes list` JSON omits the `online` and `last_seen` fields. Per-user listings include protobuf timestamp dicts which are parsed into ISO format.
 
 ### 3.3 List Matrix Group Nodes
 
@@ -221,13 +234,21 @@ GET /api/v1/vpn/matrix-groups/{matrix_id}/nodes
 
 Returns only nodes belonging to a specific Matrix group.
 
-### 3.4 Get Matrix Group ACL
+### 3.4 Rename Node
 
 ```
-GET /api/v1/vpn/matrix-groups/{matrix_id}/acl
+PATCH /api/v1/vpn/rename-node
 ```
 
-Returns ACL status for a Matrix group's VPN mesh.
+**Request:**
+```json
+{
+  "node_id": "1",
+  "new_hostname": "eyenet-office-camera"
+}
+```
+
+Renames a node in headscale. MagicDNS automatically updates to `<new_hostname>.eyenet-vpn.local`.
 
 ### 3.5 Revoke Node
 
@@ -235,7 +256,15 @@ Returns ACL status for a Matrix group's VPN mesh.
 DELETE /api/v1/vpn/nodes/{node_id}
 ```
 
-Removes a node from the VPN (admin only).
+Removes a node from the VPN mesh (admin only). Uses `--identifier` (not `--user`) since node IDs are globally unique in headscale.
+
+### 3.6 Get Matrix Group ACL
+
+```
+GET /api/v1/vpn/matrix-groups/{matrix_id}/acl
+```
+
+Returns ACL status for a Matrix group's VPN mesh.
 
 ---
 
@@ -441,10 +470,67 @@ Devices in different entitlements (different `matrix_group_id`) cannot communica
 ### 7.6 Check Headscale State (VPS)
 
 ```bash
-ssh deploy@138.201.245.219
+ssh deploy@authority.eyenet-vision.com
 docker exec authority-headscale headscale users list
 docker exec authority-headscale headscale nodes list
 ```
+
+### 7.7 Check Node Online Status
+
+```bash
+# List all nodes with online/offline status
+curl -s https://authority.eyenet-vision.com/api/v1/vpn/nodes | python3 -m json.tool
+
+# Filter for online nodes
+curl -s https://authority.eyenet-vision.com/api/v1/vpn/nodes | \
+  python3 -c "import sys,json; [print(f'{n[\"hostname\"]} ({n[\"tailscale_ip\"]}): {\"🟢\" if n[\"online\"]else\"🔴\"}') for n in json.load(sys.stdin)['nodes']]"
+```
+
+---
+
+## 8. Enrolling a Device
+
+### Quick Enrollment Workflow
+
+For any device (macOS/Linux/Windows/mobile) to join the EyeNet VPN mesh:
+
+**Step 1 — Get an enrollment key** (valid for **24 hours** — no rush to complete):
+
+**Option A — Frontend UI** (if node service is running locally):
+Go to `http://localhost:3000/#/network` → tap **"Enroll Now"** → a ready-to-run `tailscale up` command with the key embedded appears → copy it
+
+**Option B — Terminal via Node API** (if node service is running):
+```bash
+curl -s -X POST http://localhost:8001/node/vpn/enroll | \
+  python3 -c "import sys,json; print(json.load(sys.stdin)['tailscale_up_command'])"
+```
+
+**Option C — Direct Authority API** (always works):
+```bash
+curl -s -X POST https://authority.eyenet-vision.com/api/v1/vpn/enroll-installation \
+  -H "Content-Type: application/json" \
+  -d '{"installation_uuid":"<uuid>","application_key":"<key>"}' | \
+  python3 -c "import sys,json; d=json.load(sys.stdin); print(f'tailscale up --login-server {d[\"headscale_server\"]} --auth-key {d[\"auth_key\"]} --accept-routes')"
+```
+
+**Step 2 — Run the command:**
+Paste the `tailscale up --login-server https://vpn.eyenet-vision.com --auth-key hskey-auth-xxx --accept-routes` command into the device's terminal.
+
+**Step 3 — Node auto-registers:** Headscale preauth keys auto-approve by default — the node is immediately enrolled with no manual intervention needed.
+
+**Step 4 — Verify:** After refreshing the mobile VPN client's peer list or checking the authority API, the node appears with:
+- 🟢 Green checkmark and "**Online**" badge (if connected)
+- 🔴 Red X and "**Offline**" badge (if disconnected)
+- Online status is derived from `last_seen` recency (within 5 minutes)
+
+### Troubleshooting Enrollment
+
+| Issue | Solution |
+|---|---|
+| "Permission denied" or manual register prompt | Key likely expired (pre-24h TTL change). Generate a fresh key |
+| Node shows offline despite being connected | Refresh the peer list. If persistent, check `tailscale status` on the device |
+| Frontend "Enroll Now" times out | Node service may not be running. Use Option B (terminal) or Option C (direct API) |
+| Can't ping other nodes | Verify both nodes are in the same matrix group and have online status |
 
 ---
 
@@ -455,7 +541,7 @@ docker exec authority-headscale headscale nodes list
 | `autonomous/ppl-meta-authority/docker-compose.production.yml` | Docker Compose stack (headscale + authority + postgres) |
 | `autonomous/ppl-meta-authority/headscale/config.yaml` | Headscale production configuration |
 | `autonomous/ppl-meta-authority/headscale/acl.json` | Initial deny-all ACL policy |
-| `autonomous/ppl-meta-authority/src/api/vpn.py` | VPN enrollment + node management API |
+| `autonomous/ppl-meta-authority/src/api/vpn.py` | VPN enrollment + node management + online status + rename + delete API |
 | `autonomous/ppl-meta-authority/src/services/vpn_acl_service.py` | ACL synchronization service |
 | `autonomous/ppl-meta-authority/src/core/storage.py` | Matrix group auto-provision + systemic UUIDs + installation_name |
 | `autonomous/ppl-meta-authority/src/api/installations.py` | InstallationRecord + InstallationUpsertRequest models |
@@ -464,6 +550,9 @@ docker exec authority-headscale headscale nodes list
 | `autonomous/ppl-meta-authority/src/ui/templates/admin.html` | VPN Mesh section + Installation name field |
 | `autonomous/ppl-meta-authority/src/ui/assets/admin.js` | VPN rows, enrolment handler, update name handler |
 | `autonomous/ppl-meta-authority/Dockerfile` | Docker CLI for headscale exec wrapper |
+| `ppl-meta-vpn-client/lib/services/vpn_service.dart` | Flutter VPN client — connect, fetchPeers, renamePeer, deleteNode |
+| `ppl-meta-vpn-client/lib/screens/home_screen.dart` | VPN client UI — peer list with online/offline badges, rename, remove |
+| `ppl-meta-frontend/lib/presentation/widgets/settings/network_settings_section.dart` | Frontend Network screen — VPN enrollment card + status |
 | `docs/authority/eyenet-vpn-mesh-implementation-guide.md` | Original implementation blueprint |
 
 ---
