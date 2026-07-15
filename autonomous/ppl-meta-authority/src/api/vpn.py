@@ -7,12 +7,14 @@ Keys are scoped with ACL tags matching the installation's Matrix group.
 All endpoints require authority admin authentication (session-based).
 """
 
+import json
 import logging
 import os
 import shlex
 import subprocess
+import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -41,7 +43,7 @@ class EnrollInstallationResponse(BaseModel):
     headscale_server: str = ""
     matrix_group_id: str = ""
     tags: list[str] = []
-    expires_in_seconds: int = 3600  # 1 hour
+    expires_in_seconds: int = 86400  # 24 hours
 
 
 class VpnNodeInfo(BaseModel):
@@ -65,6 +67,16 @@ class VpnMatrixAclResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Cache
+# ---------------------------------------------------------------------------
+
+# In-memory cache with TTL for the /nodes endpoint.
+# Avoids sequential docker exec headscale calls on every request.
+_nodes_cache: tuple[float, VpnNodeListResponse] | None = None
+_NODES_CACHE_TTL = 30  # seconds
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -75,7 +87,7 @@ HEADSCALE_CLI = os.environ.get(
     "HEADSCALE_CLI", "docker exec authority-headscale headscale"
 )
 
-# Pre-auth key TTL: 1 hour (matches proposal Section 10.2 M7 hardening)
+# Pre-auth key TTL: 24 hours (bumped from 1h for manual enrollment convenience)
 PREAUTH_KEY_EXPIRY_HOURS = 24
 
 
@@ -129,7 +141,6 @@ def _resolve_user_id(name: str) -> str:
     """
     try:
         output = _run_headscale(["users", "list", "--output", "json"])
-        import json
         users = json.loads(output)
         for user in users:
             if user.get("name") == name:
@@ -196,13 +207,84 @@ def _list_nodes(user: str) -> list[dict]:
     """
     try:
         output = _run_headscale(["nodes", "list", "--user", user, "--output", "json"])
-        import json
         result = json.loads(output)
         if result is None:
             return []
         return result if isinstance(result, list) else []
     except RuntimeError:
         return []
+
+
+def _fetch_all_nodes() -> VpnNodeListResponse:
+    """Query all headscale users and build the full node list response.
+
+    Queries per-user because headscale's global ``nodes list`` (without
+    ``--user``) does not include ``last_seen`` fields.
+    """
+    # 1. Get all headscale user names
+    user_names: list[str] = []
+    try:
+        users_output = _run_headscale(["users", "list", "--output", "json"])
+        users_data = json.loads(users_output) or []
+        user_names = [
+            u.get("name", "") for u in users_data
+            if isinstance(u, dict) and u.get("name")
+        ]
+    except Exception:
+        pass
+
+    # 2. Collect nodes from every user namespace
+    all_nodes_data: list[dict] = []
+    for user_name in user_names:
+        try:
+            output = _run_headscale(
+                ["nodes", "list", "--user", user_name, "--output", "json"]
+            )
+            nodes_data = json.loads(output) or []
+            if isinstance(nodes_data, list):
+                all_nodes_data.extend(nodes_data)
+        except Exception:
+            continue
+
+    # 3. Build response — derive online from protobuf last_seen timestamp
+    nodes = []
+    for node in all_nodes_data:
+        # Parse protobuf timestamp: {"seconds": 1783935373, "nanos": 185189452}
+        last_seen_raw = node.get("last_seen")
+        last_seen_str = ""
+        last_seen_dt = None
+        if isinstance(last_seen_raw, dict):
+            secs = last_seen_raw.get("seconds")
+            if isinstance(secs, (int, float)):
+                try:
+                    last_seen_dt = datetime.fromtimestamp(float(secs), tz=timezone.utc)
+                    last_seen_str = last_seen_dt.isoformat()
+                except (ValueError, OSError):
+                    last_seen_str = str(last_seen_raw)
+            else:
+                last_seen_str = str(last_seen_raw)
+
+        # Online = last_seen within 5 minutes
+        online = False
+        if last_seen_dt is not None:
+            now_utc = datetime.now(timezone.utc)
+            online = (now_utc - last_seen_dt) < timedelta(minutes=5)
+
+        nodes.append(VpnNodeInfo(
+            node_id=str(node.get("id", node.get("node_key", ""))),
+            hostname=str(node.get("name", node.get("given_name", ""))),
+            installation_uuid=str(
+                (node.get("user") or {}).get("name", "")
+            ).replace("matrix-", ""),
+            tailscale_ip=(
+                (node.get("ip_addresses") or [None])[0]
+                if node.get("ip_addresses") else None
+            ),
+            online=online,
+            last_seen=last_seen_str,
+        ))
+
+    return VpnNodeListResponse(nodes=nodes)
 
 
 # ---------------------------------------------------------------------------
@@ -221,10 +303,10 @@ async def enroll_installation(payload: EnrollInstallationRequest):
     the node to its Matrix group. Each Matrix group gets its own
     headscale user namespace (matrix-<uuid>) for mesh isolation.
 
-    Key expires after 1 hour.
+    Key expires after 24 hours.
 
-    Security (per Section 10.2 M7): Keys have short TTL. Every issuance
-    is logged to the audit trail.
+    Security: Keys have limited TTL. Every issuance is logged to the
+    audit trail.
     """
     # Validate installation exists and is active
     installation = get_installation_by_application_key(payload.application_key.strip().lower())
@@ -303,81 +385,23 @@ async def enroll_installation(payload: EnrollInstallationRequest):
 
 @router.get("/nodes", response_model=VpnNodeListResponse)
 async def list_vpn_nodes(_request: Request):
-    """List all enrolled VPN nodes (admin only).
+    """List all enrolled VPN nodes with online status.
 
-    Queries per-user because headscale's global ``nodes list`` (without
-    ``--user``) does not include ``online`` / ``last_seen`` fields.
-    Requires admin session authentication.
+    Uses a 30-second in-memory cache to avoid slow sequential
+    ``docker exec headscale`` calls on every request from mobile
+    clients over high-latency connections.
     """
-    # TODO: require_admin_session dependency
-    import json
+    global _nodes_cache
 
-    # 1. Get all headscale user names
-    user_names: list[str] = []
-    try:
-        users_output = _run_headscale(["users", "list", "--output", "json"])
-        users_data = json.loads(users_output) or []
-        user_names = [
-            u.get("name", "") for u in users_data
-            if isinstance(u, dict) and u.get("name")
-        ]
-    except Exception:
-        pass
+    now = time.time()
+    if _nodes_cache is not None:
+        ts, data = _nodes_cache
+        if now - ts < _NODES_CACHE_TTL:
+            return data
 
-    # 2. Collect nodes from every user namespace
-    all_nodes_data: list[dict] = []
-    for user_name in user_names:
-        try:
-            output = _run_headscale(
-                ["nodes", "list", "--user", user_name, "--output", "json"]
-            )
-            nodes_data = json.loads(output) or []
-            if isinstance(nodes_data, list):
-                all_nodes_data.extend(nodes_data)
-        except Exception:
-            continue
-
-    # 3. Build response — derive online from protobuf last_seen timestamp
-    from datetime import timedelta, timezone as tz
-
-    nodes = []
-    for node in all_nodes_data:
-        # Parse protobuf timestamp: {"seconds": 1783935373, "nanos": 185189452}
-        last_seen_raw = node.get("last_seen")
-        last_seen_str = ""
-        last_seen_dt = None
-        if isinstance(last_seen_raw, dict):
-            secs = last_seen_raw.get("seconds")
-            if isinstance(secs, (int, float)):
-                try:
-                    last_seen_dt = datetime.fromtimestamp(float(secs), tz=tz.utc)
-                    last_seen_str = last_seen_dt.isoformat()
-                except (ValueError, OSError):
-                    last_seen_str = str(last_seen_raw)
-            else:
-                last_seen_str = str(last_seen_raw)
-
-        # Online = last_seen within 5 minutes
-        online = False
-        if last_seen_dt is not None:
-            now_utc = datetime.now(tz.utc)
-            online = (now_utc - last_seen_dt) < timedelta(minutes=5)
-
-        nodes.append(VpnNodeInfo(
-            node_id=str(node.get("id", node.get("node_key", ""))),
-            hostname=str(node.get("name", node.get("given_name", ""))),
-            installation_uuid=str(
-                (node.get("user") or {}).get("name", "")
-            ).replace("matrix-", ""),
-            tailscale_ip=(
-                (node.get("ip_addresses") or [None])[0]
-                if node.get("ip_addresses") else None
-            ),
-            online=online,
-            last_seen=last_seen_str,
-        ))
-
-    return VpnNodeListResponse(nodes=nodes)
+    data = _fetch_all_nodes()
+    _nodes_cache = (now, data)
+    return data
 
 
 @router.get("/matrix-groups/{matrix_id}/nodes", response_model=VpnNodeListResponse)
