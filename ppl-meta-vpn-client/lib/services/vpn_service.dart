@@ -229,7 +229,7 @@ class VpnService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
         final rawNodes = List<Map<String, dynamic>>.from(data['nodes'] ?? []);
-        _peers = rawNodes.map((node) => ({
+        _peers = rawNodes.map((node) => {
           'hostname': node['hostname'] ?? '',
           'tailscale_ip': node['tailscale_ip'] ?? '',
           'online': node['online'] ?? false,
