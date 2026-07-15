@@ -1,5 +1,4 @@
-import 'dart:io' show Platform;
-
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/discovery_service_client.dart';
@@ -634,7 +633,16 @@ class NetworkSettingsSection extends ConsumerWidget {
   }
 
   Widget _buildVpnNotEnrolled() {
-    final os = Platform.operatingSystem;
+    final targetPlatform = defaultTargetPlatform;
+    // Map TargetPlatform to OS name strings matching tailscaleInstallGuide keys
+    final os = switch (targetPlatform) {
+      TargetPlatform.android => 'android',
+      TargetPlatform.iOS => 'ios',
+      TargetPlatform.linux => 'linux',
+      TargetPlatform.macOS => 'macos',
+      TargetPlatform.windows => 'windows',
+      _ => 'linux',
+    };
     final guide = tailscaleInstallGuide(os);
 
     return _VpnEnrollmentCard(os: os, guide: guide);
