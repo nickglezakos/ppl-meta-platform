@@ -1,7 +1,8 @@
-/// Client for the Node's VPN status endpoint.
+/// Client for the Node's VPN status endpoint and Authority VPN API.
 ///
-/// Fetches Tailscale enrollment state, VPN IPs, and connectivity
-/// information from the local node service.
+/// Fetches Tailscale enrollment state, VPN IPs, connectivity
+/// information from the local node service, and manages mesh peers
+/// via the authority VPN API.
 library;
 
 import 'package:dio/dio.dart';
@@ -94,15 +95,51 @@ class EnrollmentKey {
   }
 }
 
+/// VPN peer info from the authority API.
+class VpnPeerInfo {
+  final String nodeId;
+  final String hostname;
+  final String tailscaleIp;
+  final bool online;
+  final String? lastSeen;
+
+  const VpnPeerInfo({
+    required this.nodeId,
+    required this.hostname,
+    required this.tailscaleIp,
+    required this.online,
+    this.lastSeen,
+  });
+
+  factory VpnPeerInfo.fromJson(Map<String, dynamic> json) {
+    return VpnPeerInfo(
+      nodeId: json['node_id']?.toString() ?? '',
+      hostname: json['hostname']?.toString() ?? 'Unknown',
+      tailscaleIp: json['tailscale_ip']?.toString() ?? '',
+      online: json['online'] == true,
+      lastSeen: json['last_seen']?.toString(),
+    );
+  }
+}
+
 class VpnStatusClient {
   final ApiClient _apiClient;
   final Dio _nodeClient;
+  final Dio _authorityClient;
+
+  static const _authorityBaseUrl = 'https://authority.eyenet-vision.com';
 
   VpnStatusClient(this._apiClient)
       : _nodeClient = Dio(BaseOptions(
           baseUrl: 'http://localhost:8001',
           connectTimeout: const Duration(seconds: 5),
           receiveTimeout: const Duration(seconds: 5),
+          headers: {'Content-Type': 'application/json'},
+        )),
+        _authorityClient = Dio(BaseOptions(
+          baseUrl: _authorityBaseUrl,
+          connectTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 15),
           headers: {'Content-Type': 'application/json'},
         ));
 
@@ -144,6 +181,33 @@ class VpnStatusClient {
   /// Reconnect Tailscale with existing identity.
   Future<Map<String, dynamic>> connect() async {
     final response = await _nodeClient.post('/node/vpn/connect');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  // -----------------------------------------------------------------------
+  // Authority VPN API — Peer Management
+  // -----------------------------------------------------------------------
+
+  /// Fetch all VPN peers from the authority API.
+  Future<List<VpnPeerInfo>> fetchPeers() async {
+    final response = await _authorityClient.get('/api/v1/vpn/nodes');
+    final data = Map<String, dynamic>.from(response.data as Map);
+    final rawNodes = List<Map<String, dynamic>>.from(data['nodes'] ?? []);
+    return rawNodes.map((n) => VpnPeerInfo.fromJson(n)).toList();
+  }
+
+  /// Rename a peer node via the authority API.
+  Future<Map<String, dynamic>> renamePeer(String nodeId, String newHostname) async {
+    final response = await _authorityClient.patch(
+      '/api/v1/vpn/rename-node',
+      data: {'node_id': nodeId, 'new_hostname': newHostname},
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Delete a peer node via the authority API.
+  Future<Map<String, dynamic>> deletePeer(String nodeId) async {
+    final response = await _authorityClient.delete('/api/v1/vpn/nodes/$nodeId');
     return Map<String, dynamic>.from(response.data as Map);
   }
 }
