@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eyenet for Shipping — Staff Safety, Presence & Fleet Management</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+    * { box-sizing: border-box; }
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    body { margin: 0; }
+    .page { max-width: var(--max-width); margin: 0 auto; padding: 32px 24px 72px; }
+    .print-bar { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+    .print-button {
+      border: 0; border-radius: 999px; padding: 12px 18px;
+      background: var(--brand-primary); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                  linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14); border-radius: 32px;
+      box-shadow: var(--shadow); overflow: hidden; position: relative; color: var(--text);
+    }
+    .hero::after {
+      content: ""; position: absolute; inset: auto -80px -80px auto;
+      width: 220px; height: 220px; border-radius: 50%; background: rgba(25, 118, 210, 0.26);
+    }
+    .hero-inner { display: grid; grid-template-columns: 1.35fr 0.9fr; gap: 28px; padding: 34px; position: relative; z-index: 1; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14); color: var(--brand-secondary);
+      font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1 { margin: 18px 0 16px; font-size: 42px; line-height: 1.05; letter-spacing: -0.03em; }
+    .lead { font-size: 18px; color: #334155; max-width: 62ch; }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+    .brand-stack { display: flex; align-items: center; gap: 14px; }
+    .brand-stack img { height: 36px; width: auto; }
+    .brand-chip {
+      padding: 8px 12px; border: 1px solid rgba(34, 211, 238, 0.24); border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9); color: #eef9ff; font-size: 13px; font-weight: 600;
+    }
+    .meta-card, .section {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04); border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px; align-self: start; color: var(--text);
+    }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+    .meta-item { padding-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+    .meta-label { display: block; margin-bottom: 6px; color: #9fb0c3; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .meta-value { font-size: 15px; font-weight: 600; color: #ffffff; }
+    .section { margin-top: 24px; padding: 28px; border-color: var(--panel-line); background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%); }
+    .section-title { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .section-number {
+      width: 34px; height: 34px; border-radius: 50%; display: inline-grid; place-items: center;
+      background: rgba(25, 118, 210, 0.1); color: var(--brand-primary); font-weight: 700;
+    }
+    h2 { margin-bottom: 0; font-size: 24px; letter-spacing: -0.02em; }
+    h3 { margin-bottom: 10px; font-size: 18px; }
+    h4 { margin-bottom: 6px; font-size: 16px; color: #334155; }
+    ul, ol { margin: 0; padding-left: 20px; }
+    li + li { margin-top: 8px; }
+    .callout {
+      padding: 18px 20px; border-left: 4px solid var(--brand-secondary); border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent); color: #f5fbff; font-weight: 600;
+    }
+    .callout.amber { border-left-color: #f59e0b; }
+    .callout.green { border-left-color: #4caf50; }
+    .footer-note { margin-top: 18px; color: #64748b; font-size: 13px; }
+    .grid-two { display: grid; gap: 22px; margin-top: 24px; grid-template-columns: 1.15fr 0.85fr; }
+    .grid-three { display: grid; gap: 22px; margin-top: 24px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .summary-card {
+      padding: 22px; border-color: var(--panel-line); background: #ffffff;
+      border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .summary-card strong { color: #0f172a; }
+    .summary-card p:last-child { margin-bottom: 0; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .badge {
+      display: inline-flex; align-items: center; padding: 4px 12px;
+      border-radius: 999px; font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
+      background: rgba(25, 118, 210, 0.08); color: var(--brand-primary);
+      border: 1px solid rgba(25, 118, 210, 0.18);
+    }
+    .badge.mode { background: rgba(34, 211, 238, 0.08); color: #0891b2; border-color: rgba(34, 211, 238, 0.18); }
+    .badge.user { background: rgba(245, 158, 11, 0.08); color: #b45309; border-color: rgba(245, 158, 11, 0.18); }
+    .badge.safety { background: rgba(239, 68, 68, 0.08); color: #b91c1c; border-color: rgba(239, 68, 68, 0.18); }
+    .badge.success { background: rgba(34, 197, 94, 0.08); color: #166534; border-color: rgba(34, 197, 94, 0.18); }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid rgba(15, 23, 42, 0.08); }
+    th { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+    td { font-size: 14px; }
+    .arch-diagram {
+      font-family: "Courier New", monospace; font-size: 11px; line-height: 1.35;
+      white-space: pre; color: #f5fbff; margin: 0; overflow-x: auto;
+    }
+    .notification-chain {
+      display: grid; gap: 16px; margin-top: 20px; grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .notif-level {
+      padding: 20px; border-radius: var(--radius-md);
+      border: 1px solid var(--panel-line); background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%);
+    }
+    .notif-level h4 { margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    .notif-level .icon-circle {
+      width: 28px; height: 28px; border-radius: 50%; display: inline-grid; place-items: center;
+      font-size: 14px; font-weight: 700;
+    }
+    .notif-level.onboard .icon-circle { background: rgba(34, 211, 238, 0.12); color: #0891b2; }
+    .notif-level.hq .icon-circle { background: rgba(25, 118, 210, 0.12); color: var(--brand-primary); }
+    .notif-level.erp .icon-circle { background: rgba(245, 158, 11, 0.12); color: #b45309; }
+    .notif-level ul { font-size: 13px; color: #475569; }
+    .notif-level ul li + li { margin-top: 6px; }
+    .key-number {
+      display: block; margin-bottom: 8px; font-size: 32px; font-weight: 800; letter-spacing: -0.03em;
+    }
+    .stat-label {
+      color: #64748b; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700;
+    }
+    @page { size: A4; margin: 12mm; }
+    @media (max-width: 920px) {
+      .hero-inner, .grid-two, .grid-three, .notification-chain { grid-template-columns: 1fr; }
+      h1 { font-size: 34px; }
+      .page { padding: 18px 16px 54px; }
+    }
+    @media print {
+      html { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page { max-width: none; padding: 0; }
+      .print-bar { display: none; }
+      .hero, .meta-card, .section, .summary-card, .notif-level { box-shadow: none; break-inside: avoid; }
+      .hero {
+        margin-bottom: 12px;
+        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                    linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+        color: #ffffff; border-color: rgba(34, 211, 238, 0.14);
+      }
+      .meta-card { background: rgba(255, 255, 255, 0.04); color: #ffffff; border-color: rgba(34, 211, 238, 0.12); }
+      .brand-chip, .callout { color: #f5fbff; }
+      .brand-link, .meta-label { color: inherit; }
+      .section { margin-top: 12px; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="../ppl-meta-frontend/assets/images/eyenet-dark.svg" alt="EyeNet logo" />
+              <span class="brand-chip">Vertical Solution</span>
+            </div>
+          </div>
+          <span class="eyebrow">Maritime Crew Safety & Fleet Management</span>
+          <h1>Eyenet for Shipping</h1>
+          <p style="color: #d1d9e6; font-size: 15px; margin-top: 8px;">Staff safety, presence tracking, and crew management for maritime fleets — automated notifications to captain, officers, and shipping company HQ</p>
+          <p style="color: #9fb0c3; font-size: 13px; margin-top: 12px;">
+            <span style="margin-right: 20px;">eyenet-vision.com</span>
+            <span>nick@eyenet-vision.com</span>
+          </p>
+        </div>
+        <aside class="meta-card">
+          <h3>Document Info</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Type</span>
+              <span class="meta-value">Vertical Solution Overview</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Date</span>
+              <span class="meta-value">14 July 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Products</span>
+              <span class="meta-value">5 Applications + Matrix</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Deployment</span>
+              <span class="meta-value">On-Premises / VPN Fleet Mesh</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <!-- 1. ABOUT -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>About Eyenet for Shipping</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Ships are isolated, safety-critical environments operating far from shore-based management. Eyenet brings computer vision-powered crew presence, restricted area protection, and automated multi-level notifications to every vessel — then connects the entire fleet through a secure VPN mesh for centralised oversight.</div>
+      <p class="lead">The maritime industry faces unique operational challenges that off-the-shelf security systems cannot address. A vessel at sea is a self-contained world: crew must be accounted for at all times, watch stations must never be left unattended, restricted zones must be enforced 24/7, and all of this must function with zero internet dependency. Eyenet's on-premises, edge-computing architecture is purpose-built for exactly this environment — each vessel runs a complete, self-sufficient EyeNet installation on a single mini PC, operating fully offline at sea and synchronising data with fleet headquarters when docked or via satellite link.</p>
+    </section>
+
+    <!-- 2. THE MARITIME OPERATIONAL CHALLENGE -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>The Maritime Operational Challenge</h2>
+      </div>
+      <div class="grid-three">
+        <div class="summary-card">
+          <span class="key-number" style="color: #0891b2;">Offline</span>
+          <span class="stat-label">Core Operation</span>
+          <p style="font-size: 13px; color: #475569; margin-top: 8px;">Ships operate without internet for days or weeks at sea. All presence tracking, alerting, and access control must function locally — no cloud dependency for core operation. Data syncs automatically when connectivity resumes.</p>
+        </div>
+        <div class="summary-card">
+          <span class="key-number" style="color: #b91c1c;">Safety</span>
+          <span class="stat-label">Critical Environment</span>
+          <p style="font-size: 13px; color: #475569; margin-top: 8px;">Know exactly who is onboard, who is where, and whether critical watch stations are manned. Restricted areas (engine room, bridge, cargo holds) must be enforced. Lone-worker monitoring and muster station headcount are non-negotiable.</p>
+        </div>
+        <div class="summary-card">
+          <span class="key-number" style="color: #1976d2;">Compliance</span>
+          <span class="stat-label">Crew & Fleet Management</span>
+          <p style="font-size: 13px; color: #475569; margin-top: 8px;">Crew shifts, certifications, and schedules managed through shipping ERP systems. Eyenet bridges the gap between shore-side crew modules and actual onboard presence — detecting mismatches and generating automated reports for captain, officers, and HQ.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. EYENET PRESENCE — CREW ATTENDANCE & MUSTER -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Eyenet Presence — Crew Attendance & Muster</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Dual-factor crew verification at every critical station — facial recognition plus QR/NFC badge — with automated attendance reports to captain and HQ.</div>
+      <div class="grid-two">
+        <div>
+          <p>Eyenet Presence is the backbone of onboard crew management. It assigns crew members to watch schedules and specific zones (bridge, engine control room, cargo office, galley), then tracks actual attendance against those schedules in real time. When a crew member fails to report for watch, the system alerts immediately — no one has to notice a missing person after the fact.</p>
+          <h3>Maritime Use Cases</h3>
+          <ul>
+            <li><strong>Watch changeover verification:</strong> Dual-factor check-in (QR/NFC badge + facial recognition) at bridge and engine control room. The system confirms the right person with the right certification is on watch — alerting the captain if a scheduled officer does not appear within the grace period.</li>
+            <li><strong>Muster station headcount:</strong> During drills and actual emergencies, Presence operating in Area mode at each muster station provides real-time headcount — officers see instantly who is accounted for and who is missing, without manual roll calls.</li>
+            <li><strong>ERP crew module sync:</strong> Crew manifest and watch schedules imported from the shipping company's ERP system. Presence compares scheduled vs actual attendance and flags discrepancies. Attendance records sync back to the ERP crew module when connected, providing shore-side HR with verified presence data.</li>
+            <li><strong>Certification-aware alerts:</strong> If a crew member assigned to engine room watch lacks a valid STCW certification (per ERP data), the system alerts the chief engineer before the watch begins — preventing compliance violations.</li>
+            <li><strong>Automated attendance reports:</strong> Daily, per-voyage, and per-shift attendance reports generated automatically and distributed to captain, department heads, and fleet managers at HQ.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Available Modes</strong></p>
+          <div class="badge-row">
+            <span class="badge mode">Area</span>
+            <span class="badge mode">Gate</span>
+          </div>
+          <p style="margin-top: 16px;"><strong>Key Integrations</strong></p>
+          <div class="badge-row">
+            <span class="badge user">ERP Crew Module</span>
+            <span class="badge">Matrix</span>
+          </div>
+          <p style="margin-top: 16px; font-size: 13px; color: #475569;"><strong>Notification targets:</strong> Captain, Chief Engineer, Chief Mate, Fleet HR Manager (via Matrix)</p>
+          <p style="font-size: 13px; color: #475569;"><strong>Offline operation:</strong> Fully functional at sea — no internet required. Attendance data queued locally, synced when VPN reconnects at port.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. EYENET GATE — GANGWAY & ENTRANCE CONTROL -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>Eyenet Gate — Gangway & Entrance Control</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Real-time onboard/ashore headcount at every gangway. Track exactly who is on the vessel at all times — crew, visitors, contractors, and port officials.</div>
+      <div class="grid-two">
+        <div>
+          <p>Eyenet Gate monitors every entrance and exit point on the vessel — primarily gangways — providing real-time people counters, identity verification, and automated logging of all embarkation and disembarkation events. In an emergency, the captain has an instant, accurate headcount. During port calls, Gate tracks visitors and contractors separately from crew, ensuring no unauthorised personnel remain onboard after departure.</p>
+          <h3>Maritime Use Cases</h3>
+          <ul>
+            <li><strong>Gangway monitoring:</strong> Real-time count of who is onboard vs ashore. Every crew departure/return logged with timestamp and identity. Shore-leave tracking integrated with ERP crew module — crew status updated to "ashore" automatically.</li>
+            <li><strong>Visitor & contractor tracking:</strong> During port calls, temporary personnel (stevedores, agents, surveyors, technicians) are logged with entry/exit timestamps. System alerts if a visitor has not disembarked by departure time.</li>
+            <li><strong>Stowaway detection:</strong> Unrecognised faces at gangway or in restricted corridors trigger instant alerts to the security officer and captain — with the person's image and location attached.</li>
+            <li><strong>Abandon-ship scenario:</strong> Gate mode combined with Presence at muster stations provides a full picture: who was last seen onboard, who has reached which muster station, and who is still unaccounted for — all in real time on the captain's dashboard.</li>
+            <li><strong>Port state control readiness:</strong> Automated crew list generation with embarkation/disembarkation timestamps — ready for inspection by port authorities at any moment.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Available Modes</strong></p>
+          <div class="badge-row">
+            <span class="badge mode">Gate</span>
+          </div>
+          <p style="margin-top: 16px;"><strong>Key Integrations</strong></p>
+          <div class="badge-row">
+            <span class="badge user">ERP Crew Module</span>
+            <span class="badge">Presence</span>
+            <span class="badge">Matrix</span>
+          </div>
+          <p style="margin-top: 16px; font-size: 13px; color: #475569;"><strong>Notification targets:</strong> Captain, Security Officer, Chief Mate, Port Agent (via Matrix at HQ)</p>
+          <p style="font-size: 13px; color: #475569;"><strong>Offline operation:</strong> All gate events logged locally. Visitor manifests and crew shore-leave records sync to HQ when connected.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. EYENET SENTINEL — WATCH STATION VIGILANCE -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>Eyenet Sentinel — Watch Station Vigilance Monitoring</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Automatically detect when a watch station is unattended — bridge, engine control room, or security post — and alert the captain before it becomes a safety incident.</div>
+      <div class="grid-two">
+        <div>
+          <p>Eyenet Sentinel ensures that critical watch stations are never left unattended beyond a configurable threshold. It monitors the designated watchkeeper's presence at their post — on the bridge, in the engine control room, at the cargo control station, or at the security desk — and triggers escalating alerts if no activity is detected. This is not about surveillance; it is about preventing the single most common cause of maritime incidents: an unattended watch.</p>
+          <h3>Maritime Use Cases</h3>
+          <ul>
+            <li><strong>Bridge watch officer monitoring:</strong> Sentinel detects when the officer of the watch (OOW) has been absent from the bridge beyond the configured grace period (e.g., 2 minutes). First alert goes to the OOW's mobile device; if not resolved, escalates to captain and chief mate.</li>
+            <li><strong>Engine room unmanned machinery space (UMS) monitoring:</strong> During UMS periods at night, Sentinel confirms that the duty engineer performs scheduled rounds at the expected intervals. Missed rounds trigger an alert to the chief engineer.</li>
+            <li><strong>Security watch post monitoring:</strong> On vessels with dedicated security watches (common on passenger ships and high-risk routes), Sentinel ensures the security officer remains at their post — critical for ISPS Code compliance.</li>
+            <li><strong>Customizable per-station parameters:</strong> Each watch station can have its own absence threshold, escalation chain, and active hours — bridge wing might have a tighter threshold than the cargo office.</li>
+            <li><strong>Fatigue management integration:</strong> Combined with Presence attendance data, Sentinel can flag anomalous patterns — e.g., a crew member who has been on watch for more than the maximum permitted hours under MLC 2006 — and alert the captain before fatigue becomes a safety risk.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Available Modes</strong></p>
+          <div class="badge-row">
+            <span class="badge mode">Area</span>
+          </div>
+          <p style="margin-top: 16px;"><strong>Key Integrations</strong></p>
+          <div class="badge-row">
+            <span class="badge safety">Presence</span>
+            <span class="badge">Orchestrator</span>
+          </div>
+          <p style="margin-top: 16px; font-size: 13px; color: #475569;"><strong>Notification targets:</strong> Watch Officer (1st alert), Captain, Chief Engineer, Chief Mate (escalation)</p>
+          <p style="font-size: 13px; color: #475569;"><strong>Offline operation:</strong> Fully self-contained on the vessel. All detection and alerting runs locally — no external connectivity needed for core function.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. EYENET VRADAR — SECURITY PATROL & RESTRICTED ZONES -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">6</span>
+        <h2>Eyenet Vradar — Security Patrol & Restricted Zone Protection</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Wearable camera eyewear for onboard security patrols. Instant face recognition against crew manifest and persons-of-interest watchlists — all on-premises, no cloud.</div>
+      <div class="grid-two">
+        <div>
+          <p>Eyenet Vradar equips the vessel's security officer with wearable camera eyewear (goggles) that provides real-time face recognition and person-of-interest alerts while on patrol. The system cross-references every face detected against the onboard crew manifest and a configurable watchlist — identifying stowaways, unauthorised personnel, or crew members who should not be in a particular zone. All processing happens on the vessel's local EyeNet installation; no video leaves the ship.</p>
+          <h3>Maritime Use Cases</h3>
+          <ul>
+            <li><strong>Crew manifest verification on patrol:</strong> Security officer walks through crew areas, engine spaces, and cargo holds — every person encountered is silently verified against the crew manifest. Unrecognised faces trigger an instant audio alert to the officer's eyewear and a notification to the captain's dashboard.</li>
+            <li><strong>Restricted zone enforcement:</strong> Define virtual perimeters around the bridge, engine control room, ammunition locker (if applicable), and cargo control. Any unauthorised presence triggers immediate alerts to the security officer and department head. The zone definitions are enforced 24/7 by the AI — no human monitoring required.</li>
+            <li><strong>Stowaway search operations:</strong> During pre-departure searches mandated by ISPS Code, the security officer uses Vradar goggles to scan compartments. Any person not on the crew or visitor manifest generates an alert with location stamp — dramatically accelerating search procedures.</li>
+            <li><strong>Port security coordination:</strong> Persons-of-interest data (e.g., from port facility security or INTERPOL notices) can be loaded as a watchlist before port calls. The system alerts if any person of interest is detected during embarkation or onboard.</li>
+            <li><strong>Drone mode for large vessels:</strong> On tankers, bulk carriers, and passenger ships, Vradar Drone mode provides aerial surveillance of deck areas and cargo holds — covering spaces that are impractical for fixed cameras.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Available Modes</strong></p>
+          <div class="badge-row">
+            <span class="badge mode">Goggles</span>
+            <span class="badge mode">Drone</span>
+          </div>
+          <p style="margin-top: 16px;"><strong>Key Integrations</strong></p>
+          <div class="badge-row">
+            <span class="badge safety">ERP Crew Manifest</span>
+            <span class="badge">Gate</span>
+            <span class="badge">Presence</span>
+          </div>
+          <p style="margin-top: 16px; font-size: 13px; color: #475569;"><strong>Notification targets:</strong> Security Officer (real-time eyewear alert), Captain, Chief Mate, Company Security Officer (CSO) at HQ (via Matrix)</p>
+          <p style="font-size: 13px; color: #475569;"><strong>Offline operation:</strong> Face recognition runs entirely on the vessel's local hardware. Watchlist and crew manifest are pre-loaded and periodically refreshed when connected.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. EYENET SIGNAGE — CREW INFORMATION & EMERGENCY DISPLAYS -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">7</span>
+        <h2>Eyenet Signage — Crew Information & Emergency Displays</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Digital information boards for crew decks, mess halls, and muster stations — with vision-triggered emergency content switching.</div>
+      <div class="grid-two">
+        <div>
+          <p>Eyenet Signage transforms standard displays throughout the vessel into intelligent information boards. Crew mess halls show shift schedules, weather updates, and port ETA. During an emergency, vision detection of smoke, fire, or muster activation automatically switches all displays to show evacuation routes, muster station assignments, and safety instructions — in the crew member's language where configured.</p>
+          <h3>Maritime Use Cases</h3>
+          <ul>
+            <li><strong>Crew mess hall displays:</strong> Current watch schedule, next port information, weather forecast, company announcements, and safety bulletins — centrally managed by the captain or fleet HQ via Matrix.</li>
+            <li><strong>Emergency content override:</strong> When the Eyenet Fire Detect service or manual muster alarm is activated, all signage displays automatically switch to emergency mode — showing evacuation routes, muster station locations, and emergency procedures in multiple languages.</li>
+            <li><strong>Safety campaign playback:</strong> Schedule safety awareness content (PPE usage, confined space entry procedures, fire prevention) during meal times or shift changes — ensuring crew receive regular safety messaging without additional meetings.</li>
+            <li><strong>Visitor & contractor orientation:</strong> During port calls, gangway displays can switch to visitor orientation content — showing safety rules, restricted areas, and emergency procedures for temporary personnel.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Available Modes</strong></p>
+          <div class="badge-row">
+            <span class="badge mode">Spot</span>
+            <span class="badge mode">Gate</span>
+            <span class="badge mode">Area</span>
+          </div>
+          <p style="margin-top: 16px;"><strong>Key Integrations</strong></p>
+          <div class="badge-row">
+            <span class="badge success">Fire Detect</span>
+            <span class="badge">Orchestrator</span>
+            <span class="badge">Matrix</span>
+          </div>
+          <p style="margin-top: 16px; font-size: 13px; color: #475569;"><strong>Notification targets:</strong> All crew (via displays), Captain (override control), Fleet HQ (content management)</p>
+          <p style="font-size: 13px; color: #475569;"><strong>Offline operation:</strong> All content pre-loaded locally. Emergency triggers run entirely on the vessel with zero dependency on external connectivity.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. EYENET MATRIX — FLEET-WIDE AGGREGATED REPORTING -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">8</span>
+        <h2>Eyenet Matrix — Fleet-Wide Aggregated Reporting</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 12px; color: #f5fbff;">Connect every vessel in your fleet through a secure VPN mesh. Centralised dashboards, aggregated crew compliance reports, and fleet-wide visibility — all from a single Matrix installation at headquarters.</div>
+      <div class="callout amber" style="margin-bottom: 16px; color: #f5fbff;">Degraded mode: When a ship is at sea and offline, its data is queued locally. The moment the vessel docks and its VPN connection re-establishes, all queued data synchronises automatically. No data is ever lost and no single point of failure blocks fleet visibility.</div>
+      <div class="grid-two">
+        <div>
+          <p>Eyenet Matrix is the product that transforms individual vessel installations into a unified fleet management system. Running at the shipping company's headquarters, Matrix connects to every vessel's EyeNet installation over the secure VPN mesh — querying all vessels in parallel and aggregating results into fleet-wide dashboards. Fleet managers see crew attendance compliance across all vessels, security events across all routes, and operational analytics across the entire fleet — without ever needing to call the captain for a status update.</p>
+          <h3>Fleet Management Use Cases</h3>
+          <ul>
+            <li><strong>Fleet-wide crew attendance compliance:</strong> Aggregated Presence reports across all vessels — see which ships have watch attendance issues, which crew members have missed shifts, and fleet-wide compliance trends in a single dashboard.</li>
+            <li><strong>Centralised user & role management:</strong> Manage access across the entire fleet from one directory. Define roles: Captain (full vessel access), Chief Engineer (technical spaces), Fleet Manager (read-only across all vessels), HR (crew attendance data), Company Security Officer (security events).</li>
+            <li><strong>Cross-vessel security event correlation:</strong> When a person of interest is detected on Vessel A, the watchlist can be pushed to all vessels in the fleet via Matrix — ensuring fleet-wide awareness within minutes.</li>
+            <li><strong>Operational analytics:</strong> Compare watch compliance, gangway activity, and restricted zone alerts across vessels, routes, and time periods. Identify patterns — e.g., which routes correlate with higher crew fatigue alerts — and take proactive action.</li>
+            <li><strong>Regulatory audit readiness:</strong> Generate fleet-wide compliance reports (STCW watchkeeping hours, ISPS security logs, MLC crew attendance records) with a single query — ready for flag state or port state inspections.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Administrative Capabilities</strong></p>
+          <ul>
+            <li><strong>View Aggregated Fleet Reports</strong> — Presence, Gate Activity, Camera Events, Demographics, and Logs across all vessels</li>
+            <li><strong>Manage Fleet Groups</strong> — Organise vessels by route, vessel type, or management company</li>
+            <li><strong>Manage Users & Permissions</strong> — Centralised RBAC across entire fleet</li>
+            <li><strong>View Aggregated Logs</strong> — Consolidated audit trails from all installations</li>
+            <li><strong>Full Fleet Administrator Access</strong> — Complete administrative control over all Matrix functions</li>
+            <li><strong>Push Watchlists Fleet-Wide</strong> — Distribute persons-of-interest data to all vessels simultaneously</li>
+            <li><strong>Fleet-Wide Content Management</strong> — Push signage content, safety bulletins, and emergency procedures to all vessels</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. AUTOMATIC NOTIFICATION ARCHITECTURE -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">9</span>
+        <h2>Automatic Notification Architecture</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 20px; color: #f5fbff;">Three-tier notification system: onboard alerts (zero latency, no internet required), ship-to-HQ sync (via VPN when connected), and ERP crew module integration (bi-directional data flow).</div>
+
+      <div class="notification-chain">
+        <div class="notif-level onboard">
+          <h4><span class="icon-circle">1</span>Onboard Notifications</h4>
+          <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">Zero latency. No internet required. Local network only.</p>
+          <ul>
+            <li>Watch officer absence → mobile push + bridge audible alarm</li>
+            <li>Restricted zone intrusion → security officer eyewear + captain dashboard</li>
+            <li>Muster station headcount → captain & chief mate dashboards</li>
+            <li>Unrecognised person at gangway → security officer + captain</li>
+            <li>Watch station unattended beyond threshold → escalating: officer → captain → chief engineer</li>
+            <li>Visitor not disembarked by departure → captain + security officer</li>
+          </ul>
+        </div>
+        <div class="notif-level hq">
+          <h4><span class="icon-circle">2</span>Ship-to-HQ Sync</h4>
+          <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">Via VPN when docked. Via satellite for critical alerts at sea.</p>
+          <ul>
+            <li>Daily crew attendance reports → fleet HR dashboard</li>
+            <li>Security events (stowaway, intrusion, POI detection) → Company Security Officer</li>
+            <li>Watch compliance exceptions → fleet operations manager</li>
+            <li>Crew certification expiry alerts → fleet HR & crewing department</li>
+            <li>Satellite-priority alerts (man overboard, fire, security breach) → HQ operations centre in real time</li>
+            <li>Degraded mode: all data queued locally at sea, auto-synced when VPN reconnects</li>
+          </ul>
+        </div>
+        <div class="notif-level erp">
+          <h4><span class="icon-circle">3</span>ERP Crew Module Integration</h4>
+          <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">Bi-directional sync between Eyenet and shipping ERP systems.</p>
+          <ul>
+            <li><strong>ERP → Eyenet:</strong> Crew manifest, watch schedules, certifications, shore-leave authorisations</li>
+            <li><strong>Eyenet → ERP:</strong> Actual attendance records, embarkation/disembarkation timestamps, watch compliance data, certification utilisation reports</li>
+            <li><strong>Mismatch alerts:</strong> Crew member on ERP manifest but not detected onboard → alert to crewing department</li>
+            <li><strong>Certification gap alerts:</strong> Crew assigned to watch requiring certification they don't hold (per ERP data) → alert before watch begins</li>
+            <li><strong>Rest hours compliance:</strong> Eyenet tracks actual watch hours → ERP flags MLC 2006 rest hour violations → alert to captain and DPA</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="summary-card" style="margin-top: 24px;">
+        <p><strong>Notification Delivery Channels</strong></p>
+        <div class="badge-row" style="margin-top: 8px;">
+          <span class="badge">Captain Dashboard</span>
+          <span class="badge mode">Officer Mobile Push</span>
+          <span class="badge user">Email to HQ</span>
+          <span class="badge safety">Audible/Visual Alarm</span>
+          <span class="badge success">ERP API Webhook</span>
+          <span class="badge">Matrix Dashboard</span>
+        </div>
+        <p style="margin-top: 12px; font-size: 13px; color: #475569;">All notifications are configurable per trigger: choose which channels, which recipients, and which escalation path for each event type. Critical safety alerts (man overboard, fire, abandon ship) bypass all filters and notify all channels simultaneously.</p>
+      </div>
+    </section>
+
+    <!-- 10. INDUSTRIAL SAFETY COVERAGE -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">10</span>
+        <h2>Industrial Safety Coverage</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 20px; color: #f5fbff;">Beyond crew management, Eyenet provides comprehensive industrial safety monitoring tailored for the maritime environment — from PPE compliance to lone-worker protection and automated incident documentation.</div>
+
+      <div class="grid-three">
+        <div class="summary-card">
+          <p><strong>PPE Compliance Detection</strong></p>
+          <p style="font-size: 13px; color: #475569;">Automatically detect whether personnel in machinery spaces, cargo holds, and deck areas are wearing required PPE — hard hat, safety vest, safety glasses, steel-toe boots. Instant alert to the area supervisor if PPE is missing. Configurable per zone: engine room may require full PPE; accommodation areas may not.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge safety">Presence</span>
+            <span class="badge">Sentinel</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <p><strong>Lone-Worker Protection</strong></p>
+          <p style="font-size: 13px; color: #475569;">Monitor personnel working alone in hazardous areas — engine room during UMS periods, pump room, cargo holds, ballast tanks. If no movement is detected beyond a configurable threshold, the system alerts the duty officer and initiates a check-in protocol. In confined space entry scenarios, integrates with permit-to-work systems.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge safety">Sentinel</span>
+            <span class="badge">Presence</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <p><strong>Automated Incident Documentation</strong></p>
+          <p style="font-size: 13px; color: #475569;">Every safety event — unauthorised access, PPE violation, watch absence, restricted zone intrusion — is automatically documented with timestamped video evidence, involved personnel, and zone information. Incident reports are generated automatically and stored locally. When connected, reports sync to HQ Matrix for fleet-wide safety analysis.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge success">Matrix</span>
+            <span class="badge">Orchestrator</span>
+            <span class="badge">Media</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <p><strong>Confined Space Entry Monitoring</strong></p>
+          <p style="font-size: 13px; color: #475569;">Track personnel entering and exiting confined spaces (ballast tanks, void spaces, cargo tanks) with automatic headcount. If the number of personnel exiting does not match the number who entered within the permit time window, trigger an immediate emergency alert to captain and chief mate.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge safety">Gate</span>
+            <span class="badge">Presence</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <p><strong>Fire & Smoke Detection Integration</strong></p>
+          <p style="font-size: 13px; color: #475569;">Eyenet Fire Detect service (available as an add-on) provides vision-based smoke and flame detection in machinery spaces and cargo holds — detecting fires visually before traditional smoke detectors trigger. On detection, orchestrator fires all emergency actions: alarms, signage override to evacuation routes, and notification to captain and fire team.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge safety">Fire Detect</span>
+            <span class="badge">Signage</span>
+            <span class="badge">Orchestrator</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <p><strong>Muster Drill & Emergency Response</strong></p>
+          <p style="font-size: 13px; color: #475569;">During drills and actual emergencies, Eyenet provides real-time visibility: Gate mode tracks crew movement toward muster stations, Presence mode counts personnel at each station, and the captain's dashboard shows a live fleet-wide headcount. Post-drill reports are generated automatically with timestamps for regulatory compliance.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge mode">Gate</span>
+            <span class="badge mode">Presence</span>
+            <span class="badge">Matrix</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11. VPN-POWERED FLEET CONNECTIVITY -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">11</span>
+        <h2>VPN-Powered Fleet Connectivity</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 20px; color: #f5fbff;">Each vessel operates a self-contained EyeNet installation. The secure EyeNet VPN mesh connects every vessel to fleet headquarters — creating a private, encrypted network that spans the entire fleet without exposing any service to the public internet.</div>
+
+      <div class="callout amber" style="margin-bottom: 16px; color: #f5fbff;">
+        <pre class="arch-diagram">
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  FLEET HEADQUARTERS                                                          │
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  EyeNet Matrix Installation                                            │ │
+│  │  • Aggregated fleet dashboards                                         │ │
+│  │  • Centralised user/RBAC management                                    │ │
+│  │  • Fleet-wide reporting & analytics                                    │ │
+│  │  • Watchlist distribution to all vessels                               │ │
+│  │  • ERP crew module integration (bi-directional sync)                   │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                      │                                       │
+│  ┌───────────────────────────────────┴────────────────────────────────────┐ │
+│  │  EyeNet Authority (VPS)                                                │ │
+│  │  • EyeNet VPN coordination server                                      │ │
+│  │  • Licence & entitlement enforcement                                   │ │
+│  │  • ACL-managed mesh isolation per fleet                                │ │
+│  │  • Pre-auth key issuance for vessel enrollment                         │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────┬───────────────────────────────────────┘
+                                       │
+                              EyeNet VPN Mesh (WireGuard)
+                       tag:matrix-{fleet-id} scoped ACL isolation
+                                       │
+          ┌────────────────────────────┼────────────────────────────┐
+          │                            │                            │
+┌─────────▼──────────┐  ┌──────────────▼─────────┐  ┌─────────────▼──────────┐
+│  VESSEL ALPHA      │  │  VESSEL BRAVO          │  │  VESSEL CHARLIE       │
+│                    │  │                        │  │                        │
+│  EyeNet Node       │  │  EyeNet Node           │  │  EyeNet Node           │
+│  (Mini PC 16-32GB) │  │  (Mini PC 16-32GB)     │  │  (Mini PC 16-32GB)     │
+│                    │  │                        │  │                        │
+│  ┌──────────────┐  │  │  ┌──────────────┐      │  │  ┌──────────────┐      │
+│  │ Cameras      │  │  │  │ Cameras      │      │  │  │ Cameras      │      │
+│  │ • Gangway    │  │  │  │ • Gangway    │      │  │  │ • Gangway    │      │
+│  │ • Bridge     │  │  │  │ • Bridge     │      │  │  │ • Bridge     │      │
+│  │ • ECR        │  │  │  │ • ECR        │      │  │  │ • ECR        │      │
+│  │ • Muster Stn │  │  │  │ • Muster Stn │      │  │  │ • Muster Stn │      │
+│  │ • Deck/Cargo │  │  │  │ • Deck/Cargo │      │  │  │ • Deck/Cargo │      │
+│  └──────────────┘  │  │  └──────────────┘      │  │  └──────────────┘      │
+│                    │  │                        │  │                        │
+│  OFFLINE-CAPABLE   │  │  OFFLINE-CAPABLE       │  │  OFFLINE-CAPABLE       │
+│  All data queued   │  │  All data queued       │  │  All data queued       │
+│  locally at sea.   │  │  locally at sea.       │  │  locally at sea.       │
+│  Syncs when VPN    │  │  Syncs when VPN        │  │  Syncs when VPN        │
+│  reconnects.       │  │  reconnects.           │  │  reconnects.           │
+└────────────────────┘  └────────────────────────┘  └────────────────────────┘
+        </pre>
+      </div>
+
+      <div class="grid-two">
+        <div>
+          <h3>Key VPN Architecture Properties</h3>
+          <ul>
+            <li><strong>Mesh topology:</strong> Every vessel can communicate directly with every other vessel and with HQ — no hub-and-spoke bottleneck. Queries from Matrix to vessels are parallel and direct.</li>
+            <li><strong>ACL-based fleet isolation:</strong> Each shipping company's fleet is tagged with a unique Matrix group ID. EyeNet VPN ACLs cryptographically enforce that vessels in Fleet A cannot communicate with vessels in Fleet B — even though they share the same coordination server.</li>
+            <li><strong>Zero public exposure:</strong> All inter-vessel and vessel-to-HQ communication travels over the EyeNet VPN encrypted tunnel. No EyeNet service port is exposed to the public internet. No cloud relay processes video or presence data.</li>
+            <li><strong>Automatic enrollment:</strong> When a new vessel is commissioned, the node fetches a pre-auth key from the Authority, enrolls in the VPN mesh, and is automatically discoverable by the fleet Matrix — no manual network configuration required.</li>
+            <li><strong>Degraded mode resilience:</strong> If a vessel goes offline (at sea), its local EyeNet installation continues operating fully. When the VPN reconnects (docking, satellite), all queued data synchronises automatically. Matrix reports mark offline vessels as "unreachable" rather than failing.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Connectivity States</strong></p>
+          <table style="margin-top: 12px;">
+            <tr><th>State</th><th>Vessel Operation</th><th>HQ Visibility</th></tr>
+            <tr><td><strong>In Port (Docked)</strong></td><td>Full VPN connectivity. All data synced in real time.</td><td>Full fleet visibility. Live dashboards.</td></tr>
+            <tr><td><strong>Coastal (4G/LTE)</strong></td><td>Intermittent VPN. Priority data (alerts) synced first.</td><td>Critical alerts real-time. Full data on next full sync.</td></tr>
+            <tr><td><strong>At Sea (Satellite)</strong></td><td>VPN via satellite if equipped. Bandwidth-optimised sync.</td><td>Critical alerts only. Full data queued for port sync.</td></tr>
+            <tr><td><strong>At Sea (Offline)</strong></td><td>Fully operational. All data queued locally.</td><td>Vessel marked "unreachable." No data loss — synced on reconnect.</td></tr>
+          </table>
+          <p style="margin-top: 12px; font-size: 13px; color: #475569;">In all states, the vessel's local EyeNet installation operates at full capability for crew safety, presence tracking, and onboard alerting — connectivity affects only HQ visibility, never onboard functionality.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12. USE CASE SCENARIOS -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">12</span>
+        <h2>Maritime Use Case Scenarios</h2>
+      </div>
+      <table>
+        <tr><th>Scenario</th><th>Eyenet Products</th><th>Mode</th><th>Notification Targets</th><th>ERP Integration</th></tr>
+        <tr>
+          <td><strong>Watch officer absent from bridge</strong></td>
+          <td>Sentinel + Presence</td>
+          <td>Area</td>
+          <td>OOW → Captain → Chief Mate → Fleet Ops (HQ)</td>
+          <td>Watch schedule import, attendance record export</td>
+        </tr>
+        <tr>
+          <td><strong>Crew member misses muster during emergency</strong></td>
+          <td>Gate + Presence</td>
+          <td>Gate • Area</td>
+          <td>Captain → Chief Mate → DPA (HQ)</td>
+          <td>Crew manifest cross-reference, muster report export</td>
+        </tr>
+        <tr>
+          <td><strong>Unauthorised person in engine room</strong></td>
+          <td>Presence + Vradar</td>
+          <td>Area • Goggles</td>
+          <td>Chief Engineer → Security Officer → Captain</td>
+          <td>Certification check against ERP crew data</td>
+        </tr>
+        <tr>
+          <td><strong>Stowaway detected during pre-departure search</strong></td>
+          <td>Vradar + Gate</td>
+          <td>Goggles • Gate</td>
+          <td>Security Officer → Captain → CSO (HQ) → Port Authority</td>
+          <td>Visitor manifest cross-reference, POI watchlist sync</td>
+        </tr>
+        <tr>
+          <td><strong>Crew fatigue — watch hours exceed MLC limits</strong></td>
+          <td>Presence + Sentinel</td>
+          <td>Area</td>
+          <td>Captain → Fleet HR → DPA (HQ)</td>
+          <td>Actual hours vs ERP schedule comparison, MLC compliance report</td>
+        </tr>
+        <tr>
+          <td><strong>Visitor not disembarked before departure</strong></td>
+          <td>Gate</td>
+          <td>Gate</td>
+          <td>Captain → Security Officer → Port Agent</td>
+          <td>Visitor log sync to ERP, departure clearance check</td>
+        </tr>
+        <tr>
+          <td><strong>Smoke detected in cargo hold</strong></td>
+          <td>Fire Detect + Signage + Orchestrator</td>
+          <td>Area • Spot</td>
+          <td>Captain → Fire Team → All Crew (signage) → HQ Ops</td>
+          <td>Incident report export, cargo manifest cross-reference</td>
+        </tr>
+        <tr>
+          <td><strong>Lone worker unresponsive in pump room</strong></td>
+          <td>Sentinel</td>
+          <td>Area</td>
+          <td>Duty Officer → Captain → Medical Team</td>
+          <td>Permit-to-work cross-reference, confined space entry log</td>
+        </tr>
+        <tr>
+          <td><strong>Fleet-wide crew attendance compliance review</strong></td>
+          <td>Matrix + Presence</td>
+          <td>Area • Gate</td>
+          <td>Fleet HR Manager → Fleet Operations Director</td>
+          <td>Aggregated attendance data export to ERP, fleet compliance dashboard</td>
+        </tr>
+        <tr>
+          <td><strong>Port state control inspection — crew documentation</strong></td>
+          <td>Gate + Presence + Matrix</td>
+          <td>Gate • Area</td>
+          <td>Captain (on-demand report generation)</td>
+          <td>Crew list with embarkation timestamps, watch hour logs, certification validity report</td>
+        </tr>
+      </table>
+    </section>
+
+    <!-- 13. OPERATING MODES REFERENCE -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">13</span>
+        <h2>Operating Modes Reference</h2>
+      </div>
+      <table>
+        <tr><th>Mode</th><th>Description</th><th>Maritime Application</th></tr>
+        <tr><td><strong>Spot</strong></td><td>Precise monitoring of fixed, close-range areas</td><td>Crew mess information displays, gangway visitor verification kiosks</td></tr>
+        <tr><td><strong>Gate</strong></td><td>Comprehensive monitoring of entrances, exits, and corridors</td><td>Gangway embarkation/disembarkation, confined space entry/exit, muster station approaches</td></tr>
+        <tr><td><strong>Area</strong></td><td>Wide-area surveillance for large spaces including rooms and outdoor environments</td><td>Bridge watch monitoring, engine control room, cargo holds, muster stations, deck areas</td></tr>
+        <tr><td><strong>Goggles</strong></td><td>Mobile, first-person monitoring through wearable camera technology</td><td>Security officer patrols, pre-departure stowaway searches, restricted zone enforcement</td></tr>
+        <tr><td><strong>Drone</strong></td><td>Aerial surveillance providing comprehensive, mobile perspective coverage</td><td>Large vessel deck surveillance, cargo hold inspection, tanker perimeter monitoring</td></tr>
+      </table>
+    </section>
+
+    <!-- 14. TECHNICAL SPECIFICATIONS -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">14</span>
+        <h2>Technical Specifications</h2>
+      </div>
+      <div class="grid-three">
+        <div class="summary-card">
+          <span class="key-number" style="color: #1976d2;">1</span>
+          <span class="stat-label">Mini PC Per Vessel</span>
+          <p style="font-size: 13px; color: #475569; margin-top: 8px;">16–32 GB RAM, modern multi-core CPU, standard GPU. No specialised hardware or GPU servers required. Fanless, compact form factor suitable for shipboard installation. Power: standard 12–24V DC or 110–240V AC.</p>
+        </div>
+        <div class="summary-card">
+          <span class="key-number" style="color: #0891b2;">2–5</span>
+          <span class="stat-label">Cameras Per Vessel</span>
+          <p style="font-size: 13px; color: #475569; margin-top: 8px;">Standard IP cameras, WiFi cams, or USB cameras. No proprietary hardware. Typical vessel deployment: gangway, bridge, engine control room, muster station, deck/cargo area. Expandable per vessel requirements.</p>
+        </div>
+        <div class="summary-card">
+          <span class="key-number" style="color: #4caf50;">100%</span>
+          <span class="stat-label">Offline Capable</span>
+          <p style="font-size: 13px; color: #475569; margin-top: 8px;">All core functions — presence tracking, face recognition, alerting, gate monitoring, watch vigilance — operate fully offline. Internet required only for HQ sync and remote notifications. Video and data never leave the vessel unless explicitly configured.</p>
+        </div>
+      </div>
+      <div class="callout amber" style="margin-top: 24px; color: #f5fbff;">All Eyenet applications run on-premises with no cloud dependency for video or data. Each vessel operates a complete, self-contained installation. The VPN mesh provides encrypted fleet connectivity without exposing any service to the public internet. Core operation functions fully offline at sea.</div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">15</span>
+        <h2>Note</h2>
+      </div>
+      <p>This document describes how the existing Eyenet product suite — Presence, Gate, Sentinel, Vradar, Signage, and Matrix — applies to maritime shipping operations. No new products or custom development are required. The platform's existing on-premises architecture, offline capability, VPN mesh connectivity, and orchestrator-driven notification engine are inherently suited to the maritime environment. Integration with shipping ERP crew modules is supported through the platform's existing API gateway and webhook infrastructure.</p>
+      <p class="footer-note">Prepared by EyeNet for informational purposes. Product specifications and availability subject to change.</p>
+    </section>
+  </div>
+</body>
+</html>

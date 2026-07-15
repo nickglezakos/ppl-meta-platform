@@ -18,6 +18,14 @@ github push
 Authority
 https://authority.eyenet-vision.com/admin
 
+get an vpn enrollment key:
+curl -s -X POST http://localhost:8001/node/vpn/enroll | python3 -m json.tool
+
+enroll:
+tailscale up --login-server https://vpn.eyenet-vision.com --auth-key hskey-auth-Sl0GtkA0HSqt-HGolDEVASCutJjc5tqSs0N2fwTzmHWtUcG4NFrf1EWZDGvtfDxMEleazmIq52z4L --accept-routes
+
+
+
 http://127.0.0.1:8010/admin
 
 
