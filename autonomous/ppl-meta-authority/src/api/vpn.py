@@ -337,9 +337,32 @@ async def list_vpn_nodes(_request: Request):
         except Exception:
             continue
 
-    # 3. Build response — per-user listing includes online / last_seen
+    # 3. Build response — derive online from protobuf last_seen timestamp
+    from datetime import timedelta, timezone as tz
+
     nodes = []
     for node in all_nodes_data:
+        # Parse protobuf timestamp: {"seconds": 1783935373, "nanos": 185189452}
+        last_seen_raw = node.get("last_seen")
+        last_seen_str = ""
+        last_seen_dt = None
+        if isinstance(last_seen_raw, dict):
+            secs = last_seen_raw.get("seconds")
+            if isinstance(secs, (int, float)):
+                try:
+                    last_seen_dt = datetime.fromtimestamp(float(secs), tz=tz.utc)
+                    last_seen_str = last_seen_dt.isoformat()
+                except (ValueError, OSError):
+                    last_seen_str = str(last_seen_raw)
+            else:
+                last_seen_str = str(last_seen_raw)
+
+        # Online = last_seen within 5 minutes
+        online = False
+        if last_seen_dt is not None:
+            now_utc = datetime.now(tz.utc)
+            online = (now_utc - last_seen_dt) < timedelta(minutes=5)
+
         nodes.append(VpnNodeInfo(
             node_id=str(node.get("id", node.get("node_key", ""))),
             hostname=str(node.get("name", node.get("given_name", ""))),
@@ -350,8 +373,8 @@ async def list_vpn_nodes(_request: Request):
                 (node.get("ip_addresses") or [None])[0]
                 if node.get("ip_addresses") else None
             ),
-            online=bool(node.get("online", False)),
-            last_seen=str(node.get("last_seen", "")),
+            online=online,
+            last_seen=last_seen_str,
         ))
 
     return VpnNodeListResponse(nodes=nodes)
