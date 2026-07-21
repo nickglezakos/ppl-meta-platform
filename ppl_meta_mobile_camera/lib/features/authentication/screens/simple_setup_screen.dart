@@ -31,7 +31,8 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   String? _errorMessage;
   String? _detectedNetwork;
   bool _isHowTosExpanded = false;
-  bool _useMagicDns = true; // Primary: MagicDNS. Falls back to LAN on failure.
+  bool _useMagicDns = true; // Primary: VPN (Tailscale IP → MagicDNS). Falls back to LAN on failure.
+  String? _savedTailscaleIp; // Node's Tailscale IP from previous enrollment (100.x.x.x)
 
   @override
   void initState() {
@@ -58,6 +59,14 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
             _hostnameController.text = hostname;
           });
         }
+      }
+      // Load stored node Tailscale IP for direct VPN connections
+      final storedIp = await VpnEnrollmentService.getTailscaleIp();
+      if (storedIp != null && storedIp.isNotEmpty) {
+        setState(() {
+          _savedTailscaleIp = storedIp;
+        });
+        print('🔒 Found stored node Tailscale IP: $storedIp');
       }
     } catch (e) {
       // Ignore — use default
@@ -96,14 +105,14 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
     return 'http://$hostname.eyenet-vpn.local:8002';
   }
 
-  /// Show info popup when MagicDNS connection fails.
+  /// Show info popup when VPN connection fails.
   void _showVpnNotEnrolledDialog() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('MagicDNS Connection Failed'),
+        title: const Text('VPN Connection Failed'),
         content: const Text(
-          'Cannot reach the node via MagicDNS.\n\n'
+          'Cannot reach the node via VPN (Tailscale IP + MagicDNS).\n\n'
           'Possible causes:\n'
           '• This device is not enrolled in the VPN mesh\n'
           '• The node\'s MagicDNS name has been changed\n'
@@ -140,23 +149,52 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
       final username = _usernameController.text.trim();
       final password = _passwordController.text.trim();
 
-      String targetHost;
-      int targetPort;
+      String targetHost = '';
+      int targetPort = 8002;
 
       if (_useMagicDns) {
-        // Primary: MagicDNS
-        final hostname = _hostnameController.text.trim();
-        targetHost = '$hostname.eyenet-vpn.local';
-        targetPort = 8002;
+        // Primary: VPN connection. Try Tailscale IP first, then MagicDNS hostname.
+        List<ServiceInfo>? services;
 
-        print('🔍 Attempting MagicDNS connection to $targetHost:$targetPort');
+        // Strategy 1: Direct Tailscale IP (most reliable from mobile)
+        if (_savedTailscaleIp != null && _savedTailscaleIp!.isNotEmpty) {
+          try {
+            final tailscaleTarget = '$_savedTailscaleIp:$targetPort';
+            print('🔍 Trying stored node Tailscale IP: $tailscaleTarget');
+            final discoveryClient = SimplifiedDiscoveryClient();
+            services = await discoveryClient
+                .discoverServicesAtAddress(tailscaleTarget);
+            if (services.isNotEmpty) {
+              targetHost = _savedTailscaleIp!;
+              print('✅ Connected via Tailscale IP: $_savedTailscaleIp');
+            }
+          } catch (e) {
+            print('⚠️ Tailscale IP connection failed: $e');
+            services = [];
+          }
+        }
 
-        // Try connecting via MagicDNS
-        final discoveryClient = SimplifiedDiscoveryClient();
-        final services = await discoveryClient.discoverServicesAtAddress('$targetHost:$targetPort');
+        // Strategy 2: MagicDNS hostname (fallback)
+        if ((services == null || services.isEmpty)) {
+          try {
+            final hostname = _hostnameController.text.trim();
+            final magicDnsTarget = '$hostname.eyenet-vpn.local';
+            print('🔍 Attempting MagicDNS connection to $magicDnsTarget:$targetPort');
+            final discoveryClient = SimplifiedDiscoveryClient();
+            services = await discoveryClient
+                .discoverServicesAtAddress('$magicDnsTarget:$targetPort');
+            if (services.isNotEmpty) {
+              targetHost = magicDnsTarget;
+              print('✅ Connected via MagicDNS: $magicDnsTarget');
+            }
+          } catch (e) {
+            print('⚠️ MagicDNS connection failed: $e');
+            services = [];
+          }
+        }
 
-        if (services.isEmpty) {
-          // MagicDNS failed — show popup and switch to LAN
+        if (services == null || services.isEmpty) {
+          // All VPN strategies failed — show popup and switch to LAN
           if (mounted) {
             setState(() {
               _isLoading = false;
@@ -297,10 +335,19 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
         final authKey = result['auth_key'] as String?;
         final headscaleServer = result['headscale_server'] as String?;
         if (authKey != null && headscaleServer != null) {
+          // Also store the node's Tailscale IP so we can connect directly via VPN
+          final nodeTailscaleIp = result['tailscale_ip'] as String?;
           await VpnEnrollmentService.saveEnrollment(
             authKey: authKey,
             headscaleServer: headscaleServer,
+            tailscaleIp: nodeTailscaleIp,
           );
+          // Cache the node's Tailscale IP locally so next launch uses it directly
+          if (nodeTailscaleIp != null && nodeTailscaleIp.isNotEmpty) {
+            setState(() {
+              _savedTailscaleIp = nodeTailscaleIp;
+            });
+          }
           // Save MagicDNS discovery URL for future VPN-based connections
           final discoveryUrl = result['discovery_url'] as String?;
           if (discoveryUrl != null) {
@@ -311,6 +358,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
             await VpnEnrollmentService.saveMagicDns(magicDns);
           }
           print('🔒 VPN enrollment key stored');
+          print('   Node Tailscale IP: $nodeTailscaleIp');
           print('   Discovery URL: $discoveryUrl');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -439,7 +487,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'MagicDNS (Recommended)',
+                          'VPN Connection (Recommended)',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             color: _useMagicDns ? Colors.green.shade700 : Colors.grey,
@@ -455,6 +503,32 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                     ),
                     if (_useMagicDns) ...[
                       const SizedBox(height: 8),
+                      if (_savedTailscaleIp != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade100,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Node VPN IP: $_savedTailscaleIp',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontFamily: 'monospace',
+                                    color: Colors.green.shade800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       TextFormField(
                         controller: _hostnameController,
                         decoration: InputDecoration(
@@ -734,8 +808,9 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                           icon: Icons.network_check,
                           title: 'Connecting to Your Platform',
                           steps: [
-                            'Primary: Enter the MagicDNS hostname (e.g. eyenet-node-hetzner)',
-                            'Fallback: If MagicDNS fails, use the LAN IP address',
+                            'Primary: App auto-connects via stored node VPN IP',
+                            'Fallback: Uses MagicDNS hostname (e.g. eyenet-node-hetzner)',
+                            'Fallback: Manual LAN IP address if VPN is unavailable',
                             'MagicDNS requires the device to be enrolled in the EyeNet VPN mesh',
                             'The hostname is saved and auto-filled on your next visit',
                           ],
@@ -766,7 +841,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                           icon: Icons.error_outline,
                           title: 'Troubleshooting',
                           steps: [
-                            'MagicDNS: Ensure this device is enrolled in the VPN mesh',
+                            'VPN: Ensure this device is enrolled in the VPN mesh (Tailscale)',
                             'LAN: Ensure your device is on the same network as the platform',
                             'Verify the platform is running (check console logs)',
                             'Try different IP addresses if connection fails',

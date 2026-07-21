@@ -19,11 +19,10 @@ class DiscoveryConfigService {
   String? _cachedDiscoveryUrl;
   SimplifiedDiscoveryClient? _discoveryClient;
   
-  /// Initialize discovery service - no defaults provided
+  /// Initialize discovery service — preserve stored configuration.
   Future<void> initialize() async {
-    // Clear any old hardcoded configurations
-    await clearConfiguration();
-    print('🔧 No default discovery configuration - user input required');
+    // No longer clearing stored config — preserve user's previous setup
+    print('🔧 Discovery service initialized (preserving stored configuration)');
   }
 
   /// Clear all stored discovery configuration

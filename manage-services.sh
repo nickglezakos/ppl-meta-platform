@@ -42,6 +42,9 @@ SERVICES=(
 start_all_services() {
     print_status "🚀 Starting all PPL Meta Python services..."
     
+    # Ensure nginx is running first so services can reach each other through the proxy
+    start_nginx
+
     for service_config in "${SERVICES[@]}"; do
         IFS=':' read -r service_name port description <<< "$service_config"
         
@@ -195,14 +198,14 @@ check_services_status() {
 
 # Function to start nginx
 start_nginx() {
-    print_status "🌐 Starting Nginx..."
+    print_status "🌐 Starting Nginx (port 9000)..."
     
     if command -v nginx >/dev/null 2>&1; then
         if pgrep nginx >/dev/null; then
             print_warning "Nginx is already running"
         else
-            sudo nginx
-            print_success "✅ Nginx started"
+            nginx
+            print_success "✅ Nginx started on port 9000"
         fi
     else
         print_error "❌ Nginx not installed. Install with: brew install nginx"
@@ -215,7 +218,7 @@ stop_nginx() {
     print_status "🛑 Stopping Nginx..."
     
     if pgrep nginx >/dev/null; then
-        sudo nginx -s quit
+        nginx -s quit
         print_success "✅ Nginx stopped"
     else
         print_warning "⚠️ Nginx is not running"

@@ -24,6 +24,8 @@ curl -s -X POST http://localhost:8001/node/vpn/enroll | python3 -m json.tool
 enroll:
 tailscale up --login-server https://vpn.eyenet-vision.com --auth-key hskey-auth-Sl0GtkA0HSqt-HGolDEVASCutJjc5tqSs0N2fwTzmHWtUcG4NFrf1EWZDGvtfDxMEleazmIq52z4L --accept-routes
 
+check the peers on mac:
+curl -s http://localhost:8001/node/vpn/peers | python3 -m json.tool
 
 
 http://127.0.0.1:8010/admin

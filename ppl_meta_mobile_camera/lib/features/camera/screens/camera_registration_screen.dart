@@ -264,24 +264,40 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
     }
   }
 
-  /// Get device IP address
+  /// Get device IP address — prefers VPN (Tailscale) IP for remote reachability.
   Future<String> _getDeviceIP() async {
     try {
-      final info = NetworkInfo();
-      final wifiIP = await info.getWifiIP();
-      if (wifiIP != null && wifiIP.isNotEmpty) {
-        return wifiIP;
-      }
-      
-      // Fallback: Try to get IP from network interfaces
+      // Strategy 1: Look for Tailscale VPN IP (100.x.x.x) in network interfaces.
+      // This ensures the backend can reach the camera even when it's on mobile data.
       for (final interface in await NetworkInterface.list()) {
         for (final addr in interface.addresses) {
           if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+            if (addr.address.startsWith('100.')) {
+              print('🔒 Found Tailscale VPN IP: ${addr.address}');
+              return addr.address;
+            }
+          }
+        }
+      }
+
+      // Strategy 2: Try WiFi IP as fallback (same-network access)
+      final info = NetworkInfo();
+      final wifiIP = await info.getWifiIP();
+      if (wifiIP != null && wifiIP.isNotEmpty) {
+        print('📶 Using WiFi IP: $wifiIP');
+        return wifiIP;
+      }
+
+      // Strategy 3: Any non-loopback IPv4 as last resort
+      for (final interface in await NetworkInterface.list()) {
+        for (final addr in interface.addresses) {
+          if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+            print('🌐 Using interface IP: ${addr.address}');
             return addr.address;
           }
         }
       }
-      
+
       // Final fallback
       return '192.168.1.100';
     } catch (e) {

@@ -419,26 +419,42 @@ class AutoCameraRegistrationService {
   /// Get device IP address for registration
   Future<String> _getDeviceIP() async {
     try {
-      final info = NetworkInfo();
-      final wifiIP = await info.getWifiIP();
-      if (wifiIP != null && wifiIP.isNotEmpty) {
-        return wifiIP;
-      }
-      
-      // Fallback: Try to get IP from network interfaces
+      // Strategy 1: Look for Tailscale VPN IP (100.x.x.x) in network interfaces.
+      // This ensures the backend can reach the camera even when it's on mobile data.
       for (final interface in await NetworkInterface.list()) {
         for (final addr in interface.addresses) {
           if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+            if (addr.address.startsWith('100.')) {
+              AutoRegistrationLogger.success('Found Tailscale VPN IP: ${addr.address}');
+              return addr.address;
+            }
+          }
+        }
+      }
+
+      // Strategy 2: Try WiFi IP as fallback (same-network access)
+      final info = NetworkInfo();
+      final wifiIP = await info.getWifiIP();
+      if (wifiIP != null && wifiIP.isNotEmpty) {
+        AutoRegistrationLogger.debug('Using WiFi IP: $wifiIP');
+        return wifiIP;
+      }
+
+      // Strategy 3: Any non-loopback IPv4 as last resort
+      for (final interface in await NetworkInterface.list()) {
+        for (final addr in interface.addresses) {
+          if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+            AutoRegistrationLogger.debug('Using interface IP: ${addr.address}');
             return addr.address;
           }
         }
       }
-      
-      // Final fallback - updated for current network
-      return '192.168.129.100';
+
+      // Final fallback
+      return '192.168.1.100';
     } catch (e) {
-      AutoRegistrationLogger.error('Error getting device IP: $e');
-      return '192.168.129.100'; // Fallback IP - updated for current network
+      AutoRegistrationLogger.error('Failed to get device IP: $e');
+      return '192.168.1.100';
     }
   }
 }

@@ -4793,6 +4793,35 @@ class RoutesPainter extends CustomPainter {
     return colors[index % colors.length];
   }
 
+  /// Draw a centered empty-state message when the graph cannot be rendered.
+  void _drawEmptyStateMessage(Canvas canvas, Size size, String message) {
+    final lines = message.split('\n');
+    final double lineHeight = 22.0;
+    final double totalHeight = lines.length * lineHeight;
+
+    for (int i = 0; i < lines.length; i++) {
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: lines[i],
+          style: TextStyle(
+            color: Colors.grey[500],
+            fontSize: 14,
+            fontWeight: i == 0 ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(
+          (size.width - textPainter.width) / 2,
+          (size.height - totalHeight) / 2 + (i * lineHeight),
+        ),
+      );
+    }
+  }
+
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
@@ -8185,14 +8214,42 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       return const Center(child: Text('No attendance data available'));
     }
 
+    // DEBUG: Log attendance data for each individual
+    print('═══════════════════════════════════════════');
+    print('📊 ATTENDANCE TAB DEBUG: ${_aggregatedAnalyses!.length} total analyses');
+    for (final analysis in _aggregatedAnalyses!) {
+      print('  Individual: ${analysis.individualUuid.substring(0,8)}...');
+      print('    firstSeen: ${analysis.firstSeen}');
+      print('    lastSeen: ${analysis.lastSeen}');
+      print('    firstSeen==lastSeen: ${analysis.firstSeen == analysis.lastSeen}');
+      print('    appearances.length: ${analysis.appearances.length}');
+      if (analysis.appearances.isNotEmpty) {
+        final firstApp = analysis.appearances.first;
+        print('    first app start: ${firstApp.startTimestamp}');
+        print('    first app end: ${firstApp.endTimestamp}');
+        print('    first app camera: ${firstApp.cameraName} / ${firstApp.cameraId}');
+        if (analysis.appearances.length > 1) {
+          final lastApp = analysis.appearances.last;
+          print('    last app start: ${lastApp.startTimestamp}');
+          print('    last app end: ${lastApp.endTimestamp}');
+        }
+      }
+    }
+
     // Group analyses by camera/collection
     final analysesByCamera = <String, List<AggregatedIndividualAnalysis>>{};
     for (final analysis in _aggregatedAnalyses!) {
       // Determine which camera(s) this individual appeared in
       final camerasForIndividual = <String>{};
-      for (final appearance in analysis.appearances) {
-        final cameraName = appearance.cameraName ?? appearance.cameraId ?? 'Unknown Camera';
-        camerasForIndividual.add(cameraName);
+      if (analysis.appearances.isNotEmpty) {
+        for (final appearance in analysis.appearances) {
+          final cameraName = appearance.cameraName ?? appearance.cameraId ?? 'Unknown Camera';
+          camerasForIndividual.add(cameraName);
+        }
+      } else {
+        // No appearance records — fall back to a default group so the
+        // individual still shows in the attendance table and graph.
+        camerasForIndividual.add('Unknown Camera');
       }
       
       // Add this individual to each camera group they appeared in
@@ -8200,6 +8257,12 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         analysesByCamera.putIfAbsent(camera, () => []).add(analysis);
       }
     }
+
+    print('📊 Cameras grouped: ${analysesByCamera.keys.toList()}');
+    for (final entry in analysesByCamera.entries) {
+      print('  ${entry.key}: ${entry.value.length} individuals');
+    }
+    print('═══════════════════════════════════════════');
 
     return SingleChildScrollView(
       child: Column(
@@ -8390,7 +8453,10 @@ class AttendanceGraphPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (analyses.isEmpty) return;
+    if (analyses.isEmpty) {
+      _drawEmptyStateMessage(canvas, size, 'No individuals to display');
+      return;
+    }
     if (!size.width.isFinite || !size.height.isFinite) return;
 
     // Sort analyses by number of appearances (descending)
@@ -8408,31 +8474,57 @@ class AttendanceGraphPainter extends CustomPainter {
     final rowHeight = graphHeight / sortedAnalyses.length;
     if (!rowHeight.isFinite || rowHeight <= 0) return;
 
-    // Find min/max time across all appearances
+    // Check if ALL analyses have empty appearances — fall back to
+    // firstSeen / lastSeen summary fields when detailed appearance
+    // records are not available (common for collection-based searches
+    // where the backend returns aggregate data without per-appearance
+    // breakdowns).
+    final bool allAppearancesEmpty =
+        sortedAnalyses.every((a) => a.appearances.isEmpty);
+
+    // Find min/max time
     DateTime? minTime;
     DateTime? maxTime;
-    
-    for (final analysis in sortedAnalyses) {
-      for (final appearance in analysis.appearances) {
-        final startTime = appearance.startTimestamp is String 
-            ? DateTime.parse(appearance.startTimestamp as String)
-            : appearance.startTimestamp as DateTime;
-        final endTime = appearance.endTimestamp is String
-            ? DateTime.parse(appearance.endTimestamp as String)
-            : appearance.endTimestamp as DateTime;
-        
-        if (minTime == null || startTime.isBefore(minTime)) minTime = startTime;
-        if (maxTime == null || endTime.isAfter(maxTime)) maxTime = endTime;
+
+    if (allAppearancesEmpty) {
+      for (final analysis in sortedAnalyses) {
+        if (minTime == null || analysis.firstSeen.isBefore(minTime)) {
+          minTime = analysis.firstSeen;
+        }
+        if (maxTime == null || analysis.lastSeen.isAfter(maxTime)) {
+          maxTime = analysis.lastSeen;
+        }
+      }
+    } else {
+      for (final analysis in sortedAnalyses) {
+        for (final appearance in analysis.appearances) {
+          final startTime = appearance.startTimestamp is String
+              ? DateTime.parse(appearance.startTimestamp as String)
+              : appearance.startTimestamp as DateTime;
+          final endTime = appearance.endTimestamp is String
+              ? DateTime.parse(appearance.endTimestamp as String)
+              : appearance.endTimestamp as DateTime;
+
+          if (minTime == null || startTime.isBefore(minTime)) minTime = startTime;
+          if (maxTime == null || endTime.isAfter(maxTime)) maxTime = endTime;
+        }
       }
     }
 
-    if (minTime == null || maxTime == null) return;
+    if (minTime == null || maxTime == null) {
+      _drawEmptyStateMessage(canvas, size, 'No time data available\nfor appearances');
+      return;
+    }
 
     final timeDuration = maxTime.difference(minTime);
-    if (timeDuration.inMilliseconds <= 0) return;
-    
-    // Helper to convert timestamp to X coordinate
+    final bool allSameInstant = timeDuration.inMilliseconds <= 0;
+
+    // Helper to convert timestamp to X coordinate.
+    // When all timestamps are identical, center everyone in the graph.
     double timeToX(DateTime time) {
+      if (allSameInstant) {
+        return leftMargin + (graphWidth / 2);
+      }
       final elapsed = time.difference(minTime!);
       final ratio = elapsed.inMilliseconds / timeDuration.inMilliseconds;
       return leftMargin + (ratio * graphWidth);
@@ -8568,19 +8660,29 @@ class AttendanceGraphPainter extends CustomPainter {
       // Get consistent color for this individual
       final individualColor = _getIndividualColor(i);
       
-      // Find first and last appearance times for this individual
-      DateTime? firstTime;
-      DateTime? lastTime;
-      for (final appearance in analysis.appearances) {
-        final startTime = appearance.startTimestamp is String
-            ? DateTime.parse(appearance.startTimestamp as String)
-            : appearance.startTimestamp as DateTime;
-        final endTime = appearance.endTimestamp is String
-            ? DateTime.parse(appearance.endTimestamp as String)
-            : appearance.endTimestamp as DateTime;
-        
-        if (firstTime == null || startTime.isBefore(firstTime)) firstTime = startTime;
-        if (lastTime == null || endTime.isAfter(lastTime)) lastTime = endTime;
+      // Find first and last appearance times for this individual.
+      // Fall back to firstSeen / lastSeen when appearances list is empty.
+      final DateTime firstTime;
+      final DateTime lastTime;
+      if (analysis.appearances.isNotEmpty) {
+        DateTime? ft;
+        DateTime? lt;
+        for (final appearance in analysis.appearances) {
+          final startTime = appearance.startTimestamp is String
+              ? DateTime.parse(appearance.startTimestamp as String)
+              : appearance.startTimestamp as DateTime;
+          final endTime = appearance.endTimestamp is String
+              ? DateTime.parse(appearance.endTimestamp as String)
+              : appearance.endTimestamp as DateTime;
+          
+          if (ft == null || startTime.isBefore(ft)) ft = startTime;
+          if (lt == null || endTime.isAfter(lt)) lt = endTime;
+        }
+        firstTime = ft!;
+        lastTime = lt!;
+      } else {
+        firstTime = analysis.firstSeen;
+        lastTime = analysis.lastSeen;
       }
       
       // Draw individual UUID label
@@ -8603,66 +8705,88 @@ class AttendanceGraphPainter extends CustomPainter {
       );
       
       // Draw first and last time underneath the UUID
-      if (firstTime != null && lastTime != null) {
-        final timeRange = '${_formatCompactTime(firstTime)} → ${_formatCompactTime(lastTime)}';
-        final timePainter = TextPainter(
-          text: TextSpan(
-            text: timeRange,
-            style: const TextStyle(
-              color: Colors.white54,
-              fontSize: 9,
-              fontFamily: 'monospace',
-            ),
+      final timeRange = '${_formatCompactTime(firstTime)} → ${_formatCompactTime(lastTime)}';
+      final timePainter = TextPainter(
+        text: TextSpan(
+          text: timeRange,
+          style: const TextStyle(
+            color: Colors.white54,
+            fontSize: 9,
+            fontFamily: 'monospace',
           ),
-          textDirection: TextDirection.ltr,
-        );
-        timePainter.layout();
-        timePainter.paint(
-          canvas,
-          Offset(leftMargin - timePainter.width - 10, y + 2),
-        );
-      }
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      timePainter.layout();
+      timePainter.paint(
+        canvas,
+        Offset(leftMargin - timePainter.width - 10, y + 2),
+      );
 
-      // Draw appearance points - all with same color per individual
-      for (int j = 0; j < analysis.appearances.length; j++) {
-        final appearance = analysis.appearances[j];
-        final startTime = appearance.startTimestamp is String
-            ? DateTime.parse(appearance.startTimestamp as String)
-            : appearance.startTimestamp as DateTime;
-        final endTime = appearance.endTimestamp is String
-            ? DateTime.parse(appearance.endTimestamp as String)
-            : appearance.endTimestamp as DateTime;
+      if (analysis.appearances.isEmpty) {
+        // Draw a single bar from firstSeen to lastSeen for individuals
+        // without detailed appearance records.
+        final startX = timeToX(firstTime);
+        final endX = timeToX(lastTime);
         
-        final startX = timeToX(startTime);
-        final endX = timeToX(endTime);
-        
-        // Use individual's color for all appearances
-        // Draw appearance as a line segment
         final linePaint = Paint()
           ..color = individualColor.withOpacity(0.7)
           ..strokeWidth = 4.0
           ..strokeCap = StrokeCap.round;
+        canvas.drawLine(Offset(startX, y), Offset(endX, y), linePaint);
         
-        canvas.drawLine(
-          Offset(startX, y),
-          Offset(endX, y),
-          linePaint,
-        );
-        
-        // Draw start point with brighter version
         final pointPaint = Paint()..color = individualColor;
         canvas.drawCircle(Offset(startX, y), 5.0, pointPaint);
-        
-        // Draw end point with brighter version
         canvas.drawCircle(Offset(endX, y), 5.0, pointPaint);
         
-        // Add white border for visibility
         final borderPaint = Paint()
           ..color = Colors.white
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5;
         canvas.drawCircle(Offset(startX, y), 5.0, borderPaint);
         canvas.drawCircle(Offset(endX, y), 5.0, borderPaint);
+      } else {
+        // Draw appearance points - all with same color per individual
+        for (int j = 0; j < analysis.appearances.length; j++) {
+          final appearance = analysis.appearances[j];
+          final startTime = appearance.startTimestamp is String
+              ? DateTime.parse(appearance.startTimestamp as String)
+              : appearance.startTimestamp as DateTime;
+          final endTime = appearance.endTimestamp is String
+              ? DateTime.parse(appearance.endTimestamp as String)
+              : appearance.endTimestamp as DateTime;
+          
+          final startX = timeToX(startTime);
+          final endX = timeToX(endTime);
+          
+          // Use individual's color for all appearances
+          // Draw appearance as a line segment
+          final linePaint = Paint()
+            ..color = individualColor.withOpacity(0.7)
+            ..strokeWidth = 4.0
+            ..strokeCap = StrokeCap.round;
+          
+          canvas.drawLine(
+            Offset(startX, y),
+            Offset(endX, y),
+            linePaint,
+          );
+          
+          // Draw start point with brighter version
+          final pointPaint = Paint()..color = individualColor;
+          canvas.drawCircle(Offset(startX, y), 5.0, pointPaint);
+          
+          // Draw end point with brighter version
+          canvas.drawCircle(Offset(endX, y), 5.0, pointPaint);
+          
+          // Add white border for visibility
+          final borderPaint = Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5;
+          canvas.drawCircle(Offset(startX, y), 5.0, borderPaint);
+          canvas.drawCircle(Offset(endX, y), 5.0, borderPaint);
+        }
       }
     }
 
@@ -8733,6 +8857,35 @@ class AttendanceGraphPainter extends CustomPainter {
       Colors.cyan,
     ];
     return colors[index % colors.length];
+  }
+
+  /// Draw a centered empty-state message when the timeline cannot be rendered.
+  void _drawEmptyStateMessage(Canvas canvas, Size size, String message) {
+    final lines = message.split('\n');
+    final double lineHeight = 22.0;
+    final double totalHeight = lines.length * lineHeight;
+
+    for (int i = 0; i < lines.length; i++) {
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: lines[i],
+          style: TextStyle(
+            color: Colors.grey[500],
+            fontSize: 14,
+            fontWeight: i == 0 ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(
+          (size.width - textPainter.width) / 2,
+          (size.height - totalHeight) / 2 + (i * lineHeight),
+        ),
+      );
+    }
   }
 
   @override
