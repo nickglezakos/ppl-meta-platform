@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import '../../widgets/settings/communications_settings_section.dart';
 import '../../widgets/settings/presence_settings_section.dart';
+import '../../widgets/settings/whitelabel_settings_section.dart';
 import 'cross_video_tracking_section.dart';
 import '../setup/platform_connection_setup_screen.dart';
 import '../../../core/api/api_client.dart';
@@ -66,6 +67,11 @@ class SettingsScreen extends ConsumerWidget {
             
             // MVR Settings Section
             const _MVRSettingsSection(),
+            
+            const SizedBox(height: 24),
+            
+            // Whitelabel Settings Section
+            const WhitelabelSettingsSection(),
           ],
         ),
       ),

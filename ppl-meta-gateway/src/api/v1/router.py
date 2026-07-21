@@ -1112,6 +1112,20 @@ async def test_email_settings(request: Request):
     return await _proxy_to_communications_service(request)
 
 
+# Generic App Settings Routes (proxied to Node service)
+# NOTE: {key} (single segment only) so it doesn't intercept /settings/workflow/* etc.
+@api_router.get("/settings/{key}")
+async def get_app_setting(request: Request):
+    """Proxy get app setting to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.post("/settings/")
+async def update_app_setting(request: Request):
+    """Proxy update/create app setting to Node service."""
+    return await _proxy_to_node_service(request)
+
+
 # Audit Logs Routes (Communications Service)
 @api_router.get("/audit/logs")
 async def get_audit_logs(request: Request):

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../widgets/app_logo.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -14,13 +15,7 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Image.asset(
-          'assets/images/eyenet-logo.png',
-          height: 32,
-          errorBuilder: (context, error, stackTrace) {
-            return const Text('Eyenet Vision');
-          },
-        ),
+        title: const AppLogo(height: 32),
         actions: [
           PopupMenuButton<String>(
             color: AppColors.widgetFill,

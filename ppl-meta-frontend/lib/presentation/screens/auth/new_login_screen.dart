@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/providers/auth_provider.dart';
+import '../../../providers/whitelabel_provider.dart';
+import '../../../widgets/app_logo.dart';
 
 class NewLoginScreen extends ConsumerStatefulWidget {
   const NewLoginScreen({super.key});
@@ -101,25 +103,20 @@ class _NewLoginScreenState extends ConsumerState<NewLoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Logo and title
-                  Image.asset(
-                    'assets/images/eyenet-logo.png',
-                    height: keyboardVisible ? 72 : 100,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Icon(
-                        Icons.security,
-                        size: keyboardVisible ? 60 : 80,
-                        color: Colors.blue,
-                      );
-                    },
-                  ),
+                  AppLogo(height: keyboardVisible ? 72 : 100),
                   SizedBox(height: keyboardVisible ? 12 : 24),
 
-                  Text(
-                    'Welcome to Eyenet Vision',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final punchline = ref.watch(whitelabelProvider).whenOrNull(data: (ws) => ws.punchline) ?? 'Welcome to Eyenet Vision';
+                      return Text(
+                        punchline,
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      );
+                    },
                   ),
                   SizedBox(height: keyboardVisible ? 6 : 8),
 

@@ -646,6 +646,7 @@ app.include_router(otp.router)
 app.include_router(logs.router)
 app.include_router(backup.router)
 app.include_router(app_settings.router)
+app.include_router(app_settings.router, prefix="/api/v1")
 app.include_router(capabilities.router)
 
 # Initialize metrics - disabled for testing
