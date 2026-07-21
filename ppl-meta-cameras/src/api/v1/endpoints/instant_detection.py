@@ -266,15 +266,14 @@ async def start_instant_detection(
         session_uuid = str(uuid.uuid4())
         vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
         # Build service-to-service auth token
-        node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
-        svc_token = jwt.encode(
-            {"sub": "cameras-service", "exp": datetime.utcnow() + timedelta(minutes=5)},
-            node_secret,
-            algorithm="HS256",
+        internal_service_token = os.getenv(
+            "INTERNAL_SERVICE_TOKEN",
+            "ppl-meta-internal-service-secret-key-change-in-production",
         )
         svc_headers = {
-            "Authorization": f"Bearer {svc_token}",
+            "Authorization": f"Bearer {internal_service_token}",
             "Content-Type": "application/json",
+            "X-Service-Name": "cameras-service",
         }
         try:
             resp = http_requests.post(
@@ -307,7 +306,7 @@ async def start_instant_detection(
                 state.storage_multiple = storage_multiple
                 state.session_duration_minutes = session_duration
                 state.cycle_counter = 0
-                state.auth_token = svc_token
+                state.auth_token = internal_service_token
         
         return {
             "success": True,
@@ -341,12 +340,15 @@ async def stop_instant_detection(
     try:
         # Complete tracking sessions for all active cameras in VMeta before stopping
         vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
-        node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
-        svc_token = jwt.encode(
-            {"sub": "cameras-service", "exp": datetime.utcnow() + timedelta(minutes=5)},
-            node_secret, algorithm="HS256"
+        stop_token = os.getenv(
+            "INTERNAL_SERVICE_TOKEN",
+            "ppl-meta-internal-service-secret-key-change-in-production",
         )
-        svc_headers = {"Authorization": f"Bearer {svc_token}", "Content-Type": "application/json"}
+        svc_headers = {
+            "Authorization": f"Bearer {stop_token}",
+            "Content-Type": "application/json",
+            "X-Service-Name": "cameras-service",
+        }
         with manager._lock:
             active_states = list(manager._samplers.values())
         for state in active_states:
@@ -402,12 +404,15 @@ async def stop_instant_detection_for_camera(
             # Complete tracking session in VMeta before stopping
             if state.session_uuid:
                 vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
-                node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
-                svc_token = jwt.encode(
-                    {"sub": "cameras-service", "exp": datetime.utcnow() + timedelta(minutes=5)},
-                    node_secret, algorithm="HS256"
+                stop_token = os.getenv(
+                    "INTERNAL_SERVICE_TOKEN",
+                    "ppl-meta-internal-service-secret-key-change-in-production",
                 )
-                svc_headers = {"Authorization": f"Bearer {svc_token}", "Content-Type": "application/json"}
+                svc_headers = {
+                    "Authorization": f"Bearer {stop_token}",
+                    "Content-Type": "application/json",
+                    "X-Service-Name": "cameras-service",
+                }
                 try:
                     resp = http_requests.post(
                         f"{vmeta_url}/api/v1/instant-detection/complete-session/{state.session_uuid}",

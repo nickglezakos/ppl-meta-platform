@@ -411,15 +411,14 @@ def flush_instant_detection_batch(camera_id: str) -> Dict:
         vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
         endpoint = f"{vmeta_url}/api/v1/instant-detection/persist-batch"
 
-        node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
-        fresh_token = _jwt.encode(
-            {"sub": "cameras-service", "exp": datetime.utcnow() + timedelta(minutes=5)},
-            node_secret,
-            algorithm="HS256",
+        internal_service_token = os.getenv(
+            "INTERNAL_SERVICE_TOKEN",
+            "ppl-meta-internal-service-secret-key-change-in-production",
         )
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {fresh_token}",
+            "Authorization": f"Bearer {internal_service_token}",
+            "X-Service-Name": "cameras-service",
         }
 
         batch_payload = {

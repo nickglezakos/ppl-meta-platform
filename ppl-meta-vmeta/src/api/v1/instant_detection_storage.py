@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from api.dependencies import get_current_user, get_mvr_service
+from api.dependencies import get_current_user, get_current_user_or_internal_service, get_mvr_service
 from services.mvr_service import MVRService
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ class TrackingSessionCreateResponse(BaseModel):
 async def create_instant_detection_session(
     request: TrackingSessionCreateRequest,
     mvr_service: MVRService = Depends(get_mvr_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user_or_internal_service),
 ):
     """Create a tracking session for an instant detection run."""
     requester = current_user.get("email") or current_user.get("service_name") or "unknown"
@@ -260,7 +260,7 @@ async def persist_instant_detection(
 async def persist_instant_detection_batch(
     request: InstantDetectionPersistBatchRequest,
     mvr_service: MVRService = Depends(get_mvr_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user_or_internal_service),
 ):
     requester = current_user.get("email") or current_user.get("service_name") or "unknown"
     if not request.items:

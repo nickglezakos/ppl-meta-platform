@@ -388,17 +388,15 @@ class InstantDetectionSampler:
             from datetime import timedelta
             new_uuid = str(uuid.uuid4())
             vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
-            # Generate service-to-service auth token
-            node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
-            svc_token = _jwt.encode(
-                {"sub": "cameras-service", "exp": datetime.utcnow() + timedelta(minutes=30)},
-                node_secret,
-                algorithm="HS256",
+            internal_service_token = os.getenv(
+                "INTERNAL_SERVICE_TOKEN",
+                "ppl-meta-internal-service-secret-key-change-in-production",
             )
-            state.auth_token = svc_token
+            state.auth_token = internal_service_token
             headers = {
-                "Authorization": f"Bearer {svc_token}",
+                "Authorization": f"Bearer {internal_service_token}",
                 "Content-Type": "application/json",
+                "X-Service-Name": "cameras-service",
             }
             try:
                 resp = _requests.post(
