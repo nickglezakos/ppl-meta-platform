@@ -10,6 +10,7 @@ import '../widgets/custom_app_bar.dart';
 import '../widgets/authority_status_card.dart';
 import '../presentation/pages/developer_settings_page.dart';
 import '../presentation/pages/people_counters_page.dart';
+import '../presentation/screens/users/role_assign_dialog.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final int? targetUserId;
@@ -110,6 +111,132 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
     if (mounted) setState(() => _isSettingPassword = false);
   }
+  void _showRoleAssignDialog(BuildContext context, User user) async {
+    final result = await RoleAssignDialog.show(
+      context,
+      userId: user.id,
+      userEmail: user.email,
+      currentRoles: _targetRoles,
+    );
+    if (result != null) {
+      setState(() => _targetRoles = result);
+    }
+  }
+
+  Future<void> _removeRole(User user, String roleName) async {
+    // Safeguard: cannot remove last owner
+    if (roleName == 'owner' && _targetRoles.where((r) => r == 'owner').length <= 1) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cannot remove the last owner role'), backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      // Need to find role ID — reload user profile after
+      await _loadTargetUser();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Use the Assign dialog to remove roles'), backgroundColor: Colors.orange),
+      );
+      _showRoleAssignDialog(context, user);
+    } catch (_) {}
+  }
+
+  Color _getRoleColor(String role) {
+    switch (role) {
+      case 'owner': return Colors.amber.shade800;
+      case 'admin': return Colors.deepPurple;
+      case 'user': return Colors.blue;
+      default: return Colors.teal;
+    }
+  }
+
+  // All known capabilities for building the toggle list
+  static const _allCapabilities = <String>[
+    'auth.session.use', 'auth.roles.read', 'auth.roles.create', 'auth.roles.update',
+    'auth.roles.delete', 'auth.roles.assign', 'auth.roles.unassign',
+    'auth.capabilities.read', 'auth.capabilities.assign', 'auth.capabilities.unassign',
+    'auth.capabilities.manage',
+    'users.profile.read', 'users.profile.update', 'users.password.change_self',
+    'users.password.recover_self', 'users.accounts.read', 'users.accounts.create',
+    'users.accounts.update', 'users.accounts.disable', 'users.accounts.delete',
+    'cameras.view', 'cameras.manage',
+    'cameras:detect', 'cameras:view', 'cameras:connect', 'cameras:disconnect',
+    'cameras:stream:start', 'cameras:stream:stop', 'cameras:stream:view',
+    'cameras:record:start', 'cameras:sessions:manage', 'cameras:settings:update',
+    'cameras:admin', 'cameras:configure',
+    'media.view', 'media.manage', 'analytics.view', 'workflows.use',
+    'operations.execute', 'system.installation.manage', 'system.licensing.manage',
+    'system.recovery.manage', 'vision',
+  ];
+
+  String _capabilityNamespace(String cap) {
+    if (cap.contains(':')) return cap.split(':').first;
+    if (cap.contains('.')) return cap.split('.').first;
+    return 'other';
+  }
+
+  Widget _buildCapabilityToggleList(BuildContext context, User user) {
+    final grouped = <String, List<String>>{};
+    for (final cap in _allCapabilities) {
+      final ns = _capabilityNamespace(cap);
+      grouped.putIfAbsent(ns, () => []).add(cap);
+    }
+    return Column(
+      children: grouped.entries.map((entry) {
+        return Card(
+          margin: const EdgeInsets.only(bottom: 8),
+          child: ExpansionTile(
+            title: Text(_namespaceLabel(entry.key), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+            subtitle: Text('${entry.value.length} capabilities'),
+            initiallyExpanded: entry.key == 'auth' || entry.key == 'users',
+            children: entry.value.map((cap) {
+              final enabled = _targetCapabilities.contains(cap);
+              return ListTile(
+                dense: true,
+                title: Text(cap, style: TextStyle(fontSize: 13, fontFamily: 'monospace', color: enabled ? null : Colors.grey)),
+                trailing: Switch(
+                  value: enabled,
+                  onChanged: _isTogglingCapability ? null : (v) => _toggleCapability(cap, v),
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildCapabilityInfoList(BuildContext context) {
+    return Column(
+      children: _targetCapabilities.map((cap) {
+        return ListTile(
+          dense: true,
+          leading: const Icon(Icons.check_circle, color: Colors.green, size: 18),
+          title: Text(cap, style: const TextStyle(fontSize: 13)),
+        );
+      }).toList(),
+    );
+  }
+
+  String _namespaceLabel(String ns) {
+    switch (ns) {
+      case 'auth': return 'Auth & Session';
+      case 'users': return 'User Accounts';
+      case 'cameras': return 'Cameras';
+      case 'media': return 'Media';
+      case 'analytics': return 'Analytics';
+      case 'workflows': return 'Workflows';
+      case 'operations': return 'Operations';
+      case 'system': return 'System';
+      case 'vision': return 'Vision';
+      default: return ns[0].toUpperCase() + ns.substring(1);
+    }
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -160,60 +287,48 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const SizedBox(height: 16),
             _buildAccountInfo(context, user),
             const SizedBox(height: 24),
-            // Roles
-            Text(
-              'Roles',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
+            // Roles with assign button and removal
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Roles', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                if (isAdmin)
+                  TextButton.icon(
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Assign'),
+                    onPressed: () => _showRoleAssignDialog(context, user),
                   ),
+              ],
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: _targetRoles.map((role) {
-                return Chip(
-                  label: Text(role),
-                  backgroundColor: role == 'admin'
-                      ? Colors.deepPurple.withValues(alpha: 0.15)
-                      : Colors.blue.withValues(alpha: 0.15),
-                );
-              }).toList(),
-            ),
-            if (_targetRoles.isEmpty)
+            if (_targetRoles.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: _targetRoles.map((role) {
+                  final color = _getRoleColor(role);
+                  return Chip(
+                    label: Text(role, style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 13)),
+                    backgroundColor: color.withOpacity(0.15),
+                    deleteIcon: isAdmin ? const Icon(Icons.close, size: 16) : null,
+                    onDeleted: isAdmin ? () => _removeRole(user, role) : null,
+                  );
+                }).toList(),
+              )
+            else
               const Text('No roles assigned', style: TextStyle(color: Colors.grey)),
             const SizedBox(height: 24),
-            // Capabilities (admin can toggle)
-            Text(
-              'Capabilities',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
+            // Capabilities grouped by namespace
+            Text('Capabilities', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-            if (isAdmin) ...[
-              _CapabilityToggle(
-                capability: 'media:view',
-                label: 'Media Viewing',
-                description: 'Allow this user to view, download, and stream media files',
-                enabled: _targetCapabilities.contains('media:view'),
-                isLoading: _isTogglingCapability,
-                onChanged: (enabled) => _toggleCapability('media:view', enabled),
-              ),
-            ] else ...[
-              _ProfileInfoCard(
-                icon: Icons.visibility,
-                title: 'Media Viewing',
-                value: _targetCapabilities.contains('media:view') ? 'Enabled' : 'Disabled',
-              ),
-            ],
+            if (isAdmin)
+              _buildCapabilityToggleList(context, user)
+            else
+              _buildCapabilityInfoList(context),
             const SizedBox(height: 24),
             // Admin: Set Password
-            if (isAdmin) ...[              Text(
-                'Set Password',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
+            if (isAdmin) ...[
+              Text('Set Password', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
               _AdminSetPasswordCard(
                 isLoading: _isSettingPassword,

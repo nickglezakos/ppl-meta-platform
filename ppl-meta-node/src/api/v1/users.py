@@ -46,6 +46,7 @@ from src.services.user_service import (
     verify_password_reset_token,
     verify_user_email,
 )
+from src.services.capabilites_service import get_roles_and_capabilities_by_user
 
 # Import shared validation - disabled for testing
 # from shared.validation import (
@@ -732,16 +733,24 @@ def api_get_user_by_guid(
     return user
 
 
-@router.get("/", response_model=list[UserRead])
+@router.get("/")
 def api_list_users(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, le=1000),
     db: Session = Depends(get_db),
     _current_user: UserRead = Depends(require_capability("users.accounts.read")),
 ):
-    """List users with pagination."""
+    """List users with pagination, enriched with roles and capabilities."""
     users = list_users(db, skip=skip, limit=limit)
-    return users
+    result = []
+    for user in users:
+        enriched = get_roles_and_capabilities_by_user(db, user.id)
+        result.append({
+            **user.to_dict(),
+            "roles": enriched["roles"],
+            "capabilities": enriched["capabilities"],
+        })
+    return result
 
 
 @router.get("/actions/", response_model=list[UserActionRead])

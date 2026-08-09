@@ -62,6 +62,35 @@ class UsersNotifier extends StateNotifier<UsersState> {
   void clearError() {
     state = state.copyWith(error: null);
   }
+  /// Load detailed user profile with roles and capabilities
+  Future<Map<String, dynamic>> loadUserDetail(int userId) async {
+    try {
+      return await _usersService.getUserProfile(userId);
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+      rethrow;
+    }
+  }
+
+  /// Toggle a capability on/off for a user
+  Future<Map<String, dynamic>> toggleUserCapability(
+    int userId,
+    String capability,
+    bool enabled,
+  ) async {
+    try {
+      return await _usersService.toggleUserCapability(
+        userId,
+        capability,
+        enabled,
+      );
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+      rethrow;
+    }
+  }
+
+
 }
 
 // Provider for users service

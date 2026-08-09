@@ -45,4 +45,60 @@ class UsersService {
       throw Exception('Unexpected error: $e');
     }
   }
+  /// Get detailed user profile with roles and capabilities
+  Future<Map<String, dynamic>> getUserProfile(int userId) async {
+    try {
+      final response = await _apiClient.get<Map<String, dynamic>>(
+        '/api/v1/users/user-profile/$userId',
+      );
+
+      if (response.data == null) {
+        throw Exception('User profile not found');
+      }
+
+      return response.data!;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        throw Exception('Authentication required. Please log in again.');
+      } else if (e.response?.statusCode == 403) {
+        throw Exception('Access denied. Insufficient permissions.');
+      } else if (e.response?.statusCode == 404) {
+        throw Exception('User not found.');
+      } else {
+        throw Exception('Failed to load user profile: ${e.message}');
+      }
+    } catch (e) {
+      throw Exception('Unexpected error: $e');
+    }
+  }
+
+  /// Toggle a capability on/off for a user
+  Future<Map<String, dynamic>> toggleUserCapability(
+    int userId,
+    String capability,
+    bool enabled,
+  ) async {
+    try {
+      final response = await _apiClient.post<Map<String, dynamic>>(
+        '/api/v1/users/toggle-capability/$userId',
+        data: {'capability': capability, 'enabled': enabled},
+      );
+
+      if (response.data == null) {
+        throw Exception('Failed to toggle capability');
+      }
+
+      return response.data!;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        throw Exception('Authentication required. Please log in again.');
+      } else if (e.response?.statusCode == 403) {
+        throw Exception('Access denied. Insufficient permissions.');
+      } else {
+        throw Exception('Failed to toggle capability: ${e.message}');
+      }
+    } catch (e) {
+      throw Exception('Unexpected error: $e');
+    }
+  }
 }

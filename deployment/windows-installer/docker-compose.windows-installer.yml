@@ -11,6 +11,11 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   redis:
@@ -21,6 +26,11 @@ services:
       - "${REDIS_PORT}:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   ppl-meta-node:
@@ -36,7 +46,8 @@ services:
       APPLICATION_KEY: ${APPLICATION_KEY}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   ppl-meta-media:
@@ -49,8 +60,10 @@ services:
       ENVIRONMENT: production
       USER_SERVICE_URL: http://ppl-meta-node:8001
     depends_on:
-      - postgres
-      - ppl-meta-node
+      postgres:
+        condition: service_healthy
+      ppl-meta-node:
+        condition: service_started
     restart: unless-stopped
 
   ppl-meta-gateway:
@@ -63,9 +76,12 @@ services:
       MEDIA_SERVICE_URL: http://ppl-meta-media:8000
       REDIS_URL: redis://redis:6379/0
     depends_on:
-      - ppl-meta-node
-      - ppl-meta-media
-      - redis
+      ppl-meta-node:
+        condition: service_started
+      ppl-meta-media:
+        condition: service_started
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   ppl-meta-orchestrator:
@@ -81,9 +97,12 @@ services:
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
     depends_on:
-      - postgres
-      - ppl-meta-node
-      - ppl-meta-media
+      postgres:
+        condition: service_healthy
+      ppl-meta-node:
+        condition: service_started
+      ppl-meta-media:
+        condition: service_started
     restart: unless-stopped
 
   ppl-meta-discovery:
@@ -109,8 +128,10 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       ORCHESTRATOR_URL: http://ppl-meta-orchestrator:8002
     depends_on:
-      - postgres
-      - ppl-meta-orchestrator
+      postgres:
+        condition: service_healthy
+      ppl-meta-orchestrator:
+        condition: service_started
     restart: unless-stopped
 
   ppl-meta-vmeta:
@@ -127,8 +148,10 @@ services:
       DB_PORT: "5432"
       DB_NAME: ${POSTGRES_DB}
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   ppl-meta-frontend:
@@ -137,7 +160,8 @@ services:
     ports:
       - "${FRONTEND_PORT}:80"
     depends_on:
-      - ppl-meta-gateway
+      ppl-meta-gateway:
+        condition: service_started
     restart: unless-stopped
 
 volumes:

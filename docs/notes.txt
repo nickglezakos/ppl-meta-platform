@@ -7,12 +7,11 @@ NewPassword234!
 curl -X POST 'http://localhost:8001/api/v1/users/login' \§
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=fresh.user@example.com&password=NewPassword234!' 
-
+ 
 
 github push
 
 ./scripts/git-push-release.sh
-
 
 
 Authority
@@ -369,7 +368,36 @@ Stop VPN + Matrix Only (Layered)
 ****************************************************************************************************
 
 
-implementation-roadmap-headscale-vpn
-ppl-meta-matrix
+update the roles and capabilities functions and documentation
 
+finalize the user management service
 
+debug and optimise and document the people uniqueness
+have routes and distanse from lense assigned to MVR
+have routes and distanse from lense assigned to instant detection
+debug and optimise and document the analytics
+
+study wether instant detection is enough for all functionalities
+
+body detection
+
+find a way to pair the bodies detected with faces maybe on the frame level or statistically on frames series on
+the frame level.
+
+Colors of clother detection
+
+Car plates detection
+
+Multi view καμερών with poor resolution for simple users
+ 
+Rule sets on scenery use cases like bag stable at a bench after someone leaves
+
+Rule set on crowd ampience
+
+analyse the matrix status
+analyse the headscale status
+
+clarify and update the software licences scheme
+
+finish the deployment via docker
+fine tune and document the CI-CD

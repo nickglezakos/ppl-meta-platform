@@ -30,7 +30,27 @@ class User {
     this.capabilities = const [],
   });
 
+  /// New capability-check helpers for RBAC management
+  bool get isOwner => roles.contains('owner');
   bool get isAdmin => roles.contains('admin');
+  bool get canManageRoles =>
+      capabilities.contains('auth.roles.read') ||
+      capabilities.contains('auth.roles.create') ||
+      capabilities.contains('auth.roles.update') ||
+      capabilities.contains('auth.roles.delete') ||
+      capabilities.contains('auth.roles.assign') ||
+      capabilities.contains('auth.roles.unassign');
+  bool get canManageCapabilities =>
+      capabilities.contains('auth.capabilities.read') ||
+      capabilities.contains('auth.capabilities.assign') ||
+      capabilities.contains('auth.capabilities.unassign') ||
+      capabilities.contains('auth.capabilities.manage');
+  bool get canManageUsers =>
+      capabilities.contains('users.accounts.read') ||
+      capabilities.contains('users.accounts.create') ||
+      capabilities.contains('users.accounts.update') ||
+      capabilities.contains('users.accounts.disable') ||
+      capabilities.contains('users.accounts.delete');
   bool get canViewMedia => capabilities.contains('media:view');
 
   factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);

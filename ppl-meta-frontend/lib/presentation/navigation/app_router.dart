@@ -12,6 +12,8 @@ import '../screens/auth/reset_password_screen.dart';
 import '../screens/auth/verify_email_screen.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/users/users_screen.dart';
+import '../screens/roles/roles_screen.dart';
+import '../screens/roles/role_detail_screen.dart';
 import '../screens/cameras/cameras_screen.dart';
 import '../screens/cameras/camera_detail_screen.dart';
 import '../screens/cameras/edge_camera_management_screen.dart';
@@ -196,6 +198,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ProviderScreenWrapper(
           child: UsersScreen(),
         ),
+      ),
+      GoRoute(
+        path: '/roles',
+        name: 'roles',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: RolesScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/roles/:roleId',
+        name: 'role-detail',
+        builder: (context, state) {
+          final roleId = int.parse(state.pathParameters['roleId']!);
+          return ProviderScreenWrapper(
+            child: RoleDetailScreen(roleId: roleId),
+          );
+        },
       ),
       GoRoute(
         path: '/cameras',
