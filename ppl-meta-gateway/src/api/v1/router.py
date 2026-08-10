@@ -14,7 +14,7 @@ from jose import JWTError, jwt
 # Add shared modules to path
 parent_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
 sys.path.append(parent_dir)
-
+ 
 api_router = APIRouter(redirect_slashes=False)
 
 # JWT Configuration
@@ -267,6 +267,12 @@ async def delete_current_user(request: Request):
 @api_router.get("/users/verify-email")
 async def verify_email(request: Request):
     """Proxy email verification to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.post("/users/send-verification-email")
+async def send_verification_email(request: Request):
+    """Proxy send verification email to Node service."""
     return await _proxy_to_node_service(request)
 
 

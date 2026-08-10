@@ -129,7 +129,7 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
         try:
             verification_token = jwt.encode(
                 {
-                    "sub": created_user.id,
+                    "sub": str(created_user.id),
                     "action": "verify_email",
                     "exp": datetime.utcnow() + timedelta(hours=24),
                 },
@@ -209,6 +209,42 @@ async def verify_email(token: str, db: Session = Depends(get_db)):
     )
 
     return {"detail": "Email successfully verified."}
+
+
+@router.post("/send-verification-email")
+async def send_verification_email(
+    current_user: User = Depends(get_current_user),
+):
+    """Re-send email verification to the authenticated user."""
+    if current_user.email_verified:
+        return {"detail": "Email already verified."}
+
+    try:
+        verification_token = jwt.encode(
+            {
+                "sub": str(current_user.id),
+                "action": "verify_email",
+                "exp": datetime.utcnow() + timedelta(hours=24),
+            },
+            settings.SECRET_KEY,
+            algorithm=settings.ALGORITHM,
+        )
+        verify_link = f"{settings.FRONTEND_URL}/#/verify-email?token={verification_token}"
+        await send_email(
+            subject="Verify your EyeNet account",
+            email_to=current_user.email,
+            body=f"""
+                <h3>Verify your EyeNet account, {current_user.username}!</h3>
+                <p>Please verify your email by clicking the button below:</p>
+                <a href="{verify_link}" style="padding:12px 24px;background:#1a73e8;color:white;
+                   text-decoration:none;border-radius:6px;display:inline-block;">Verify Email</a>
+                <p>This link expires in 24 hours.</p>
+            """,
+        )
+        return {"detail": "Verification email sent."}
+    except (ConnectionError, OSError, RuntimeError, smtplib.SMTPException) as email_err:
+        logger.warning("Failed to send verification email: %s", email_err)
+        raise HTTPException(status_code=500, detail="Failed to send verification email. Please try again later.") from email_err
 
 
 @router.post("/login")

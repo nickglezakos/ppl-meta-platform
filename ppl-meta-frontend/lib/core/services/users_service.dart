@@ -101,4 +101,30 @@ class UsersService {
       throw Exception('Unexpected error: $e');
     }
   }
+
+  /// Re-send verification email to the authenticated user
+  Future<String> sendVerificationEmail() async {
+    try {
+      final response = await _apiClient.post<Map<String, dynamic>>(
+        '/api/v1/users/send-verification-email',
+      );
+
+      if (response.data == null) {
+        throw Exception('Failed to send verification email');
+      }
+
+      return response.data!['detail'] as String? ?? 'Verification email sent.';
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        throw Exception('Authentication required. Please log in again.');
+      } else if (e.response?.statusCode == 500) {
+        throw Exception('Failed to send email. Please try again later.');
+      } else {
+        final detail = (e.response?.data as Map?)?['detail']?.toString();
+        throw Exception(detail ?? 'Failed to send verification email.');
+      }
+    } catch (e) {
+      throw Exception('Unexpected error: $e');
+    }
+  }
 }

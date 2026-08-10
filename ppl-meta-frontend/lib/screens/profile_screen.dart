@@ -529,7 +529,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
             ),
             const SizedBox(height: 16),
-            Container(
+            GestureDetector(
+              onTap: user.emailVerified
+                  ? null
+                  : () => _sendVerificationEmail(),
+              child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: user.emailVerified
@@ -561,10 +565,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ],
               ),
             ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _sendVerificationEmail() async {
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final resp = await apiClient.post('/api/v1/users/send-verification-email');
+      final msg = (resp.data as Map<String, dynamic>?)?['detail']?.toString() ?? 'Verification email sent.';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   Widget _buildAccountInfo(BuildContext context, User user) {

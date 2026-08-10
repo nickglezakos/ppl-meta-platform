@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/services/auth_service.dart';
+import '../../../core/providers/auth_provider.dart';
 
 class VerifyEmailScreen extends ConsumerStatefulWidget {
   final String token;
@@ -42,6 +43,8 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen> {
           _isLoading = false;
           _success = true;
           _message = 'Your email has been verified successfully!';
+          // Refresh auth state so the current user reflects email_verified
+          ref.read(authNotifierProvider.notifier).checkAuth();
         });
       }
     } on AuthenticationException catch (e) {
@@ -117,8 +120,8 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen> {
         ),
         const SizedBox(height: 32),
         ElevatedButton(
-          onPressed: () => context.go('/login'),
-          child: const Text('Go to Sign In'),
+          onPressed: () => context.go('/home'),
+          child: const Text('Go to Home'),
         ),
       ],
     );
