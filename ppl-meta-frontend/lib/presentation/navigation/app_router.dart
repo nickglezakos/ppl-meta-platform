@@ -1,3 +1,4 @@
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -47,22 +48,35 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   final bootstrapStatus = ref.watch(bootstrapStatusProvider);
   
   return GoRouter(
-    initialLocation: '/home', // Set a default, let redirect handle authentication
     redirect: (context, state) async {
       final storedToken = await SecureStorageService.getString('auth_token');
       final isAuthenticated = authState.isAuthenticated &&
           storedToken != null &&
           storedToken.isNotEmpty;
-      final isLoginRoute = state.fullPath == '/login';
-      final isRegisterRoute = state.fullPath == '/register';
-      final isBootstrapRoute = state.fullPath == '/bootstrap';
-      final isPublicRoute = state.fullPath == '/forgot-password' ||
-          (state.fullPath?.startsWith('/reset-password') ?? false) ||
-          (state.fullPath?.startsWith('/verify-email') ?? false);
+      final path = state.uri.path;  // Clean path without query params
+      final isLoginRoute = path == '/login';
+      final isRegisterRoute = path == '/register';
+      final isBootstrapRoute = path == '/bootstrap';
+      final isPublicRoute = path == '/' ||
+          path == '/forgot-password' ||
+          path == '/reset-password' ||
+          path == '/verify-email';
       final bootstrapPending = bootstrapStatus.maybeWhen(
         data: (status) => status.needsOwnerBootstrap,
         orElse: () => false,
       );
+
+      debugPrint('🔀 Router: path=$path isPublic=$isPublicRoute isAuth=$isAuthenticated');
+
+      // Redirect root to home if authenticated, or login if not
+      // Skip redirect if browser has a hash fragment (e.g., /#/reset-password?token=...)
+      if (path == '/') {
+        final hash = html.window.location.hash;
+        if (hash.isNotEmpty) {
+          return null; // Let hash route be processed
+        }
+        return isAuthenticated ? '/home' : '/login';
+      }
 
       if (!isAuthenticated && bootstrapPending && !isBootstrapRoute && !isPublicRoute) {
         return '/bootstrap';

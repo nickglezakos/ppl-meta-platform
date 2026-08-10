@@ -66,6 +66,7 @@ class PasswordResetRequest(BaseModel):
 
 
 class PasswordResetConfirm(BaseModel):
+    email: str = ""
     token: str
     new_password: str
 

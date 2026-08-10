@@ -288,6 +288,12 @@ async def reset_password(request: Request):
     return await _proxy_to_node_service(request)
 
 
+@api_router.post("/users/verify-reset-code")
+async def verify_reset_code(request: Request):
+    """Proxy OTP-based password reset to Node service."""
+    return await _proxy_to_node_service(request)
+
+
 @api_router.post("/users/change-password")
 async def change_password(request: Request):
     """Proxy password change to Node service."""

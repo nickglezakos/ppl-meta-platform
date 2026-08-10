@@ -357,6 +357,18 @@ class AuthService {
     }
   }
 
+  // Reset password with code (OTP)
+  Future<void> verifyResetCode(String email, String code, String newPassword) async {
+    try {
+      await _apiClient.post(
+        '/api/v1/users/verify-reset-code',
+        data: {'email': email, 'token': code, 'new_password': newPassword},
+      );
+    } on DioException catch (e) {
+      throw _handleApiError(e);
+    }
+  }
+
   // Verify email with token
   Future<void> verifyEmail(String token) async {
     try {

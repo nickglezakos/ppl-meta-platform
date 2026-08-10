@@ -227,7 +227,7 @@ def create_password_reset_token(user_id: int, email: str) -> str:
     """
     expire = datetime.now() + timedelta(hours=RESET_PASSWORD_EXPIRE_HOURS)
     to_encode = {
-        "sub": user_id,
+        "sub": str(user_id),
         "email": email,
         "exp": expire,
         "action": "reset_password",
@@ -247,6 +247,71 @@ def verify_password_reset_token(token: str):
         return payload
     except JWTError:
         return None
+
+
+# ── OTP-based password reset (no deep links needed) ──────────────
+
+import json
+import os
+import random
+import time
+
+# JSON file for persistent code storage (survives restarts)
+_CODES_FILE = os.path.join(os.path.dirname(__file__), '..', '..', 'reset_codes.json')
+
+
+def _load_codes() -> dict:
+    """Load reset codes from JSON file."""
+    try:
+        with open(_CODES_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_codes(codes: dict):
+    """Save reset codes to JSON file."""
+    os.makedirs(os.path.dirname(_CODES_FILE), exist_ok=True)
+    with open(_CODES_FILE, 'w') as f:
+        json.dump(codes, f)
+
+
+def _cleanup_expired_codes(codes: dict) -> dict:
+    """Remove expired codes."""
+    now = time.time()
+    return {e: d for e, d in codes.items() if d["expires"] > now}
+
+
+def generate_reset_code(email: str) -> str:
+    """Generate a 6-digit reset code valid for 15 minutes, persisted to disk."""
+    codes = _cleanup_expired_codes(_load_codes())
+    code = f"{random.randint(0, 999999):06d}"
+    codes[email] = {
+        "code": code,
+        "expires": time.time() + 900,  # 15 minutes
+    }
+    _save_codes(codes)
+    return code
+
+
+def verify_reset_code(email: str, code: str) -> bool:
+    """Verify a reset code. Returns True if valid, False otherwise."""
+    codes = _cleanup_expired_codes(_load_codes())
+    entry = codes.get(email)
+    if not entry:
+        return False
+    if entry["expires"] < time.time():
+        return False
+    if entry["code"] != code:
+        return False
+    return True
+
+
+def consume_reset_code(email: str):
+    """Remove the reset code after successful use."""
+    codes = _load_codes()
+    codes.pop(email, None)
+    _save_codes(codes)
 
 
 def set_new_password(db, user_id: int, new_password: str):

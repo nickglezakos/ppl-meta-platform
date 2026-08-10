@@ -45,6 +45,9 @@ from src.services.user_service import (
     update_user_password,
     verify_password_reset_token,
     verify_user_email,
+    generate_reset_code,
+    verify_reset_code,
+    consume_reset_code,
 )
 from src.services.capabilites_service import get_roles_and_capabilities_by_user
 
@@ -838,29 +841,54 @@ async def update_password(
 
 @router.post("/forgot-password")
 async def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)):
-    """Request password reset."""
+    """Request password reset via 6-digit code."""
     user = get_user_by_email(db, request.email)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        # Don't reveal whether email exists — always say sent
+        return {"detail": "If that email is registered, a reset code has been sent."}
 
-    token = create_password_reset_token(user.id, request.email)
-    reset_link = f"{settings.FRONTEND_URL}/#/reset-password?token={token}"
+    code = generate_reset_code(user.email)
 
     email_body = f"""
-        <h3>Password Reset Request</h3>
-        <p>We received a request to reset your password.</p>
-        <p>Click the button below to set a new password:</p>
-        <a href="{reset_link}" style="padding:12px 24px;background:#1a73e8;color:white;
-           text-decoration:none;border-radius:6px;display:inline-block;">Reset Password</a>
-        <p>This link will expire in 1 hour.</p>
+        <h3>Password Reset Code</h3>
+        <p>Use this code to reset your EyeNet password:</p>
+        <h2 style="font-size:32px;letter-spacing:8px;text-align:center;background:#f5f5f5;padding:16px;border-radius:8px;">{code}</h2>
+        <p>Enter this code in the app. It expires in 15 minutes.</p>
         <p style="color:#666;">If you didn't request this, you can safely ignore this email.</p>
     """
 
-    await send_email(
-        subject="Reset your EyeNet password", email_to=request.email, body=email_body
+    success = await send_email(
+        subject="Your EyeNet password reset code", email_to=request.email, body=email_body
     )
 
-    return {"detail": "Password reset email sent"}
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to send email. Is the Communications Service running?")
+
+    return {"detail": "If that email is registered, a reset code has been sent."}
+
+
+@router.post("/verify-reset-code")
+async def verify_reset_code_endpoint(request: PasswordResetConfirm, db: Session = Depends(get_db)):
+    """Verify a reset code and set a new password."""
+    email = request.email
+    code = request.token  # reusing token field for the 6-digit code
+    new_password = request.new_password
+
+    user = get_user_by_email(db, email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not verify_reset_code(email, code):
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
+
+    result, error = set_new_password(db, user.id, new_password)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+
+    consume_reset_code(email)
+    log_user_action(db, user.username, user.email, "password_reset_code")
+
+    return {"detail": "Password reset successfully"}
 
 
 @router.post("/reset-password")
