@@ -12,7 +12,7 @@ class CapabilitiesService {
   Future<List<Capability>> getCapabilitiesByRole(int roleId) async {
     try {
       final response = await _apiClient.get<List<dynamic>>(
-        '/capabilities/by-role/$roleId',
+        '/api/v1/capabilities/by-role/$roleId',
       );
 
       if (response.data == null) {
@@ -20,7 +20,7 @@ class CapabilitiesService {
       }
 
       return response.data!
-          .map((json) => Capability.fromJson(json as Map<String, dynamic>))
+          .map((json) => Capability(id: 0, name: json.toString()))
           .toList();
     } on DioException catch (e) {
       throw _handleError(e);
@@ -33,7 +33,7 @@ class CapabilitiesService {
   Future<Map<String, dynamic>> getRolesAndCapabilitiesForUser(int userId) async {
     try {
       final response = await _apiClient.get<Map<String, dynamic>>(
-        '/capabilities/by-user/$userId',
+        '/api/v1/capabilities/by-user/$userId',
       );
 
       if (response.data == null) {
@@ -52,7 +52,7 @@ class CapabilitiesService {
   Future<Map<String, dynamic>> getMyCapabilities() async {
     try {
       final response = await _apiClient.get<Map<String, dynamic>>(
-        '/capabilities/my-capabilities',
+        '/api/v1/capabilities/my-capabilities',
       );
 
       if (response.data == null) {

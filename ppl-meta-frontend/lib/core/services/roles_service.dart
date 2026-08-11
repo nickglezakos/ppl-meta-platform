@@ -14,7 +14,7 @@ class RolesService {
   /// Get list of all roles
   Future<List<Role>> getRoles() async {
     try {
-      final response = await _apiClient.get<List<dynamic>>('/roles/');
+      final response = await _apiClient.get<List<dynamic>>('/api/v1/roles/');
 
       if (response.data == null) {
         throw Exception('No data received from server');
@@ -34,7 +34,7 @@ class RolesService {
   Future<Role> getRoleById(int roleId) async {
     try {
       final response = await _apiClient.get<Map<String, dynamic>>(
-        '/roles/$roleId',
+        '/api/v1/roles/$roleId',
       );
 
       if (response.data == null) {
@@ -53,7 +53,7 @@ class RolesService {
   Future<Role> getRoleByName(String name) async {
     try {
       final response = await _apiClient.get<Map<String, dynamic>>(
-        '/roles/by-name/$name',
+        '/api/v1/roles/by-name/$name',
       );
 
       if (response.data == null) {
@@ -72,7 +72,7 @@ class RolesService {
   Future<Role> createRole(String name) async {
     try {
       final response = await _apiClient.post<Map<String, dynamic>>(
-        '/roles/',
+        '/api/v1/roles/',
         data: {'name': name},
       );
 
@@ -92,7 +92,7 @@ class RolesService {
   Future<Role> updateRole(int roleId, String newName) async {
     try {
       final response = await _apiClient.put<Map<String, dynamic>>(
-        '/roles/$roleId',
+        '/api/v1/roles/$roleId',
         data: {'name': newName},
       );
 
@@ -111,7 +111,22 @@ class RolesService {
   /// Delete a role
   Future<void> deleteRole(int roleId) async {
     try {
-      await _apiClient.delete('/roles/$roleId');
+      await _apiClient.delete('/api/v1/roles/$roleId');
+    } on DioException catch (e) {
+      throw _handleError(e);
+    } catch (e) {
+      throw Exception('Unexpected error: $e');
+    }
+  }
+
+  /// Delete a role and migrate its capabilities to a target role
+  Future<String> deleteRoleAndMigrate(int roleId, int targetRoleId) async {
+    try {
+      final response = await _apiClient.post<Map<String, dynamic>>(
+        '/api/v1/roles/$roleId/delete-and-migrate',
+        queryParameters: {'target_role_id': targetRoleId},
+      );
+      return response.data?['detail']?.toString() ?? 'Role deleted';
     } on DioException catch (e) {
       throw _handleError(e);
     } catch (e) {
@@ -125,7 +140,7 @@ class RolesService {
   Future<void> assignRoleToUser(int userId, int roleId) async {
     try {
       await _apiClient.post(
-        '/roles/assign/',
+        '/api/v1/roles/assign/',
         queryParameters: {'user_id': userId, 'role_id': roleId},
       );
     } on DioException catch (e) {
@@ -139,7 +154,7 @@ class RolesService {
   Future<void> unassignRoleFromUser(int userId, int roleId) async {
     try {
       await _apiClient.post(
-        '/roles/unassign/',
+        '/api/v1/roles/unassign/',
         queryParameters: {'user_id': userId, 'role_id': roleId},
       );
     } on DioException catch (e) {
@@ -155,7 +170,7 @@ class RolesService {
   Future<void> addCapabilityToRole(int roleId, int capabilityId) async {
     try {
       await _apiClient.post(
-        '/roles/add-capability/',
+        '/api/v1/roles/add-capability/',
         data: {'role_id': roleId, 'capability_id': capabilityId},
       );
     } on DioException catch (e) {
@@ -169,7 +184,7 @@ class RolesService {
   Future<void> removeCapabilityFromRole(int roleId, int capabilityId) async {
     try {
       await _apiClient.post(
-        '/roles/remove-capability/',
+        '/api/v1/roles/remove-capability/',
         data: {'role_id': roleId, 'capability_id': capabilityId},
       );
     } on DioException catch (e) {

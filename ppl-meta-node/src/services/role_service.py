@@ -37,6 +37,8 @@ DEFAULT_ROLE_CAPABILITIES = {
         "media.manage",
         "operations.execute",
         "auth.roles.read",
+        "auth.roles.assign",
+        "auth.roles.unassign",
         "auth.capabilities.assign",
         "auth.capabilities.unassign",
     },

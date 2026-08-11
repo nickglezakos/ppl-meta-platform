@@ -38,8 +38,8 @@ class RoleAssignDialog extends ConsumerStatefulWidget {
 }
 
 class _DialogState extends ConsumerState<RoleAssignDialog> {
-  late Map<int, bool> _selections;
-  late List<Role> _allRoles;
+  Map<int, bool> _selections = {};
+  List<Role> _allRoles = [];
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -47,7 +47,7 @@ class _DialogState extends ConsumerState<RoleAssignDialog> {
   @override
   void initState() {
     super.initState();
-    _load();
+    Future.microtask(() => _load());
   }
 
   Future<void> _load() async {
@@ -128,6 +128,8 @@ class _DialogState extends ConsumerState<RoleAssignDialog> {
       title: const Text('Manage Roles'),
       content: SizedBox(
         width: double.maxFinite,
+        height: 400,
+        child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -164,6 +166,7 @@ class _DialogState extends ConsumerState<RoleAssignDialog> {
                   )),
             ],
           ],
+        ),
         ),
       ),
       actions: [

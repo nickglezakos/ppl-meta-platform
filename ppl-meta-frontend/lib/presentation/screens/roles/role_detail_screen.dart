@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/providers/roles_provider.dart';
 import '../../../core/providers/capabilities_provider.dart';
+import '../../../core/providers/auth_provider.dart';
 import '../../../core/models/role.dart';
 import '../../../core/models/capability.dart';
 import '../../../widgets/custom_app_bar.dart';
@@ -23,7 +25,7 @@ class _RoleDetailScreenState extends ConsumerState<RoleDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    Future.microtask(() => _load());
   }
 
   Future<void> _load() async {
@@ -53,6 +55,7 @@ class _RoleDetailScreenState extends ConsumerState<RoleDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUser = ref.watch(currentUserProvider);
     if (_isLoading) return Scaffold(appBar: const CustomAppBar(title: 'Role Detail'), body: const Center(child: CircularProgressIndicator()));
     if (_error != null) return Scaffold(appBar: const CustomAppBar(title: 'Role Detail'), body: Center(child: Text(_error!, style: const TextStyle(color: Colors.red))));
     if (_role == null) return Scaffold(appBar: const CustomAppBar(title: 'Role Detail'), body: const Center(child: Text('Role not found')));
@@ -62,7 +65,7 @@ class _RoleDetailScreenState extends ConsumerState<RoleDetailScreen> {
     for (final c in _capabilities) { grouped.putIfAbsent(_namespace(c.name), () => []).add(c); }
 
     return Scaffold(
-      appBar: CustomAppBar(title: 'Role: ${role.name}'),
+      appBar: CustomAppBar(title: 'Role: ${role.name}', onBackPressed: () => context.go('/roles')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -86,7 +89,9 @@ class _RoleDetailScreenState extends ConsumerState<RoleDetailScreen> {
                 dense: true,
                 leading: const Icon(Icons.check_circle, color: Colors.green, size: 18),
                 title: Text(cap.name, style: const TextStyle(fontSize: 13, fontFamily: 'monospace')),
-                trailing: IconButton(icon: const Icon(Icons.remove_circle_outline, color: Colors.red, size: 20), onPressed: () => _removeCapability(cap), tooltip: 'Remove'),
+                trailing: (currentUser?.canUnassignCapabilities == true)
+                    ? IconButton(icon: const Icon(Icons.remove_circle_outline, color: Colors.red, size: 20), onPressed: () => _removeCapability(cap), tooltip: 'Remove')
+                    : null,
               )).toList(),
             ),
           )),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/providers/users_provider.dart';
 import '../../../core/providers/roles_provider.dart';
+import '../../../core/providers/auth_provider.dart';
 import '../../../core/models/user.dart';
 import '../../../core/models/role.dart';
 import '../../../widgets/custom_app_bar.dart';
@@ -29,16 +30,51 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
   @override
   Widget build(BuildContext context) {
     final usersState = ref.watch(usersNotifierProvider);
+    final currentUser = ref.watch(currentUserProvider);
+
+    if (currentUser == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!currentUser.canManageUsers) {
+      return Scaffold(
+        appBar: const CustomAppBar(title: 'Users'),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.lock_outline, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text('Access Denied', style: Theme.of(context).textTheme.headlineSmall),
+                const SizedBox(height: 8),
+                const Text('You need the "users.accounts.read" capability to view users.',
+                  textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: const CustomAppBar(
         title: 'Users',
       ),
-      body: _buildBody(usersState),
+      floatingActionButton: (currentUser.canManageUsers)
+          ? FloatingActionButton(
+              onPressed: () => _showCreateUserDialog(context),
+              child: const Icon(Icons.person_add),
+            )
+          : null,
+      body: _buildBody(usersState, currentUser),
     );
   }
 
-  Widget _buildBody(UsersState state) {
+  Widget _buildBody(UsersState state, User currentUser) {
     if (state.isLoading && state.users.isEmpty) {
       return const Center(
         child: Column(
@@ -149,7 +185,12 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
             itemCount: filteredUsers.length,
             itemBuilder: (context, index) {
               final user = filteredUsers[index];
-              return _UserCard(user: user, getRoleColor: _getRoleColor);
+              return _UserCard(
+                user: user,
+                getRoleColor: _getRoleColor,
+                canDelete: currentUser?.capabilities.contains('users.accounts.delete') == true,
+                onDelete: () => _deleteUser(user),
+              );
             },
           ),
         ),
@@ -191,6 +232,60 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
     );
   }
 
+  Future<void> _showCreateUserDialog(BuildContext context) async {
+    final usernameCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final passwordCtrl = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Create User'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: usernameCtrl, decoration: const InputDecoration(labelText: 'Username')),
+            TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email'), keyboardType: TextInputType.emailAddress),
+            TextField(controller: passwordCtrl, decoration: const InputDecoration(labelText: 'Password'), obscureText: true),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Create')),
+        ],
+      ),
+    );
+    if (result == true) {
+      try {
+        final svc = ref.read(usersServiceProvider);
+        await svc.createUser(usernameCtrl.text.trim(), emailCtrl.text.trim(), passwordCtrl.text);
+        ref.read(usersNotifierProvider.notifier).refreshUsers();
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User created'), backgroundColor: Colors.green));
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  Future<void> _deleteUser(User user) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(title: Text('Delete ${user.username}?'), content: const Text('This cannot be undone.'), actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        FilledButton(style: FilledButton.styleFrom(backgroundColor: Colors.red), onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+      ]),
+    );
+    if (ok == true) {
+      try {
+        final svc = ref.read(usersServiceProvider);
+        await svc.deleteUser(user.id);
+        ref.read(usersNotifierProvider.notifier).refreshUsers();
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User deleted'), backgroundColor: Colors.green));
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
   List<User> _filteredUsers(List<User> users) {
     if (_activeRoleFilter == 'All') return users;
     return users.where((u) => u.roles.contains(_activeRoleFilter)).toList();
@@ -209,8 +304,10 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
 class _UserCard extends StatelessWidget {
   final User user;
   final Color Function(String) getRoleColor;
+  final bool canDelete;
+  final VoidCallback? onDelete;
 
-  const _UserCard({required this.user, required this.getRoleColor});
+  const _UserCard({required this.user, required this.getRoleColor, this.canDelete = false, this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -274,6 +371,14 @@ class _UserCard extends StatelessWidget {
                       style: TextStyle(color: user.emailVerified ? Colors.green[700] : Colors.orange[700], fontSize: 11, fontWeight: FontWeight.w500)),
                   ),
                   const SizedBox(height: 4),
+                  if (canDelete)
+                    GestureDetector(
+                      onTap: onDelete,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Icon(Icons.delete_outline, size: 20, color: Colors.red[400]),
+                      ),
+                    ),
                   const Icon(Icons.chevron_right, color: Colors.grey),
                 ],
               ),

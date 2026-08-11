@@ -292,7 +292,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Roles', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                if (isAdmin)
+                if (currentUser.canAssignRoles)
                   TextButton.icon(
                     icon: const Icon(Icons.add, size: 18),
                     label: const Text('Assign'),

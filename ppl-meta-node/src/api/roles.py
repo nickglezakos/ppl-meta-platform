@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from src.auth_utils import require_capability
 from src.database import get_db
-from src.models.role import UserRole
+from src.models.role import UserRole, Role, RoleCapability, Capability
 from src.schemas.role import RoleCreate, RoleRead, UserRoleRead, RoleCapabilityCreate
 from src.services.role_service import (
     add_capability_to_role,
@@ -105,6 +105,52 @@ def api_delete_role(
         return {"detail": "Role deleted"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.post("/{role_id}/delete-and-migrate")
+def api_delete_role_and_migrate(
+    role_id: int,
+    target_role_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_capability("auth.roles.delete")),
+):
+    """Delete a role, migrating its capabilities to a target role first."""
+    role = get_role_by_id(db, role_id)
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
+    target = get_role_by_id(db, target_role_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Target role not found")
+    if role_id == target_role_id:
+        raise HTTPException(status_code=400, detail="Cannot migrate to the same role")
+
+    # Migrate capabilities
+    role_caps = (
+        db.query(RoleCapability)
+        .filter(RoleCapability.role_id == role_id)
+        .all()
+    )
+    migrated = 0
+    for rc in role_caps:
+        # Skip duplicates
+        existing = (
+            db.query(RoleCapability)
+            .filter_by(role_id=target_role_id, capability_id=rc.capability_id)
+            .first()
+        )
+        if not existing:
+            db.add(RoleCapability(role_id=target_role_id, capability_id=rc.capability_id))
+            migrated += 1
+
+    db.commit()
+    log_user_action(
+        db,
+        current_user.username,
+        current_user.email,
+        f"role_delete_migrate:{role.name}->{target.name}:{migrated}",
+    )
+    delete_role(db, role_id)
+    return {"detail": f"Role deleted, {migrated} capabilities migrated to '{target.name}'"}
 
 @router.post("/assign/", response_model=UserRoleRead)
 def api_assign_role_to_user(

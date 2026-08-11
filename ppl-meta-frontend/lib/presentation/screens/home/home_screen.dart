@@ -54,6 +54,9 @@ class HomeScreen extends ConsumerWidget {
                 case 'users':
                   context.go('/users');
                   break;
+                case 'roles':
+                  context.go('/roles');
+                  break;
                 case 'logout':
                   await authNotifier.logout();
                   if (context.mounted) {
@@ -102,6 +105,20 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 ),
               ),
+              if (currentUser != null && currentUser.canManageRoles)
+                PopupMenuItem(
+                  value: 'roles',
+                  padding: EdgeInsets.zero,
+                  child: Container(
+                    decoration: const BoxDecoration(),
+                    child: ListTile(
+                      leading: const Icon(Icons.badge),
+                      title: const Text('Roles'),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ),
               PopupMenuItem(
                 value: 'logout',
                 padding: EdgeInsets.zero,

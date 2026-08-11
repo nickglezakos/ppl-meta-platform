@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/providers/roles_provider.dart';
+import '../../../core/providers/auth_provider.dart';
 import '../../../core/models/role.dart';
+import '../../../core/models/user.dart';
 import '../../../widgets/custom_app_bar.dart';
 
 class RolesScreen extends ConsumerStatefulWidget {
@@ -65,36 +67,91 @@ class _RolesScreenState extends ConsumerState<RolesScreen> {
   }
 
   Future<void> _deleteRole(Role role) async {
-    final ok = await showDialog<bool>(
+    final rolesState = ref.read(rolesNotifierProvider);
+    final otherRoles = rolesState.roles.where((r) => r.id != role.id).toList();
+    int? targetRoleId;
+
+    final action = await showDialog<String>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Delete "${role.name}"?'),
-        content: const Text('This cannot be undone.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(style: FilledButton.styleFrom(backgroundColor: Colors.red), onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
-        ],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Delete "${role.name}"?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('This cannot be undone. You can migrate its capabilities to another role first.'),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<int>(
+                initialValue: targetRoleId,
+                decoration: const InputDecoration(labelText: 'Migrate capabilities to'),
+                hint: const Text('Discard capabilities'),
+                items: otherRoles.map((r) => DropdownMenuItem(value: r.id, child: Text(r.name))).toList(),
+                onChanged: (v) => setDialogState(() => targetRoleId = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, 'cancel'), child: const Text('Cancel')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () => Navigator.pop(context, targetRoleId == null ? 'delete' : 'migrate'),
+              child: Text(targetRoleId == null ? 'Delete' : 'Delete & Migrate'),
+            ),
+          ],
+        ),
       ),
     );
-    if (ok == true) {
-      try {
-        await ref.read(rolesNotifierProvider.notifier).deleteRole(role.id);
-      } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+
+    if (action == null || action == 'cancel') return;
+    try {
+      final svc = ref.read(rolesServiceProvider);
+      String msg;
+      if (action == 'migrate' && targetRoleId != null) {
+        msg = await svc.deleteRoleAndMigrate(role.id, targetRoleId!);
+      } else {
+        await svc.deleteRole(role.id);
+        msg = 'Role deleted';
       }
+      await ref.read(rolesNotifierProvider.notifier).loadRoles();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(rolesNotifierProvider);
+    final currentUser = ref.watch(currentUserProvider);
+
+    if (currentUser == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (!currentUser.canManageRoles) {
+      return Scaffold(
+        appBar: const CustomAppBar(title: 'Roles'),
+        body: Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.lock_outline, size: 64, color: Colors.grey[400]),
+          const SizedBox(height: 16),
+          Text('Access Denied', style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 8),
+          const Text('You need the "auth.roles.read" capability to view roles.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+        ]))),
+      );
+    }
+
     return Scaffold(
-      appBar: CustomAppBar(title: 'Roles', actions: [IconButton(icon: const Icon(Icons.add), tooltip: 'Create Role', onPressed: _createRole)]),
-      body: _buildBody(state),
+      appBar: CustomAppBar(title: 'Roles', actions: [
+        if (currentUser.canCreateRoles)
+          IconButton(icon: const Icon(Icons.add), tooltip: 'Create Role', onPressed: _createRole),
+      ]),
+      body: _buildBody(state, currentUser),
     );
   }
 
-  Widget _buildBody(RolesState state) {
+  Widget _buildBody(RolesState state, User currentUser) {
     if (state.isLoading && state.roles.isEmpty) return const Center(child: CircularProgressIndicator());
     if (state.error != null && state.roles.isEmpty) {
       return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -108,8 +165,8 @@ class _RolesScreenState extends ConsumerState<RolesScreen> {
       padding: const EdgeInsets.all(12), itemCount: state.roles.length,
       itemBuilder: (_, i) => _RoleCard(
         role: state.roles[i], onTap: () => context.go('/roles/${state.roles[i].id}'),
-        onRename: state.roles[i].isSystemRole ? null : () => _renameRole(state.roles[i]),
-        onDelete: state.roles[i].isSystemRole ? null : () => _deleteRole(state.roles[i]),
+        onRename: (state.roles[i].isSystemRole || !currentUser.canUpdateRoles) ? null : () => _renameRole(state.roles[i]),
+        onDelete: (state.roles[i].isSystemRole || !currentUser.canDeleteRoles) ? null : () => _deleteRole(state.roles[i]),
       ),
     );
   }

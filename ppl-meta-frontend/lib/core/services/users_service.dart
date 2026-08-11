@@ -127,4 +127,66 @@ class UsersService {
       throw Exception('Unexpected error: $e');
     }
   }
+
+  /// Create a new user
+  Future<Map<String, dynamic>> createUser(String username, String email, String password) async {
+    try {
+      final response = await _apiClient.post<Map<String, dynamic>>(
+        '/api/v1/users/register',
+        data: {'username': username, 'email': email, 'password': password},
+      );
+      if (response.data == null) throw Exception('Failed to create user');
+      return response.data!;
+    } on DioException catch (e) {
+      throw Exception(_errorMsg(e));
+    }
+  }
+
+  /// Update user fields (username/email)
+  Future<Map<String, dynamic>> updateUser(int userId, {String? username, String? email}) async {
+    try {
+      final body = <String, String>{};
+      if (username != null) body['username'] = username;
+      if (email != null) body['email'] = email;
+      final response = await _apiClient.put<Map<String, dynamic>>(
+        '/api/v1/users/$userId',
+        data: body,
+      );
+      if (response.data == null) throw Exception('Failed to update user');
+      return response.data!;
+    } on DioException catch (e) {
+      throw Exception(_errorMsg(e));
+    }
+  }
+
+  /// Delete a user
+  Future<void> deleteUser(int userId) async {
+    try {
+      await _apiClient.delete('/api/v1/users/$userId');
+    } on DioException catch (e) {
+      throw Exception(_errorMsg(e));
+    }
+  }
+
+  /// Toggle user active/disabled status
+  Future<bool> disableUser(int userId) async {
+    try {
+      final response = await _apiClient.post<Map<String, dynamic>>(
+        '/api/v1/users/$userId/disable',
+      );
+      return response.data?['is_active'] == true;
+    } on DioException catch (e) {
+      throw Exception(_errorMsg(e));
+    }
+  }
+
+  String _errorMsg(DioException e) {
+    if (e.response?.statusCode == 409) return 'Already exists.';
+    if (e.response?.statusCode == 404) return 'Not found.';
+    if (e.response?.statusCode == 400) {
+      return (e.response?.data as Map?)?['detail']?.toString() ?? 'Bad request';
+    }
+    return e.message ?? 'Request failed';
+  }
+
 }

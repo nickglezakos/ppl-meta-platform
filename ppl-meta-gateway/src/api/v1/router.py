@@ -264,6 +264,24 @@ async def delete_current_user(request: Request):
     return await _proxy_to_node_service(request)
 
 
+@api_router.put("/users/{user_id}")
+async def update_user(request: Request, user_id: int):
+    """Proxy update user to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(request: Request, user_id: int):
+    """Proxy delete user to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.post("/users/{user_id}/disable")
+async def disable_user(request: Request, user_id: int):
+    """Proxy disable/enable user to Node service."""
+    return await _proxy_to_node_service(request)
+
+
 @api_router.get("/users/verify-email")
 async def verify_email(request: Request):
     """Proxy email verification to Node service."""
@@ -615,6 +633,73 @@ async def get_capabilities_by_role(request: Request):
 @api_router.get("/capabilities/by-user/{user_id}")
 async def get_capabilities_by_user(request: Request):
     """Proxy get capabilities by user to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+# Roles Management Routes
+@api_router.post("/roles/")
+async def create_role(request: Request):
+    """Proxy create role to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.get("/roles/")
+async def list_roles(request: Request):
+    """Proxy list roles to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.get("/roles/{role_id}")
+async def get_role_by_id(request: Request, role_id: int):
+    """Proxy get role by id to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.get("/roles/by-name/{role_name}")
+async def get_role_by_name(request: Request, role_name: str):
+    """Proxy get role by name to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.put("/roles/{role_id}")
+async def update_role(request: Request, role_id: int):
+    """Proxy update role to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.delete("/roles/{role_id}")
+async def delete_role(request: Request, role_id: int):
+    """Proxy delete role to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.post("/roles/assign/")
+async def assign_role_to_user(request: Request):
+    """Proxy assign role to user to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.post("/roles/unassign/")
+async def unassign_role_from_user(request: Request):
+    """Proxy unassign role from user to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.post("/roles/{role_id}/delete-and-migrate")
+async def delete_role_and_migrate(request: Request, role_id: int):
+    """Proxy delete-and-migrate role to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.post("/roles/add-capability/")
+async def add_capability_to_role(request: Request):
+    """Proxy add capability to role to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.post("/roles/remove-capability/")
+async def remove_capability_from_role(request: Request):
+    """Proxy remove capability from role to Node service."""
     return await _proxy_to_node_service(request)
 
 

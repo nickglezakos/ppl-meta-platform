@@ -40,6 +40,12 @@ class User {
       capabilities.contains('auth.roles.delete') ||
       capabilities.contains('auth.roles.assign') ||
       capabilities.contains('auth.roles.unassign');
+  bool get canCreateRoles => capabilities.contains('auth.roles.create');
+  bool get canUpdateRoles => capabilities.contains('auth.roles.update');
+  bool get canDeleteRoles => capabilities.contains('auth.roles.delete');
+  bool get canAssignRoles => capabilities.contains('auth.roles.assign');
+  bool get canAssignCapabilities => capabilities.contains('auth.capabilities.assign');
+  bool get canUnassignCapabilities => capabilities.contains('auth.capabilities.unassign');
   bool get canManageCapabilities =>
       capabilities.contains('auth.capabilities.read') ||
       capabilities.contains('auth.capabilities.assign') ||

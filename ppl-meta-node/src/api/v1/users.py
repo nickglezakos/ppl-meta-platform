@@ -759,17 +759,70 @@ def api_get_user_by_id(
     return user
 
 
-@router.get("/guid/{guid}", response_model=UserRead)
-def api_get_user_by_guid(
-    guid: str,
+@router.put("/{user_id}", response_model=UserRead)
+def api_update_user(
+    user_id: int,
+    body: dict,
     db: Session = Depends(get_db),
-    _current_user: UserRead = Depends(require_capability("users.accounts.read")),
+    current_user: UserRead = Depends(require_capability("users.accounts.update")),
 ):
-    """Get user by GUID."""
-    user = get_user_by_guid(db, guid)
+    """Update a user's email or username. Only owner or admin."""
+    user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if "username" in body:
+        existing = db.query(User).filter(User.username == body["username"], User.id != user_id).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Username already taken")
+        user.username = body["username"]
+    if "email" in body:
+        existing = db.query(User).filter(User.email == body["email"], User.id != user_id).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Email already taken")
+        user.email = body["email"]
+
+    db.commit()
+    db.refresh(user)
+    log_user_action(db, current_user.username, current_user.email, f"user_update:{user_id}")
     return user
+
+
+@router.delete("/{user_id}")
+def api_delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserRead = Depends(require_capability("users.accounts.delete")),
+):
+    """Delete a user. Only owner. Cannot delete yourself."""
+    if current_user.id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(user)
+    db.commit()
+    log_user_action(db, current_user.username, current_user.email, f"user_delete:{user_id}")
+    return {"detail": "User deleted"}
+
+
+@router.post("/{user_id}/disable")
+def api_disable_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserRead = Depends(require_capability("users.accounts.update")),
+):
+    """Toggle a user's active/disabled status."""
+    if current_user.id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot disable yourself")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.is_active = not user.is_active
+    db.commit()
+    status = "disabled" if not user.is_active else "enabled"
+    log_user_action(db, current_user.username, current_user.email, f"user_{status}:{user_id}")
+    return {"detail": f"User {status}", "is_active": user.is_active}
 
 
 @router.get("/")
