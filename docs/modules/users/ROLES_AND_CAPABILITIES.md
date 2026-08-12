@@ -130,9 +130,9 @@ The highest privilege role. Has full control over users, roles, capabilities, sy
 | `system.licensing.manage` | Manage licenses |
 | `system.recovery.manage` | System recovery operations |
 
-### 3.2 `admin` — Administrator (19 capabilities)
+### 3.2 `admin` — Administrator (21 capabilities)
 
-Broad administrative access but cannot delete user accounts, manage roles/capabilities, or access system-level settings.
+Broad administrative access. Can manage user accounts and assign/unassign roles and capabilities, but cannot delete user accounts, create/rename/delete roles, or access system-level settings.
 
 > Includes all `user` capabilities (lines marked below) **plus** the admin extensions:
 
@@ -155,6 +155,8 @@ Broad administrative access but cannot delete user accounts, manage roles/capabi
 | `media.manage` | Manage media assets |
 | `operations.execute` | Execute operational tasks |
 | `auth.roles.read` | View role definitions |
+| `auth.roles.assign` | Assign roles to users |
+| `auth.roles.unassign` | Unassign roles from users |
 | `auth.capabilities.assign` | Assign capabilities to roles |
 | `auth.capabilities.unassign` | Remove capabilities from roles |
 
@@ -185,8 +187,6 @@ owner
     ├── auth.roles.create
     ├── auth.roles.update
     ├── auth.roles.delete
-    ├── auth.roles.assign
-    ├── auth.roles.unassign
     ├── auth.capabilities.read
     ├── auth.capabilities.manage
     ├── system.installation.manage
@@ -208,8 +208,8 @@ All capabilities organized by namespace.
 | `auth.roles.create` | Create new roles | owner |
 | `auth.roles.update` | Rename existing roles | owner |
 | `auth.roles.delete` | Delete roles | owner |
-| `auth.roles.assign` | Assign a role to a user | owner |
-| `auth.roles.unassign` | Remove a role from a user | owner |
+| `auth.roles.assign` | Assign a role to a user | owner, admin |
+| `auth.roles.unassign` | Remove a role from a user | owner, admin |
 | `auth.capabilities.read` | View capability definitions | owner |
 | `auth.capabilities.assign` | Add a capability to a role | owner, admin |
 | `auth.capabilities.unassign` | Remove a capability from a role | owner, admin |

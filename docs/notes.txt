@@ -372,23 +372,29 @@ Stop VPN + Matrix Only (Layered)
 ****************************************************************************************************
 
 
-update the roles and capabilities functions and documentation
+******   DEVELOPMENT    ******
 
-finalize the user management service
 
 debug and optimise and document the people uniqueness
+
+TEST
+
+ASK
+__Tier 2 threshold calibration__ — the defaults (`velocity_inconsistency_factor = 1.5`, `velocity_activation_threshold = 0`) are reasonable starting points but were tuned against synthetic tests. Real footage with jitter may need adjustment, and the `tier2_velocity_rejected` counter will tell you if it's over-rejecting.
+
+
 have routes and distanse from lense assigned to MVR
 have routes and distanse from lense assigned to instant detection
 debug and optimise and document the analytics
 
-study wether instant detection is enough for all functionalities
+study whether instant detection is enough for all functionalities
 
 body detection
 
 find a way to pair the bodies detected with faces maybe on the frame level or statistically on frames series on
 the frame level.
 
-Colors of clother detection
+Colors of clothes detection
 
 Car plates detection
 
@@ -403,5 +409,30 @@ analyse the headscale status
 
 clarify and update the software licences scheme
 
+
+******   TESTS    ******
+
+test and finalize the user management service
+
+  check exactly what happens in this:
+    When Authority is configured, startup consults Authority for ownership approval:
+
+    If approved: fresh.user@example.com gets {owner, admin, user}
+    If not approved: Downgraded to {admin, user}, Authority's owner is used instead
+    If Authority not configured: Falls back to local owner assignment
+
+******   DEPLOYMENT    ******
+
 finish the deployment via docker
-fine tune and document the CI-CD
+fine tune and document the CI-CD (including software updates for customers)
+
+******   GUIDES    ******
+
+Create manuals for users
+
+******   ACCEPTANCE TESTS    ******
+
+Conduct acceptance tests for users
+
+
+

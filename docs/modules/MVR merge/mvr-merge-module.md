@@ -11,7 +11,7 @@ This module was updated to align with the current implemented behavior in fronte
    - Frontend reads and writes merge rule and threshold through this endpoint.
 
 2. Default merge settings are standardized.
-   - merge_rule default is semi.
+   - merge_rule default is none.
    - merge_threshold default is 0.70.
 
 3. Local persistence for merge rule/threshold was removed from frontend general settings storage.
@@ -109,9 +109,11 @@ Backend setting keys:
       - `1` -> `semi`
       - `2` -> `auto`
 - `mvr_merge_threshold`
+- `mvr_stored_comparison_enabled`
+   - encoded as numeric setting value (`0.0` / `1.0`); surfaced to the API as `stored_comparison_enabled` boolean
 
 Current defaults:
-- `merge_rule = semi`
+- `merge_rule = none`
 - `merge_threshold = 0.70`
 - `stored_comparison_enabled = false`
 
@@ -576,12 +578,15 @@ This includes:
 - best-image and demographics display
 - group operations on analysis cards
 
-## Current Safety Behavior: Gender Guard in Auto-Merge Paths
+## Current Safety Behavior: Gender & Contamination Guards in Auto-Merge Paths
 
-The backend now enforces a confidence-aware gender guard in automatic merge edge creation.
+The backend now enforces confidence-aware safety guards in automatic merge edge creation. There are two complementary guardrails: a cross-gender conflict guard and an embedding-contamination suspect guard.
+
+### 1. Cross-Gender Conflict Guard
 
 Implemented behavior:
 1. normalize labels to binary values (`male`, `female`) when available
+   - `HierarchicalMVRMerger` also prefers linked-individual gender evidence (`linked_individual_gender`) when present
 2. allow merge if one or both sides are unknown/non-binary/missing
 3. allow merge if labels match
 4. block merge edge only when labels conflict **and** both sides are above the confidence gate
@@ -592,9 +597,24 @@ Current confidence gate:
 Where it is applied:
 - hierarchical MVR merge grouping in `HierarchicalMVRMerger._find_merge_groups(...)`
 - cross-video automatic graph edge creation in `cross_video_tracking_simple.py`
+- single-media MVR service paths in `MVRService._can_auto_merge_by_gender(...)`
 
-Operational impact:
+### 2. Embedding-Contamination Suspect Guard
+
+A second, distinct guard blocks merges that show the fingerprint of a multi-face crop contaminating the embedding (see `docs/modules/MVR merge/EMBEDDING_CONTAMINATION.md`).
+
+Trigger conditions (when one side has `gender=unknown` and the other has a high-confidence known gender):
+- known-side `gender_confidence >= 0.80`
+- AND embedding similarity `>= contamination_similarity_threshold (0.70)`
+
+Where it is applied:
+- `HierarchicalMVRMerger._is_contamination_suspect(...)`
+- `MVRService._is_contamination_suspect(...)`
+
+### 3. Operational impact
+
 - reduces high-confidence male/female false auto-merges
+- reduces unknown-gender + confident-known-gender contamination merges
 - preserves merge recall in uncertain/low-confidence demographics cases
 - keeps manual workflows available for operator-driven correction
 
@@ -614,10 +634,12 @@ Frontend:
 - `ppl-meta-frontend/lib/services/media_api_client.dart`
 - `ppl-meta-frontend/lib/providers/settings_providers.dart`
 - `ppl-meta-frontend/lib/models/settings_models.dart`
+- `ppl-meta-frontend/lib/presentation/screens/settings/cross_video_tracking_section.dart`
 
 Backend:
 - `ppl-meta-vmeta/src/api/routes/mvr_people.py`
 - `ppl-meta-vmeta/src/services/hierarchical_mvr_merger.py`
+- `ppl-meta-vmeta/src/services/mvr_service.py`
 - `ppl-meta-vmeta/src/database/mvr_repository.py`
 - `ppl-meta-vmeta/src/api/v1/cross_video_tracking_simple.py`
 - `ppl-meta-orchestrator/src/api/workflow_settings_endpoints.py`
@@ -640,5 +662,6 @@ The latest work in this area made the pipeline much clearer and more robust by:
 - carrying merge state into analysis explicitly
 - loading merged results through hierarchy rather than flattening them back into duplicate cards
 - moving merge settings authority to backend workflow settings endpoints
-- standardizing defaults to `semi` + `0.70`
+- standardizing defaults to `none` + `0.70`
 - enforcing confidence-aware cross-gender auto-merge guardrails
+- adding an embedding-contamination suspect guard for unknown-gender + confident-known-gender pairs

@@ -18,12 +18,13 @@ Key Features:
 """
 
 import asyncio
+import base64
 import httpx
 import json
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Database imports (Phase 1 integration)
 try:
@@ -70,7 +71,9 @@ class PPLThreadWorkflowController:
             database: Vision Service database connection
         """
         self.db = database
-        self.face_grouping_engine = VisionFaceGroupingEngine()
+        self.face_grouping_engine = VisionFaceGroupingEngine(
+            embedding_extractor=self._build_embedding_extractor()
+        )
         self.quality_analyzer = PersonQualityAnalyzer()
 
         # Workflow configuration
@@ -81,6 +84,132 @@ class PPLThreadWorkflowController:
         self.batch_size = 100
         self._velocity_sensitivity_cache = None
         self._cache_timestamp = None
+
+    def _build_embedding_extractor(self) -> Optional[Callable]:
+        """
+        Build a lazy, in-memory embedding extractor for Tier 3 discrimination.
+
+        The returned callable loads a face crop from the ``face_crops`` table
+        (keyed by ``face_detection_id``), decodes it, and runs it through the
+        FaceNet512 model to produce a 512-dim embedding. Face crops are cached
+        in memory within the closure so each face is loaded at most once, and
+        the model is loaded lazily (only on first use).
+
+        Returns None when the model is unavailable (e.g. DeepFace not installed,
+        or the model fails to load) so Tier 3 degrades gracefully to a no-op and
+        grouping is unaffected.
+        """
+        try:
+            import numpy as np
+            from deepface.basemodels import Facenet512
+        except Exception as e:  # noqa: BLE001 - model availability must not break grouping
+            logger.warning(
+                "FaceNet512 unavailable; Tier 3 embedding gate will be a no-op: %s", e
+            )
+            return None
+
+        model = None
+        crop_cache = {}  # face_detection_id -> numpy array (in-memory, per session)
+
+        def _load_model():
+            nonlocal model
+            if model is None:
+                model = Facenet512.loadModel()
+            return model
+
+        def _get_crop(face_id: str) -> Optional[np.ndarray]:
+            """Load and decode a face crop from the face_crops table (cached)."""
+            if face_id in crop_cache:
+                return crop_cache[face_id]
+
+            crop = None
+            try:
+                cursor = self.db.connection.cursor()
+                cursor.execute(
+                    "SELECT crop_base64 FROM face_crops WHERE face_detection_id = %s",
+                    (str(face_id),),
+                )
+                row = cursor.fetchone()
+                cursor.close()
+
+                if row and row[0]:
+                    import io
+
+                    raw = base64.b64decode(row[0])
+                    crop = np.frombuffer(raw, dtype=np.uint8)
+                    # Decode image bytes to a numpy array (BGR or grayscale).
+                    try:
+                        import cv2
+
+                        img = cv2.imdecode(crop, cv2.IMREAD_COLOR)
+                        if img is not None:
+                            crop = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    except Exception:  # noqa: BLE001 - fall back to raw bytes
+                        crop = None
+            except Exception as e:  # noqa: BLE001 - crop load failure must not break grouping
+                logger.warning("Failed to load face crop for %s: %s", face_id, e)
+                crop = None
+
+            crop_cache[face_id] = crop
+            return crop
+
+        def _extract(face_record: Dict) -> Optional[List[float]]:
+            """Extract an embedding for a single face record."""
+            m = _load_model()
+            if m is None:
+                return None
+
+            face_id = face_record.get("id") or face_record.get("face_detection_id")
+            if not face_id:
+                return None
+
+            # Prefer an in-memory crop provided directly on the face record
+            # (e.g. the from-faces path), falling back to the DB face_crops table.
+            crop = _crop_from_record(face_record)
+            if crop is None:
+                crop = _get_crop(face_id)
+            if crop is None:
+                return None
+
+            try:
+                embedding = m.predict(crop, verbose=0)[0]
+                return [float(x) for x in embedding]
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Embedding inference failed for face %s: %s", face_id, e)
+                return None
+
+        def _crop_from_record(face_record: Dict) -> Optional[np.ndarray]:
+            """Build a numpy crop from crop data embedded in the face record."""
+            crop = face_record.get("crop_image")
+            if crop is None:
+                crop = face_record.get("crop_base64")
+            if crop is None:
+                return None
+
+            try:
+                import io
+
+                if isinstance(crop, str):
+                    raw = np.frombuffer(base64.b64decode(crop), dtype=np.uint8)
+                elif isinstance(crop, (bytes, bytearray)):
+                    raw = np.frombuffer(bytes(crop), dtype=np.uint8)
+                else:
+                    raw = crop  # already a numpy array
+
+                try:
+                    import cv2
+
+                    img = cv2.imdecode(raw, cv2.IMREAD_COLOR)
+                    if img is not None:
+                        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                except Exception:  # noqa: BLE001
+                    pass
+                return raw
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Failed to decode in-memory crop: %s", e)
+                return None
+
+        return _extract
 
     def _is_valid_uuid(self, uuid_string: str) -> bool:
         """Check if string is a valid UUID format."""
