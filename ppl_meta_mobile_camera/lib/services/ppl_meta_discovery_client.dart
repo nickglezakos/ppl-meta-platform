@@ -66,6 +66,8 @@ class PPLMetaDiscoveryClient {
     return discoveryServiceUrl; // Fallback to default
   }
 
+/// Installation-token auth headers for discovery requests (Issue #8).
+  Future<Map<String, String>> _authHeaders() => _configService.authHeaders();
   /// Get potential host machine IP addresses
   Future<List<String>> _getHostMachineIPs() async {
     final List<String> hostIPs = [];
@@ -113,7 +115,7 @@ class PPLMetaDiscoveryClient {
       // For nginx-proxied discovery service, test the API endpoint directly
       final response = await http.get(
         Uri.parse('$baseUrl/api/v1/services'),
-        headers: {'Accept': 'application/json'},
+        headers: {'Accept': 'application/json', ...await _authHeaders()},
       ).timeout(const Duration(seconds: 3));
       
       return response.statusCode == 200;
@@ -132,7 +134,7 @@ class PPLMetaDiscoveryClient {
       
       final response = await http.get(
         Uri.parse('$discoveryUrl/api/v1/services'),
-        headers: {'Accept': 'application/json'},
+        headers: {'Accept': 'application/json', ...await _authHeaders()},
       ).timeout(_discoveryTimeout);
       
       if (response.statusCode == 200) {

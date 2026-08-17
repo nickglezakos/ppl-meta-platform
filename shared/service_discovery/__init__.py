@@ -8,6 +8,8 @@ with the PPL Meta Discovery Service.
 
 from typing import Dict, List, Optional
 
+import os
+
 # Use the local ppl_discovery_client (httpx-based, not aiohttp-based)
 try:
     from .ppl_discovery_client import DiscoveryClient, ServiceConfig
@@ -18,7 +20,9 @@ try:
         """Get or create the discovery client instance."""
         global _discovery_client
         if _discovery_client is None:
-            _discovery_client = DiscoveryClient()
+            _discovery_client = DiscoveryClient(
+                service_name=os.getenv("DISCOVERY_SERVICE_NAME")
+            )
         return _discovery_client
 
     async def register_service(
@@ -67,6 +71,8 @@ try:
             )
 
             client = _get_client()
+            # Ensure the client sends the service-token auth header (Issue #8)
+            client.service_name = client.service_name or name
             return await client.register_service(config)
         except Exception as e:
             print(f"Failed to register service {name}: {e}")
@@ -84,6 +90,8 @@ try:
         """
         try:
             client = _get_client()
+            # Ensure the client sends the service-token auth header (Issue #8)
+            client.service_name = client.service_name or service_name
             return await client.deregister_service(service_name)
         except Exception as e:
             print(f"Failed to deregister service {service_name}: {e}")

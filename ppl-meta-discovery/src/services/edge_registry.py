@@ -16,6 +16,7 @@ from fastapi import HTTPException, Request
 from models import (
     EdgeDeviceInfo,
     EdgeDeviceList,
+    EdgeDeviceType,
     EdgeRegistrationRequest,
     HeartbeatRequest,
     RegistrationResponse,
@@ -68,16 +69,9 @@ class EdgeRegistry:
         Returns:
             Registration response with device ID
         """
-        # Validate device type
-        supported_types = {
-            "mobile_camera",
-            "raspberry_pi",
-            "ip_camera",
-            "android_device",
-            "ios_device",
-            "edge_gateway",
-        }
-        if request.device_type not in supported_types:
+        # Validate device type (Pydantic already coerces to EdgeDeviceType, so this
+        # guards against any non-enum edge values reaching the registry).
+        if request.device_type not in EdgeDeviceType.__members__.values():
             logger.warning(f"Unsupported device type: {request.device_type}")
 
         # Generate unique device ID or reuse existing

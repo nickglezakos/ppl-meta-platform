@@ -53,7 +53,7 @@ class ServiceRegistration {
   final String host;
   final int port;
   final Map<String, dynamic> metadata;
-  @JsonKey(name: 'health_check_endpoint')
+  @JsonKey(name: 'health_endpoint')
   final String healthCheckEndpoint;
   final String version;
 

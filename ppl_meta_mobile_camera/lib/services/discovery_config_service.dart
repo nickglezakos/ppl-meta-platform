@@ -1,5 +1,16 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert' show jsonDecode, jsonEncode;
+import 'package:http/http.dart' as http;
 import 'simplified_discovery_client.dart';
+
+/// Shared installation auth secret (Option 1) used to ask the local discovery
+/// service to issue the HMAC token. Defaults to the dev secret so IDE/CLI
+/// builds work out of the box; override per-environment via:
+///   `--dart-define=INSTALL_AUTH_SECRET=<your_secret>`
+const String _installAuthSecret = String.fromEnvironment(
+  'INSTALL_AUTH_SECRET',
+  defaultValue: 'ppl-meta-installation-auth-secret-dev',
+);
 
 /// Service to manage discovery service configuration
 /// Stores user's network configuration and provides discovery client methods
@@ -7,6 +18,8 @@ class DiscoveryConfigService {
   static const String _keyDiscoveryHost = 'discovery_host';
   static const String _keyDiscoveryPort = 'discovery_port';
   static const String _keyDeviceIPPrefix = 'device_ip_prefix';
+  static const String _keyApiToken = 'installation_api_token';
+  static const String _keyInstallationUuid = 'installation_uuid';
   
   // Default configuration removed - user must provide explicit network configuration
   static const String _defaultDiscoveryPort = '8006';
@@ -147,5 +160,82 @@ class DiscoveryConfigService {
     final prefs = await SharedPreferences.getInstance();
     final host = prefs.getString(_keyDiscoveryHost);
     return host != null;
+  }
+
+  /// Persist the Authority-issued HMAC installation token + installation UUID
+  /// (Issue #8). Used to authenticate discovery calls once AUTH_ENFORCE is on.
+  Future<void> saveInstallationAuth({
+    required String apiToken,
+    required String installationUuid,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyApiToken, apiToken);
+    await prefs.setString(_keyInstallationUuid, installationUuid);
+    print('🔐 Saved installation token for discovery auth');
+  }
+
+  /// Build the installation-token auth headers for discovery requests.
+  /// Returns an empty map when no token is configured (legacy open behavior).
+  Future<Map<String, String>> authHeaders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(_keyApiToken) ?? '';
+    final uuid = prefs.getString(_keyInstallationUuid) ?? '';
+    if (token.isEmpty || uuid.isEmpty) {
+      return {};
+    }
+    return {
+      'Authorization': 'Bearer $token',
+      'X-Installation-Uuid': uuid,
+    };
+  }
+
+  /// Option 1 — local onboarding. Ask the local discovery service
+  /// (`/api/v1/device-enroll`) to issue an HMAC installation token using the
+  /// build-time secret, then persist it so discovery calls carry auth headers.
+  /// Best-effort: returns false (and logs) on failure, never throws.
+  Future<bool> enrollLocallyIfNeeded() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final existingToken = prefs.getString(_keyApiToken) ?? '';
+      final existingUuid = prefs.getString(_keyInstallationUuid) ?? '';
+      if (existingToken.isNotEmpty && existingUuid.isNotEmpty) {
+        print('🔐 Already enrolled locally (token present)');
+        return true;
+      }
+
+      final discoveryUrl = await getDiscoveryUrl();
+      if (discoveryUrl == null) {
+        print('❌ No discovery URL configured; skipping local enrollment');
+        return false;
+      }
+
+      final resp = await http
+          .post(
+            Uri.parse('$discoveryUrl/api/v1/device-enroll'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'X-Enroll-Key': _installAuthSecret,
+            },
+            body: jsonEncode({}), // blank uuid -> server generates signage-<uuid>
+          )
+          .timeout(const Duration(seconds: 8));
+
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final token = data['api_token'] as String? ?? '';
+        final uuid = data['installation_uuid'] as String? ?? '';
+        if (token.isNotEmpty && uuid.isNotEmpty) {
+          await saveInstallationAuth(apiToken: token, installationUuid: uuid);
+          print('🔐 Local token issued by discovery (Option 1)');
+          return true;
+        }
+      }
+      print('⚠️ Local enrollment failed (HTTP ${resp.statusCode}): ${resp.body}');
+      return false;
+    } catch (e) {
+      print('⚠️ Local enrollment error: $e');
+      return false;
+    }
   }
 }

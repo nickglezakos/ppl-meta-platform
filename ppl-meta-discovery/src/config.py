@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     # Security Configuration
     ALLOWED_ORIGINS: List[str] = ["*"]
     ALLOWED_HOSTS: List[str] = ["*"]
+
+    # Installation Authentication (Issue #8)
+    # Shared secret used to derive HMAC installation tokens. Must match the
+    # Authority (INSTALLATION_AUTH_SECRET) that issues them.
+    INSTALLATION_AUTH_SECRET: str = "ppl-meta-installation-auth-secret-dev"
+    # When true, register/heartbeat/topology endpoints require a valid
+    # Authorization: Bearer <HMAC token> + X-Installation-Uuid header.
+    AUTH_ENFORCE: bool = False
     
     # Discovery Configuration
     ENABLE_MULTICAST: bool = True

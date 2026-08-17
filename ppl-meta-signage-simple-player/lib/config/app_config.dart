@@ -10,6 +10,18 @@ class AppConfig {
   static const Duration heartbeatInterval = Duration(seconds: 30);
   static const Duration registrationRetryDelay = Duration(seconds: 10);
   static const Duration syncTimeout = Duration(minutes: 5);
+
+  // Network Timeouts (discovery service) — single source of truth for the
+  // registration / heartbeat / deregister / topology requests.
+  static const Duration discoveryConnectTimeout = Duration(seconds: 4);
+  static const Duration discoverySendTimeout = Duration(seconds: 4);
+  static const Duration discoveryReceiveTimeout = Duration(seconds: 6);
+  static const Duration heartbeatSendTimeout = Duration(seconds: 5);
+  static const Duration heartbeatReceiveTimeout = Duration(seconds: 5);
+  static const Duration deregisterSendTimeout = Duration(seconds: 5);
+  static const Duration deregisterReceiveTimeout = Duration(seconds: 5);
+  static const Duration topologySendTimeout = Duration(seconds: 5);
+  static const Duration topologyReceiveTimeout = Duration(seconds: 8);
   
   // Backend Service URLs (default for local development)
   static const String mediaServiceUrl = 'http://localhost:8000';
@@ -47,6 +59,4 @@ class AppConfig {
   static String get videoListsEndpoint => '$mediaServiceUrl/api/v1/signage/video-lists';
   static String get etlSyncEndpoint => '$mediaServiceUrl/api/v1/signage/etl/sync';
   static String get playbackControlEndpoint => '$mediaServiceUrl/api/v1/signage/playback/control';
-  static String get discoveryRegisterEndpoint => '$discoveryServiceUrl/api/v1/services';
-  static String get discoveryHeartbeatEndpoint => '$discoveryServiceUrl/api/v1/services/heartbeat';
 }

@@ -159,6 +159,11 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
       
       print('✅ Discovery configuration saved for backend IP: $backendIP');
 
+      // Option 1 — local onboarding: request an HMAC installation token from
+      // the local discovery service so subsequent discovery calls (e.g.
+      // /api/v1/discovery/topology) are authenticated. Best-effort.
+      await configService.enrollLocallyIfNeeded();
+
       // Create discovery client with user-specified IP
       final discoveryClient = SimplifiedDiscoveryClient();
       

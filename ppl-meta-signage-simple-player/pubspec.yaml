@@ -49,7 +49,6 @@ dependencies:
   # Embedded HTTP server
   shelf: ^1.4.2
   shelf_router: ^1.1.4
-
 dev_dependencies:
   flutter_test:
     sdk: flutter

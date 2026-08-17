@@ -1,7 +1,7 @@
-import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'browser_hash.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/bootstrap_provider.dart';
 import '../../core/providers/provider_bridge.dart';
@@ -71,7 +71,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // Redirect root to home if authenticated, or login if not
       // Skip redirect if browser has a hash fragment (e.g., /#/reset-password?token=...)
       if (path == '/') {
-        final hash = html.window.location.hash;
+        final hash = windowLocationHash();
         if (hash.isNotEmpty) {
           return null; // Let hash route be processed
         }

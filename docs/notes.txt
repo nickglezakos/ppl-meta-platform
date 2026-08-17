@@ -374,10 +374,17 @@ Stop VPN + Matrix Only (Layered)
 
 ******   DEVELOPMENT    ******
 
+TEST all the fonr end apps after the HMAC development
+TEST the digital signage's keep alive
+Check improvements on the signage player rigid operation
+TEST the other services keep alive
+
+Document the digital signage based roles.
+
 
 debug and optimise and document the people uniqueness
 
-TEST
+TEST people uniqueness
 
 ASK
 __Tier 2 threshold calibration__ — the defaults (`velocity_inconsistency_factor = 1.5`, `velocity_activation_threshold = 0`) are reasonable starting points but were tuned against synthetic tests. Real footage with jitter may need adjustment, and the `tier2_velocity_rejected` counter will tell you if it's over-rejecting.

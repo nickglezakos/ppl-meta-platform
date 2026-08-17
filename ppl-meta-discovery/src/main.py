@@ -2,9 +2,11 @@
 
 import logging
 import socket
+import hmac
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
+from uuid import uuid4
 
 # Import platform API
 from api.platform import router as platform_router
@@ -21,6 +23,8 @@ from models import (
     ServiceInfo,
     ServiceList,
 )
+from config import get_settings
+from auth import InstallationAuthMiddleware, compute_installation_token
 from services.edge_registry import EdgeRegistry
 from services.multicast_announcer import MulticastAnnouncer
 from services.service_registry import ServiceRegistry
@@ -33,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 # Global registries and announcer
 service_registry = ServiceRegistry()
-edge_registry = EdgeRegistry()
+edge_registry = EdgeRegistry(heartbeat_timeout=get_settings().EDGE_DEVICE_TIMEOUT)
 multicast_announcer = MulticastAnnouncer()
 
 
@@ -157,6 +161,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Installation-token auth (Issue #8) — enforces HMAC installation tokens on
+# register/heartbeat/topology when AUTH_ENFORCE is enabled.
+app.add_middleware(InstallationAuthMiddleware)
 
 # Include routers
 app.include_router(platform_router, prefix="/api/v1")
@@ -462,6 +470,44 @@ async def health_check_all():
     """Perform health check on all registered services."""
     results = await service_registry.health_check_all()
     return {"health_results": results}
+
+
+@app.post("/api/v1/device-enroll")
+async def device_enroll(request: Request):
+    """Issue a local installation token to a device (Option 1 / local onboarding).
+
+    Lets a device obtain its HMAC installation token directly from discovery on
+    the local network, so onboarding does NOT depend on the remote Authority.
+
+    Guarded by ``X-Enroll-Key`` (must equal this service's
+    ``INSTALLATION_AUTH_SECRET``). Anyone holding the shared secret can already
+    mint the same token, so this does not widen the trust boundary — it just
+    centralizes issuance server-side.
+
+    Body (optional): ``{"installation_uuid": "..."}``. If omitted/blank, a
+    ``signage-<uuid>`` identifier is generated and returned so the device knows
+    which UUID its token is bound to.
+    """
+    settings = get_settings()
+    provided = request.headers.get("X-Enroll-Key", "")
+    if not hmac.compare_digest(provided.strip(), settings.INSTALLATION_AUTH_SECRET):
+        raise HTTPException(status_code=401, detail="Invalid enroll key")
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    installation_uuid = str(body.get("installation_uuid") or "").strip()
+    if not installation_uuid:
+        installation_uuid = f"signage-{uuid4()}"
+
+    api_token = compute_installation_token(
+        installation_uuid, settings.INSTALLATION_AUTH_SECRET
+    )
+    return {
+        "installation_uuid": installation_uuid,
+        "api_token": api_token,
+    }
 
 
 if __name__ == "__main__":

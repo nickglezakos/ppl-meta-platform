@@ -46,7 +46,7 @@ ServiceRegistration _$ServiceRegistrationFromJson(Map<String, dynamic> json) =>
       port: (json['port'] as num).toInt(),
       metadata: json['metadata'] as Map<String, dynamic>,
       healthCheckEndpoint:
-          json['health_check_endpoint'] as String? ?? '/health',
+          json['health_endpoint'] as String? ?? '/health',
       version: json['version'] as String,
     );
 
@@ -58,6 +58,6 @@ Map<String, dynamic> _$ServiceRegistrationToJson(
   'host': instance.host,
   'port': instance.port,
   'metadata': instance.metadata,
-  'health_check_endpoint': instance.healthCheckEndpoint,
+  'health_endpoint': instance.healthCheckEndpoint,
   'version': instance.version,
 };

@@ -15,13 +15,26 @@ class SignageDiscoveryService {
   final ConfigService _configService;
   
   Timer? _heartbeatTimer;
+  Timer? _registrationRetryTimer;
   bool _isRegistered = false;
   String? _serviceId;
   DeviceInfoModel? _deviceInfo;
   String? _lastError;
 
+  /// Heartbeat interval suggested by the discovery service on registration (Issue #7).
+  /// Falls back to [AppConfig.heartbeatInterval] when the server omits it.
+  Duration? _serverHeartbeatInterval;
+
   /// Cached VPN node IP for direct discovery (Phase 5)
   String? _vpnNodeIp;
+
+  /// Most recent VPN-direct topology fetched from ppl-meta-discovery (Phase 5).
+  Map<String, dynamic>? _lastTopology;
+/// Edge-device registration (Issue #6): the player is registered both as a
+  /// service (control/health plane) and as an edge device (device registry).
+  bool _isDeviceRegistered = false;
+  /// Device id assigned by the edge-device registry (/api/v1/devices/register).
+  String? _deviceRegistrationId;
 
   SignageDiscoveryService({
     Dio? dio,
@@ -30,13 +43,33 @@ class SignageDiscoveryService {
   })  : _dio = dio ??
             Dio(
               BaseOptions(
-                connectTimeout: const Duration(seconds: 4),
-                sendTimeout: const Duration(seconds: 4),
-                receiveTimeout: const Duration(seconds: 6),
+                connectTimeout: AppConfig.discoveryConnectTimeout,
+                sendTimeout: AppConfig.discoverySendTimeout,
+                receiveTimeout: AppConfig.discoveryReceiveTimeout,
               ),
             ),
         _logger = logger ?? Logger(),
-        _configService = configService;
+        _configService = configService {
+    _setupAuthInterceptor();
+  }
+
+  /// Attach installation-token auth headers (Issue #8) to every request when the
+  /// Authority has issued a token. Safe no-op when no token is configured.
+  void _setupAuthInterceptor() {
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          final token = _configService.installationApiToken;
+          final uuid = _configService.authorityInstallationUuid;
+          if (token.isNotEmpty && uuid.isNotEmpty) {
+            options.headers['Authorization'] = 'Bearer $token';
+            options.headers['X-Installation-Uuid'] = uuid;
+          }
+          handler.next(options);
+        },
+      ),
+    );
+  }
 
   /// Set the VPN node IP for direct discovery (Phase 5)
   void setVpnNodeIp(String? ip) {
@@ -62,13 +95,14 @@ class SignageDiscoveryService {
         '$vpnDiscoveryUrl/api/v1/discovery/topology?vpn=true',
         options: Options(
           headers: {'Accept': 'application/json'},
-          sendTimeout: const Duration(seconds: 5),
-          receiveTimeout: const Duration(seconds: 8),
+          sendTimeout: AppConfig.topologySendTimeout,
+          receiveTimeout: AppConfig.topologyReceiveTimeout,
         ),
       );
 
       if (response.statusCode == 200) {
         final data = response.data as Map<String, dynamic>;
+        _lastTopology = data;
         _logger.i('VPN-direct topology discovered: ${data['backend_services']?.length ?? 0} services');
         return data;
       }
@@ -89,6 +123,23 @@ class SignageDiscoveryService {
       _logger.d('Device ID: ${_deviceInfo!.deviceId}');
       _logger.d('Device Name: ${_deviceInfo!.deviceName}');
       
+      // VPN-direct discovery (Phase 5): when the Authority has supplied the primary
+      // node's Tailscale IP, query the platform topology directly over the mesh for
+      // zero-config backend lookup. Best-effort — failures do not block registration.
+      final vpnNodeIp = _configService.vpnPrimaryNodeIp;
+      if (vpnNodeIp != null && vpnNodeIp.isNotEmpty) {
+        setVpnNodeIp(vpnNodeIp);
+        await discoverTopology();
+      }
+
+
+      // Edge-device registration (Issue #6, dual registration): also register the
+      // player as an edge device so the device registry can track it by type,
+      // capabilities and VPN reachability. Best-effort — failure does not block
+      // service registration.
+      await _registerAsEdgeDevice();
+
+      // Register with discovery service
       // Register with discovery service
       final registered = await register();
       
@@ -97,6 +148,7 @@ class SignageDiscoveryService {
         _logger.i('Discovery Service initialized successfully');
       } else {
         _logger.w('Failed to register with discovery service');
+        _startRegistrationRetry();
       }
       
       return registered;
@@ -119,13 +171,21 @@ class SignageDiscoveryService {
       _logger.i('Registering with discovery service...');
       
       final localIp = await DeviceInfoHelper.getLocalIpAddress();
+      // Include the Tailscale IP in registration metadata so ppl-meta-discovery
+      // marks the player as VPN-reachable and returns it in ?vpn=true topology.
+      final metadata = _deviceInfo!.toJson();
+      if (localIp.startsWith('100.')) {
+        metadata['tailscale_ip'] = localIp;
+      }
+
+
       
       final registration = ServiceRegistration(
         name: '${AppConfig.serviceName}-${_deviceInfo!.deviceId}',
         serviceType: AppConfig.serviceType,
         host: localIp,
         port: AppConfig.httpServerPort,
-        metadata: _deviceInfo!.toJson(),
+        metadata: metadata,
         healthCheckEndpoint: '/health',
         version: AppConfig.version,
       );
@@ -137,8 +197,8 @@ class SignageDiscoveryService {
         discoveryUrl,
         data: registration.toJson(),
         options: Options(
-          sendTimeout: const Duration(seconds: 4),
-          receiveTimeout: const Duration(seconds: 6),
+          sendTimeout: AppConfig.discoverySendTimeout,
+          receiveTimeout: AppConfig.discoveryReceiveTimeout,
           headers: {
             'Content-Type': 'application/json',
           },
@@ -157,6 +217,16 @@ class SignageDiscoveryService {
           _serviceId = registration.name;
         }
         
+        // Honor the server-suggested heartbeat interval if provided (Issue #7),
+        // otherwise keep the configured default.
+        final serverInterval = responseData['heartbeat_interval'];
+        if (serverInterval is int && serverInterval > 0) {
+          _serverHeartbeatInterval = Duration(seconds: serverInterval);
+          _logger.d('Using server heartbeat interval: ${serverInterval}s');
+        } else {
+          _serverHeartbeatInterval = null;
+        }
+
         _logger.i('Successfully registered with discovery service');
         _logger.d('Service ID: $_serviceId');
         return true;
@@ -197,8 +267,77 @@ class SignageDiscoveryService {
     }
   }
 
+/// Register the player as an edge device (Issue #6, dual registration) so the
+  /// device registry can track it by type, capabilities and VPN reachability.
+  Future<bool> _registerAsEdgeDevice() async {
+    if (_deviceInfo == null) {
+      return false;
+    }
+    try {
+      final localIp = await DeviceInfoHelper.getLocalIpAddress();
+      final metadata = _deviceInfo!.toJson();
+      if (localIp.startsWith('100.')) {
+        metadata['tailscale_ip'] = localIp;
+      }
+
+      final deviceData = {
+        'device_name': '${AppConfig.serviceName}-${_deviceInfo!.deviceId}',
+        'device_type': 'signage_player',
+        'capabilities': _deviceInfo!.capabilities,
+        'platform_info': {
+          'platform': _deviceInfo!.platform,
+          'platform_version': _deviceInfo!.platformVersion,
+          'app_version': _deviceInfo!.appVersion,
+        },
+        'network_interfaces': [
+          {
+            'interface_name': 'default',
+            'ip_address': localIp,
+            'network_type': localIp.startsWith('100.') ? 'vpn' : 'ethernet',
+            'is_active': true,
+          },
+        ],
+        'metadata': metadata,
+      };
+
+      final url = '${_configService.discoveryServiceUrl}/api/v1/devices/register';
+      _logger.i('Registering as edge device at $url');
+      final response = await _dio.post(
+        url,
+        data: deviceData,
+        options: Options(
+          sendTimeout: AppConfig.discoverySendTimeout,
+          receiveTimeout: AppConfig.discoveryReceiveTimeout,
+          headers: {'Content-Type': 'application/json'},
+          validateStatus: (status) => status != null && status < 500,
+        ),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data as Map<String, dynamic>;
+        _deviceRegistrationId =
+            (data['device_id'] as String?) ?? (data['service_id'] as String?);
+        _isDeviceRegistered = true;
+        _logger.i('Successfully registered as edge device: $_deviceRegistrationId');
+        return true;
+      }
+      _logger.w('Edge device registration failed with status: ${response.statusCode}');
+      return false;
+    } on DioException catch (e) {
+      _logger.w('Edge device registration DioException: ${e.message}');
+      return false;
+    } catch (e, stackTrace) {
+      _logger.w('Edge device registration error: $e');
+      _logger.w('Stack trace: $stackTrace');
+      return false;
+    }
+  }
+
   /// Send heartbeat to discovery service
   Future<void> sendHeartbeat() async {
+    // Edge-device heartbeat (Issue #6) — independent of the service heartbeat.
+    await _sendDeviceHeartbeat();
+
     if (!_isRegistered || _serviceId == null) {
       _logger.d('Not registered, attempting registration...');
       await register();
@@ -226,8 +365,8 @@ class SignageDiscoveryService {
           headers: {
             'Content-Type': 'application/json',
           },
-          sendTimeout: const Duration(seconds: 5),
-          receiveTimeout: const Duration(seconds: 5),
+          sendTimeout: AppConfig.heartbeatSendTimeout,
+          receiveTimeout: AppConfig.heartbeatReceiveTimeout,
         ),
       );
 
@@ -260,18 +399,116 @@ class SignageDiscoveryService {
     }
   }
 
-  /// Start heartbeat timer
+/// Keep the edge-device registration alive (Issue #6). Independent of, and
+  /// in addition to, the service heartbeat.
+  Future<void> _sendDeviceHeartbeat() async {
+    if (!_isDeviceRegistered || _deviceRegistrationId == null) {
+      return;
+    }
+    try {
+      final url = '${_configService.discoveryServiceUrl}/api/v1/devices/heartbeat';
+      final data = {
+        'device_id': _deviceRegistrationId,
+        'status': 'healthy',
+        'metadata': {},
+      };
+      final response = await _dio.post(
+        url,
+        data: data,
+        options: Options(
+          headers: {'Content-Type': 'application/json'},
+          sendTimeout: AppConfig.heartbeatSendTimeout,
+          receiveTimeout: AppConfig.heartbeatReceiveTimeout,
+        ),
+      );
+      if (response.statusCode == 200) {
+        _logger.d('Edge device heartbeat sent successfully');
+      } else {
+        _logger.w('Edge device heartbeat failed with status: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      _logger.w('Edge device heartbeat DioException: ${e.message}');
+    } catch (e) {
+      _logger.w('Edge device heartbeat error: $e');
+    }
+  }
+  /// Start heartbeat timer using the server-suggested interval when available (Issue #7)
   void _startHeartbeat() {
+    final interval = _serverHeartbeatInterval ?? AppConfig.heartbeatInterval;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(
-      AppConfig.heartbeatInterval,
+      interval,
       (_) => sendHeartbeat(),
     );
-    _logger.d('Heartbeat timer started (${AppConfig.heartbeatInterval.inSeconds}s interval)');
+    _logger.d('Heartbeat timer started (${interval.inSeconds}s interval)');
   }
 
+  /// Retry registration periodically after a failure so the player does not stay
+  /// stuck in offline mode indefinitely (Issue #3).
+  void _startRegistrationRetry() {
+    if (_isRegistered) return;
+
+    _registrationRetryTimer?.cancel();
+    _registrationRetryTimer = Timer.periodic(
+      AppConfig.registrationRetryDelay,
+      (_) async {
+        if (_isRegistered) {
+          _registrationRetryTimer?.cancel();
+          _registrationRetryTimer = null;
+          return;
+        }
+        final ok = await register();
+        if (ok) {
+          _registrationRetryTimer?.cancel();
+          _registrationRetryTimer = null;
+          if (_heartbeatTimer == null) {
+            _startHeartbeat();
+          }
+          _logger.i('Registration recovered; heartbeat active');
+        } else {
+          _logger.d('Registration retry still failing; will retry again in '
+              '${AppConfig.registrationRetryDelay.inSeconds}s');
+        }
+      },
+    );
+    _logger.d('Registration retry timer started '
+        '(${AppConfig.registrationRetryDelay.inSeconds}s interval)');
+  }
+
+/// Deregister the edge-device registration (Issue #6).
+  Future<void> _deregisterDevice() async {
+    if (!_isDeviceRegistered || _deviceRegistrationId == null) {
+      return;
+    }
+    try {
+      final url =
+          '${_configService.discoveryServiceUrl}/api/v1/devices/$_deviceRegistrationId';
+      final response = await _dio.delete(
+        url,
+        options: Options(
+          sendTimeout: AppConfig.deregisterSendTimeout,
+          receiveTimeout: AppConfig.deregisterReceiveTimeout,
+        ),
+      );
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        _logger.i('Successfully deregistered edge device');
+      } else {
+        _logger.w('Edge device deregistration failed with status: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      _logger.w('Edge device deregistration DioException: ${e.message}');
+    } catch (e) {
+      _logger.w('Edge device deregistration error: $e');
+    } finally {
+      _isDeviceRegistered = false;
+      _deviceRegistrationId = null;
+    }
+  }
   /// Deregister from discovery service
   Future<void> deregister() async {
+    // Edge-device deregistration (Issue #6) — independent of service registration.
+    await _deregisterDevice();
+
     if (!_isRegistered || _serviceId == null) {
       _logger.d('Not registered, skipping deregistration');
       return;
@@ -281,10 +518,10 @@ class SignageDiscoveryService {
       _logger.i('Deregistering from discovery service...');
       
       final response = await _dio.delete(
-        '${AppConfig.discoveryRegisterEndpoint}/$_serviceId',
+        '${_configService.discoveryServiceUrl}/api/v1/services/$_serviceId',
         options: Options(
-          sendTimeout: const Duration(seconds: 5),
-          receiveTimeout: const Duration(seconds: 5),
+          sendTimeout: AppConfig.deregisterSendTimeout,
+          receiveTimeout: AppConfig.deregisterReceiveTimeout,
         ),
       );
 
@@ -303,11 +540,13 @@ class SignageDiscoveryService {
     }
   }
 
-  /// Stop the heartbeat timer and deregister
+  /// Stop the heartbeat timer, cancel any pending registration retry, and deregister
   Future<void> dispose() async {
     _logger.i('Disposing Discovery Service...');
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    _registrationRetryTimer?.cancel();
+    _registrationRetryTimer = null;
     await deregister();
     _logger.i('Discovery Service disposed');
   }
@@ -317,4 +556,7 @@ class SignageDiscoveryService {
   String? get serviceId => _serviceId;
   DeviceInfoModel? get deviceInfo => _deviceInfo;
   String? get lastError => _lastError;
+  Map<String, dynamic>? get discoveredTopology => _lastTopology;
+  bool get isDeviceRegistered => _isDeviceRegistered;
+  String? get deviceRegistrationId => _deviceRegistrationId;
 }

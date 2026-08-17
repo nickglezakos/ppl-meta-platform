@@ -32,6 +32,8 @@ class EdgeDeviceType(str, Enum):
     EDGE_CAMERA = "edge_camera"
     EDGE_VPN = "edge_vpn"
     RASPBERRY_PI = "raspberry_pi"
+    SIGNAGE_PLAYER = "signage_player"
+    DIGITAL_SIGNAGE = "digital_signage"
 
 
 class LicenseStatus(str, Enum):

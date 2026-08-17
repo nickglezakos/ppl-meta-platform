@@ -7,6 +7,7 @@ import 'package:signage_simple_player/services/discovery_service.dart';
 import 'package:signage_simple_player/services/config_service.dart';
 import 'package:signage_simple_player/widgets/player_controls.dart';
 import 'package:signage_simple_player/widgets/status_overlay.dart';
+import 'package:signage_simple_player/main.dart';
 
 /// Full-screen signage player screen
 /// 
@@ -87,6 +88,19 @@ class _SignagePlayerScreenState extends State<SignagePlayerScreen> {
     });
   }
 
+  /// Factory reset: clears all stored configuration and returns the player to
+  /// the initial Backend Setup screen (StartupScreen re-runs the config check
+  /// and shows the setup screen because nothing is configured).
+  Future<void> _doConfigureReset(
+      BuildContext parentContext, ConfigService configService) async {
+    await configService.resetAllConfiguration();
+    if (!parentContext.mounted) return;
+    Navigator.of(parentContext).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const StartupScreen()),
+      (route) => false,
+    );
+  }
+
   void _showConfigDialog() {
     final parentContext = context;
     final configService = parentContext.read<ConfigService>();
@@ -129,6 +143,16 @@ class _SignagePlayerScreenState extends State<SignagePlayerScreen> {
           ],
         ),
         actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop(); // close the dialog
+              _doConfigureReset(parentContext, configService);
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red.shade700,
+            ),
+            child: const Text('Reset & Reconfigure'),
+          ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Cancel'),

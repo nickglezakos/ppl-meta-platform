@@ -7,6 +7,8 @@ Keys are scoped with ACL tags matching the installation's Matrix group.
 All endpoints require authority admin authentication (session-based).
 """
 
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -43,8 +45,10 @@ class EnrollInstallationResponse(BaseModel):
     tailscale_ip_range: str = "100.64.0.0/10"
     headscale_server: str = ""
     matrix_group_id: str = ""
+    primary_node_ip: str | None = None
     tags: list[str] = []
     expires_in_seconds: int = 86400  # 24 hours
+    api_token: str = ""  # HMAC installation token for discovery auth (Issue #8)
 
 
 class VpnNodeInfo(BaseModel):
@@ -91,6 +95,12 @@ HEADSCALE_CLI = os.environ.get(
 
 # Pre-auth key TTL: 24 hours (bumped from 1h for manual enrollment convenience)
 PREAUTH_KEY_EXPIRY_HOURS = 24
+
+# Shared secret for HMAC installation tokens (Issue #8). Must match
+# ppl-meta-discovery's INSTALLATION_AUTH_SECRET.
+INSTALLATION_AUTH_SECRET = os.getenv(
+    "INSTALLATION_AUTH_SECRET", "ppl-meta-installation-auth-secret-dev"
+)
 
 
 def _run_headscale(args: list[str]) -> str:
@@ -215,6 +225,45 @@ def _list_nodes(user: str) -> list[dict]:
         return result if isinstance(result, list) else []
     except RuntimeError:
         return []
+
+
+def _node_tags(node: dict) -> list[str]:
+    """Return ACL tags for a headscale node dict, deriving node/client by hostname."""
+    raw_tags = list(node.get("tags") or [])
+    if not any("tag:node" in t or "tag:client" in t for t in raw_tags):
+        hostname = str(node.get("given_name", node.get("name", "")))
+        derived = (
+            "tag:node"
+            if hostname.startswith("eyenet-node") or "node" in hostname
+            else "tag:client"
+        )
+        raw_tags.append(derived)
+    return raw_tags
+
+
+def _find_primary_node_ip(matrix_group_id: str) -> str | None:
+    """Return the Tailscale IP of the primary (node) in a matrix group, if any."""
+    if not matrix_group_id:
+        return None
+    try:
+        nodes_data = _list_nodes(f"matrix-{matrix_group_id}")
+        for node in nodes_data:
+            if "tag:node" in _node_tags(node):
+                ips = node.get("ip_addresses") or []
+                if ips:
+                    return str(ips[0])
+    except RuntimeError:
+        return None
+    return None
+
+
+def _issue_installation_token(installation_uuid: str) -> str:
+    """Derive the HMAC-SHA256 installation token used for discovery auth (Issue #8)."""
+    return hmac.new(
+        INSTALLATION_AUTH_SECRET.encode("utf-8"),
+        str(installation_uuid).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def _fetch_all_nodes() -> VpnNodeListResponse:
@@ -396,12 +445,20 @@ async def enroll_installation(payload: EnrollInstallationRequest):
         tags,
     )
 
+    # Resolve the primary node's Tailscale IP (used by VPN-direct discovery)
+    primary_node_ip = _find_primary_node_ip(matrix_group_id)
+
+    # Issue the installation token for discovery service authentication (Issue #8)
+    api_token = _issue_installation_token(payload.installation_uuid)
+
     return EnrollInstallationResponse(
         auth_key=auth_key,
         tags=tags,
         matrix_group_id=matrix_group_id,
+        primary_node_ip=primary_node_ip,
         headscale_server="https://vpn.eyenet-vision.com",
         expires_in_seconds=PREAUTH_KEY_EXPIRY_HOURS * 3600,
+        api_token=api_token,
     )
 
 
@@ -452,6 +509,7 @@ async def list_matrix_group_nodes(matrix_id: str, _request: Request):
             ),
             online=node.get("online", False),
             last_seen=str(node.get("last_seen", "")),
+            tags=_node_tags(node),
         ))
 
     return VpnNodeListResponse(nodes=nodes)

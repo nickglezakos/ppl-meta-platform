@@ -1,5 +1,16 @@
 import 'package:flutter/material.dart';
+import 'dart:convert' show jsonDecode, jsonEncode;
+import 'package:http/http.dart' as http;
 import '../services/config_service.dart';
+
+/// Shared installation auth secret used to ask the discovery service to issue
+/// the local HMAC token. Defaults to the dev secret (matching discovery's
+/// default) so IDE/CLI builds work out of the box; override per-environment via:
+///   `--dart-define=INSTALL_AUTH_SECRET=<your_secret>`
+const String _installAuthSecret = String.fromEnvironment(
+  'INSTALL_AUTH_SECRET',
+  defaultValue: 'ppl-meta-installation-auth-secret-dev',
+);
 
 class SimpleSetupScreen extends StatefulWidget {
   final VoidCallback onSetupComplete;
@@ -42,23 +53,40 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
       final backendIP = _backendIPController.text.trim();
       final port = _portController.text.trim();
 
+      if (_installAuthSecret.isEmpty) {
+        throw Exception(
+          'Installation auth secret not configured. Rebuild with '
+          '--dart-define=INSTALL_AUTH_SECRET=<secret>.',
+        );
+      }
+
       print('🔍 Attempting to connect to Discovery Service at $backendIP:$port');
 
       // Save configuration
       final configService = await ConfigService.getInstance();
       await configService.saveBackendUrl(backendIP, port);
-      
+
       print('✅ Configuration saved for backend IP: $backendIP:$port');
 
-      // Test connection to Discovery Service
-      final discoveryUrl = 'http://$backendIP:$port';
-      // Simple HTTP check to verify discovery service is accessible
-      // Full initialization will happen in InitializationScreen
-      
-      print('✅ Configuration complete');
-      
+      // Local onboarding (Option 1): ask the local discovery service to issue the
+      // HMAC token using the build-time secret. No remote Authority round-trip.
+      final enrollment = await _fetchLocalToken(
+        enrollKey: _installAuthSecret,
+        uuid: '', // blank -> server generates a stable signage-<uuid>
+        discoveryUrl: configService.discoveryServiceUrl,
+      );
+
+      await configService.saveAuthorityCredentials(
+        applicationKey: '',
+        installationUuid: enrollment.uuid,
+      );
+      await configService.saveVpnMetadata(apiToken: enrollment.token);
+
+      print('🔐 Token issued by local discovery (Option 1)');
+
       setState(() {
-        _successMessage = 'Configuration saved! Proceeding to initialization...';
+        _successMessage =
+            'Configuration saved. Local token issued by discovery.';
       });
 
       // Wait a moment to show success message
@@ -66,7 +94,6 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
 
       // Call the completion callback to proceed
       widget.onSetupComplete();
-      
     } catch (e) {
       setState(() {
         _errorMessage = 'Connection failed: $e';
@@ -77,6 +104,47 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  /// Option 1 flow: ask the local discovery service to issue an HMAC
+  /// installation token bound to the given installation UUID (or one the server
+  /// generates when blank). Verified server-side against
+  /// INSTALLATION_AUTH_SECRET via the `X-Enroll-Key` header.
+  Future<({String uuid, String token})> _fetchLocalToken({
+    required String enrollKey,
+    required String uuid,
+    required String discoveryUrl,
+  }) async {
+    final resp = await http
+        .post(
+          Uri.parse('$discoveryUrl/api/v1/device-enroll'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Enroll-Key': enrollKey,
+          },
+          body: jsonEncode({'installation_uuid': uuid}),
+        )
+        .timeout(const Duration(seconds: 8));
+
+    if (resp.statusCode != 200) {
+      if (resp.statusCode == 401) {
+        throw Exception(
+          'Invalid install auth secret (401). It must match the discovery '
+          'service\'s INSTALLATION_AUTH_SECRET.',
+        );
+      }
+      throw Exception(
+        'Device enrollment failed (HTTP ${resp.statusCode}): ${resp.body}',
+      );
+    }
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    final returnedUuid = (data['installation_uuid'] as String?) ?? uuid;
+    final token = data['api_token'] as String? ?? '';
+    if (token.isEmpty) {
+      throw Exception('Device enrollment returned no token.');
+    }
+    return (uuid: returnedUuid, token: token);
   }
 
   @override
@@ -165,6 +233,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                     return null;
                   },
                 ),
+
                 const SizedBox(height: 32),
 
                 // Connect Button

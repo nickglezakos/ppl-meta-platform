@@ -19,6 +19,13 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+# Internal service token for service-to-service auth (Issue #8).
+# Must match shared/auth/service_auth.py INTERNAL_SERVICE_TOKEN.
+INTERNAL_SERVICE_TOKEN = os.getenv(
+    "INTERNAL_SERVICE_TOKEN",
+    "ppl-meta-internal-service-secret-key-change-in-production",
+)
+
 
 class ServiceConfig(BaseModel):
     """Service configuration for discovery registration."""
@@ -42,6 +49,7 @@ class DiscoveryClient:
         timeout: int = 10,
         retry_attempts: int = 3,
         retry_delay: int = 5,
+        service_name: Optional[str] = None,
     ):
         """Initialize discovery client.
 
@@ -50,11 +58,13 @@ class DiscoveryClient:
             timeout: Request timeout in seconds
             retry_attempts: Number of retry attempts for failed requests
             retry_delay: Delay between retry attempts in seconds
+            service_name: Name of the calling service (for X-Service-Name auth header)
         """
         self.discovery_url = discovery_url.rstrip("/")
         self.timeout = timeout
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
+        self.service_name = service_name
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(timeout))
 
         # Track registered services for this client instance
@@ -354,6 +364,15 @@ class DiscoveryClient:
         Returns:
             Response data or None if failed
         """
+        # Attach internal service-token auth headers (Issue #8) so the request is
+        # accepted by Discovery once AUTH_ENFORCE is enabled.
+        headers = dict(kwargs.get("headers") or {})
+        if self.service_name:
+            headers["Authorization"] = f"Bearer {INTERNAL_SERVICE_TOKEN}"
+            headers["X-Service-Name"] = self.service_name
+        if headers:
+            kwargs["headers"] = headers
+
         for attempt in range(self.retry_attempts):
             try:
                 response = await self.client.request(method, url, **kwargs)
@@ -393,13 +412,16 @@ class DiscoveryClient:
 _discovery_client: Optional[DiscoveryClient] = None
 
 
-async def get_discovery_client() -> DiscoveryClient:
+async def get_discovery_client(service_name: Optional[str] = None) -> DiscoveryClient:
     """Get or create the global discovery client instance."""
     global _discovery_client
 
     if _discovery_client is None:
         discovery_url = os.getenv("DISCOVERY_SERVICE_URL", "http://localhost:8006")
         _discovery_client = DiscoveryClient(discovery_url=discovery_url)
+
+    if service_name:
+        _discovery_client.service_name = service_name
 
     return _discovery_client
 
@@ -418,7 +440,7 @@ async def register_service(
 
     Convenience function for service registration.
     """
-    client = await get_discovery_client()
+    client = await get_discovery_client(service_name=service_name)
     config = ServiceConfig(
         service_name=service_name,
         service_id=service_id,

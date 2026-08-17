@@ -1,10 +1,18 @@
 """Platform registration client."""
+import hashlib
+import hmac
 import logging
+import os
 import requests
 from typing import Optional, Dict, Any
 import time
 
 logger = logging.getLogger(__name__)
+
+
+INSTALLATION_AUTH_SECRET = os.getenv(
+    "INSTALLATION_AUTH_SECRET", "ppl-meta-installation-auth-secret-dev"
+)
 
 
 class RegistrationClient:
@@ -22,7 +30,20 @@ class RegistrationClient:
         self.device_config = device_config
         self.is_registered = False
         self.registration_data: Optional[Dict] = None
-        
+
+    def _auth_headers(self) -> Dict[str, str]:
+        """HMAC installation-token auth headers (Issue #8)."""
+        installation_uuid = f"edge-camera-{self.device_config['id']}"
+        token = hmac.new(
+            INSTALLATION_AUTH_SECRET.encode(),
+            installation_uuid.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        return {
+            "Authorization": f"Bearer {token}",
+            "X-Installation-Uuid": installation_uuid,
+        }
+
     def register(self) -> bool:
         """
         Register device with discovery service.
@@ -53,6 +74,7 @@ class RegistrationClient:
             response = requests.post(
                 f"{self.discovery_url}/api/v1/services/register",
                 json=payload,
+                headers=self._auth_headers(),
                 timeout=10
             )
             
@@ -89,6 +111,7 @@ class RegistrationClient:
             
             response = requests.delete(
                 f"{self.discovery_url}/api/v1/services/{service_name}",
+                headers=self._auth_headers(),
                 timeout=10
             )
             
@@ -121,6 +144,7 @@ class RegistrationClient:
             
             response = requests.post(
                 f"{self.discovery_url}/api/v1/services/{service_name}/heartbeat",
+                headers=self._auth_headers(),
                 timeout=5
             )
             

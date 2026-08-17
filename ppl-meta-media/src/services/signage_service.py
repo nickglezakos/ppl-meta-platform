@@ -5,6 +5,7 @@ Business logic for video list management, synchronization, and playback control.
 """
 
 import logging
+import os
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -32,6 +33,14 @@ from ..schemas.signage import (
 
 # Use simple logging like other working services
 logger = logging.getLogger(__name__)
+
+
+def _discovery_auth_headers() -> dict:
+    """Service-token headers required by discovery once AUTH_ENFORCE is on."""
+    return {
+        "Authorization": f"Bearer {os.getenv('INTERNAL_SERVICE_TOKEN', 'ppl-meta-internal-service-secret-key-change-in-production')}",
+        "X-Service-Name": "ppl-meta-media",
+    }
 
 
 class SignageService:
@@ -747,7 +756,7 @@ class SignageSyncService:
                 discovery_url = "http://localhost:8006"  # Discovery service
                 logger.info(f"Querying discovery service at {discovery_url}/api/v1/services/{device_id}")
                 async with httpx.AsyncClient() as client:
-                    response = await client.get(f"{discovery_url}/api/v1/services/{device_id}", timeout=5.0)
+                    response = await client.get(f"{discovery_url}/api/v1/services/{device_id}", timeout=5.0, headers=_discovery_auth_headers())
                     response.raise_for_status()
                     discovery_device = response.json()
                 logger.info(f"Found device in discovery: {discovery_device.get('name')}")
@@ -844,7 +853,7 @@ class SignageSyncService:
         try:
             import httpx
             with httpx.Client(timeout=2.0) as client:
-                response = client.get("http://localhost:8006/api/v1/services")
+                response = client.get("http://localhost:8006/api/v1/services", headers=_discovery_auth_headers())
                 if response.status_code == 200:
                     services = response.json().get("services", [])
                     for service in services:
@@ -1029,7 +1038,7 @@ class SignageSyncService:
             logger.info(f"Querying discovery service at {discovery_url}/api/v1/services/{service_id}")
             
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{discovery_url}/api/v1/services/{service_id}")
+                response = await client.get(f"{discovery_url}/api/v1/services/{service_id}", headers=_discovery_auth_headers())
                 
                 if response.status_code == 200:
                     service_data = response.json()
@@ -1194,7 +1203,7 @@ class SignagePlaybackService:
             logger.info(f"Querying discovery service at {discovery_url}/api/v1/services/{service_id}")
             
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{discovery_url}/api/v1/services/{service_id}")
+                response = await client.get(f"{discovery_url}/api/v1/services/{service_id}", headers=_discovery_auth_headers())
                 
                 if response.status_code == 200:
                     service_data = response.json()

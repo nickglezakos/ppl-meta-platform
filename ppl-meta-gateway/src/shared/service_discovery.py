@@ -4,6 +4,7 @@ PPL Meta Discovery Service integration for the gateway service.
 
 import asyncio
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 # Import httpx for making requests to discovery service
@@ -17,6 +18,21 @@ logger = logging.getLogger(__name__)
 # PPL Meta Discovery Service URL
 DISCOVERY_SERVICE_URL = "http://localhost:8006"
 
+# Service-token auth (Issue #8): must match shared/auth/service_auth.py / Discovery.
+INTERNAL_SERVICE_TOKEN = os.getenv(
+    "INTERNAL_SERVICE_TOKEN",
+    "ppl-meta-internal-service-secret-key-change-in-production",
+)
+_SERVICE_NAME = "ppl-meta-gateway"
+
+
+def _auth_headers() -> dict:
+    """Service-token headers required by Discovery once AUTH_ENFORCE is on."""
+    return {
+        "Authorization": f"Bearer {INTERNAL_SERVICE_TOKEN}",
+        "X-Service-Name": _SERVICE_NAME,
+    }
+
 
 async def _make_discovery_request(method: str, endpoint: str, **kwargs) -> dict:
     """Make a request to the PPL Meta Discovery Service."""
@@ -26,8 +42,9 @@ async def _make_discovery_request(method: str, endpoint: str, **kwargs) -> dict:
 
     try:
         url = f"{DISCOVERY_SERVICE_URL}{endpoint}"
+        merged = {**kwargs, "headers": {**_auth_headers(), **(kwargs.get("headers") or {})}}
         async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
-            response = await client.request(method, url, **kwargs)
+            response = await client.request(method, url, **merged)
             if response.status_code < 400:
                 try:
                     return response.json()

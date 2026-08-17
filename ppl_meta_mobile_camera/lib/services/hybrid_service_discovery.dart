@@ -3,11 +3,16 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import '../core/models/auth_result.dart';
+import 'discovery_config_service.dart';
 import 'multicast_network_discovery.dart';
 
 /// Enhanced service discovery that combines multicast with PPL Meta Discovery Service
 class HybridServiceDiscoveryService {
   final EnhancedNetworkDiscoveryService _multicastService = EnhancedNetworkDiscoveryService();
+
+  /// Installation-token auth headers for discovery requests (Issue #8).
+  Future<Map<String, String>> _authHeaders() =>
+      DiscoveryConfigService.instance.authHeaders();
   
   /// Discover Node service using hybrid approach:
   /// 1. Try multicast discovery (local network)
@@ -50,12 +55,8 @@ class HybridServiceDiscoveryService {
     try {
       // REMOVED: No hardcoded discovery service endpoints - explicit user configuration required
       print('🔧 No hardcoded discovery endpoints available - user must explicitly configure');
-      return null;
-      }
-      
       debugPrint('⚠️ No discovery services responded');
       return null;
-      
     } catch (e) {
       debugPrint('❌ PPL Meta Discovery Service error: $e');
       return null;
@@ -67,7 +68,7 @@ class HybridServiceDiscoveryService {
     try {
       final response = await http.get(
         Uri.parse('$discoveryUrl/api/v1/services'),
-        headers: {'Accept': 'application/json'},
+        headers: {'Accept': 'application/json', ...await _authHeaders()},
       ).timeout(const Duration(seconds: 5));
       
       if (response.statusCode == 200) {
@@ -140,7 +141,7 @@ class HybridServiceDiscoveryService {
         try {
           final response = await http.get(
             Uri.parse('$discoveryUrl/api/v1/services'),
-            headers: {'Accept': 'application/json'},
+            headers: {'Accept': 'application/json', ...await _authHeaders()},
           ).timeout(const Duration(seconds: 5));
           
           if (response.statusCode == 200) {

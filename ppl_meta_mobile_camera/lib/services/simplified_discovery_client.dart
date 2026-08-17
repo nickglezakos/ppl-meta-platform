@@ -93,6 +93,11 @@ class SimplifiedDiscoveryClient {
     return null;
   }
   
+  /// Installation-token auth headers for discovery requests (Issue #8).
+  Future<Map<String, String>> _authHeaders() =>
+      DiscoveryConfigService.instance.authHeaders();
+
+  /// Discover services at a specific IP:port address
   /// Discover services at a specific IP:port address
   Future<List<ServiceInfo>> discoverServicesAtAddress(String ipPort) async {
     final url = 'http://$ipPort/api/v1/services';
@@ -102,7 +107,7 @@ class SimplifiedDiscoveryClient {
       
       final response = await http.get(
         Uri.parse(url),
-        headers: {'Accept': 'application/json'},
+        headers: {'Accept': 'application/json', ...await _authHeaders()},
       ).timeout(_timeout);
       
       if (response.statusCode != 200) {
@@ -209,7 +214,7 @@ class SimplifiedDiscoveryClient {
       
       final response = await http.get(
         Uri.parse(servicesUrl),
-        headers: {'Accept': 'application/json'},
+        headers: {'Accept': 'application/json', ...await _authHeaders()},
       ).timeout(_timeout);
       
       if (response.statusCode != 200) {

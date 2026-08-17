@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'discovery_config_service.dart';
 import 'multicast_network_discovery.dart';
 
 /// Service information from PPL Meta Discovery Service
@@ -117,6 +118,10 @@ class UnifiedDiscoveryService {
     _vpnNodeIp = ip;
   }
 
+  /// Installation-token auth headers for discovery requests (Issue #8).
+  Future<Map<String, String>> _authHeaders() =>
+      DiscoveryConfigService.instance.authHeaders();
+
   /// Check if VPN is connected and we have a known node IP
   bool get _isVpnConnected => _vpnNodeIp != null && _vpnNodeIp!.isNotEmpty;
 
@@ -208,7 +213,7 @@ class UnifiedDiscoveryService {
       final response = await _dio.get(
         '$vpnDiscoveryUrl/api/v1/discovery/topology?vpn=true',
         options: Options(
-          headers: {'Accept': 'application/json'},
+          headers: {'Accept': 'application/json', ...await _authHeaders()},
           sendTimeout: const Duration(seconds: 5),
           receiveTimeout: const Duration(seconds: 8),
         ),
@@ -266,7 +271,7 @@ class UnifiedDiscoveryService {
         final response = await _dio.get(
           '$url/api/v1/services',
           options: Options(
-            headers: {'Accept': 'application/json'},
+            headers: {'Accept': 'application/json', ...await _authHeaders()},
           ),
         );
 

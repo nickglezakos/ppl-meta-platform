@@ -1,0 +1,8 @@
+# Development / test-only dependencies for ppl-meta-discovery.
+# Install with:  python -m pip install -r requirements-dev.txt
+#
+# - pytest : test runner for tests/ (e.g., tests/test_auth.py)
+# - httpx  : required by Starlette's TestClient for the auth middleware round-trip tests
+
+pytest==7.4.3
+httpx==0.25.2
