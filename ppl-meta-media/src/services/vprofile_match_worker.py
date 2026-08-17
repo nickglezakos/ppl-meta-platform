@@ -305,6 +305,18 @@ class VProfileMatchWorker:
                 Trigger.trigger_mode == 'vprofile_match',
             ).all()
 
+            # Diagnostic: log total active triggers and their modes to help
+            # identify why vprofile_match triggers may be missed at startup.
+            all_active = db.query(Trigger).filter(Trigger.is_active == True).all()
+            modes = {}
+            for t in all_active:
+                modes[t.trigger_mode] = modes.get(t.trigger_mode, 0) + 1
+            logger.info(
+                "Startup vprofile restore: %d active vprofile_match trigger(s); "
+                "active trigger modes=%s",
+                len(triggers), modes,
+            )
+
             if not triggers:
                 logger.info("No active vprofile_match triggers to restore on startup")
                 return
@@ -385,6 +397,71 @@ class VProfileMatchWorker:
             "Activated vprofile_match trigger %s — %d groups, %d bytes in cache",
             trigger.uuid, len(group_ids), self.cache.memory_usage_bytes,
         )
+
+    async def ensure_trigger_loaded(self, trigger: Trigger) -> bool:
+        """
+        Ensure a trigger's group embeddings are loaded into the cache.
+
+        Lazily loads them on-demand if they are missing (e.g., the startup
+        restore in :meth:`load_all_active_triggers` returned no triggers, or
+        groups were evicted / never registered). This makes the evaluation
+        path resilient instead of silently evaluating against an empty cache.
+
+        Returns True when all of the trigger's groups are available in cache,
+        False otherwise (caller should skip evaluation).
+        """
+        trigger_id = str(trigger.uuid)
+
+        group_ids_raw = getattr(trigger, 'ppl_match_group_ids', None)
+        if not group_ids_raw:
+            logger.warning("Trigger %s has no ppl_match_group_ids — cannot load groups", trigger_id)
+            return False
+
+        try:
+            group_ids = json.loads(group_ids_raw) if isinstance(group_ids_raw, str) else group_ids_raw
+        except (json.JSONDecodeError, TypeError):
+            # Handle PostgreSQL array notation: {val1,val2}
+            if isinstance(group_ids_raw, str) and group_ids_raw.strip().startswith('{') and group_ids_raw.strip().endswith('}'):
+                items = group_ids_raw.strip()[1:-1].split(',')
+                group_ids = [item.strip().strip('"') for item in items if item.strip()]
+            else:
+                logger.error("Invalid ppl_match_group_ids for trigger %s: %s", trigger_id, group_ids_raw)
+                return False
+
+        if not group_ids:
+            logger.warning("Trigger %s has empty ppl_match_group_ids", trigger_id)
+            return False
+
+        cached = set(self.cache.group_ids)
+        missing = [gid for gid in group_ids if gid not in cached]
+
+        if not missing:
+            # Groups are already present — just ensure the trigger is tracked as active.
+            self._active_trigger_ids.add(trigger_id)
+            return True
+
+        logger.info(
+            "  🔄 Lazy-loading %d missing group(s) for trigger %s: %s",
+            len(missing), trigger_id, missing,
+        )
+
+        try:
+            await self.activate_trigger(trigger)
+        except Exception as e:
+            logger.error("Failed to lazy-load groups for trigger %s: %s", trigger_id, e)
+            return False
+
+        cached = set(self.cache.group_ids)
+        still_missing = [gid for gid in group_ids if gid not in cached]
+        if still_missing:
+            logger.warning(
+                "Groups still missing after lazy-load for trigger %s: %s",
+                trigger_id, still_missing,
+            )
+            return False
+
+        self._active_trigger_ids.add(trigger_id)
+        return True
 
     async def deactivate_trigger(self, trigger_uuid: str, group_ids: Optional[List[str]] = None):
         """
@@ -470,6 +547,7 @@ class VProfileMatchWorker:
         if negate:
             if len(all_matches) == 0:
                 match_info = {
+                    'mode': 'vprofile_match',
                     'group_ids': group_ids_list,
                     'threshold': threshold,
                     'negated': True,
@@ -486,6 +564,7 @@ class VProfileMatchWorker:
         if all_matches:
             best = all_matches[0]
             match_info = {
+                'mode': 'vprofile_match',
                 'group_ids': group_ids_list,
                 'threshold': threshold,
                 'negated': False,

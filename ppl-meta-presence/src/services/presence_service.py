@@ -644,6 +644,95 @@ class PresenceService:
 
         return session
 
+    def _installation_owner_uuid(self) -> str | None:
+        """Resolve the installation owner user UUID from the installation profile."""
+        user_uuid = getattr(self.installation_profile, "user_uuid", None)
+        return str(user_uuid) if isinstance(user_uuid, str) and user_uuid else None
+
+    async def process_trigger_match(
+        self,
+        camera_device_id: str,
+        trigger_uuid: str,
+        action_uuid: str | None,
+        match_info: dict,
+    ) -> PresenceSession:
+        """
+        Issue a camera-only (video-only) presence grant from an external trigger
+        that fired a successful people match.
+
+        Unlike a burst-driven session, the identity match already happened via
+        instant detection on the media service, so no QR or front burst is
+        required. This makes the grant immediately visible in the presence
+        session view and analytics tabs.
+        """
+        session_settings = self._current_session_settings()
+        installation_uuid = getattr(self.installation_profile, "installation_uuid", None) or "local-installation"
+        user_uuid = self._installation_owner_uuid() or "unknown-user"
+        device_uuid = camera_device_id or "video-only"
+
+        best_match = match_info.get("best_match") if isinstance(match_info.get("best_match"), dict) else {}
+        matched_group_uuid = self._active_presence_individual_group_id()
+        matched_member_uuid = best_match.get("matched_member_uuid") or match_info.get("matched_member_uuid")
+        similarity = best_match.get("similarity_score") or match_info.get("similarity_score")
+
+        session = PresenceSession(
+            installation_uuid=installation_uuid,
+            device_uuid=device_uuid,
+            user_uuid=user_uuid,
+            session_mode=PresenceSessionMode.CAMERA_ONLY,
+            assurance_level=PresenceAssuranceLevel.MEDIUM,
+            grant_type=PresenceGrantType.PRESENCE_MATCH,
+            status=PresenceSessionStatus.COMPLETED,
+            decision=PresenceDecisionState.GRANTED,
+            failure_reason_code=None,
+            retry_allowed=False,
+            detection_status="completed",
+            resolved_camera_uuid=camera_device_id,
+            matched_group_uuid=matched_group_uuid,
+            policy_source="platform_trigger",
+            trigger_type="presence_match",
+            action_type="presence_grant",
+            action_execution_status="not_applicable",
+            expires_at=datetime.utcnow() + timedelta(seconds=session_settings.session_timeout_seconds),
+            external_assets=PresenceExternalAssets(
+                trigger_uuid=trigger_uuid,
+                action_uuid=action_uuid,
+                individual_group_id=matched_group_uuid,
+            ),
+        )
+
+        self.sessions[session.session_uuid] = session
+        self.qr_tokens[session.qr_token] = session.session_uuid
+        self.repository.save_session(session)
+        self._record_decision(session, simulated_detection=False, reason_code="presence_ppl_match")
+
+        if not any(event.session_uuid == session.session_uuid for event in self.analytics_events):
+            event = PresenceAnalyticsEvent(
+                session_uuid=session.session_uuid,
+                session_mode=session.session_mode,
+                assurance_level=session.assurance_level,
+                grant_type=session.grant_type,
+                installation_uuid=installation_uuid,
+                user_uuid=user_uuid,
+                device_uuid=device_uuid,
+                outcome=PresenceDecisionState.GRANTED.value,
+                reason_code="presence_ppl_match",
+                matched_group_uuid=matched_group_uuid,
+                policy_source=session.policy_source,
+                trigger_type=session.trigger_type,
+                action_type=session.action_type,
+                action_execution_status=session.action_execution_status,
+                resolved_camera_uuid=camera_device_id,
+            )
+            self.analytics_events.append(event)
+            self.repository.save_analytics_event(event)
+
+        logger.info(
+            "✅ Video-only presence grant issued via trigger %s (camera=%s, member=%s, score=%s) session=%s",
+            trigger_uuid, camera_device_id, matched_member_uuid, similarity, session.session_uuid,
+        )
+        return session
+
     async def _start_camera_only_detection(self, session: PresenceSession) -> None:
         if self._remaining_attempt_capacity(session) <= 0:
             self._fail_session(session, "presence_attempt_limit_reached")
@@ -1681,7 +1770,10 @@ class PresenceService:
             return None
         if last_matched_at < session.created_at:
             return None
-        if match_info.get("mode") != "ppl_match":
+        # Accept both identity-matching trigger modes (single-camera ppl_match and
+        # multi-camera vprofile_match). Demographic triggers have no 'mode' and are
+        # therefore excluded here.
+        if match_info.get("mode") not in ("ppl_match", "vprofile_match"):
             return None
 
         best_match = match_info.get("best_match") if isinstance(match_info.get("best_match"), dict) else {}

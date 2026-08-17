@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     COMMUNICATIONS_SERVICE_URL: str = Field(
         default="http://localhost:8009", env="COMMUNICATIONS_SERVICE_URL"
     )
+    PRESENCE_SERVICE_URL: str = Field(
+        default="http://localhost:8011", env="PRESENCE_SERVICE_URL"
+    )
 
     # Standardized Mail Configuration (consistent across all services)
     MAIL_USERNAME: str = Field(default="", env="MAIL_USERNAME")

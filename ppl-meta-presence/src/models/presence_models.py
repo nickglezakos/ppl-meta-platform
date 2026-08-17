@@ -235,6 +235,21 @@ class ResetInstallationReservationsRequest(BaseModel):
     installation_uuid: str = "local-installation"
 
 
+class TriggerMatchRequest(BaseModel):
+    """Service-to-service payload issued by the media service when a
+    people-match trigger (ppl_match or vprofile_match) fires successfully and
+    a presence action is attached."""
+
+    camera_device_id: str
+    trigger_uuid: str
+    action_uuid: Optional[str] = None
+    match_info: Dict[str, Any] = Field(default_factory=dict)
+    matched_member_uuid: Optional[str] = None
+    similarity_score: Optional[float] = None
+    source_mvr_uuid: Optional[str] = None
+    matched_at: Optional[str] = None
+
+
 class PresenceExternalAssets(BaseModel):
     individual_group_id: Optional[str] = None
     trigger_uuid: Optional[str] = None

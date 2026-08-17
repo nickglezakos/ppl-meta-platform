@@ -374,13 +374,16 @@ Stop VPN + Matrix Only (Layered)
 
 ******   DEVELOPMENT    ******
 
-TEST all the fonr end apps after the HMAC development
-TEST the digital signage's keep alive
-Check improvements on the signage player rigid operation
-TEST the other services keep alive
+OK -- TEST all the front end apps after the HMAC development
+OK -- TEST the digital signage's keep alive
+OK -- Check improvements on the signage player rigid operation
+OK -- TEST the other services keep alive
 
-Document the digital signage based roles.
+OK -- DEBUG the presense service and mobile camera part affected by HMAC
 
+TEST the vprofile for solid operations
+
+CHECK and maybe FIX the camera shuffle on the camera screen upon (de)activation
 
 debug and optimise and document the people uniqueness
 
@@ -388,7 +391,6 @@ TEST people uniqueness
 
 ASK
 __Tier 2 threshold calibration__ — the defaults (`velocity_inconsistency_factor = 1.5`, `velocity_activation_threshold = 0`) are reasonable starting points but were tuned against synthetic tests. Real footage with jitter may need adjustment, and the `tier2_velocity_rejected` counter will tell you if it's over-rejecting.
-
 
 have routes and distanse from lense assigned to MVR
 have routes and distanse from lense assigned to instant detection
@@ -414,7 +416,16 @@ Rule set on crowd ampience
 analyse the matrix status
 analyse the headscale status
 
-clarify and update the software licences scheme
+clarify and update the software licences scheme:
+  software licences should start/open certain modules?
+  Matrix is a product? or just unlocks the enetrprise?
+  Eyenet VPN is a product? or just unlocks the enetrprise?
+  As the owner upgrades their software licence what do they get? (packages)
+  clarify the authority's role on the above (probalby metadata for the same
+   lic-XXXXXX UUID ?)
+
+Document and upgrade the licence threshold on product AND the default roles
+on each licecence tier.
 
 
 ******   TESTS    ******

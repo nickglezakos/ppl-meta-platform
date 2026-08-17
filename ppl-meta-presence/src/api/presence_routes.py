@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,12 +17,15 @@ from models.presence_models import (
     PresenceQrValidateRequest,
     ResetInstallationReservationsRequest,
     ReserveResourceRequest,
+    TriggerMatchRequest,
     UnreserveResourceRequest,
     UpdateActivePresenceGroupRequest,
     UpdateInstallationSettingsRequest,
     UpdateInstallationPolicyRequest,
 )
 from services.presence_service import PresenceService
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_filter_datetime(value: str | None) -> datetime | None:
@@ -395,3 +399,37 @@ def build_presence_router(service: PresenceService) -> APIRouter:
         }
 
     return router
+
+
+def build_internal_router(service: PresenceService) -> APIRouter:
+    """Service-to-service router (no user-auth dependency).
+
+    These endpoints are invoked by other platform services (e.g. the media
+    service trigger executor), not by authenticated end users.
+    """
+    router = APIRouter()
+
+    @router.post("/trigger-match")
+    async def record_trigger_match(request: TriggerMatchRequest):
+        try:
+            session = await service.process_trigger_match(
+                camera_device_id=request.camera_device_id,
+                trigger_uuid=request.trigger_uuid,
+                action_uuid=request.action_uuid,
+                match_info=request.match_info,
+            )
+        except Exception as exc:  # noqa: BLE001 - surface as HTTP 500 service-to-service
+            logger.exception("trigger-match processing failed: %s", exc)
+            raise HTTPException(status_code=502, detail=f"presence trigger-match failed: {exc}") from exc
+        return {
+            "success": True,
+            "data": {
+                "session_uuid": session.session_uuid,
+                "decision": session.decision.value,
+                "session_mode": session.session_mode.value,
+                "grant_type": session.grant_type.value,
+            },
+        }
+
+    return router
+

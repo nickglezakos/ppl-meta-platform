@@ -439,6 +439,25 @@ class InstantDetectionSubscriber:
                         logger.debug("  ⏭️ Camera %s not in trigger's camera list, skipping", event_camera_id)
                         continue
 
+                    # Ensure the trigger's group embeddings are loaded before evaluating.
+                    # Lazy-loads them if the startup restore missed them (otherwise the
+                    # in-memory comparison would always return 0 matches on an empty cache).
+                    try:
+                        groups_ready = await worker.ensure_trigger_loaded(trigger)
+                    except Exception as e:
+                        logger.warning("  ⚠️ Error ensuring groups loaded for trigger %s: %s", trigger.uuid, e)
+                        groups_ready = False
+
+                    if not groups_ready:
+                        logger.info("  ❌ SKIP: Trigger group embeddings not available (cache not loaded)")
+                        self._log_execution(
+                            db=db, trigger=trigger, passed=False,
+                            reason="Trigger group embeddings not available (cache not loaded)",
+                            match_info=None, detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+
                     # Fetch source embeddings — use deep-extracted UUIDs (same as legacy ppl_match) because
                     # Redis event-level source_mvr_uuids may be empty. deep extraction finds MVR UUIDs
                     # from person_objects, metadata, and individual fields.
@@ -856,8 +875,26 @@ class InstantDetectionSubscriber:
         logger.info(f"     Action Type: {action.action_type}")
         logger.info(f"     Action Name: {action.name}")
         
-        # Route to appropriate handler
-        if action.action_type == "digital_signage":
+        # Route to appropriate handler.
+        #
+        # Presence actions (the "Presence Action N" audit-log actions created by
+        # the presence service) are `action_type = "log"` but carry a presence
+        # marker. On a people-match trigger they must issue a video-only grant
+        # (process_trigger_match) in addition to the normal audit-log write.
+        if self._is_presence_action(action) and trigger.trigger_mode in ("ppl_match", "vprofile_match"):
+            await self._execute_presence_action(
+                action, trigger, db,
+                evaluation_reason=evaluation_reason,
+                match_info=match_info,
+            )
+            # Presence actions are audit-log actions; keep writing the log too.
+            if getattr(action, "action_type", None) == "log":
+                await self._execute_log_action(
+                    action, trigger, db,
+                    evaluation_reason=evaluation_reason,
+                    match_info=match_info,
+                )
+        elif action.action_type == "digital_signage":
             await self._execute_signage_action(
                 action,
                 trigger,
@@ -877,6 +914,39 @@ class InstantDetectionSubscriber:
             await self._execute_alert_action(action, trigger, db, evaluation_reason=evaluation_reason, match_info=match_info)
         else:
             logger.warning(f"     ⚠️ Unsupported action type: {action.action_type}")
+
+    def _is_presence_action(self, action) -> bool:
+        """Return True if an action represents a presence action.
+
+        Presence actions may be explicitly typed (`presence_grant`, ...) or be
+        the audit-log actions the presence service creates (`action_type="log"`
+        whose config carries a `category: "presence"` / `tags: presence` marker
+        and a "Presence Action" name).
+        """
+        action_type = getattr(action, "action_type", None) or ""
+        if action_type in ("presence_grant", "presence_log", "presence_notify", "presence_deny"):
+            return True
+
+        name = (getattr(action, "name", None) or "").strip()
+        if name.lower().startswith("presence action"):
+            return True
+
+        cfg = getattr(action, "action_config", None)
+        if isinstance(cfg, str) and cfg.strip():
+            try:
+                parsed = json.loads(cfg)
+            except (json.JSONDecodeError, TypeError):
+                return False
+            data = parsed.get("data", {}) if isinstance(parsed, dict) else {}
+            if not isinstance(data, dict):
+                return False
+            if data.get("category") == "presence":
+                return True
+            tags = data.get("tags", []) or []
+            if any(str(tag).lower() == "presence" for tag in tags):
+                return True
+        return False
+    
     
     async def _execute_signage_action(
         self,
@@ -1358,6 +1428,91 @@ class InstantDetectionSubscriber:
         
         except Exception as e:
             logger.error(f"     ❌ Error executing alert action: {e}", exc_info=True)
+
+    async def _execute_presence_action(
+        self,
+        action,
+        trigger: Trigger,
+        db: Session,
+        evaluation_reason: Optional[str] = None,
+        match_info: Optional[Dict[str, Any]] = None,
+    ):
+        """Issue a video-only presence grant by notifying the Presence service.
+
+        Called when a people-match trigger (ppl_match / vprofile_match) fires
+        successfully and a presence action is attached. The presence service
+        creates and grades a camera-only (video-only) grant visible in the
+        presence screen and analytics tabs.
+        """
+        logger.info("  📍 Executing presence action...")
+
+        # Only issue grants for people-match triggers. Presence actions on other
+        # trigger types (e.g. demographic) should not mint camera-only grants.
+        if getattr(trigger, "trigger_mode", None) not in ("ppl_match", "vprofile_match"):
+            logger.info(
+                "  ⏭️ Presence action skipped for trigger mode %r (people-match only)",
+                getattr(trigger, "trigger_mode", None),
+            )
+            return
+
+        presence_url = os.getenv(
+            "PRESENCE_SERVICE_URL",
+            getattr(get_config(), "PRESENCE_SERVICE_URL", "http://localhost:8011"),
+        ).rstrip("/")
+
+        endpoint = f"{presence_url}/api/v1/presence/trigger-match"
+
+        # Determine the camera that produced the match. vprofile_match stores
+        # source_camera_id in match_info; fall back to the event/detection data
+        # or the trigger's configured camera.
+        camera_device_id = None
+        if isinstance(match_info, dict):
+            camera_device_id = match_info.get("source_camera_id") or match_info.get("camera_id")
+        if not camera_device_id:
+            detection_data = getattr(self, "_current_detection_data", {}) or {}
+            camera_device_id = detection_data.get("camera_id")
+        if not camera_device_id:
+            camera_device_id = getattr(trigger, "camera_device_id", None)
+
+        if not camera_device_id:
+            logger.warning("  ⚠️ Presence action skipped: unable to resolve camera_device_id")
+            return
+
+        payload = {
+            "camera_device_id": camera_device_id,
+            "trigger_uuid": str(trigger.uuid),
+            "action_uuid": str(action.uuid),
+            "match_info": match_info or {},
+        }
+        if isinstance(match_info, dict):
+            best = match_info.get("best_match") if isinstance(match_info.get("best_match"), dict) else {}
+            payload["matched_member_uuid"] = best.get("matched_member_uuid")
+            payload["similarity_score"] = best.get("similarity_score")
+            payload["source_mvr_uuid"] = best.get("source_mvr_uuid")
+            payload["matched_at"] = match_info.get("matched_at")
+
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+                response = await client.post(endpoint, json=payload)
+        except httpx.HTTPError as e:
+            logger.error(f"  ❌ Presence service request failed: {e}", exc_info=True)
+            return
+
+        if response.status_code >= 400:
+            logger.error(
+                f"  ❌ Presence service rejected trigger-match: HTTP {response.status_code} {response.text[:300]}"
+            )
+            return
+
+        data = response.json()
+        session_info = data.get("data", {}) if isinstance(data, dict) else {}
+        logger.info(
+            "  ✅ Video-only presence grant issued: session=%s decision=%s mode=%s grant=%s",
+            session_info.get("session_uuid"),
+            session_info.get("decision"),
+            session_info.get("session_mode"),
+            session_info.get("grant_type"),
+        )
 
 
 # Global subscriber instance

@@ -10,7 +10,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.presence_routes import build_presence_router
+from api.presence_routes import build_internal_router, build_presence_router
 from config import config
 from database import test_connection
 from services.presence_service import PresenceService
@@ -45,6 +45,7 @@ app.add_middleware(
 )
 
 app.include_router(build_presence_router(presence_service), prefix="/api/v1/presence", tags=["presence"])
+app.include_router(build_internal_router(presence_service), prefix="/api/v1/presence", tags=["presence-internal"])
 
 
 @app.get("/")
