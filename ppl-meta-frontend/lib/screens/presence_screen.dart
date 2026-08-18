@@ -10,10 +10,12 @@ import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../core/api/api_client.dart';
 import '../core/providers/auth_provider.dart';
 import '../models/api_response.dart';
 import '../core/theme/app_theme.dart';
 import '../models/presence_models.dart';
+import '../services/individual_groups_api_client.dart';
 import '../services/presence_api_client.dart';
 import '../utils/platform_file_download.dart';
 import '../widgets/custom_app_bar.dart';
@@ -80,13 +82,21 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   late DateTime _sessionsEndDate;
   late DateTime _userDayAwardsStartDate;
   late DateTime _userDayAwardsEndDate;
-  String? _sessionsCameraUuid;
-  String? _sessionsGrantType;
   String? _selectedUserDayAwardQuery;
+  List<SessionFilter> _selectedSessionFilters = const [];
   final Map<String, List<PresenceSessionTraceSummary>> _userDayAwardSessions = {};
   final Set<String> _loadingUserDayAwardRows = <String>{};
   final Set<String> _expandedUserDayAwardRows = <String>{};
   final Map<String, String> _userDayAwardRowFilters = <String, String>{};
+  List<PresencePeopleProfile> _peopleProfiles = const [];
+  bool _isPeopleLoading = false;
+  bool _isPeopleSaving = false;
+  String? _peopleError;
+  final TextEditingController _peopleSearchController = TextEditingController();
+  String _peopleSearchQuery = '';
+  Timer? _peopleSearchDebounce;
+  List<SessionFilter> _sessionMemberFilterOptions = const [];
+  bool _sessionMemberOptionsLoading = false;
 
   String get _deviceReference => widget.stationMode ? 'presence-web-station' : 'presence-web-console';
 
@@ -148,7 +158,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _sessionsEndDate = DateTime.now();
     _sessionsStartDate = _sessionsEndDate.subtract(const Duration(days: 3));
     _userDayAwardsEndDate = DateTime.now();
@@ -157,6 +167,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadPresenceDashboard();
       _loadSessionsPage();
+      _loadPeopleProfiles();
       if (widget.stationMode) {
         _refreshExecutionState(renderIfMissing: true);
       }
@@ -171,6 +182,8 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     _locationLabelController.dispose();
     _sessionsUserQueryController.dispose();
     _userDayAwardUserController.dispose();
+    _peopleSearchController.dispose();
+    _peopleSearchDebounce?.cancel();
     super.dispose();
   }
 
@@ -332,6 +345,13 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     });
   }
 
+  List<String> _filterValues(String category) {
+    return _selectedSessionFilters
+        .where((f) => f.category == category)
+        .map((f) => f.value)
+        .toList();
+  }
+
   Future<void> _loadSessionsPage({int? offset}) async {
     setState(() {
       _isSessionsLoading = true;
@@ -342,8 +362,13 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       limit: _sessionsPageSize,
       offset: offset ?? _sessionsPage.offset,
       userQuery: _sessionsUserQueryController.text.trim(),
-      cameraUuid: _sessionsCameraUuid,
-      grantType: _sessionsGrantType,
+      cameraUuids: _filterValues('camera'),
+      grantTypes: _filterValues('grant_type'),
+      sessionModes: _filterValues('session_mode'),
+      decisions: _filterValues('decision'),
+      groupNames: _filterValues('group'),
+      memberNames: _filterValues('member'),
+      profileNames: _filterValues('profile'),
       startDate: DateTime(_sessionsStartDate.year, _sessionsStartDate.month, _sessionsStartDate.day),
       endDate: DateTime(_sessionsEndDate.year, _sessionsEndDate.month, _sessionsEndDate.day, 23, 59, 59),
     );
@@ -370,8 +395,13 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
         limit: exportPageSize,
         offset: offset,
         userQuery: _sessionsUserQueryController.text.trim(),
-        cameraUuid: _sessionsCameraUuid,
-        grantType: _sessionsGrantType,
+        cameraUuids: _filterValues('camera'),
+        grantTypes: _filterValues('grant_type'),
+        sessionModes: _filterValues('session_mode'),
+        decisions: _filterValues('decision'),
+        groupNames: _filterValues('group'),
+        memberNames: _filterValues('member'),
+        profileNames: _filterValues('profile'),
         startDate: DateTime(_sessionsStartDate.year, _sessionsStartDate.month, _sessionsStartDate.day),
         endDate: DateTime(_sessionsEndDate.year, _sessionsEndDate.month, _sessionsEndDate.day, 23, 59, 59),
       );
@@ -1202,6 +1232,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
               Tab(icon: Icon(Icons.play_circle_outline), text: 'Actions'),
               Tab(icon: Icon(Icons.analytics_outlined), text: 'Analytics'),
               Tab(icon: Icon(Icons.list_alt_outlined), text: 'Sessions'),
+              Tab(icon: Icon(Icons.people_outline), text: 'People'),
               Tab(icon: Icon(Icons.settings_outlined), text: 'Settings'),
             ],
           ),
@@ -1214,6 +1245,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
               _buildActionsTab(context),
               _buildAnalyticsTab(context),
               _buildSessionsTab(context),
+              _buildPeopleTab(context),
               _buildSettingsTab(context),
             ],
           ),
@@ -1564,6 +1596,342 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     );
   }
 
+  Future<void> _loadPeopleProfiles({String? query}) async {
+    setState(() {
+      _isPeopleLoading = true;
+      _peopleError = null;
+    });
+    final effectiveQuery = (query ?? _peopleSearchQuery).trim();
+    final resp = await _apiClient.listPeopleProfiles(
+      query: effectiveQuery.isEmpty ? null : effectiveQuery,
+      limit: 200,
+    );
+    if (!mounted) return;
+    setState(() {
+      _peopleProfiles = resp.success ? (resp.data ?? _peopleProfiles) : _peopleProfiles;
+      _peopleError = resp.success ? null : resp.error;
+      _isPeopleLoading = false;
+    });
+  }
+
+  void _onPeopleSearchChanged(String value) {
+    // Immediate rebuild so the clear-button suffix appears/disappears as typed.
+    setState(() {});
+    _peopleSearchDebounce?.cancel();
+    _peopleSearchDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      setState(() => _peopleSearchQuery = value.trim());
+      _loadPeopleProfiles(query: value.trim());
+    });
+  }
+
+  Widget _buildPeopleTab(BuildContext context) {
+    final List<Widget> body;
+    if (_isPeopleLoading) {
+      body = [
+        const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
+      ];
+    } else if (_peopleError != null) {
+      body = [Text(_peopleError!, style: const TextStyle(color: Colors.orangeAccent))];
+    } else if (_peopleProfiles.isEmpty) {
+      final emptyMessage = _peopleSearchQuery.isNotEmpty
+          ? 'No people profiles match "${_peopleSearchQuery}".'
+          : 'No people profiles yet. Create one to represent a person across groups.';
+      body = [
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              emptyMessage,
+              style: TextStyle(color: Colors.grey[500]),
+            ),
+          ),
+        ),
+      ];
+    } else {
+      body = _peopleProfiles.map((profile) => _buildPeopleCard(context, profile)).toList();
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadPeopleProfiles,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'People Profiles',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Manage person identity profiles (PPP) linked to group members.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
+                    ),
+                  ],
+                ),
+              ),
+              FilledButton.icon(
+                icon: const Icon(Icons.person_add, size: 18),
+                label: const Text('New Profile'),
+                onPressed: _isPeopleSaving ? null : () => _showPeopleProfileDialog(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _peopleSearchController,
+            decoration: InputDecoration(
+              labelText: 'Search profiles',
+              hintText: 'Name, email, phone, external ref\u2026',
+              prefixIcon: const Icon(Icons.search),
+              border: const OutlineInputBorder(),
+              isDense: true,
+              suffixIcon: _peopleSearchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear),
+                      tooltip: 'Clear search',
+                      onPressed: () {
+                        _peopleSearchController.clear();
+                        _onPeopleSearchChanged('');
+                      },
+                    ),
+            ),
+            onChanged: _onPeopleSearchChanged,
+          ),
+          if (_peopleSearchQuery.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Showing results for "$_peopleSearchQuery".',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[500]),
+            ),
+          ],
+          const SizedBox(height: 16),
+          ...body,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPeopleCard(BuildContext context, PresencePeopleProfile profile) {
+    final chips = <Widget>[
+      _TraceChip(label: '${profile.linkedMemberCount} linked'),
+      if (profile.email != null && profile.email!.isNotEmpty) _TraceChip(label: profile.email!),
+      if (profile.phone != null && profile.phone!.isNotEmpty) _TraceChip(label: profile.phone!),
+      if (profile.externalRef != null && profile.externalRef!.isNotEmpty)
+        _TraceChip(label: 'Ref: ${profile.externalRef!}'),
+    ];
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              profile.name,
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (profile.status != 'active') ...[
+                            const SizedBox(width: 8),
+                            _TraceChip(label: profile.status),
+                          ],
+                        ],
+                      ),
+                      if (profile.pppUuid.isNotEmpty)
+                        Text(
+                          _truncateId(profile.pppUuid),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[500]),
+                        ),
+                    ],
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Edit profile',
+                      icon: const Icon(Icons.edit_outlined, size: 20),
+                      onPressed: _isPeopleSaving ? null : () => _showPeopleProfileDialog(context, profile: profile),
+                    ),
+                    IconButton(
+                      tooltip: 'Delete profile',
+                      icon: const Icon(Icons.delete_outline, size: 20),
+                      onPressed: _isPeopleSaving ? null : () => _deletePeopleProfile(context, profile),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: chips),
+            if (profile.notes != null && profile.notes!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(profile.notes!, style: Theme.of(context).textTheme.bodyMedium),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deletePeopleProfile(BuildContext context, PresencePeopleProfile profile) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete People Profile'),
+        content: Text('Deactivate profile "${profile.name}"? Linked members will no longer show a profile name.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _isPeopleSaving = true);
+    final resp = await _apiClient.deletePeopleProfile(profile.pppUuid);
+    if (!mounted) return;
+    setState(() => _isPeopleSaving = false);
+    if (resp.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('People profile deleted'), duration: Duration(seconds: 2)),
+      );
+      await _loadPeopleProfiles();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(resp.error ?? 'Delete failed')),
+      );
+    }
+  }
+
+  Future<void> _showPeopleProfileDialog(BuildContext context, {PresencePeopleProfile? profile}) async {
+    final isEdit = profile != null;
+    final name = TextEditingController(text: profile?.name ?? '');
+    final email = TextEditingController(text: profile?.email ?? '');
+    final phone = TextEditingController(text: profile?.phone ?? '');
+    final notes = TextEditingController(text: profile?.notes ?? '');
+    final external = TextEditingController(text: profile?.externalRef ?? '');
+    String? dialogError;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(isEdit ? 'Edit People Profile' : 'New People Profile'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: name,
+                  decoration: const InputDecoration(labelText: 'Name *', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: email,
+                  decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: phone,
+                  decoration: const InputDecoration(labelText: 'Phone', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: external,
+                  decoration: const InputDecoration(labelText: 'External Ref', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: notes,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Notes', border: OutlineInputBorder()),
+                ),
+                if (dialogError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Text(dialogError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () async {
+                final trimmed = name.text.trim();
+                if (trimmed.isEmpty) {
+                  setDialogState(() => dialogError = 'Name is required.');
+                  return;
+                }
+                setDialogState(() => dialogError = null);
+                setState(() => _isPeopleSaving = true);
+                ApiResponse<PresencePeopleProfile> resp;
+                if (isEdit) {
+                  resp = await _apiClient.updatePeopleProfile(
+                    pppUuid: profile!.pppUuid,
+                    name: trimmed,
+                    email: email.text.trim(),
+                    phone: phone.text.trim(),
+                    notes: notes.text.trim(),
+                    externalRef: external.text.trim(),
+                  );
+                } else {
+                  resp = await _apiClient.createPeopleProfile(
+                    name: trimmed,
+                    email: email.text.trim(),
+                    phone: phone.text.trim(),
+                    notes: notes.text.trim(),
+                    externalRef: external.text.trim(),
+                  );
+                }
+                if (context.mounted) setState(() => _isPeopleSaving = false);
+                if (resp.success) {
+                  if (context.mounted) Navigator.pop(context, true);
+                } else if (context.mounted) {
+                  setDialogState(() => dialogError = resp.error ?? 'Save failed');
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved == true && mounted) {
+      await _loadPeopleProfiles();
+    }
+    name.dispose();
+    email.dispose();
+    phone.dispose();
+    notes.dispose();
+    external.dispose();
+  }
+
   Widget _buildSettingsTab(BuildContext context) {
     return _buildTabbedList([
       _buildAdminSection(context),
@@ -1804,6 +2172,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
                     _TraceChip(label: _interactionLabelForSession(session)),
                     if (session.cameraLabel != null && session.cameraLabel!.isNotEmpty)
                       _TraceChip(label: session.cameraLabel!),
+                    ..._matchedPersonChips(session),
                   ],
                 ),
               ],
@@ -1815,7 +2184,49 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     }).toList();
   }
 
+  List<Widget> _matchedPersonChips(PresenceSessionTraceSummary session) {
+    final chips = <Widget>[];
+    String capitalize(String value) {
+      if (value.isEmpty) return value;
+      return value[0].toUpperCase() + value.substring(1);
+    }
+
+    if (session.matchedIndividualGroupName != null &&
+        session.matchedIndividualGroupName!.isNotEmpty) {
+      chips.add(_TraceChip(label: session.matchedIndividualGroupName!));
+    }
+    if (session.matchedIndividualGroupId != null &&
+        session.matchedIndividualGroupId!.isNotEmpty) {
+      chips.add(_TraceChip(label: _truncateId(session.matchedIndividualGroupId!)));
+    }
+    if (session.matchedMemberNumber != null) {
+      chips.add(_TraceChip(label: 'Group Member ${session.matchedMemberNumber}'));
+    }
+    if (session.matchedMemberName != null && session.matchedMemberName!.isNotEmpty) {
+      chips.add(_TraceChip(label: session.matchedMemberName!));
+    }
+    if (session.matchedGender != null && session.matchedGender!.isNotEmpty) {
+      chips.add(_TraceChip(label: capitalize(session.matchedGender!)));
+    }
+    if (session.matchedPppUuid != null && session.matchedPppUuid!.isNotEmpty) {
+      chips.add(_TraceChip(label: 'Profile ${_truncateId(session.matchedPppUuid!)}'));
+    } else if (session.matchedMemberName != null && session.matchedMemberName!.isNotEmpty) {
+      chips.add(_TraceChip(label: 'No Profile'));
+    }
+    if (session.matchedAgeMin != null || session.matchedAgeMax != null) {
+      final age = <String>[
+        if (session.matchedAgeMin != null) '${session.matchedAgeMin}',
+        if (session.matchedAgeMax != null) '${session.matchedAgeMax}',
+      ].join('-');
+      if (age.isNotEmpty) {
+        chips.add(_TraceChip(label: '$age yrs'));
+      }
+    }
+    return chips;
+  }
+
   Widget _buildSessionsFilters(BuildContext context) {
+    final count = _selectedSessionFilters.length;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1823,117 +2234,239 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2)),
       ),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 240,
-            child: TextField(
-              controller: _sessionsUserQueryController,
-              decoration: const InputDecoration(
-                labelText: 'User',
-                hintText: 'Email, username, or id',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.search),
-              ),
-              onSubmitted: (_) => _loadSessionsPage(offset: 0),
-            ),
-          ),
-          SizedBox(
-            width: 220,
-            child: DropdownButtonFormField<String?>(
-              isExpanded: true,
-              value: _sessionsCameraUuid,
-              decoration: const InputDecoration(
-                labelText: 'Camera',
-                border: OutlineInputBorder(),
-              ),
-              items: [
-                const DropdownMenuItem<String?>(value: null, child: Text('All cameras')),
-                ..._cameras.map(
-                  (camera) => DropdownMenuItem<String?>(value: camera.deviceId, child: Text(camera.name)),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 220,
+                child: TextField(
+                  controller: _sessionsUserQueryController,
+                  decoration: const InputDecoration(
+                    labelText: 'User',
+                    hintText: 'Email, username, or id',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.search),
+                    isDense: true,
+                  ),
+                  onSubmitted: (_) => _loadSessionsPage(offset: 0),
                 ),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _sessionsCameraUuid = value;
-                });
-                _loadSessionsPage(offset: 0);
-              },
-            ),
-          ),
-          SizedBox(
-            width: 220,
-            child: DropdownButtonFormField<String?>(
-              isExpanded: true,
-              value: _sessionsGrantType,
-              decoration: const InputDecoration(
-                labelText: 'Grant type',
-                border: OutlineInputBorder(),
               ),
-              items: [
-                const DropdownMenuItem<String?>(value: null, child: Text('All grant types')),
-                ..._grantTypes.map(
-                  (grant) => DropdownMenuItem<String?>(value: grant.key, child: Text(grant.label)),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.tune),
+                label: Text(count == 0 ? 'Filters' : 'Filters ($count)'),
+                onPressed: () => _showSessionFilterDialog(context),
+              ),
+              _buildDateFilterButton(
+                context,
+                label: 'Start',
+                value: _sessionsStartDate,
+                onPicked: (value) {
+                  setState(() {
+                    _sessionsStartDate = value;
+                    if (_sessionsEndDate.isBefore(value)) {
+                      _sessionsEndDate = value;
+                    }
+                  });
+                  _loadSessionsPage(offset: 0);
+                },
+              ),
+              _buildDateFilterButton(
+                context,
+                label: 'End',
+                value: _sessionsEndDate,
+                onPicked: (value) {
+                  setState(() {
+                    _sessionsEndDate = value;
+                    if (_sessionsStartDate.isAfter(value)) {
+                      _sessionsStartDate = value;
+                    }
+                  });
+                  _loadSessionsPage(offset: 0);
+                },
+              ),
+              if (count > 0)
+                TextButton.icon(
+                  icon: const Icon(Icons.clear_all),
+                  label: const Text('Clear all'),
+                  onPressed: _isSessionsLoading ? null : () => _applySessionFilters(const []),
                 ),
+              OutlinedButton.icon(
+                onPressed: _isDownloadingSessions || _isSessionsLoading ? null : _downloadSessionsWorkbook,
+                icon: _isDownloadingSessions
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.download_outlined),
+                label: Text(_isDownloadingSessions ? 'Downloading...' : 'Download Excel'),
+              ),
+            ],
+          ),
+          if (count > 0) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final filter in _selectedSessionFilters)
+                  InputChip(
+                    label: Text('${_filterCategoryLabel(filter.category)}: ${filter.label}'),
+                    onDeleted: _isSessionsLoading ? null : () => _removeSessionFilter(filter),
+                  ),
               ],
-              onChanged: (value) {
-                setState(() {
-                  _sessionsGrantType = value;
-                });
-                _loadSessionsPage(offset: 0);
-              },
             ),
-          ),
-          _buildDateFilterButton(
-            context,
-            label: 'Start',
-            value: _sessionsStartDate,
-            onPicked: (value) {
-              setState(() {
-                _sessionsStartDate = value;
-                if (_sessionsEndDate.isBefore(value)) {
-                  _sessionsEndDate = value;
-                }
-              });
-              _loadSessionsPage(offset: 0);
-            },
-          ),
-          _buildDateFilterButton(
-            context,
-            label: 'End',
-            value: _sessionsEndDate,
-            onPicked: (value) {
-              setState(() {
-                _sessionsEndDate = value;
-                if (_sessionsStartDate.isAfter(value)) {
-                  _sessionsStartDate = value;
-                }
-              });
-              _loadSessionsPage(offset: 0);
-            },
-          ),
-          FilledButton.icon(
-            onPressed: () => _loadSessionsPage(offset: 0),
-            icon: const Icon(Icons.filter_alt_outlined),
-            label: const Text('Apply'),
-          ),
-          OutlinedButton.icon(
-            onPressed: _isDownloadingSessions || _isSessionsLoading ? null : _downloadSessionsWorkbook,
-            icon: _isDownloadingSessions
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.download_outlined),
-            label: Text(_isDownloadingSessions ? 'Downloading...' : 'Download Excel'),
-          ),
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _showSessionFilterDialog(BuildContext context) async {
+    if (_sessionMemberOptionsLoading) {
+      return;
+    }
+    await _ensureSessionMemberOptionsLoaded();
+    if (!mounted) {
+      return;
+    }
+    final result = await showDialog<List<SessionFilter>>(
+      context: context,
+      builder: (context) => _SessionFilterDialog(
+        available: _sessionFilterOptions(),
+        selected: _selectedSessionFilters,
+      ),
+    );
+    if (result != null) {
+      await _applySessionFilters(result);
+    }
+  }
+
+  /// Lazily loads the group-member names (across all available groups) used as
+  /// "Member" filter options in the session filter dialog.
+  Future<void> _ensureSessionMemberOptionsLoaded() async {
+    if (_sessionMemberOptionsLoading) {
+      return;
+    }
+    if (_availableIndividualGroups.isEmpty) {
+      return;
+    }
+    setState(() => _sessionMemberOptionsLoading = true);
+    final groupsClient = IndividualGroupsApiClient(ref.read(apiClientProvider));
+    final memberNames = <String>{};
+    try {
+      final results = await Future.wait(
+        _availableIndividualGroups
+            .map((group) => groupsClient.getGroupMembers(group.individualGroupId, limit: 200))
+            .toList(),
+      );
+      for (final response in results) {
+        if (!response.success || response.data == null) {
+          continue;
+        }
+        for (final member in response.data!.members) {
+          final name = (member.name ?? '').trim();
+          if (name.isNotEmpty) {
+            memberNames.add(name);
+          }
+        }
+      }
+    } catch (_) {
+      // Non-fatal; the member filter options simply stay empty.
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sessionMemberOptionsLoading = false;
+          _sessionMemberFilterOptions = memberNames
+              .map((name) => SessionFilter(category: 'member', value: name, label: name))
+              .toList()
+            ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+        });
+      }
+    }
+  }
+
+  Future<void> _applySessionFilters(List<SessionFilter> filters) async {
+    setState(() => _selectedSessionFilters = filters);
+    await _loadSessionsPage(offset: 0);
+  }
+
+  Future<void> _removeSessionFilter(SessionFilter filter) async {
+    final next = _selectedSessionFilters.where((f) => !f.sameAs(filter)).toList();
+    setState(() => _selectedSessionFilters = next);
+    await _loadSessionsPage(offset: 0);
+  }
+
+  List<SessionFilter> _sessionFilterOptions() {
+    final list = <SessionFilter>[];
+    for (final grant in _grantTypes) {
+      list.add(SessionFilter(category: 'grant_type', value: grant.key, label: grant.label));
+    }
+    const modes = <(String, String)>[
+      ('qr_only', 'QR Only'),
+      ('camera_only', 'Camera Only'),
+      ('qr_plus_camera', 'QR + Camera'),
+    ];
+    for (final mode in modes) {
+      list.add(SessionFilter(category: 'session_mode', value: mode.$1, label: mode.$2));
+    }
+    const decisions = <(String, String)>[
+      ('granted', 'Granted'),
+      ('denied', 'Denied'),
+      ('pending', 'Pending'),
+      ('failed', 'Failed'),
+      ('retry_required', 'Retry Required'),
+    ];
+    for (final decision in decisions) {
+      list.add(SessionFilter(category: 'decision', value: decision.$1, label: decision.$2));
+    }
+    for (final camera in _cameras) {
+      if (camera.deviceId.isNotEmpty) {
+        list.add(SessionFilter(category: 'camera', value: camera.deviceId, label: camera.name));
+      }
+    }
+    for (final group in _availableIndividualGroups) {
+      final groupName = group.name.trim();
+      if (groupName.isNotEmpty) {
+        list.add(SessionFilter(category: 'group', value: groupName, label: groupName));
+      }
+    }
+    for (final member in _sessionMemberFilterOptions) {
+      list.add(SessionFilter(category: 'member', value: member.label, label: member.label));
+    }
+    for (final profile in _peopleProfiles) {
+      final profileName = profile.name.trim();
+      if (profileName.isNotEmpty) {
+        list.add(SessionFilter(category: 'profile', value: profileName, label: profileName));
+      }
+    }
+    return list;
+  }
+
+  String _filterCategoryLabel(String category) {
+    switch (category) {
+      case 'grant_type':
+        return 'Grant';
+      case 'session_mode':
+        return 'Mode';
+      case 'decision':
+        return 'Decision';
+      case 'camera':
+        return 'Camera';
+      case 'group':
+        return 'Group';
+      case 'member':
+        return 'Member';
+      case 'profile':
+        return 'Profile';
+      default:
+        return category;
+    }
   }
 
   Widget _buildDateFilterButton(
@@ -2599,6 +3132,7 @@ class _PresenceSessionInspectorState extends State<_PresenceSessionInspector> {
   PresenceSessionTraceDetails? _trace;
   List<PresenceDecisionRecordDetails> _decisionHistory = const [];
   bool _isLoading = true;
+  bool _creatingProfile = false;
   String? _error;
 
   @override
@@ -2636,6 +3170,85 @@ class _PresenceSessionInspectorState extends State<_PresenceSessionInspector> {
           : actionPlanResponse.error ?? decisionResponse.error ?? traceResponse.error;
       _isLoading = false;
     });
+  }
+
+  PresenceSessionDetails _fallbackSession() {
+    return PresenceSessionDetails(
+      sessionUuid: widget.session.sessionUuid,
+      status: widget.session.status,
+      sessionMode: widget.session.sessionMode,
+      assuranceLevel: widget.session.assuranceLevel,
+      grantType: widget.session.grantType,
+      decision: 'unknown',
+      qrStatus: widget.session.qrStatus,
+      detectionStatus: 'unknown',
+      matchedGroupUuid: widget.session.matchedGroupUuid,
+      matchedIndividualGroupId: widget.session.matchedIndividualGroupId,
+      matchedIndividualGroupName: widget.session.matchedIndividualGroupName,
+      matchedMemberNumber: widget.session.matchedMemberNumber,
+      matchedMemberName: widget.session.matchedMemberName,
+      matchedGender: widget.session.matchedGender,
+      matchedAgeMin: widget.session.matchedAgeMin,
+      matchedAgeMax: widget.session.matchedAgeMax,
+      matchedPppUuid: widget.session.matchedPppUuid,
+      matchedMemberUuid: widget.session.matchedMemberUuid,
+      policySource: null,
+      triggerType: null,
+      actionType: null,
+      actionExecutionStatus: null,
+      resolvedCameraUuid: null,
+      resolvedCollectionUuid: null,
+      createdAt: widget.session.createdAt?.toIso8601String(),
+      externalAssets: null,
+    );
+  }
+
+  PresenceSessionDetails get _resolvedSession => _trace?.session ?? _fallbackSession();
+
+  bool _canCreateProfile(PresenceSessionDetails s) {
+    final hasMember = (s.matchedMemberName != null && s.matchedMemberName!.isNotEmpty) &&
+        (s.matchedMemberUuid != null && s.matchedMemberUuid!.isNotEmpty);
+    final notLinked = s.matchedPppUuid == null || s.matchedPppUuid!.isEmpty;
+    return notLinked && hasMember;
+  }
+
+  Future<void> _createProfileForSession(PresenceSessionDetails s) async {
+    if (_creatingProfile) return;
+    final name = s.matchedMemberName?.trim();
+    final individualId = s.matchedMemberUuid;
+    final groupId = s.matchedIndividualGroupId;
+    if (name == null || name.isEmpty || individualId == null || individualId.isEmpty) {
+      return;
+    }
+    setState(() => _creatingProfile = true);
+    try {
+      final created = await widget.apiClient.createPeopleProfile(name: name);
+      if (!created.success || created.data == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(created.error ?? 'Failed to create profile')),
+          );
+        }
+        return;
+      }
+      final pppUuid = created.data!.pppUuid;
+      if (groupId != null && groupId.isNotEmpty) {
+        await widget.apiClient.linkMemberToPeopleProfile(
+          pppUuid: pppUuid,
+          groupId: groupId,
+          individualId: individualId,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Create profile error: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _creatingProfile = false);
+        await _loadDetails();
+      }
+    }
   }
 
   @override
@@ -2679,25 +3292,21 @@ class _PresenceSessionInspectorState extends State<_PresenceSessionInspector> {
                       padding: const EdgeInsets.only(bottom: 16),
                       child: Text(_error!, style: const TextStyle(color: Colors.orangeAccent)),
                     ),
-                  _SessionOverviewCard(session: _trace?.session ?? PresenceSessionDetails(
-                    sessionUuid: widget.session.sessionUuid,
-                    status: widget.session.status,
-                    sessionMode: widget.session.sessionMode,
-                    assuranceLevel: widget.session.assuranceLevel,
-                    grantType: widget.session.grantType,
-                    decision: 'unknown',
-                    qrStatus: widget.session.qrStatus,
-                    detectionStatus: 'unknown',
-                    matchedGroupUuid: null,
-                    policySource: null,
-                    triggerType: null,
-                    actionType: null,
-                    actionExecutionStatus: null,
-                    resolvedCameraUuid: null,
-                    resolvedCollectionUuid: null,
-                    createdAt: widget.session.createdAt?.toIso8601String(),
-                    externalAssets: null,
-                  ), cameras: widget.cameras),
+                  _SessionOverviewCard(session: _resolvedSession, cameras: widget.cameras),
+                  if (_canCreateProfile(_resolvedSession)) ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      icon: _creatingProfile
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.person_add, size: 18),
+                      label: Text(_creatingProfile ? 'Creating profile…' : 'Create People Profile'),
+                      onPressed: _creatingProfile ? null : () => _createProfileForSession(_resolvedSession),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   if (_actionPlan != null) _ActionPlanCard(actionPlan: _actionPlan!),
                   const SizedBox(height: 16),
@@ -2736,20 +3345,66 @@ class _SessionOverviewCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cameraLabel = _cameraLabel();
+    final matchedRows = <Widget>[
+      if (session.matchedMemberName != null && session.matchedMemberName!.isNotEmpty)
+        _InspectorRow(label: 'Member Name', value: session.matchedMemberName!),
+      if (session.matchedPppUuid != null && session.matchedPppUuid!.isNotEmpty)
+        _InspectorRow(label: 'People Profile', value: _truncateId(session.matchedPppUuid!)),
+      if (session.matchedMemberNumber != null)
+        _InspectorRow(label: 'Member Number', value: 'Group Member ${session.matchedMemberNumber}'),
+      if (session.matchedIndividualGroupName != null &&
+          session.matchedIndividualGroupName!.isNotEmpty)
+        _InspectorRow(label: 'Group Name', value: session.matchedIndividualGroupName!),
+      if (session.matchedIndividualGroupId != null &&
+          session.matchedIndividualGroupId!.isNotEmpty)
+        _InspectorRow(label: 'Group UUID', value: session.matchedIndividualGroupId!),
+      if (session.matchedGender != null && session.matchedGender!.isNotEmpty)
+        _InspectorRow(label: 'Gender', value: _capitalizeFirst(session.matchedGender!)),
+      if (session.matchedAgeMin != null || session.matchedAgeMax != null)
+        _InspectorRow(label: 'Age', value: _ageBandLabel(session.matchedAgeMin, session.matchedAgeMax)),
+    ];
     return _InspectorCard(
       title: 'Session',
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _TraceChip(label: session.sessionMode),
-          _TraceChip(label: session.assuranceLevel),
-          _TraceChip(label: session.grantType),
-          _TraceChip(label: session.status),
-          _TraceChip(label: session.decision),
-          _TraceChip(label: 'QR ${session.qrStatus}'),
-          _TraceChip(label: 'Detection ${session.detectionStatus}'),
-          if (cameraLabel != null) _TraceChip(label: 'Camera $cameraLabel'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _TraceChip(label: session.sessionMode),
+              _TraceChip(label: session.assuranceLevel),
+              _TraceChip(label: session.grantType),
+              _TraceChip(label: session.status),
+              _TraceChip(label: session.decision),
+              _TraceChip(label: 'QR ${session.qrStatus}'),
+              _TraceChip(label: 'Detection ${session.detectionStatus}'),
+              if (cameraLabel != null) _TraceChip(label: 'Camera $cameraLabel'),
+              if (session.matchedIndividualGroupName != null &&
+                  session.matchedIndividualGroupName!.isNotEmpty)
+                _TraceChip(label: session.matchedIndividualGroupName!),
+              if (session.matchedIndividualGroupId != null &&
+                  session.matchedIndividualGroupId!.isNotEmpty)
+                _TraceChip(label: _truncateId(session.matchedIndividualGroupId!)),
+              if (session.matchedMemberNumber != null)
+                _TraceChip(label: 'Group Member ${session.matchedMemberNumber}'),
+              if (session.matchedMemberName != null && session.matchedMemberName!.isNotEmpty)
+                _TraceChip(label: session.matchedMemberName!),
+              if (session.matchedGender != null && session.matchedGender!.isNotEmpty)
+                _TraceChip(label: _capitalizeFirst(session.matchedGender!)),
+              if (session.matchedAgeMin != null || session.matchedAgeMax != null)
+                _TraceChip(label: _ageBandLabel(session.matchedAgeMin, session.matchedAgeMax)),
+            ],
+          ),
+          if (matchedRows.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Matched Person',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            ...matchedRows,
+          ],
         ],
       ),
     );
@@ -3434,6 +4089,144 @@ class _MetricCard extends StatelessWidget {
           Text(title, style: Theme.of(context).textTheme.bodyMedium),
         ],
       ),
+    );
+  }
+}
+
+String _capitalizeFirst(String value) {
+  if (value.isEmpty) return value;
+  return value[0].toUpperCase() + value.substring(1);
+}
+
+String _ageBandLabel(int? min, int? max) {
+  if (min != null && max != null) return '$min-$max yrs';
+  if (min != null) return '$min+ yrs';
+  if (max != null) return '≤ $max yrs';
+  return '';
+}
+
+String _truncateId(String value, {int head = 8, int tail = 4}) {
+  if (value.length <= head + tail + 1) return value;
+  return '${value.substring(0, head)}…${value.substring(value.length - tail)}';
+}
+
+String _filterCategoryLabelFor(String category) {
+  switch (category) {
+    case 'grant_type':
+      return 'Grant type';
+    case 'session_mode':
+      return 'Mode';
+    case 'decision':
+      return 'Decision';
+    case 'camera':
+      return 'Camera';
+    case 'group':
+      return 'Group';
+    case 'member':
+      return 'Member';
+    case 'profile':
+      return 'Profile';
+    default:
+      return category;
+  }
+}
+
+class _SessionFilterDialog extends StatefulWidget {
+  final List<SessionFilter> available;
+  final List<SessionFilter> selected;
+  const _SessionFilterDialog({required this.available, required this.selected});
+  @override
+  State<_SessionFilterDialog> createState() => _SessionFilterDialogState();
+}
+
+class _SessionFilterDialogState extends State<_SessionFilterDialog> {
+  late final List<SessionFilter> _selected;
+  String _search = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = List.of(widget.selected);
+  }
+
+  bool _isSelected(SessionFilter filter) => _selected.any((f) => f.sameAs(filter));
+
+  void _toggle(SessionFilter filter) {
+    setState(() {
+      if (_isSelected(filter)) {
+        _selected.removeWhere((f) => f.sameAs(filter));
+      } else {
+        _selected.add(filter);
+      }
+    });
+  }
+
+  List<SessionFilter> _filteredOptions() {
+    final term = _search.trim().toLowerCase();
+    if (term.isEmpty) return widget.available;
+    return widget.available
+        .where((f) => f.label.toLowerCase().contains(term) || _filterCategoryLabelFor(f.category).toLowerCase().contains(term))
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedValues = _selected.toSet();
+    return AlertDialog(
+      title: Text('Filter sessions (${_selected.length} active)'),
+      content: SizedBox(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              autofocus: false,
+              decoration: const InputDecoration(
+                labelText: 'Search filters',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (v) => setState(() => _search = v),
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final filter in _filteredOptions())
+                    CheckboxListTile(
+                      dense: true,
+                      value: _isSelected(filter),
+                      title: Text(filter.label),
+                      subtitle: Text(_filterCategoryLabelFor(filter.category)),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      onChanged: (_) => _toggle(filter),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        if (selectedValues.isNotEmpty)
+          TextButton(
+            onPressed: () => setState(() => _selected.clear()),
+            child: const Text('Clear'),
+          ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_selected),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final filteredValues = _filteredOptions().toSet();
+            Navigator.of(context).pop(_selected.where((s) => filteredValues.contains(s)).toList());
+          },
+          child: const Text('Apply'),
+        ),
+      ],
     );
   }
 }

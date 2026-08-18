@@ -376,16 +376,18 @@ Stop VPN + Matrix Only (Layered)
 
 OK -- TEST all the front end apps after the HMAC development
 OK -- TEST the digital signage's keep alive
-OK -- Check improvements on the signage player rigid operation
+OK -- CHECK improvements on the signage player rigid operation
 OK -- TEST the other services keep alive
-
 OK -- DEBUG the presense service and mobile camera part affected by HMAC
+OK -- TEST the vprofile for solid operations
 
-TEST the vprofile for solid operations
+OK -- FINETUNE what type of info someone gets 
+      from triggers and presense combination (from the product value view)
 
-CHECK and maybe FIX the camera shuffle on the camera screen upon (de)activation
 
-debug and optimise and document the people uniqueness
+FIX the camera shuffle on the camera screen upon (de)activation
+
+DEBUG and OPTIMISE and DOCUMENT the people uniqueness
 
 TEST people uniqueness
 

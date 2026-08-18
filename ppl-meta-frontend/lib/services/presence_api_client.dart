@@ -47,7 +47,14 @@ class PresenceApiClient {
     int offset = 0,
     String? userQuery,
     String? cameraUuid,
+    List<String>? cameraUuids,
     String? grantType,
+    List<String>? grantTypes,
+    List<String>? sessionModes,
+    List<String>? decisions,
+    List<String>? groupNames,
+    List<String>? memberNames,
+    List<String>? profileNames,
     DateTime? startDate,
     DateTime? endDate,
   }) async {
@@ -59,7 +66,14 @@ class PresenceApiClient {
           'offset': offset,
           if (userQuery != null && userQuery.isNotEmpty) 'user_query': userQuery,
           if (cameraUuid != null && cameraUuid.isNotEmpty) 'camera_uuid': cameraUuid,
+          if (cameraUuids != null && cameraUuids.isNotEmpty) 'camera_uuids': cameraUuids.join(','),
           if (grantType != null && grantType.isNotEmpty) 'grant_type': grantType,
+          if (grantTypes != null && grantTypes.isNotEmpty) 'grant_types': grantTypes.join(','),
+          if (sessionModes != null && sessionModes.isNotEmpty) 'session_modes': sessionModes.join(','),
+          if (decisions != null && decisions.isNotEmpty) 'decisions': decisions.join(','),
+          if (groupNames != null && groupNames.isNotEmpty) 'group_names': groupNames.join(','),
+          if (memberNames != null && memberNames.isNotEmpty) 'member_names': memberNames.join(','),
+          if (profileNames != null && profileNames.isNotEmpty) 'profile_names': profileNames.join(','),
           if (startDate != null) 'start_date': startDate.toUtc().toIso8601String(),
           if (endDate != null) 'end_date': endDate.toUtc().toIso8601String(),
         },
@@ -532,6 +546,165 @@ class PresenceApiClient {
           .map(PresenceAnalyticsBucket.fromJson)
           .toList();
       return ApiResponse.success(items);
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<PresencePeopleProfile>> getPeopleProfile(String pppUuid) async {
+    try {
+      final response = await _apiClient.get('/api/v1/presence/people-profiles/$pppUuid');
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(PresencePeopleProfile.fromJson(data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<PresencePeopleProfile?>> lookupPeopleProfileByMember(String individualId) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/presence/people-profiles/lookup',
+        queryParameters: {'individual_id': individualId},
+      );
+      final payload = response.data;
+      if (payload is Map<String, dynamic>) {
+        final data = payload['data'];
+        if (data is Map<String, dynamic>) {
+          return ApiResponse.success(PresencePeopleProfile.fromJson(data));
+        }
+      }
+      return ApiResponse.success(null);
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<List<PresencePeopleProfile>>> listPeopleProfiles({
+    String? query,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/presence/people-profiles',
+        queryParameters: {
+          'limit': limit,
+          'offset': offset,
+          if (query != null && query.isNotEmpty) 'query': query,
+        },
+      );
+      final data = response.data;
+      final items = <PresencePeopleProfile>[];
+      if (data is Map) {
+        final rawItems = (data['data'] is Map)
+            ? ((data['data'] as Map)['items'] as List?)
+            : (data['items'] as List?);
+        if (rawItems != null) {
+          for (final item in rawItems) {
+            if (item is Map<String, dynamic>) {
+              items.add(PresencePeopleProfile.fromJson(item));
+            }
+          }
+        }
+      }
+      return ApiResponse.success(items);
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<PresencePeopleProfile>> createPeopleProfile({
+    required String name,
+    String? email,
+    String? phone,
+    String? notes,
+    String? externalRef,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/presence/people-profiles',
+        data: {
+          'name': name,
+          if (email != null && email.isNotEmpty) 'email': email,
+          if (phone != null && phone.isNotEmpty) 'phone': phone,
+          if (notes != null && notes.isNotEmpty) 'notes': notes,
+          if (externalRef != null && externalRef.isNotEmpty) 'external_ref': externalRef,
+        },
+      );
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(PresencePeopleProfile.fromJson(data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<PresencePeopleProfile>> linkMemberToPeopleProfile({
+    required String pppUuid,
+    required String groupId,
+    required String individualId,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/presence/people-profiles/$pppUuid/links',
+        data: {
+          'group_id': groupId,
+          'individual_id': individualId,
+        },
+      );
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(PresencePeopleProfile.fromJson(data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<PresencePeopleProfile>> updatePeopleProfile({
+    required String pppUuid,
+    String? name,
+    String? email,
+    String? phone,
+    String? notes,
+    String? externalRef,
+    String? status,
+  }) async {
+    try {
+      final response = await _apiClient.put(
+        '/api/v1/presence/people-profiles/$pppUuid',
+        data: {
+          if (name != null && name.isNotEmpty) 'name': name,
+          if (email != null) 'email': email,
+          if (phone != null) 'phone': phone,
+          if (notes != null) 'notes': notes,
+          if (externalRef != null) 'external_ref': externalRef,
+          if (status != null) 'status': status,
+        },
+      );
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(PresencePeopleProfile.fromJson(data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<void>> deletePeopleProfile(String pppUuid) async {
+    try {
+      await _apiClient.delete('/api/v1/presence/people-profiles/$pppUuid');
+      return ApiResponse.success(null);
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {

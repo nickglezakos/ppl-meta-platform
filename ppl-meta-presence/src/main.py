@@ -24,6 +24,9 @@ presence_service = PresenceService()
 
 @asynccontextmanager
 async def lifespan(_application: FastAPI):
+    from database import create_tables
+
+    create_tables()  # idempotent: creates any missing tables (incl. people profiles)
     await presence_service.startup()
     yield
     await presence_service.shutdown()

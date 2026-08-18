@@ -840,8 +840,19 @@ class IndividualGroupsManager:
         ORDER BY gm.added_at DESC
         """
         
+        # Count only members that resolve to a real MVR identity. Corrupted shell
+        # memberships (e.g. stale recording_pipeline individuals that were never
+        # promoted to an MVR person and have no mapping) resolve to a NULL
+        # mvr_person_uuid and must not surface to clients.
         count_query = """
-        SELECT COUNT(*) FROM group_memberships WHERE group_id = $1
+        SELECT COUNT(*)
+        FROM group_memberships gm
+        WHERE gm.group_id = $1
+          AND gm.individual_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+          AND (
+                EXISTS (SELECT 1 FROM mvr_people md WHERE md.mvr_people_uuid = gm.individual_id::uuid)
+            OR EXISTS (SELECT 1 FROM individual_mvr_mapping imm WHERE imm.individual_uuid = gm.individual_id::uuid)
+          )
         """
         
         async with self.db.pool.acquire() as conn:
@@ -849,13 +860,24 @@ class IndividualGroupsManager:
             rows = await conn.fetch(query, group_id, limit, skip)
 
         logger.info(
-            "[IG-DEBUG] get_group_members fetched group_id=%s total=%s page_rows=%s",
+            "[IG-DEBUG] get_group_members fetched group_id=%s resolvable_total=%s page_rows=%s",
             group_id,
             total,
             len(rows),
         )
 
+        # Skip members that could not be resolved to an MVR identity. These are
+        # stale/corrupt shell memberships; returning them yields frontend members
+        # with null mvr_person_uuid that cannot be analysed or displayed.
+        members = []
         for index, row in enumerate(rows):
+            if not row.get("mvr_person_uuid"):
+                logger.warning(
+                    "[IG-CLEAN] Skipping unresolvable group member group_id=%s individual_id=%s mvr_person_uuid=None",
+                    group_id,
+                    row.get("individual_id"),
+                )
+                continue
             logger.info(
                 "[IG-DEBUG] member_row idx=%s group_id=%s individual_id=%s resolved_mvr=%s name=%s name_updated_at=%s name_updated_by=%s",
                 skip + index + 1,
@@ -866,24 +888,21 @@ class IndividualGroupsManager:
                 row.get("name_updated_at"),
                 row.get("name_updated_by"),
             )
-        
-        # TODO: Join with actual persons table to get full individual data
-        members = [
-            IndividualSummary(
-                id=row["individual_id"],
-                mvr_person_uuid=row.get("mvr_person_uuid"),
-                thumbnail_url=None,
-                total_appearances=0,
-                last_seen=None,
-                group_count=1,
-                group_member_number=skip + index + 1,
-                name=row.get("name"),
-                name_updated_at=row.get("name_updated_at"),
-                name_updated_by=row.get("name_updated_by"),
+            members.append(
+                IndividualSummary(
+                    id=row["individual_id"],
+                    mvr_person_uuid=row.get("mvr_person_uuid"),
+                    thumbnail_url=None,
+                    total_appearances=0,
+                    last_seen=None,
+                    group_count=1,
+                    group_member_number=skip + len(members) + 1,
+                    name=row.get("name"),
+                    name_updated_at=row.get("name_updated_at"),
+                    name_updated_by=row.get("name_updated_by"),
+                )
             )
-            for index, row in enumerate(rows)
-        ]
-        
+
         return members, total
 
     async def _cleanup_orphaned_members(self, group_id: str) -> None:
@@ -2128,6 +2147,9 @@ class IndividualGroupsManager:
                         NULLIF(BTRIM(m_related.name), ''),
                         NULLIF(BTRIM(m_history.new_name), '')
                     ) AS effective_name,
+                    COALESCE(m_direct.age_min, m_mapped.age_min) AS age_min,
+                    COALESCE(m_direct.age_max, m_mapped.age_max) AS age_max,
+                    COALESCE(m_direct.gender, m_mapped.gender) AS gender,
                     gm.individual_id,
                     ROW_NUMBER() OVER (ORDER BY gm.added_at DESC, gm.individual_id DESC) AS group_member_number
                 FROM group_members gm
@@ -2135,7 +2157,10 @@ class IndividualGroupsManager:
                     SELECT
                         m.mvr_people_uuid,
                         m.face_embedding,
-                        m.name
+                        m.name,
+                        m.age_min,
+                        m.age_max,
+                        m.gender
                     FROM mvr_people m
                     WHERE m.mvr_people_uuid = gm.individual_uuid
                     LIMIT 1
@@ -2144,7 +2169,10 @@ class IndividualGroupsManager:
                     SELECT
                         m.mvr_people_uuid,
                         m.face_embedding,
-                        m.name
+                        m.name,
+                        m.age_min,
+                        m.age_max,
+                        m.gender
                     FROM individual_mvr_mapping imm
                     JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
                     WHERE imm.individual_uuid = gm.individual_uuid
@@ -2205,6 +2233,9 @@ class IndividualGroupsManager:
                         existing_member_id=str(member['resolved_mvr_uuid']),
                         existing_member_name=member['effective_name'],
                         group_member_number=int(member['group_member_number']) if member.get('group_member_number') is not None else None,
+                        gender=member.get('gender'),
+                        age_min=member.get('age_min'),
+                        age_max=member.get('age_max'),
                         similarity_score=round(similarity, 4),
                         confidence=confidence,
                     ))

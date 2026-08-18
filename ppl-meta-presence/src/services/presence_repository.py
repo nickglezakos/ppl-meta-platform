@@ -11,6 +11,8 @@ from models.presence_models import (
     PresenceAnalyticsEvent,
     PresenceDecisionRecord,
     PresenceDetectionAttempt,
+    PresencePeopleProfile,
+    PresencePeopleProfileLink,
     PresenceProfile,
     PresenceResource,
     PresenceSession,
@@ -22,6 +24,8 @@ from models.persistence_models import (
     PresenceAnalyticsEventRecord,
     PresenceDecisionHistoryRecord,
     PresenceAttemptRecord,
+    PresencePeopleProfileLinkRecord,
+    PresencePeopleProfileRecord,
     PresenceProfileRecord,
     PresenceResourceRecord,
     PresenceSessionRecord,
@@ -170,3 +174,63 @@ class PresenceRepository:
             record.payload_json = json.dumps(decision_record.model_dump(mode="json"))
             db.merge(record)
             db.commit()
+
+    def load_people_profiles(self) -> Dict[str, PresencePeopleProfile]:
+        with SessionLocal() as db:
+            rows = db.execute(select(PresencePeopleProfileRecord)).scalars().all()
+            return {
+                row.ppp_uuid: PresencePeopleProfile.model_validate(json.loads(row.payload_json))
+                for row in rows
+            }
+
+    def list_people_profile_links(self) -> List[PresencePeopleProfileLink]:
+        with SessionLocal() as db:
+            rows = db.execute(select(PresencePeopleProfileLinkRecord)).scalars().all()
+            return [PresencePeopleProfileLink.model_validate(json.loads(row.payload_json)) for row in rows]
+
+    def list_people_profile_links_for_ppp(self, ppp_uuid: str) -> List[PresencePeopleProfileLink]:
+        with SessionLocal() as db:
+            rows = db.execute(
+                select(PresencePeopleProfileLinkRecord).where(
+                    PresencePeopleProfileLinkRecord.ppp_uuid == ppp_uuid
+                )
+            ).scalars().all()
+            return [PresencePeopleProfileLink.model_validate(json.loads(row.payload_json)) for row in rows]
+
+    def save_people_profile(self, profile: PresencePeopleProfile) -> None:
+        with SessionLocal() as db:
+            record = db.get(PresencePeopleProfileRecord, profile.ppp_uuid)
+            if record is None:
+                record = PresencePeopleProfileRecord(ppp_uuid=profile.ppp_uuid)
+            record.installation_uuid = profile.installation_uuid
+            record.payload_json = json.dumps(profile.model_dump(mode="json"))
+            db.merge(record)
+            db.commit()
+
+    def save_people_profile_link(self, link: PresencePeopleProfileLink) -> None:
+        with SessionLocal() as db:
+            record = db.get(PresencePeopleProfileLinkRecord, link.link_uuid) \
+                if hasattr(link, "link_uuid") else None
+            if record is None:
+                from uuid import uuid5, NAMESPACE_URL
+                link_uuid = str(uuid5(NAMESPACE_URL, f"{link.ppp_uuid}:{link.group_id}:{link.individual_id}"))
+                record = PresencePeopleProfileLinkRecord(
+                    link_uuid=link_uuid,
+                    ppp_uuid=link.ppp_uuid,
+                    group_id=link.group_id,
+                    individual_id=link.individual_id,
+                )
+            record.payload_json = json.dumps(link.model_dump(mode="json"))
+            db.merge(record)
+            db.commit()
+
+    def delete_people_profile_link(self, ppp_uuid: str, group_id: str, individual_id: str) -> bool:
+        from uuid import uuid5, NAMESPACE_URL
+        link_uuid = str(uuid5(NAMESPACE_URL, f"{ppp_uuid}:{group_id}:{individual_id}"))
+        with SessionLocal() as db:
+            record = db.get(PresencePeopleProfileLinkRecord, link_uuid)
+            if record is None:
+                return False
+            db.delete(record)
+            db.commit()
+            return True

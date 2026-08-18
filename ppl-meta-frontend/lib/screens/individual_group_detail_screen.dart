@@ -18,7 +18,8 @@ import '../core/api/api_client.dart';
 import '../widgets/individual_groups/edit_group_dialog.dart';
 import '../widgets/individual_groups/add_members_dialog.dart';
 import '../widgets/individual_groups/cover_image_selector.dart';
-import '../widgets/editable_mvr_name.dart';
+import '../widgets/people_profile_picker.dart';
+import '../services/presence_api_client.dart';
 import '../widgets/custom_app_bar.dart';
 import '../models/cross_video_analysis_models.dart';
 import '../models/mvr_best_image.dart';
@@ -103,7 +104,11 @@ class _IndividualGroupDetailScreenState
 
     setState(() {
       _group = groupResponse.data!.group;
-      _members = membersResponse.data?.members ?? [];
+      // Defensive: drop any member without a resolvable MVR identity. Such
+      // "shell" memberships carry no analysable UUID and cannot be rendered.
+      _members = (membersResponse.data?.members ?? [])
+          .where((member) => member.mvrPersonUuid != null)
+          .toList();
       _isLoading = false;
     });
 
@@ -209,33 +214,17 @@ class _IndividualGroupDetailScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Name:',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-              ),
+              'People Profile:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
             ),
             const SizedBox(height: 8),
             if (member.mvrPersonUuid != null)
-              EditableMVRName(
-                initialName: member.name,
-                mvrPersonUuid: member.mvrPersonUuid!,
-                propagate: true,
-                onNameUpdated: (newName) async {
-                  // Close the dialog first
-                  Navigator.pop(context);
-                  // Reload group data to refresh member list with new name
-                  await _loadGroupData();
-                  // Show success message
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Name updated to "$newName"'),
-                        backgroundColor: Colors.green,
-                        duration: const Duration(seconds: 2),
-                      ),
-                    );
-                  }
+              PeopleProfilePicker(
+                groupId: widget.groupId,
+                individualId: member.mvrPersonUuid!,
+                apiClient: PresenceApiClient(ref.read(apiClientProvider)),
+                onChanged: () {
+                  _loadGroupData();
                 },
               )
             else

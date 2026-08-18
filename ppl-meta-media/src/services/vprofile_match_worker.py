@@ -194,6 +194,9 @@ class EmbeddingCache:
                     'matched_member_uuid': member.mvr_people_uuid,
                     'existing_member_name': member.name,
                     'group_member_number': member.member_number,
+                    'gender': (member.demographics or {}).get('gender'),
+                    'age_min': (member.demographics or {}).get('age_min'),
+                    'age_max': (member.demographics or {}).get('age_max'),
                     'similarity_score': float(similarities[original_idx]),
                     'source_mvr_uuid': None,
                     'source_camera_id': None,
@@ -207,12 +210,19 @@ class EmbeddingCache:
         Compute a deterministic hash of current cache contents.
 
         Used by the background refresh to decide whether an atomic swap is needed.
+        Includes member name/number/demographics so that user-assigned name and
+        demographic edits are detected and reflected on the next refresh (not just
+        embedding/membership changes).
         """
         hasher = hashlib.sha256()
         for group_id in sorted(self._groups.keys()):
             group = self._groups[group_id]
             member_uuids = sorted(m.mvr_people_uuid for m in group.members)
             hasher.update(f"{group_id}:{','.join(member_uuids)}".encode())
+            for member in sorted(group.members, key=lambda m: m.mvr_people_uuid):
+                demographics_json = json.dumps(member.demographics or {}, sort_keys=True, ensure_ascii=False)
+                meta = f"{member.name}|{member.member_number}|{demographics_json}"
+                hasher.update(f"|{member.mvr_people_uuid}:{meta}".encode())
         return hasher.hexdigest()
 
     def clone_empty(self) -> 'EmbeddingCache':

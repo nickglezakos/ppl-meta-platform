@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from presence_auth import get_current_user, require_admin_user
 from models.presence_models import (
     BindResourcesRequest,
+    CreatePeopleProfileRequest,
     CreatePresenceSessionRequest,
+    LinkMemberRequest,
     PresenceBurstUploadRequest,
     PresenceOwnerQrRenderRequest,
     PresenceOwnerQrHitRequest,
@@ -19,9 +21,11 @@ from models.presence_models import (
     ReserveResourceRequest,
     TriggerMatchRequest,
     UnreserveResourceRequest,
+    UnlinkMemberRequest,
     UpdateActivePresenceGroupRequest,
     UpdateInstallationSettingsRequest,
     UpdateInstallationPolicyRequest,
+    UpdatePeopleProfileRequest,
 )
 from services.presence_service import PresenceService
 
@@ -35,6 +39,13 @@ def _parse_filter_datetime(value: str | None) -> datetime | None:
     if parsed.tzinfo is not None:
         return parsed.astimezone(timezone.utc).replace(tzinfo=None)
     return parsed
+
+
+def _split_csv(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    parts = [item.strip() for item in value.split(",") if item.strip()]
+    return parts or None
 
 
 def build_presence_router(service: PresenceService) -> APIRouter:
@@ -140,7 +151,14 @@ def build_presence_router(service: PresenceService) -> APIRouter:
         policy_source: str | None = None,
         user_query: str | None = None,
         camera_uuid: str | None = None,
+        camera_uuids: str | None = None,
         grant_type: str | None = None,
+        grant_types: str | None = None,
+        session_modes: str | None = None,
+        decisions: str | None = None,
+        group_names: str | None = None,
+        member_names: str | None = None,
+        profile_names: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
         limit: int | None = None,
@@ -157,7 +175,14 @@ def build_presence_router(service: PresenceService) -> APIRouter:
             policy_source=policy_source,
             user_query=user_query,
             camera_uuid=camera_uuid,
+            camera_uuids=_split_csv(camera_uuids),
             grant_type=grant_type,
+            grant_types=_split_csv(grant_types),
+            session_modes=_split_csv(session_modes),
+            decisions=_split_csv(decisions),
+            group_names=_split_csv(group_names),
+            member_names=_split_csv(member_names),
+            profile_names=_split_csv(profile_names),
             start_date=parsed_start_date,
             end_date=parsed_end_date,
             limit=limit,
@@ -397,6 +422,77 @@ def build_presence_router(service: PresenceService) -> APIRouter:
                 "requested_by": current_user.get("sub") or current_user.get("user_id"),
             },
         }
+
+    # ------------------------------------------------------------------
+    # Presence People Profiles (PPP) — CRUD + linkage
+    # ------------------------------------------------------------------
+
+    @router.get("/people-profiles")
+    async def list_people_profiles(
+        query: str | None = None,
+        installation_uuid: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ):
+        return {"success": True, "data": service.list_people_profiles(
+            query=query, installation_uuid=installation_uuid, limit=limit, offset=offset,
+        )}
+
+    @router.get("/people-profiles/lookup")
+    async def lookup_people_profile_by_member(individual_id: str):
+        return {"success": True, "data": service.lookup_people_profile_by_member(individual_id)}
+
+    @router.post("/people-profiles")
+    async def create_people_profile(request: CreatePeopleProfileRequest):
+        try:
+            profile = service.create_people_profile(request)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"create people profile failed: {exc}") from exc
+        return {"success": True, "data": profile.model_dump(mode="json")}
+
+    @router.get("/people-profiles/{ppp_uuid}")
+    async def get_people_profile(ppp_uuid: str):
+        result = service.get_people_profile(ppp_uuid)
+        if result is None:
+            raise HTTPException(status_code=404, detail="people profile not found")
+        return {"success": True, "data": result}
+
+    @router.put("/people-profiles/{ppp_uuid}")
+    async def update_people_profile(ppp_uuid: str, request: UpdatePeopleProfileRequest):
+        profile = service.update_people_profile(ppp_uuid, request)
+        if profile is None:
+            raise HTTPException(status_code=404, detail="people profile not found")
+        return {"success": True, "data": profile.model_dump(mode="json")}
+
+    @router.delete("/people-profiles/{ppp_uuid}")
+    async def delete_people_profile(ppp_uuid: str):
+        deleted = service.delete_people_profile(ppp_uuid)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="people profile not found")
+        return {"success": True, "data": {"ppp_uuid": ppp_uuid, "status": "inactive"}}
+
+    @router.post("/people-profiles/{ppp_uuid}/links")
+    async def link_member(
+        ppp_uuid: str,
+        request: LinkMemberRequest,
+        current_user: dict = Depends(get_current_user),
+    ):
+        profile = service.link_member(
+            ppp_uuid=ppp_uuid,
+            group_id=request.group_id,
+            individual_id=request.individual_id,
+            linked_by=current_user.get("sub") or current_user.get("username"),
+        )
+        if profile is None:
+            raise HTTPException(status_code=404, detail="people profile not found")
+        return {"success": True, "data": profile.model_dump(mode="json")}
+
+    @router.post("/people-profiles/{ppp_uuid}/unlink")
+    async def unlink_member(ppp_uuid: str, request: UnlinkMemberRequest):
+        changed = service.unlink_member(ppp_uuid, request.group_id, request.individual_id)
+        if not changed:
+            raise HTTPException(status_code=404, detail="link not found")
+        return {"success": True, "data": {"unlinked": True}}
 
     return router
 

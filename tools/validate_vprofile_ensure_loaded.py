@@ -141,6 +141,23 @@ async def main():
     trig_e = FakeTrigger("uuid-E", "{group-E}")
     results.append(await run_case(worker, trig_e, True, "E: pg array notation"))
 
+    # Case H: content hash detects a member NAME change (data edits must trigger
+    # a background refresh swap; previously only embeddings/membership mattered).
+    hash_cache = EmbeddingCache()
+    payload = make_group_payload("group-H")
+    hash_cache.load_group("group-H", "Group H", payload["members"])
+    hash_before = hash_cache.compute_content_hash()
+    changed = [dict(payload["members"][0])]
+    changed[0]["face_embedding"] = payload["members"][0]["face_embedding"]
+    changed[0]["name"] = "Nick"
+    hash_cache2 = EmbeddingCache()
+    hash_cache2.load_group("group-H", "Group H", changed)
+    hash_after = hash_cache2.compute_content_hash()
+    hash_changed = hash_after != hash_before
+    status = "PASS" if hash_changed else "FAIL"
+    print(f"[{status}] H: content hash changes on member name edit: {hash_changed}")
+    results.append(hash_changed)
+
     print()
     if all(results):
         print("ALL CASES PASSED")

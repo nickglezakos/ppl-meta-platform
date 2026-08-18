@@ -23,6 +23,10 @@ from models.presence_models import (
     PresenceIndividualGroupOption,
     PresenceDecisionRecord,
     PresenceExternalAssets,
+    PresencePeopleProfile,
+    PresencePeopleProfileLink,
+    CreatePeopleProfileRequest,
+    UpdatePeopleProfileRequest,
     PresenceGrantType,
     PresenceGroupPolicy,
     PresenceAnalyticsEvent,
@@ -70,6 +74,8 @@ class PresenceService:
         self.collections: Dict[str, PresenceResource] = self.repository.load_resources("collection")
         self.platform_clients = platform_clients or PlatformClients()
         self.installation_profile = self._load_or_create_installation_profile()
+        self.people_profiles: Dict[str, PresencePeopleProfile] = self.repository.load_people_profiles()
+        self.people_profile_links: List[PresencePeopleProfileLink] = self.repository.list_people_profile_links()
         for session in self.sessions.values():
             self.qr_tokens[session.qr_token] = session.session_uuid
 
@@ -208,7 +214,14 @@ class PresenceService:
         policy_source: str | None = None,
         user_query: str | None = None,
         camera_uuid: str | None = None,
+        camera_uuids: list | None = None,
         grant_type: str | None = None,
+        grant_types: list | None = None,
+        session_modes: list | None = None,
+        decisions: list | None = None,
+        group_names: list | None = None,
+        member_names: list | None = None,
+        profile_names: list | None = None,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         limit: int | None = None,
@@ -223,6 +236,15 @@ class PresenceService:
             reverse=True,
         )
 
+        if camera_uuids and camera_uuid:
+            camera_uuids = list(camera_uuids) + [camera_uuid]
+        elif camera_uuid:
+            camera_uuids = [camera_uuid]
+        if grant_types and grant_type:
+            grant_types = list(grant_types) + [grant_type]
+        elif grant_type:
+            grant_types = [grant_type]
+
         matched_sessions = []
         for session in sessions:
             if session_uuid and session.session_uuid != session_uuid:
@@ -233,12 +255,29 @@ class PresenceService:
                 continue
             if policy_source and session.policy_source != policy_source:
                 continue
-            if grant_type:
+            if grant_types:
                 session_grant_type = session.grant_type.value if hasattr(session.grant_type, "value") else str(session.grant_type)
-                if session_grant_type != grant_type:
+                if session_grant_type not in grant_types:
                     continue
-            if camera_uuid and session.resolved_camera_uuid != camera_uuid:
+            if session_modes:
+                session_mode = session.session_mode.value if hasattr(session.session_mode, "value") else str(session.session_mode)
+                if session_mode not in session_modes:
+                    continue
+            if decisions:
+                session_decision = session.decision.value if hasattr(session.decision, "value") else str(session.decision)
+                if session_decision not in decisions:
+                    continue
+            if camera_uuids and session.resolved_camera_uuid not in camera_uuids:
                 continue
+            if group_names and (session.matched_individual_group_name or "") not in group_names:
+                continue
+            if member_names and (session.matched_member_name or "") not in member_names:
+                continue
+            if profile_names:
+                ppp = self.people_profiles.get(session.matched_ppp_uuid or "")
+                ppp_name = ppp.name if ppp else None
+                if not ppp_name or ppp_name not in profile_names:
+                    continue
             if start_date and session.created_at < start_date:
                 continue
             if end_date and session.created_at > end_date:
@@ -441,6 +480,11 @@ class PresenceService:
         profile_metadata = profile.metadata if isinstance(profile and profile.metadata, dict) else {}
         candidates = [
             session.user_uuid,
+            session.matched_member_name,
+            session.matched_individual_group_id,
+            session.matched_individual_group_name,
+            session.matched_gender,
+            session.matched_member_number,
             profile.display_name if profile else None,
             profile_metadata.get("email"),
             profile_metadata.get("username"),
@@ -675,6 +719,42 @@ class PresenceService:
         matched_member_uuid = best_match.get("matched_member_uuid") or match_info.get("matched_member_uuid")
         similarity = best_match.get("similarity_score") or match_info.get("similarity_score")
 
+        def _match_value(name):
+            if name in best_match and best_match.get(name) is not None:
+                return best_match.get(name)
+            return match_info.get(name)
+
+        matched_individual_group_id = _match_value("group_id") or _match_value("matched_individual_group_id")
+        matched_individual_group_name = _match_value("group_name") or _match_value("matched_individual_group_name")
+        if not matched_individual_group_name:
+            # Fall back to the installation's stored presence group name or the
+            # active presence group configured on this installation profile.
+            matched_individual_group_name = self._active_presence_individual_group_name()
+        if not matched_individual_group_name and matched_individual_group_id:
+            matched_individual_group_name = matched_individual_group_id
+
+        # Normalize the matched/configured group uuid: prefer the one the match
+        # actually came from, else fall back to the installation's active group.
+        if matched_individual_group_id:
+            matched_group_uuid = matched_individual_group_id
+
+        matched_member_number = _match_value("group_member_number")
+        if matched_member_number is None:
+            matched_member_number = _match_value("matched_member_number")
+        if matched_member_number is not None:
+            try:
+                matched_member_number = int(matched_member_number)
+            except (TypeError, ValueError):
+                matched_member_number = None
+
+        matched_member_name = _match_value("existing_member_name") or _match_value("matched_member_name")
+        matched_gender = _match_value("gender") or _match_value("matched_gender")
+
+        matched_age_min = _match_value("age_min")
+        matched_age_min = int(matched_age_min) if matched_age_min is not None else None
+        matched_age_max = _match_value("age_max")
+        matched_age_max = int(matched_age_max) if matched_age_max is not None else None
+
         session = PresenceSession(
             installation_uuid=installation_uuid,
             device_uuid=device_uuid,
@@ -689,6 +769,14 @@ class PresenceService:
             detection_status="completed",
             resolved_camera_uuid=camera_device_id,
             matched_group_uuid=matched_group_uuid,
+            matched_individual_group_id=matched_individual_group_id,
+            matched_individual_group_name=matched_individual_group_name,
+            matched_member_number=matched_member_number,
+            matched_member_name=matched_member_name,
+            matched_member_uuid=matched_member_uuid,
+            matched_gender=matched_gender,
+            matched_age_min=matched_age_min,
+            matched_age_max=matched_age_max,
             policy_source="platform_trigger",
             trigger_type="presence_match",
             action_type="presence_grant",
@@ -700,6 +788,10 @@ class PresenceService:
                 individual_group_id=matched_group_uuid,
             ),
         )
+
+        # People Profile resolution: PPP name is the sole source of truth for the
+        # matched member's display name when a PPP is linked to the member.
+        self._apply_ppp_to_session(session, matched_member_uuid)
 
         self.sessions[session.session_uuid] = session
         self.qr_tokens[session.qr_token] = session.session_uuid
@@ -718,6 +810,14 @@ class PresenceService:
                 outcome=PresenceDecisionState.GRANTED.value,
                 reason_code="presence_ppl_match",
                 matched_group_uuid=matched_group_uuid,
+                matched_individual_group_id=matched_individual_group_id,
+                matched_individual_group_name=matched_individual_group_name,
+                matched_member_number=session.matched_member_number,
+                matched_member_name=session.matched_member_name,
+                matched_gender=session.matched_gender,
+                matched_age_min=session.matched_age_min,
+                matched_age_max=session.matched_age_max,
+                matched_ppp_uuid=session.matched_ppp_uuid,
                 policy_source=session.policy_source,
                 trigger_type=session.trigger_type,
                 action_type=session.action_type,
@@ -732,6 +832,148 @@ class PresenceService:
             trigger_uuid, camera_device_id, matched_member_uuid, similarity, session.session_uuid,
         )
         return session
+
+    def _ppp_for_member(self, individual_id: str | None) -> PresencePeopleProfile | None:
+        """Return the PPP linked to the given group member (individual_id), if any."""
+        if not individual_id:
+            return None
+        for link in self.people_profile_links:
+            if link.individual_id == individual_id:
+                return self.people_profiles.get(link.ppp_uuid)
+        return None
+
+    def _apply_ppp_to_session(self, session: PresenceSession, individual_id: str | None) -> bool:
+        """Attach a linked PPP to a session; PPP name is the sole source of truth."""
+        ppp = self._ppp_for_member(individual_id)
+        if ppp is None or ppp.status == "inactive":
+            return False
+        session.matched_ppp_uuid = ppp.ppp_uuid
+        if ppp.name:
+            session.matched_member_name = ppp.name
+        return True
+
+    # ------------------------------------------------------------------
+    # Presence People Profiles (CRUD + linkage)
+    # ------------------------------------------------------------------
+
+    def list_people_profiles(
+        self,
+        *,
+        query: str | None = None,
+        installation_uuid: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        items = sorted(self.people_profiles.values(), key=lambda p: p.updated_at, reverse=True)
+        if installation_uuid:
+            items = [p for p in items if p.installation_uuid == installation_uuid]
+        if query:
+            q = query.strip().lower()
+            items = [
+                p for p in items
+                if q in (p.name or "").lower()
+                or (p.external_ref and q in str(p.external_ref).lower())
+                or (p.email and q in str(p.email).lower())
+                or (p.phone and q in str(p.phone).lower())
+            ]
+        total = len(items)
+        page = items[offset: offset + limit] if limit else items[offset:]
+        return {"items": [p.model_dump(mode="json") for p in page], "total": total, "returned": len(page)}
+
+    def create_people_profile(self, request: CreatePeopleProfileRequest) -> PresencePeopleProfile:
+        profile = PresencePeopleProfile(
+            name=request.name.strip(),
+            email=request.email,
+            phone=request.phone,
+            notes=request.notes,
+            external_ref=request.external_ref,
+            installation_uuid=request.installation_uuid,
+        )
+        self.people_profiles[profile.ppp_uuid] = profile
+        self.repository.save_people_profile(profile)
+        return profile
+
+    def get_people_profile(self, ppp_uuid: str) -> dict | None:
+        profile = self.people_profiles.get(ppp_uuid)
+        if profile is None:
+            return None
+        links = [link.model_dump(mode="json") for link in self.people_profile_links if link.ppp_uuid == ppp_uuid]
+        return {**profile.model_dump(mode="json"), "links": links}
+
+    def update_people_profile(self, ppp_uuid: str, request: UpdatePeopleProfileRequest) -> PresencePeopleProfile | None:
+        profile = self.people_profiles.get(ppp_uuid)
+        if profile is None:
+            return None
+        updates = request.model_dump(exclude_unset=True)
+        for field in ("name", "email", "phone", "notes", "external_ref", "status"):
+            if field in updates:
+                setattr(profile, field, updates[field])
+        profile.updated_at = datetime.utcnow()
+        self.repository.save_people_profile(profile)
+        return profile
+
+    def delete_people_profile(self, ppp_uuid: str) -> bool:
+        profile = self.people_profiles.get(ppp_uuid)
+        if profile is None:
+            return False
+        profile.status = "inactive"
+        profile.updated_at = datetime.utcnow()
+        self.repository.save_people_profile(profile)
+        return True
+
+    def link_member(
+        self,
+        ppp_uuid: str,
+        group_id: str,
+        individual_id: str,
+        linked_by: str | None = None,
+    ) -> PresencePeopleProfile | None:
+        profile = self.people_profiles.get(ppp_uuid)
+        if profile is None:
+            return None
+        # At most one PPP per member: remove any pre-existing link for this member.
+        self.people_profile_links = [
+            link for link in self.people_profile_links
+            if not (link.group_id == group_id and link.individual_id == individual_id)
+        ]
+        link = PresencePeopleProfileLink(
+            ppp_uuid=ppp_uuid,
+            group_id=group_id,
+            individual_id=individual_id,
+            linked_by=linked_by,
+        )
+        self.people_profile_links.append(link)
+        self.repository.save_people_profile_link(link)
+        self._refresh_linked_member_counts()
+        return profile
+
+    def unlink_member(self, ppp_uuid: str, group_id: str, individual_id: str) -> bool:
+        before = len(self.people_profile_links)
+        self.people_profile_links = [
+            link for link in self.people_profile_links
+            if not (link.ppp_uuid == ppp_uuid and link.group_id == group_id and link.individual_id == individual_id)
+        ]
+        changed = len(self.people_profile_links) != before
+        if changed:
+            self.repository.delete_people_profile_link(ppp_uuid, group_id, individual_id)
+            self._refresh_linked_member_counts()
+        return changed
+
+    def lookup_people_profile_by_member(self, individual_id: str) -> dict | None:
+        profile = self._ppp_for_member(individual_id)
+        if profile is None:
+            return None
+        return profile.model_dump(mode="json")
+
+    def _refresh_linked_member_counts(self) -> None:
+        counts: Dict[str, int] = {}
+        for link in self.people_profile_links:
+            counts[link.ppp_uuid] = counts.get(link.ppp_uuid, 0) + 1
+        for ppp in list(self.people_profiles.values()):
+            new_count = counts.get(ppp.ppp_uuid, 0)
+            if ppp.linked_member_count != new_count:
+                ppp.linked_member_count = new_count
+                self.repository.save_people_profile(ppp)
 
     async def _start_camera_only_detection(self, session: PresenceSession) -> None:
         if self._remaining_attempt_capacity(session) <= 0:
@@ -1708,16 +1950,22 @@ class PresenceService:
         if members:
             return False
 
-        identity_ids = self._extract_detection_identity_ids(latest_attempt.instant_detection_result_payload)
-        if not identity_ids:
+        # Prefer a genuine MVR person identity for the seed member. Using the raw
+        # recording_pipeline individual_uuid can persist a "shell" individual that
+        # has no MVR mapping/appearances, producing a corrupt group member that the
+        # UI cannot render or analyse.
+        seed_member_id = self._select_presence_seed_identity_id(
+            latest_attempt.instant_detection_result_payload
+        )
+        if not seed_member_id:
             return False
 
         await self.platform_clients.add_individual_group_members(
             token,
             group_id,
-            {"individual_ids": [identity_ids[0]]},
+            {"individual_ids": [seed_member_id]},
         )
-        metadata["presence_seed_member_id"] = identity_ids[0]
+        metadata["presence_seed_member_id"] = seed_member_id
         metadata["presence_seeded_at"] = datetime.utcnow().isoformat()
         self.installation_profile.metadata = metadata
         self.installation_profile.updated_at = datetime.utcnow()
@@ -1792,6 +2040,13 @@ class PresenceService:
             "matched_member_uuid": best_match.get("matched_member_uuid"),
             "source_mvr_uuid": source_mvr_uuid,
             "similarity_score": best_match.get("similarity_score"),
+            "matched_member_name": best_match.get("existing_member_name") or best_match.get("matched_member_name"),
+            "matched_member_number": best_match.get("group_member_number") or best_match.get("matched_member_number"),
+            "matched_individual_group_id": best_match.get("group_id") or best_match.get("matched_individual_group_id"),
+            "matched_individual_group_name": best_match.get("group_name") or best_match.get("matched_individual_group_name"),
+            "matched_gender": best_match.get("gender") or best_match.get("matched_gender"),
+            "matched_age_min": best_match.get("age_min") or best_match.get("matched_age_min"),
+            "matched_age_max": best_match.get("age_max") or best_match.get("matched_age_max"),
         }
 
     async def _grant_presence_match(
@@ -1823,6 +2078,9 @@ class PresenceService:
         session.action_log_uuid = action_log_uuid
         session.executed_at = datetime.utcnow()
         session.updated_at = datetime.utcnow()
+        if trigger_match:
+            session.policy_source = "platform_trigger"
+            self._apply_matched_person_fields(session, trigger_match)
         self.repository.save_session(session)
         self._record_decision(session, simulated_detection, reason_code)
         if not any(event.session_uuid == session.session_uuid for event in self.analytics_events):
@@ -1837,6 +2095,13 @@ class PresenceService:
                 outcome=session.decision.value,
                 reason_code=reason_code,
                 matched_group_uuid=session.matched_group_uuid,
+                matched_individual_group_id=session.matched_individual_group_id,
+                matched_individual_group_name=session.matched_individual_group_name,
+                matched_member_number=session.matched_member_number,
+                matched_member_name=session.matched_member_name,
+                matched_gender=session.matched_gender,
+                matched_age_min=session.matched_age_min,
+                matched_age_max=session.matched_age_max,
                 policy_source=session.policy_source,
                 trigger_type=session.trigger_type,
                 action_type=session.action_type,
@@ -1846,6 +2111,62 @@ class PresenceService:
             )
             self.analytics_events.append(event)
             self.repository.save_analytics_event(event)
+
+    def _apply_matched_person_fields(self, session: PresenceSession, data: dict) -> None:
+        """Copy people-match details onto a presence session from match data.
+
+        The match data dict may carry the fields under the trigger-worker names
+        (group_id/group_name/existing_member_name/group_member_number/gender/
+        age_min/age_max) or the internal matched_* names. Populates the session
+        so the details surface in the session cards, inspector, and analytics.
+        """
+        best_match = data.get("match_info") if isinstance(data, dict) else None
+        best_match = best_match.get("best_match") if isinstance(best_match, dict) else {}
+
+        def pick(default, *names):
+            for name in names:
+                if default and name in default and default.get(name) is not None:
+                    return default.get(name)
+            for name in names:
+                value = data.get(name)
+                if value is not None:
+                    return value
+            return None
+
+        member_name = pick(best_match, "existing_member_name", "matched_member_name")
+        member_number = pick(best_match, "group_member_number", "matched_member_number")
+        if member_number is not None:
+            try:
+                member_number = int(member_number)
+            except (TypeError, ValueError):
+                member_number = None
+
+        group_id = pick(best_match, "group_id", "matched_individual_group_id") or session.matched_group_uuid
+        group_name = pick(best_match, "group_name", "matched_individual_group_name")
+        if not group_name:
+            group_name = self._active_presence_individual_group_name()
+        if not group_name and group_id:
+            group_name = group_id
+
+        age_min = pick(best_match, "age_min", "matched_age_min")
+        age_max = pick(best_match, "age_max", "matched_age_max")
+        age_min = int(age_min) if age_min is not None else None
+        age_max = int(age_max) if age_max is not None else None
+
+        session.matched_member_name = member_name
+        session.matched_member_number = member_number
+        session.matched_individual_group_id = group_id
+        session.matched_individual_group_name = group_name
+        session.matched_gender = pick(best_match, "gender", "matched_gender")
+        session.matched_age_min = age_min
+        session.matched_age_max = age_max
+
+        # People Profile resolution: PPP name is the sole source of truth for the
+        # matched member's display name in the burst (presence-client) flow too.
+        matched_member_uuid = data.get("matched_member_uuid") or pick(best_match, "matched_member_uuid")
+        session.matched_member_uuid = matched_member_uuid
+        if matched_member_uuid:
+            self._apply_ppp_to_session(session, matched_member_uuid)
 
     async def _grant_qr_check_in(self, session: PresenceSession, current_user: dict) -> None:
         if self._session_has_terminal_resolution(session):
@@ -2837,6 +3158,52 @@ class PresenceService:
         raw_payload = payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else payload
         return self._extract_identity_ids_from_payload(raw_payload)
 
+    def _select_presence_seed_identity_id(self, payload: dict | None) -> str | None:
+        """
+        Choose the best identity id to seed a presence individual group.
+
+        Prefers a genuine persisted ``mvr_person_uuid`` (match, then per-person,
+        then best-face) so we never persist a raw ``recording_pipeline``
+        ``individual_uuid`` shell as a group member. Falls back to the first
+        candidate identity id only when no MVR uuid is available.
+        """
+        if not payload:
+            return None
+
+        def first_mvr(*values: Any) -> str | None:
+            for value in values:
+                if isinstance(value, str) and value:
+                    return value
+            return None
+
+        data = payload.get("data") if isinstance(payload, dict) and isinstance(payload.get("data"), dict) else payload
+        if not isinstance(data, dict):
+            return None
+
+        match = data.get("match")
+        if isinstance(match, dict):
+            mvr = first_mvr(match.get("mvr_person_uuid"))
+            if mvr:
+                return mvr
+
+        person_objects = data.get("person_objects")
+        if isinstance(person_objects, list):
+            for person in person_objects:
+                if not isinstance(person, dict):
+                    continue
+                mvr = first_mvr(person.get("mvr_person_uuid"))
+                if mvr:
+                    return mvr
+                best_face = person.get("best_face")
+                if isinstance(best_face, dict):
+                    mvr = first_mvr(best_face.get("mvr_person_uuid"))
+                    if mvr:
+                        return mvr
+
+        # No deduplicated MVR uuid available; fall back to the first identity id.
+        identity_ids = self._extract_detection_identity_ids(payload)
+        return identity_ids[0] if identity_ids else None
+
     def _presence_individual_group_name(self, user_uuid: str | None) -> str:
         return f"Presence Individuals {user_uuid or 'unknown-user'}"
 
@@ -3048,6 +3415,16 @@ class PresenceService:
             "camera_label": camera_label,
             "headline": headline,
             "subtitle": " • ".join(subtitle_parts) if subtitle_parts else None,
+            "matched_group_uuid": session.matched_group_uuid,
+            "matched_individual_group_id": session.matched_individual_group_id,
+            "matched_individual_group_name": session.matched_individual_group_name,
+            "matched_member_number": session.matched_member_number,
+            "matched_member_name": session.matched_member_name,
+            "matched_gender": session.matched_gender,
+            "matched_age_min": session.matched_age_min,
+            "matched_age_max": session.matched_age_max,
+            "matched_ppp_uuid": session.matched_ppp_uuid,
+            "matched_member_uuid": session.matched_member_uuid,
             "created_at": session.created_at.isoformat(),
             "completed_at": session.executed_at.isoformat() if session.executed_at else None,
         }

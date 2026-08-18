@@ -348,6 +348,18 @@ class DuplicateMatch(BaseModel):
         default=None,
         description="Display member number inside the group (Group Member NN)",
     )
+    gender: Optional[str] = Field(
+        default=None,
+        description="Member gender: male, female, or unknown",
+    )
+    age_min: Optional[int] = Field(
+        default=None,
+        description="Member age band lower bound",
+    )
+    age_max: Optional[int] = Field(
+        default=None,
+        description="Member age band upper bound",
+    )
     similarity_score: float = Field(description="Face similarity score (0-1)")
     confidence: str = Field(description="Match confidence level: high, medium, low")
 

@@ -997,11 +997,16 @@ async def _evaluate_ppl_match(
                 for item in data.get("matches", []):
                     candidates.append({
                         "source_mvr_uuid": source_mvr_uuid,
+                        "group_id": data.get("group_id"),
+                        "group_name": data.get("group_name"),
                         "matched_member_uuid": item.get("existing_member_id"),
                         "similarity_score": item.get("similarity_score", 0.0),
                         "confidence": item.get("confidence"),
                         "existing_member_name": item.get("existing_member_name"),
                         "group_member_number": item.get("group_member_number"),
+                        "gender": item.get("gender"),
+                        "age_min": item.get("age_min"),
+                        "age_max": item.get("age_max"),
                     })
                 return candidates
 

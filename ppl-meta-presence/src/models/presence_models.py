@@ -143,6 +143,15 @@ class PresenceSession(BaseModel):
     resolved_collection_uuid: Optional[str] = None
     decision: PresenceDecisionState = PresenceDecisionState.PENDING
     matched_group_uuid: Optional[str] = None
+    matched_individual_group_id: Optional[str] = None
+    matched_individual_group_name: Optional[str] = None
+    matched_member_number: Optional[int] = None
+    matched_member_name: Optional[str] = None
+    matched_gender: Optional[str] = None
+    matched_age_min: Optional[int] = None
+    matched_age_max: Optional[int] = None
+    matched_ppp_uuid: Optional[str] = None
+    matched_member_uuid: Optional[str] = None
     policy_source: Optional[str] = None
     trigger_type: Optional[str] = None
     action_type: Optional[str] = None
@@ -248,6 +257,73 @@ class TriggerMatchRequest(BaseModel):
     similarity_score: Optional[float] = None
     source_mvr_uuid: Optional[str] = None
     matched_at: Optional[str] = None
+    matched_individual_group_id: Optional[str] = None
+    matched_individual_group_name: Optional[str] = None
+    matched_member_number: Optional[int] = None
+    matched_member_name: Optional[str] = None
+    matched_gender: Optional[str] = None
+    matched_age_min: Optional[int] = None
+    matched_age_max: Optional[int] = None
+
+
+class PresencePeopleProfile(BaseModel):
+    """A people-centric identity record (PPP) used as the canonical place to
+    set and retrieve a real person's name and details across individual groups
+    and presence sessions."""
+
+    ppp_uuid: str = Field(default_factory=lambda: str(uuid4()))
+    profile_type: str = "people"
+    name: str = Field(..., min_length=1, max_length=255)
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+    external_ref: Optional[str] = None
+    parent_ppp_uuid: Optional[str] = None
+    installation_uuid: str = "local-installation"
+    linked_member_count: int = 0
+    status: str = "active"  # active | inactive | merged
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class PresencePeopleProfileLink(BaseModel):
+    """Links a PPP to one member in one individual group."""
+
+    link_uuid: str = Field(default_factory=lambda: str(uuid4()))
+    ppp_uuid: str
+    group_id: str
+    individual_id: str
+    linked_at: datetime = Field(default_factory=datetime.utcnow)
+    linked_by: Optional[str] = None
+
+
+class CreatePeopleProfileRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+    external_ref: Optional[str] = None
+    installation_uuid: str = "local-installation"
+
+
+class UpdatePeopleProfileRequest(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+    external_ref: Optional[str] = None
+    status: Optional[str] = None
+
+
+class LinkMemberRequest(BaseModel):
+    group_id: str
+    individual_id: str
+
+
+class UnlinkMemberRequest(BaseModel):
+    group_id: str
+    individual_id: str
 
 
 class PresenceExternalAssets(BaseModel):
@@ -352,6 +428,14 @@ class PresenceAnalyticsEvent(BaseModel):
     outcome: str
     reason_code: str
     matched_group_uuid: Optional[str] = None
+    matched_individual_group_id: Optional[str] = None
+    matched_individual_group_name: Optional[str] = None
+    matched_member_number: Optional[int] = None
+    matched_member_name: Optional[str] = None
+    matched_gender: Optional[str] = None
+    matched_age_min: Optional[int] = None
+    matched_age_max: Optional[int] = None
+    matched_ppp_uuid: Optional[str] = None
     policy_source: Optional[str] = None
     trigger_type: Optional[str] = None
     action_type: Optional[str] = None

@@ -375,6 +375,16 @@ class PresenceSessionTraceSummary {
   final String? cameraLabel;
   final String? headline;
   final String? subtitle;
+  final String? matchedGroupUuid;
+  final String? matchedIndividualGroupId;
+  final String? matchedIndividualGroupName;
+  final int? matchedMemberNumber;
+  final String? matchedMemberName;
+  final String? matchedGender;
+  final int? matchedAgeMin;
+  final int? matchedAgeMax;
+  final String? matchedPppUuid;
+  final String? matchedMemberUuid;
   final DateTime? createdAt;
   final DateTime? completedAt;
 
@@ -394,6 +404,16 @@ class PresenceSessionTraceSummary {
     required this.cameraLabel,
     required this.headline,
     required this.subtitle,
+    required this.matchedGroupUuid,
+    required this.matchedIndividualGroupId,
+    required this.matchedIndividualGroupName,
+    required this.matchedMemberNumber,
+    required this.matchedMemberName,
+    required this.matchedGender,
+    required this.matchedAgeMin,
+    required this.matchedAgeMax,
+    required this.matchedPppUuid,
+    required this.matchedMemberUuid,
     required this.createdAt,
     required this.completedAt,
   });
@@ -423,6 +443,22 @@ class PresenceSessionTraceSummary {
       cameraLabel: json['camera_label']?.toString(),
       headline: json['headline']?.toString(),
       subtitle: json['subtitle']?.toString(),
+      matchedGroupUuid: json['matched_group_uuid']?.toString(),
+      matchedIndividualGroupId: json['matched_individual_group_id']?.toString(),
+      matchedIndividualGroupName: json['matched_individual_group_name']?.toString(),
+      matchedMemberNumber: json['matched_member_number'] is num
+          ? (json['matched_member_number'] as num).toInt()
+          : null,
+      matchedMemberName: json['matched_member_name']?.toString(),
+      matchedGender: json['matched_gender']?.toString(),
+      matchedAgeMin: json['matched_age_min'] is num
+          ? (json['matched_age_min'] as num).toInt()
+          : null,
+      matchedAgeMax: json['matched_age_max'] is num
+          ? (json['matched_age_max'] as num).toInt()
+          : null,
+      matchedPppUuid: json['matched_ppp_uuid']?.toString(),
+      matchedMemberUuid: json['matched_member_uuid']?.toString(),
       createdAt: parseDate('created_at'),
       completedAt: parseDate('completed_at'),
     );
@@ -802,6 +838,15 @@ class PresenceSessionDetails {
   final String qrStatus;
   final String detectionStatus;
   final String? matchedGroupUuid;
+  final String? matchedIndividualGroupId;
+  final String? matchedIndividualGroupName;
+  final int? matchedMemberNumber;
+  final String? matchedMemberName;
+  final String? matchedGender;
+  final int? matchedAgeMin;
+  final int? matchedAgeMax;
+  final String? matchedPppUuid;
+  final String? matchedMemberUuid;
   final String? policySource;
   final String? triggerType;
   final String? actionType;
@@ -821,6 +866,15 @@ class PresenceSessionDetails {
     required this.qrStatus,
     required this.detectionStatus,
     required this.matchedGroupUuid,
+    required this.matchedIndividualGroupId,
+    required this.matchedIndividualGroupName,
+    required this.matchedMemberNumber,
+    required this.matchedMemberName,
+    required this.matchedGender,
+    required this.matchedAgeMin,
+    required this.matchedAgeMax,
+    required this.matchedPppUuid,
+    required this.matchedMemberUuid,
     required this.policySource,
     required this.triggerType,
     required this.actionType,
@@ -842,6 +896,21 @@ class PresenceSessionDetails {
       qrStatus: (json['qr_status'] ?? '').toString(),
       detectionStatus: (json['detection_status'] ?? '').toString(),
       matchedGroupUuid: json['matched_group_uuid']?.toString(),
+      matchedIndividualGroupId: json['matched_individual_group_id']?.toString(),
+      matchedIndividualGroupName: json['matched_individual_group_name']?.toString(),
+      matchedMemberNumber: json['matched_member_number'] is num
+          ? (json['matched_member_number'] as num).toInt()
+          : null,
+      matchedMemberName: json['matched_member_name']?.toString(),
+      matchedGender: json['matched_gender']?.toString(),
+      matchedAgeMin: json['matched_age_min'] is num
+          ? (json['matched_age_min'] as num).toInt()
+          : null,
+      matchedAgeMax: json['matched_age_max'] is num
+          ? (json['matched_age_max'] as num).toInt()
+          : null,
+      matchedPppUuid: json['matched_ppp_uuid']?.toString(),
+      matchedMemberUuid: json['matched_member_uuid']?.toString(),
       policySource: json['policy_source']?.toString(),
       triggerType: json['trigger_type']?.toString(),
       actionType: json['action_type']?.toString(),
@@ -1054,6 +1123,99 @@ class PresenceQrValidation {
       installationUuid: json['installation_uuid']?.toString(),
       qrType: json['qr_type']?.toString(),
       referenceSource: json['reference_source']?.toString(),
+    );
+  }
+}
+
+class PresencePeopleProfileLink {
+  final String pppUuid;
+  final String groupId;
+  final String individualId;
+  final String? linkedAt;
+  final String? linkedBy;
+
+  const PresencePeopleProfileLink({
+    required this.pppUuid,
+    required this.groupId,
+    required this.individualId,
+    this.linkedAt,
+    this.linkedBy,
+  });
+
+  factory PresencePeopleProfileLink.fromJson(Map<String, dynamic> json) {
+    return PresencePeopleProfileLink(
+      pppUuid: (json['ppp_uuid'] ?? '').toString(),
+      groupId: (json['group_id'] ?? '').toString(),
+      individualId: (json['individual_id'] ?? '').toString(),
+      linkedAt: json['linked_at']?.toString(),
+      linkedBy: json['linked_by']?.toString(),
+    );
+  }
+}
+
+/// A single selected session filter chip.
+/// [category] is one of: grant_type | session_mode | decision | camera | date.
+class SessionFilter {
+  final String category;
+  final String value;
+  final String label;
+
+  const SessionFilter({
+    required this.category,
+    required this.value,
+    required this.label,
+  });
+
+  bool sameAs(SessionFilter other) => category == other.category && value == other.value;
+}
+
+class PresencePeopleProfile {
+  final String pppUuid;
+  final String name;
+  final String? email;
+  final String? phone;
+  final String? notes;
+  final String? externalRef;
+  final String? installationUuid;
+  final int linkedMemberCount;
+  final String status;
+  final List<PresencePeopleProfileLink> links;
+
+  const PresencePeopleProfile({
+    required this.pppUuid,
+    required this.name,
+    this.email,
+    this.phone,
+    this.notes,
+    this.externalRef,
+    this.installationUuid,
+    this.linkedMemberCount = 0,
+    this.status = 'active',
+    this.links = const [],
+  });
+
+  factory PresencePeopleProfile.fromJson(Map<String, dynamic> json) {
+    final links = <PresencePeopleProfileLink>[];
+    if (json['links'] is List) {
+      for (final link in json['links'] as List) {
+        if (link is Map<String, dynamic>) {
+          links.add(PresencePeopleProfileLink.fromJson(link));
+        }
+      }
+    }
+    return PresencePeopleProfile(
+      pppUuid: (json['ppp_uuid'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
+      email: json['email']?.toString(),
+      phone: json['phone']?.toString(),
+      notes: json['notes']?.toString(),
+      externalRef: json['external_ref']?.toString(),
+      installationUuid: json['installation_uuid']?.toString(),
+      linkedMemberCount: json['linked_member_count'] is num
+          ? (json['linked_member_count'] as num).toInt()
+          : 0,
+      status: (json['status'] ?? 'active').toString(),
+      links: links,
     );
   }
 }

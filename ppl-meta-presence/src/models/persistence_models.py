@@ -61,3 +61,21 @@ class PresenceDecisionHistoryRecord(Base):
     device_uuid: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     decision: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class PresencePeopleProfileRecord(Base):
+    __tablename__ = "presence_people_profiles"
+
+    ppp_uuid: Mapped[str] = mapped_column(String(64), primary_key=True)
+    installation_uuid: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class PresencePeopleProfileLinkRecord(Base):
+    __tablename__ = "presence_people_profile_links"
+
+    link_uuid: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ppp_uuid: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    group_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    individual_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
