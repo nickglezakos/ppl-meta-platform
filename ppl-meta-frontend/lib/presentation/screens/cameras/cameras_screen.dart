@@ -12,6 +12,8 @@ import '../../widgets/camera/add_edge_camera_dialog.dart';
 import '../../../widgets/custom_app_bar.dart';
 import '../../../widgets/automatic_face_detection_status.dart';
 import 'multi_stream_page.dart';
+import 'camera_pipeline_settings_screen.dart';
+import '../../../presentation/widgets/common/ux_breakpoints.dart';
 
 /// Enhanced cameras screen with real-time status monitoring
 class CamerasScreen extends ConsumerStatefulWidget {
@@ -25,6 +27,17 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
   // REMOVED: bool _showMonitoringDashboard = false; // Complex monitoring dashboard removed
   bool _showLiveStreams = false; // Disable streaming by default to prevent auto-connection
   bool _showArchivedCameras = false; // Toggle to show/hide archived cameras
+  String? _selectedDeviceId;
+
+  Camera _selectedCamera(CameraListState state) {
+    for (final c in state.cameras) {
+      if (c.deviceId == _selectedDeviceId) return c;
+    }
+    return state.cameras.first;
+  }
+
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -33,6 +46,12 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(cameraListProvider.notifier).loadCameras(includeArchived: _showArchivedCameras);
     });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -212,10 +231,28 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
             const AutomaticFaceDetectionStatus(),
           ], */
           
-          // Cameras list
-          Expanded(
-            child: _buildCamerasContent(cameraListState),
-          ),
+          // Master/detail split on wide (desktop) screens:
+          // list on the left, selected camera's content on the right.
+          if (isWide(context))
+            Expanded(
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: kMasterPaneWidth,
+                    child: _buildCamerasContent(cameraListState),
+                  ),
+                  const VerticalDivider(width: 1),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: _rightPane(cameraListState),
+                  ),
+                ],
+              ),
+            )
+          else
+            Expanded(
+              child: _buildCamerasContent(cameraListState),
+            ),
         ],
       ),
     );
@@ -240,6 +277,29 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
       return _buildEmptyState();
     }
 
+    // In wide (desktop) mode taps select the camera into the content pane
+    // instead of navigating away to the detail route.
+    final bool isMasterDetail = isWide(context);
+
+    final query = _searchQuery.trim().toLowerCase();
+    final List<Camera> filtered = query.isEmpty
+        ? cameras
+        : cameras
+              .where((c) =>
+                  c.name.toLowerCase().contains(query) ||
+                  c.deviceId.toLowerCase().contains(query))
+              .toList();
+
+    if (filtered.isEmpty) {
+      return Column(
+        children: [
+          _buildSearchField(),
+          const SizedBox(height: 8),
+          Expanded(child: _buildNoMatches()),
+        ],
+      );
+    }
+
     return RefreshIndicator(
       onRefresh: () async {
         ref.read(cameraListProvider.notifier).loadCameras(includeArchived: _showArchivedCameras);
@@ -252,6 +312,13 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
             slivers: [
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                sliver: SliverToBoxAdapter(
+                  child: _buildSearchField(),
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 8)),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                 sliver: SliverToBoxAdapter(
                   child: Text(
                     'Cameras',
@@ -275,12 +342,19 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) => CameraCard(
-                        camera: cameras[index],
+                        camera: filtered[index],
+                        selected: isMasterDetail &&
+                            filtered[index].deviceId == _selectedDeviceId,
                         onTap: () {
-                          context.go('/cameras/${cameras[index].deviceId}');
+                          final deviceId = filtered[index].deviceId;
+                          if (isMasterDetail) {
+                            setState(() => _selectedDeviceId = deviceId);
+                          } else {
+                            context.go('/cameras/$deviceId');
+                          }
                         },
                       ),
-                      childCount: cameras.length,
+                      childCount: filtered.length,
                     ),
                   ),
                 )
@@ -292,19 +366,100 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
                       (context, index) => Padding(
                         padding: const EdgeInsets.only(bottom: 16),
                         child: CameraCard(
-                          camera: cameras[index],
+                          camera: filtered[index],
+                          selected: isMasterDetail &&
+                              filtered[index].deviceId == _selectedDeviceId,
                           onTap: () {
-                            context.go('/cameras/${cameras[index].deviceId}');
+                            final deviceId = filtered[index].deviceId;
+                            if (isMasterDetail) {
+                              setState(() => _selectedDeviceId = deviceId);
+                            } else {
+                              context.go('/cameras/$deviceId');
+                            }
                           },
                         ),
                       ),
-                      childCount: cameras.length,
+                      childCount: filtered.length,
                     ),
                   ),
                 ),
             ],
           );
         },
+      ),
+    );
+  }
+
+  /// Right content pane (desktop master/detail) rendering the selected
+  /// camera's pipeline settings form inline — the same view the gear icon
+  /// opens, shown directly in the content pane.
+  Widget _rightPane(CameraListState state) {
+    if (state.cameras.isEmpty) {
+      return _buildEmptyPane();
+    }
+    final camera = _selectedCamera(state);
+    // Keying by deviceId forces the StatefulWidget's state to be recreated
+    // (and its settings reloaded) when a different camera is selected.
+    return CameraPipelineSettingsScreen(
+      key: ValueKey(camera.deviceId),
+      camera: camera,
+      showAppBar: false,
+    );
+  }
+
+  /// Placeholder shown in the content pane when there are no cameras.
+  Widget _buildEmptyPane() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.videocam_off_outlined,
+            size: 64,
+            color: AppColors.textSecondary.withOpacity(0.5),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Select a camera to view its live stream and controls',
+            style: OfflineFonts.inter(
+              fontSize: 15,
+              color: AppColors.textSecondary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Search field shown above the cameras list.
+  Widget _buildSearchField() {
+    return TextField(
+      controller: _searchController,
+      onChanged: (value) => setState(() => _searchQuery = value),
+      decoration: InputDecoration(
+        hintText: 'Search cameras',
+        prefixIcon: const Icon(Icons.search),
+        isDense: true,
+        filled: true,
+        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+
+  /// Placeholder shown when the search yields no matches.
+  Widget _buildNoMatches() {
+    return Center(
+      child: Text(
+        'No cameras match your search',
+        style: OfflineFonts.inter(
+          fontSize: 14,
+          color: AppColors.textSecondary,
+        ),
       ),
     );
   }

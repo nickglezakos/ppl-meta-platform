@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/providers/auth_provider.dart';
-import '../../../core/providers/users_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../widgets/app_logo.dart';
 
@@ -13,24 +12,6 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authNotifier = ref.read(authNotifierProvider.notifier);
     final currentUser = ref.watch(currentUserProvider);
-
-    Future<void> sendVerificationEmail() async {
-      try {
-        final service = ref.read(usersServiceProvider);
-        final msg = await service.sendVerificationEmail();
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(msg), backgroundColor: Colors.green),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-          );
-        }
-      }
-    }
 
     return Scaffold(
       appBar: AppBar(
@@ -158,99 +139,7 @@ class HomeScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Compact welcome header
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.waving_hand,
-                    color: Colors.orange,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  if (currentUser != null) ...[
-                    Text(
-                      'Welcome back, ${currentUser.username}',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '•',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).textTheme.bodySmall?.color,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        currentUser.email,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).textTheme.bodySmall?.color,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (!currentUser.emailVerified) ...[
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: () => sendVerificationEmail(),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.email, size: 14, color: Colors.orange),
-                              SizedBox(width: 4),
-                              Text(
-                                'Verify',
-                                style: TextStyle(
-                                  color: Colors.orange,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ] else ...[
-                    Text(
-                      'Welcome back!',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Quick actions
-            Text(
-              'Quick Actions',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-
+            // (welcome bar and quick actions title removed)
             // Action cards
             Expanded(
               child: LayoutBuilder(
@@ -298,12 +187,12 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.how_to_reg,
+                        icon: Icons.precision_manufacturing,
                         iconColor: AppColors.secondary,
-                        title: 'Presence',
-                        subtitle: 'Presence flows and assurance analytics',
+                        title: 'Automation',
+                        subtitle: 'Manage automated triggers & actions',
                         onTap: () {
-                          context.go('/presence');
+                          context.go('/triggers');
                         },
                       ),
                       _ActionCard(
@@ -325,12 +214,12 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.precision_manufacturing,
+                        icon: Icons.how_to_reg,
                         iconColor: AppColors.secondary, // Unified cyan color
-                        title: 'Automation',
-                        subtitle: 'Manage automated triggers & actions',
+                        title: 'Presence',
+                        subtitle: 'Presence flows and assurance analytics',
                         onTap: () {
-                          context.go('/triggers');
+                          context.go('/presence');
                         },
                       ),
                       _ActionCard(

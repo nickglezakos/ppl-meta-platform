@@ -14,17 +14,20 @@ import '../../screens/cameras/camera_pipeline_settings_screen.dart';
 import '../../../widgets/camera/camera_counter_widget.dart';
 import '../../../widgets/camera/instant_detection_widget.dart';
 import '../../../widgets/camera/instant_detection_controls.dart';
-import 'rtsp_camera_dialog.dart';
-import 'edit_camera_name_dialog.dart';
 
 class CameraCard extends ConsumerWidget {
   final Camera camera;
   final VoidCallback? onTap;
 
+  /// When true, renders the card with a highlighted selected border. Used by
+  /// responsive master/detail layouts to mark the currently-active camera.
+  final bool selected;
+
   const CameraCard({
     super.key,
     required this.camera,
     this.onTap,
+    this.selected = false,
   });
 
   static IconData _getCameraIcon(CameraType type) {
@@ -92,17 +95,24 @@ class CameraCard extends ConsumerWidget {
     debugPrint('   ✅ Final isConnected: $isConnected');
     debugPrint('   🎬 Play button visible: $isConnected');
 
-    return Card(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
+        side: selected
+            ? BorderSide(color: colorScheme.primary, width: 2)
+            : BorderSide.none,
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-              // Header with status indicator
+              // Header: camera type icon + camera title (wraps onto next line on
+              // narrow/mobile cards instead of truncating or overflowing).
               Row(
                 children: [
                   Icon(
@@ -112,81 +122,69 @@ class CameraCard extends ConsumerWidget {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            updatedCamera.name,
-                            style: textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                            overflow: TextOverflow.ellipsis,
+                    child: Text(
+                      updatedCamera.name,
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  // Settings is always available in the content pane on desktop;
+                  // on mobile it is opened from this card instead.
+                  if (isMobileView) ...[
+                    const SizedBox(width: 4),
+                    IconButton(
+                      onPressed: () => _showPipelineSettings(context, ref, updatedCamera),
+                      icon: const Icon(Icons.settings_outlined, size: 20),
+                      iconSize: 20,
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Camera settings',
+                    ),
+                  ],
+                ],
+              ),
+
+              // Pipeline status indicators
+              Padding(
+                padding: const EdgeInsets.only(top: 8, left: 32),
+                child: Row(
+                  children: [
+                    if (updatedCamera.instantDetectionEnabled) ...[
+                      Tooltip(
+                        message: 'Instant Detection Active',
+                        child: Container(
+                          padding: EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Color(0x1AFF9800),
+                            borderRadius: BorderRadius.all(Radius.circular(4)),
+                          ),
+                          child: Icon(Icons.bolt, color: Colors.orange, size: 16),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    if (updatedCamera.recordingPipelineEnabled) ...[
+                      Tooltip(
+                        message: 'Recording Pipeline Active',
+                        child: Container(
+                          padding: EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Color(0x1A000000),
+                            borderRadius: BorderRadius.all(Radius.circular(4)),
+                          ),
+                          child: Icon(
+                            Icons.fiber_manual_record,
+                            color: Colors.red,
+                            size: 16,
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        // Edit name button
-                        IconButton(
-                          onPressed: () => _showEditNameDialog(context, ref, updatedCamera),
-                          icon: const Icon(Icons.edit, size: 16),
-                          iconSize: 16,
-                          padding: const EdgeInsets.all(4),
-                          constraints: const BoxConstraints(),
-                          tooltip: 'Rename camera',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Pipeline status indicators
-                  if (updatedCamera.instantDetectionEnabled)
-                    Tooltip(
-                      message: 'Instant Detection Active',
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Icon(
-                          Icons.bolt,
-                          color: Colors.orange,
-                          size: 16,
-                        ),
                       ),
-                    ),
-                  const SizedBox(width: 4),
-                  if (updatedCamera.recordingPipelineEnabled)
-                    Tooltip(
-                      message: 'Recording Pipeline Active',
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Icon(
-                          Icons.fiber_manual_record,
-                          color: Colors.red,
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(width: 4),
-                  // Pipeline settings button
-                  IconButton(
-                    onPressed: () => _showPipelineSettings(context, ref, updatedCamera),
-                    icon: const Icon(Icons.tune, size: 20),
-                    iconSize: 20,
-                    padding: const EdgeInsets.all(4),
-                    constraints: const BoxConstraints(),
-                    tooltip: 'Pipeline Settings',
-                  ),
-                  const SizedBox(width: 4),
-                  // Collection status indicator
-                  _CollectionStatusIndicator(cameraId: updatedCamera.deviceId),
-                  const SizedBox(width: 8),
-                  _StatusIndicator(camera: updatedCamera),
-                ],
+                      const SizedBox(width: 4),
+                    ],
+                    _StatusIndicator(camera: updatedCamera),
+                  ],
+                ),
               ),
               
               const SizedBox(height: 12),
@@ -257,7 +255,10 @@ class CameraCard extends ConsumerWidget {
                 const SizedBox(height: 8),
               
               // Bottom actions
-              Row(
+              Wrap(
+                spacing: actionSpacingMedium,
+                runSpacing: actionSpacingMedium,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   // Active status
                   Container(
@@ -285,19 +286,8 @@ class CameraCard extends ConsumerWidget {
                     ),
                   ),
                   
-                  const Spacer(),
-                  
-                  // RTSP Edit button (only for RTSP cameras)
+                  // Spacer removed so the action icons wrap onto additional // lines when the card is too narrow to fit them in one row.
                   if (updatedCamera.type == CameraType.rtsp) ...[
-                    IconButton(
-                      onPressed: () => _showEditRTSPDialog(context, ref, updatedCamera),
-                      icon: const Icon(Icons.edit),
-                      iconSize: actionIconSize,
-                      padding: actionPadding,
-                      constraints: const BoxConstraints(),
-                      tooltip: 'Edit camera',
-                    ),
-                    SizedBox(width: actionSpacingMedium),
                     IconButton(
                       onPressed: () => _showDeleteRTSPDialog(context, ref, updatedCamera),
                       icon: const Icon(Icons.delete, color: Colors.red),
@@ -448,6 +438,7 @@ class CameraCard extends ConsumerWidget {
             ],
           ),
         ),
+      ),
     );
   }
   
@@ -459,33 +450,6 @@ class CameraCard extends ConsumerWidget {
     ).then((result) {
       if (result == true) {
         // Reload cameras after settings change
-        ref.read(cameraListProvider.notifier).loadCameras();
-      }
-    });
-  }
-  
-  static void _showEditNameDialog(BuildContext context, WidgetRef ref, Camera camera) {
-    showDialog(
-      context: context,
-      builder: (context) => EditCameraNameDialog(camera: camera),
-    ).then((result) {
-      if (result == true) {
-        // Reload cameras after name change
-        ref.read(cameraListProvider.notifier).loadCameras();
-      }
-    });
-  }
-  
-  static void _showEditRTSPDialog(BuildContext context, WidgetRef ref, Camera camera) {
-    showDialog(
-      context: context,
-      builder: (context) => RTSPCameraDialog(
-        camera: camera,
-        isEditing: true,
-      ),
-    ).then((result) {
-      if (result == true) {
-        // Reload cameras after edit
         ref.read(cameraListProvider.notifier).loadCameras();
       }
     });

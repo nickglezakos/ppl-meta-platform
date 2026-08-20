@@ -4,10 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/trigger_model.dart'; 
 import '../services/trigger_service.dart';
 import '../core/models/camera.dart';
+import '../core/theme/app_theme.dart';
 import '../core/providers/camera_providers.dart';
 import '../core/api/api_client.dart';
 import '../services/individual_groups_api_client.dart';
 import '../models/individual_group_models.dart';
+import '../presentation/widgets/common/ux_breakpoints.dart';
+import '../presentation/widgets/common/content_pane.dart';
+import '../presentation/widgets/common/unified_toggle.dart';
 
 class TriggersTab extends ConsumerStatefulWidget {
   const TriggersTab({super.key});
@@ -52,6 +56,13 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
   bool? _filterIsActive;
   int _currentPage = 1;
   int _totalPages = 1;
+
+  // Master/detail + search (unified UX, Phase 4)
+  TriggerModel? _selectedTrigger;
+  bool _editingTrigger = false;
+  Widget? _inlineTriggerEditor;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -223,6 +234,10 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
         _triggers = response.triggers;
         _totalPages = response.totalPages;
         _isLoading = false;
+        // Default-select the first trigger so the right settings pane is
+        // populated on load (unless the user already picked one).
+        _selectedTrigger ??=
+            _triggers.isNotEmpty ? _triggers.first : null;
       });
     } catch (e) {
       debugPrint('❌ Error loading triggers: $e');
@@ -321,7 +336,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
               i < names.length ? names[i] : uuids[i].substring(0, 8),
               style: const TextStyle(color: Colors.white70, fontSize: 11),
             ),
-            backgroundColor: Colors.blueGrey.shade800,
+            backgroundColor: AppColors.primary,
             padding: EdgeInsets.zero,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             visualDensity: VisualDensity.compact,
@@ -331,96 +346,23 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     );
   }
 
-  Future<void> _showMultiActionPicker(TriggerModel trigger) async {
-    final currentUuids = List<String>.from(
-      trigger.actionUuids ?? (trigger.actionUuid != null ? [trigger.actionUuid!] : []),
-    );
-    final selectedUuids = List<String>.from(currentUuids);
-
-    final result = await showDialog<List<String>>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Select Actions'),
-              content: SizedBox(
-                width: 400,
-                child: _availableActions.isEmpty
-                    ? const Text('No actions available. Create actions first.')
-                    : ListView(
-                        shrinkWrap: true,
-                        children: _availableActions.map((action) {
-                          final uuid = action['uuid']!;
-                          final isSelected = selectedUuids.contains(uuid);
-                          return CheckboxListTile(
-                            title: Text(action['name']!),
-                            subtitle: Text(action['type'] ?? '', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
-                            value: isSelected,
-                            onChanged: (checked) {
-                              setDialogState(() {
-                                if (checked == true) {
-                                  selectedUuids.add(uuid);
-                                } else {
-                                  selectedUuids.remove(uuid);
-                                }
-                              });
-                            },
-                          );
-                        }).toList(),
-                      ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, null),
-                  child: const Text('Cancel'),
-                ),
-                if (selectedUuids.isNotEmpty)
-                  TextButton(
-                    onPressed: () {
-                      setDialogState(() => selectedUuids.clear());
-                    },
-                    child: const Text('Clear All'),
-                  ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context, selectedUuids),
-                  child: const Text('Save'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (result == null) return; // Cancelled
-    await _updateTriggerActions(trigger, result);
-  }
-
-  Future<void> _toggleTrigger(TriggerModel trigger) async {
+  Future<bool> _unifiedToggleTrigger(TriggerModel trigger) async {
     try {
       final apiClient = ref.read(apiClientProvider);
-      
+
       final response = await apiClient.put(
         '/api/v1/triggers/${trigger.uuid}',
         data: {'is_active': !trigger.isActive},
       );
-      
+
       if (response.statusCode == 200) {
-        if (!mounted) return;
-        _loadTriggers();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Trigger ${trigger.isActive ? 'deactivated' : 'activated'}')),
-        );
-      } else {
-        throw Exception('Failed to toggle trigger');
+        if (mounted) await _loadTriggers();
+        return true;
       }
+      return false;
     } catch (e) {
       debugPrint('❌ Error toggling trigger: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error toggling trigger: $e')),
-      );
+      return false;
     }
   }
 
@@ -437,7 +379,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('Delete'),
           ),
         ],
@@ -515,11 +457,13 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: LayoutBuilder(
+        builder: (context, _) {
+          final master = Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             // Header
             LayoutBuilder(
               builder: (context, constraints) {
@@ -596,6 +540,10 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
             const SizedBox(height: 16),
             
             // Content
+            _buildSearchField(),
+            const SizedBox(height: 12),
+
+            // Content
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
@@ -604,7 +552,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text('Error: $_errorMessage', style: const TextStyle(color: Colors.red)),
+                              Text('Error: $_errorMessage', style: const TextStyle(color: AppColors.error)),
                               const SizedBox(height: 16),
                               ElevatedButton(
                                 onPressed: _loadTriggers,
@@ -663,7 +611,20 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                 ),
               ),
           ],
-        ),
+            ),
+          );
+          if (isWide(context)) {
+            return Row(
+              children: [
+                SizedBox(width: kMasterPaneWidth, child: master),
+                const VerticalDivider(width: 1),
+                const SizedBox(width: 4),
+                Expanded(child: _buildDetailPane()),
+              ],
+            );
+          }
+          return master;
+        },
       ),
     );
   }
@@ -689,12 +650,173 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
   };
 
   static const _modeColors = {
-    'demographic': Colors.blue,
-    'ppl_match': Colors.purple,
-    'search': Colors.teal,
-    'search_demographic': Colors.deepOrange,
-    'vprofile_match': Colors.indigo,
+    'demographic': AppColors.primary,
+    'ppl_match': AppColors.secondary,
+    'search': AppColors.secondary,
+    'search_demographic': AppColors.error,
+    'vprofile_match': AppColors.info,
   };
+
+  Widget _buildSearchField() {
+    return TextField(
+      controller: _searchController,
+      onChanged: (value) => setState(() => _searchQuery = value),
+      decoration: InputDecoration(
+        hintText: 'Search triggers',
+        prefixIcon: const Icon(Icons.search),
+        isDense: true,
+        filled: true,
+        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleInlineTriggerEditor(TriggerModel trigger) async {
+    if (_editingTrigger) {
+      setState(() {
+        _editingTrigger = false;
+        _inlineTriggerEditor = null;
+      });
+      return;
+    }
+
+    final w = await _showCreateEditDialog(
+      trigger: trigger,
+      embedded: true,
+      onCancel: () {
+        if (mounted) {
+          setState(() {
+            _editingTrigger = false;
+            _inlineTriggerEditor = null;
+          });
+        }
+      },
+      onSaved: () async {
+        await _loadTriggers();
+        if (!mounted) return;
+        setState(() {
+          _editingTrigger = false;
+          _inlineTriggerEditor = null;
+          if (trigger.uuid != null) {
+            final reloaded =
+                _triggers.where((t) => t.uuid == trigger.uuid);
+            if (reloaded.isNotEmpty) _selectedTrigger = reloaded.first;
+          }
+        });
+      },
+    );
+    if (!mounted || w == null) return;
+    setState(() {
+      _inlineTriggerEditor = w;
+      _editingTrigger = true;
+    });
+  }
+
+  Widget _buildDetailPane() {
+    final trigger = _selectedTrigger;
+    if (trigger == null) {
+      return ContentPane(
+        title: 'Trigger',
+        subtitle: 'Select a trigger to inspect it',
+        child: const Center(
+          child: Text('Select a trigger from the list to view its details'),
+        ),
+      );
+    }
+
+    final mode = trigger.triggerMode;
+    final modeLabel = _modeLabels[mode] ?? mode;
+
+    return ContentPane(
+      title: trigger.name ?? 'Unnamed',
+      subtitle: modeLabel,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Status',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    UnifiedToggle(
+                      value: trigger.isActive,
+                      label: trigger.isActive ? 'Active' : 'Inactive',
+                      onToggle: (next) => _unifiedToggleTrigger(trigger),
+                    ),
+                    const SizedBox(height: 12),
+                    _detailRow('Mode', modeLabel),
+                    _detailRow(
+                      'Camera',
+                      trigger.cameraName ?? trigger.cameraDeviceId ?? '—',
+                    ),
+                    _detailRow('Conditions', '${trigger.conditionsDisplay}'),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _toggleInlineTriggerEditor(trigger),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Edit'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _deleteTrigger(trigger),
+                  icon: const Icon(Icons.delete_outline),
+                  style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
+                  label: const Text('Delete'),
+                ),
+              ],
+            ),
+            if (_editingTrigger && _inlineTriggerEditor != null) ...[
+              const SizedBox(height: 12),
+              _inlineTriggerEditor!,
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey.shade500,
+                  ),
+            ),
+          ),
+          Expanded(
+            child: Text(value, style: Theme.of(context).textTheme.bodyMedium),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildTriggerCards() {
     return LayoutBuilder(builder: (context, constraints) {
@@ -721,10 +843,19 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
             : 264,
       );
 
+      final q = _searchQuery.trim().toLowerCase();
+      final visible = q.isEmpty
+          ? _triggers
+          : _triggers
+                .where((t) =>
+                    (t.name ?? '').toLowerCase().contains(q) ||
+                    (t.triggerMode ?? '').toLowerCase().contains(q))
+                .toList();
+
       return GridView.builder(
         gridDelegate: gridDelegate,
-        itemCount: _triggers.length,
-        itemBuilder: (context, index) => _buildTriggerCard(_triggers[index]),
+        itemCount: visible.length,
+        itemBuilder: (context, index) => _buildTriggerCard(visible[index]),
       );
     });
   }
@@ -766,7 +897,17 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
-        onTap: () => _showCreateEditDialog(trigger: trigger),
+        onTap: () {
+          if (isWide(context)) {
+            setState(() {
+              _selectedTrigger = trigger;
+              _editingTrigger = false;
+              _inlineTriggerEditor = null;
+            });
+          } else {
+            _showCreateEditDialog(trigger: trigger);
+          }
+        },
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
           child: Column(
@@ -795,27 +936,36 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (!isWide(context)) ...[
+                    const SizedBox(width: 4),
+                    IconButton(
+                      onPressed: () => _showCreateEditDialog(trigger: trigger),
+                      icon: const Icon(Icons.settings_outlined, size: 20),
+                      iconSize: 20,
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Trigger settings',
+                    ),
+                  ],
                   const SizedBox(width: 6),
-                  // Active badge + toggle
-                  GestureDetector(
-                    onTap: () => _toggleTrigger(trigger),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
+                  // Informational status chip — editing/toggle lives in the
+                  // right-hand detail pane (or pending editor on mobile).
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: trigger.isActive
+                          ? AppColors.success.withValues(alpha: 0.14)
+                          : AppColors.error.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      trigger.isActive ? 'Active' : 'Inactive',
+                      style: TextStyle(
                         color: trigger.isActive
-                            ? Colors.green.shade900
-                            : Colors.red.shade900,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        trigger.isActive ? 'Active' : 'Inactive',
-                        style: TextStyle(
-                          color: trigger.isActive
-                              ? Colors.green.shade300
-                              : Colors.red.shade300,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
+                            ? AppColors.success
+                            : AppColors.error,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -868,7 +1018,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                         text: latestMatchTime.isEmpty
                             ? latestMatchSummary
                             : '$latestMatchSummary  ·  $latestMatchTime',
-                        color: Colors.amber.shade300,
+                        color: AppColors.warning,
                       ),
                     ],
                   ],
@@ -877,41 +1027,9 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
 
               const SizedBox(height: 6),
 
-              // ── Footer: actions + edit/delete ───────
-              Row(
-                children: [
-                  // Action chips (tappable)
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => _showMultiActionPicker(trigger),
-                      child: _buildActionChips(trigger),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  // Edit button
-                  SizedBox(
-                    width: 30,
-                    height: 30,
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.blue),
-                      onPressed: () => _showCreateEditDialog(trigger: trigger),
-                      tooltip: 'Edit',
-                    ),
-                  ),
-                  // Delete button
-                  SizedBox(
-                    width: 30,
-                    height: 30,
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
-                      onPressed: () => _deleteTrigger(trigger),
-                      tooltip: 'Delete',
-                    ),
-                  ),
-                ],
-              ),
+              // ── Footer: informational action chips ──
+              // Editing (edit/delete/toggle) lives in the detail pane.
+              _buildActionChips(trigger),
             ],
           ),
         ),
@@ -942,7 +1060,12 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     );
   }
 
-  Future<void> _showCreateEditDialog({TriggerModel? trigger}) async {
+  Future<Widget?> _showCreateEditDialog({
+    TriggerModel? trigger,
+    bool embedded = false,
+    VoidCallback? onCancel,
+    VoidCallback? onSaved,
+  }) async {
     final isEditing = trigger != null;
     
     // Fetch all registered cameras from database using the SAME method as cameras screen
@@ -970,7 +1093,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     } catch (e) {
       debugPrint('⚠️ Failed to load individual groups: $e');
     }
-    if (!mounted) return;
+    if (!mounted) return null;
     
     String? selectedCameraDeviceId = trigger?.cameraDeviceId;
     List<String> selectedActionUuids = List<String>.from(
@@ -1044,19 +1167,97 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     
     bool isActive = trigger?.isActive ?? true;
 
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: Text(isEditing ? 'Edit Trigger' : 'Create Trigger'),
-            content: SingleChildScrollView(
-              child: SizedBox(
-                width: 600,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+    // Shared save routine used by both the modal and embedded (inline) editors.
+    Future<void> doSave() async {
+      try {
+        final apiClient = ref.read(apiClientProvider);
+
+        final cameraName = (triggerMode == 'search' || triggerMode == 'search_demographic')
+            ? null
+            : availableCameras.firstWhere(
+                (c) => c.deviceId == selectedCameraDeviceId,
+                orElse: () => Camera(
+                  id: '',
+                  deviceId: selectedCameraDeviceId ?? '',
+                  name: selectedCameraDeviceId ?? '',
+                  status: 'unknown',
+                  resolution: '0x0',
+                  type: CameraType.usb,
+                  supportsRecording: false,
+                ),
+              ).name;
+
+        final requestBody = TriggerCreateRequest(
+          name: nameController.text.trim(),
+          description: descriptionController.text.trim().isEmpty ? null : descriptionController.text.trim(),
+          demographicConditions: (triggerMode == 'demographic' || triggerMode == 'search_demographic') ? demographicConditions : const [],
+          timeSpan: timeSpanController.text.trim(),
+          cameraDeviceId: (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match') ? null : selectedCameraDeviceId,
+          cameraName: cameraName,
+          actionUuid: selectedActionUuids.isNotEmpty ? selectedActionUuids.first : null,
+          actionUuids: selectedActionUuids.isNotEmpty ? selectedActionUuids : null,
+          trackingDuration: '$trackingNumber $trackingUnit',
+          cooldownSeconds: int.tryParse(cooldownController.text) ?? 60,
+          isActive: isActive,
+          triggerMode: triggerMode,
+          pplMatchGroupId: (triggerMode == 'ppl_match' || triggerMode == 'search')
+            ? selectedPplMatchGroupId : null,
+          pplMatchGroupIds: triggerMode == 'vprofile_match' ? selectedVProfileGroupIds : null,
+          cameraDeviceIds: triggerMode == 'vprofile_match' ? selectedVProfileCameraIds : null,
+          pplMatchSimilarityThreshold: (triggerMode == 'ppl_match' || triggerMode == 'search' || triggerMode == 'vprofile_match')
+            ? (double.tryParse(similarityThresholdController.text) ?? 0.75)
+            : null,
+          pplMatchTopK: (triggerMode == 'ppl_match' || triggerMode == 'vprofile_match')
+            ? (int.tryParse(topKController.text) ?? 1)
+            : null,
+          pplMatchNegate: (triggerMode == 'ppl_match' || triggerMode == 'search' || triggerMode == 'vprofile_match')
+            ? pplMatchNegate : null,
+          searchCameraDeviceIds: (triggerMode == 'search' || triggerMode == 'search_demographic') ? selectedSearchCameraIds : null,
+          searchIntervalSeconds: (triggerMode == 'search' || triggerMode == 'search_demographic')
+            ? (int.tryParse(searchIntervalController.text) ?? 300)
+            : null,
+        );
+
+        final endpoint = isEditing
+            ? '/api/v1/triggers/${trigger!.uuid}'
+            : '/api/v1/triggers/';
+
+        final response = isEditing
+            ? await apiClient.put(endpoint, data: requestBody.toJson())
+            : await apiClient.post(endpoint, data: requestBody.toJson());
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          _loadTriggers();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Trigger ${isEditing ? 'updated' : 'created'} successfully')),
+            );
+          }
+        } else {
+          throw Exception('Failed to ${isEditing ? 'update' : 'create'} trigger: ${response.data}');
+        }
+      } catch (e) {
+        debugPrint('❌ Error ${isEditing ? 'updating' : 'creating'} trigger: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e')),
+          );
+        }
+      }
+    }
+
+    final Widget editor = StatefulBuilder(
+      builder: (context, setDialogState) {
+        return AlertDialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          title: Text(isEditing ? 'Edit Trigger' : 'Create Trigger'),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 600,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                     // Basic info
                     TextField(
                       controller: nameController,
@@ -1132,7 +1333,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                       children: [
                                         const Row(
                                           children: [
-                                            Icon(Icons.tune, color: Colors.blue, size: 20),
+                                            Icon(Icons.tune, color: AppColors.primary, size: 20),
                                             SizedBox(width: 8),
                                             Expanded(
                                               child: Text(
@@ -1144,7 +1345,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                         ),
                                         const SizedBox(height: 8),
                                         IconButton(
-                                          icon: const Icon(Icons.add_circle, color: Colors.blue),
+                                          icon: const Icon(Icons.add_circle, color: AppColors.primary),
                                           onPressed: () {
                                             setDialogState(() {
                                               demographicConditions.add(
@@ -1163,7 +1364,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                   else
                                     Row(
                                       children: [
-                                        const Icon(Icons.tune, color: Colors.blue, size: 20),
+                                        const Icon(Icons.tune, color: AppColors.primary, size: 20),
                                         const SizedBox(width: 8),
                                         const Expanded(
                                           child: Text(
@@ -1172,7 +1373,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                           ),
                                         ),
                                         IconButton(
-                                          icon: const Icon(Icons.add_circle, color: Colors.blue),
+                                          icon: const Icon(Icons.add_circle, color: AppColors.primary),
                                           onPressed: () {
                                             setDialogState(() {
                                               demographicConditions.add(
@@ -1280,7 +1481,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                     );
 
                                     final removeButton = IconButton(
-                                      icon: const Icon(Icons.remove_circle, color: Colors.red),
+                                      icon: const Icon(Icons.remove_circle, color: AppColors.error),
                                       onPressed: demographicConditions.length > 1
                                           ? () {
                                               setDialogState(() {
@@ -1338,7 +1539,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                             children: [
                               const Row(
                                 children: [
-                                  Icon(Icons.psychology, color: Colors.purple, size: 20),
+                                  Icon(Icons.psychology, color: AppColors.secondary, size: 20),
                                   SizedBox(width: 8),
                                   Text(
                                     'PPL Match Configuration',
@@ -1413,7 +1614,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                             children: [
                               const Row(
                                 children: [
-                                  Icon(Icons.search, color: Colors.teal, size: 20),
+                                  Icon(Icons.search, color: AppColors.secondary, size: 20),
                                   SizedBox(width: 8),
                                   Text(
                                     'Search Configuration',
@@ -1454,7 +1655,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                     ? const Padding(
                                         padding: EdgeInsets.all(12),
                                         child: Text('No cameras available',
-                                            style: TextStyle(color: Colors.orange)),
+                                            style: TextStyle(color: AppColors.warning)),
                                       )
                                     : ListView.builder(
                                         shrinkWrap: true,
@@ -1547,7 +1748,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                             children: [
                               const Row(
                                 children: [
-                                  Icon(Icons.analytics, color: Colors.deepOrange, size: 20),
+                                  Icon(Icons.analytics, color: AppColors.error, size: 20),
                                   SizedBox(width: 8),
                                   Text(
                                     'Search Demographic Configuration',
@@ -1570,7 +1771,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                     ? const Padding(
                                         padding: EdgeInsets.all(12),
                                         child: Text('No cameras available',
-                                            style: TextStyle(color: Colors.orange)),
+                                            style: TextStyle(color: AppColors.warning)),
                                       )
                                     : ListView.builder(
                                         shrinkWrap: true,
@@ -1624,7 +1825,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                               // Demographic conditions (reuse same builder)
                               Row(
                                 children: [
-                                  const Icon(Icons.tune, color: Colors.blue, size: 20),
+                                  const Icon(Icons.tune, color: AppColors.primary, size: 20),
                                   const SizedBox(width: 8),
                                   const Text(
                                     'Demographic Conditions (All must match)',
@@ -1632,7 +1833,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                   ),
                                   const Spacer(),
                                   IconButton(
-                                    icon: const Icon(Icons.add_circle, color: Colors.blue),
+                                    icon: const Icon(Icons.add_circle, color: AppColors.primary),
                                     onPressed: () {
                                       setDialogState(() {
                                         demographicConditions.add(
@@ -1752,7 +1953,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                       ),
                                       const SizedBox(width: 8),
                                       IconButton(
-                                        icon: const Icon(Icons.remove_circle, color: Colors.red),
+                                        icon: const Icon(Icons.remove_circle, color: AppColors.error),
                                         onPressed: demographicConditions.length > 1
                                             ? () {
                                                 setDialogState(() {
@@ -1780,7 +1981,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                             children: [
                               const Row(
                                 children: [
-                                  Icon(Icons.people_outline, color: Colors.indigo, size: 20),
+                                  Icon(Icons.people_outline, color: AppColors.info, size: 20),
                                   SizedBox(width: 8),
                                   Text(
                                     'VProfile Match Configuration',
@@ -1801,7 +2002,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                 child: availableCameras.isEmpty
                                     ? const Padding(
                                         padding: EdgeInsets.all(12),
-                                        child: Text('No cameras available', style: TextStyle(color: Colors.orange)),
+                                        child: Text('No cameras available', style: TextStyle(color: AppColors.warning)),
                                       )
                                     : ListView.builder(
                                         shrinkWrap: true,
@@ -1846,7 +2047,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                 child: availableGroups.isEmpty
                                     ? const Padding(
                                         padding: EdgeInsets.all(12),
-                                        child: Text('No groups available', style: TextStyle(color: Colors.orange)),
+                                        child: Text('No groups available', style: TextStyle(color: AppColors.warning)),
                                       )
                                     : ListView.builder(
                                         shrinkWrap: true,
@@ -1925,7 +2126,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                     availableCameras.isEmpty
                         ? const Text(
                             'No cameras registered in database.',
-                            style: TextStyle(color: Colors.orange),
+                            style: TextStyle(color: AppColors.warning),
                           )
                         : DropdownButtonFormField<String>(
                             value: selectedCameraDeviceId,
@@ -2050,7 +2251,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Icon(Icons.add_circle_outline, size: 18, color: Colors.blue),
+                                    const Icon(Icons.add_circle_outline, size: 18, color: AppColors.primary),
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Column(
@@ -2142,7 +2343,13 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context, false),
+                onPressed: () {
+                  if (embedded) {
+                    onCancel?.call();
+                    return;
+                  }
+                  Navigator.pop(context, false);
+                },
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
@@ -2273,6 +2480,11 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                     }
                   }
                   
+                  if (embedded) {
+                    await doSave();
+                    onSaved?.call();
+                    return;
+                  }
                   Navigator.pop(context, true);
                 },
                 child: Text(isEditing ? 'Update' : 'Create'),
@@ -2280,87 +2492,20 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
             ],
           );
         },
-      ),
     );
 
-    if (result != true) return;
-
-    // Create/update the trigger using authenticated ApiClient
-    try {
-      final apiClient = ref.read(apiClientProvider);
-
-      final cameraName = (triggerMode == 'search' || triggerMode == 'search_demographic')
-          ? null
-          : availableCameras.firstWhere(
-              (c) => c.deviceId == selectedCameraDeviceId,
-              orElse: () => Camera(
-                id: '',
-                deviceId: selectedCameraDeviceId ?? '',
-                name: selectedCameraDeviceId ?? '',
-                status: 'unknown',
-                resolution: '0x0',
-                type: CameraType.usb,
-                supportsRecording: false,
-              ),
-            ).name;
-
-      final requestBody = TriggerCreateRequest(
-        name: nameController.text.trim(),
-        description: descriptionController.text.trim().isEmpty ? null : descriptionController.text.trim(),
-        demographicConditions: (triggerMode == 'demographic' || triggerMode == 'search_demographic') ? demographicConditions : const [],
-        timeSpan: timeSpanController.text.trim(),
-        cameraDeviceId: (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match') ? null : selectedCameraDeviceId,
-        cameraName: cameraName,
-        actionUuid: selectedActionUuids.isNotEmpty ? selectedActionUuids.first : null,
-        actionUuids: selectedActionUuids.isNotEmpty ? selectedActionUuids : null,
-        trackingDuration: '$trackingNumber $trackingUnit',
-        cooldownSeconds: int.tryParse(cooldownController.text) ?? 60,
-        isActive: isActive,
-        triggerMode: triggerMode,
-        pplMatchGroupId: (triggerMode == 'ppl_match' || triggerMode == 'search')
-          ? selectedPplMatchGroupId : null,
-        pplMatchGroupIds: triggerMode == 'vprofile_match' ? selectedVProfileGroupIds : null,
-        cameraDeviceIds: triggerMode == 'vprofile_match' ? selectedVProfileCameraIds : null,
-        pplMatchSimilarityThreshold: (triggerMode == 'ppl_match' || triggerMode == 'search' || triggerMode == 'vprofile_match')
-          ? (double.tryParse(similarityThresholdController.text) ?? 0.75)
-          : null,
-        pplMatchTopK: (triggerMode == 'ppl_match' || triggerMode == 'vprofile_match')
-          ? (int.tryParse(topKController.text) ?? 1)
-          : null,
-        pplMatchNegate: (triggerMode == 'ppl_match' || triggerMode == 'search' || triggerMode == 'vprofile_match')
-          ? pplMatchNegate : null,
-        searchCameraDeviceIds: (triggerMode == 'search' || triggerMode == 'search_demographic') ? selectedSearchCameraIds : null,
-        searchIntervalSeconds: (triggerMode == 'search' || triggerMode == 'search_demographic')
-          ? (int.tryParse(searchIntervalController.text) ?? 300)
-          : null,
-      );
-
-      final endpoint = isEditing
-          ? '/api/v1/triggers/${trigger.uuid}'
-          : '/api/v1/triggers/';
-
-      final response = isEditing
-          ? await apiClient.put(endpoint, data: requestBody.toJson())
-          : await apiClient.post(endpoint, data: requestBody.toJson());
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        _loadTriggers();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Trigger ${isEditing ? 'updated' : 'created'} successfully')),
-          );
-        }
-      } else {
-        throw Exception('Failed to ${isEditing ? 'update' : 'create'} trigger: ${response.data}');
-      }
-    } catch (e) {
-      debugPrint('❌ Error ${isEditing ? 'updating' : 'creating'} trigger: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+    if (embedded) {
+      return editor;
     }
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => editor,
+    );
+
+    if (result != true) return null;
+
+    await doSave();
 
     // Dispose controllers
     nameController.dispose();
@@ -2374,6 +2519,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     super.dispose();
   }
 }

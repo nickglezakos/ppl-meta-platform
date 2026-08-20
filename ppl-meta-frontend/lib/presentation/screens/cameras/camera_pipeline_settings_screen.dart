@@ -7,14 +7,22 @@ import '../../../core/providers/camera_providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../utils/offline_fonts.dart';
 import '../../../widgets/custom_app_bar.dart';
+import '../../widgets/camera/edit_camera_name_dialog.dart';
+import '../../widgets/camera/rtsp_camera_dialog.dart';
 
 /// Pipeline settings screen for per-camera configuration
 class CameraPipelineSettingsScreen extends ConsumerStatefulWidget {
   final Camera camera;
 
+  /// Whether to render the screen's own app bar. Set to [false] when the
+  /// settings form is embedded inline (e.g. inside a master/detail content
+  /// pane) where the surrounding layout already provides the header.
+  final bool showAppBar;
+
   const CameraPipelineSettingsScreen({
     super.key,
     required this.camera,
+    this.showAppBar = true,
   });
 
   @override
@@ -231,9 +239,11 @@ class _CameraPipelineSettingsScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: const CustomAppBar(
-        title: 'Pipeline Settings',
-      ),
+      appBar: widget.showAppBar
+          ? const CustomAppBar(
+              title: 'Pipeline Settings',
+            )
+          : null,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -244,6 +254,16 @@ class _CameraPipelineSettingsScreenState
                   // Camera info card
                   _buildCameraInfoCard(),
                   const SizedBox(height: 24),
+
+                  // Rename camera
+                  _buildRenameCard(),
+                  const SizedBox(height: 24),
+
+                  // RTSP connection editing (RTSP cameras only)
+                  if (widget.camera.type == CameraType.rtsp) ...[
+                    _buildRTSPCard(),
+                    const SizedBox(height: 24),
+                  ],
 
                   // Pipeline toggles
                   _buildPipelineTogglesCard(),
@@ -338,6 +358,110 @@ class _CameraPipelineSettingsScreenState
         ),
       ),
     );
+  }
+
+  Widget _buildRenameCard() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.edit, color: AppColors.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Rename Camera',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Update this camera's display name. Names must be unique.",
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _openRenameDialog,
+              icon: const Icon(Icons.drive_file_rename_outline),
+              label: const Text('Rename camera'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openRenameDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => EditCameraNameDialog(camera: widget.camera),
+    );
+    if (result == true && mounted) {
+      // Reload so the list and this form pick up the new name.
+      await ref.read(cameraListProvider.notifier).loadCameras();
+    }
+  }
+
+  Widget _buildRTSPCard() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.videocam, color: AppColors.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'RTSP Connection',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Configure the RTSP URL and authentication for this camera.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _openRTSPDialog,
+              icon: const Icon(Icons.settings_ethernet),
+              label: const Text('Edit RTSP connection'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openRTSPDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => RTSPCameraDialog(
+        camera: widget.camera,
+        isEditing: true,
+      ),
+    );
+    if (result == true && mounted) {
+      await ref.read(cameraListProvider.notifier).loadCameras();
+    }
   }
 
   Widget _buildPipelineTogglesCard() {

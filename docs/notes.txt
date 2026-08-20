@@ -367,6 +367,14 @@ Start VPN + Matrix Only (Layered)
 Stop VPN + Matrix Only (Layered)
  
 
+****************************************************************************************************
+
+
+cd autonomous/mockups/ppl_meta_mockup
+flutter pub get
+flutter run -d chrome   # resize window for mobile / tablet / desktop
+# also: flutter run -d macos|android, and flutter test
+
 
 
 ****************************************************************************************************
@@ -380,12 +388,14 @@ OK -- CHECK improvements on the signage player rigid operation
 OK -- TEST the other services keep alive
 OK -- DEBUG the presense service and mobile camera part affected by HMAC
 OK -- TEST the vprofile for solid operations
-
 OK -- FINETUNE what type of info someone gets 
       from triggers and presense combination (from the product value view)
+OK -- FIX the camera shuffle on the camera screen upon (de)activation
 
+DEBUG the media search that looks to be produsing no results and this is
+probably due to the analytics modifications.
 
-FIX the camera shuffle on the camera screen upon (de)activation
+DEBUG the TMA member lost !
 
 DEBUG and OPTIMISE and DOCUMENT the people uniqueness
 
@@ -399,6 +409,8 @@ have routes and distanse from lense assigned to instant detection
 debug and optimise and document the analytics
 
 study whether instant detection is enough for all functionalities
+
+++++++++
 
 body detection
 

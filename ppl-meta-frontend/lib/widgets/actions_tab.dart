@@ -9,6 +9,10 @@ import '../services/auth_service.dart';
 import '../services/signage_api_client.dart';
 import '../services/discovery_service_client.dart';
 import '../core/api/api_client.dart';
+import '../core/theme/app_theme.dart';
+import '../presentation/widgets/common/ux_breakpoints.dart';
+import '../presentation/widgets/common/content_pane.dart';
+import '../presentation/widgets/common/unified_toggle.dart';
 import '../core/config/app_config.dart';
 import '../screens/communication_logs_screen.dart';
 import '../screens/communication_logs_screen.dart';
@@ -36,6 +40,18 @@ class _ActionsTabState extends State<ActionsTab> {
   
   bool? _filterIsActiveUser;
   bool? _filterIsActiveSystem;
+
+  // Phase 4 unified UX
+  UserActionModel? _selectedAction;
+  final TextEditingController _searchControllerActions = TextEditingController();
+  String _searchQueryActions = '';
+  bool _editingAction = false;
+
+  @override
+  void dispose() {
+    _searchControllerActions.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -71,6 +87,10 @@ class _ActionsTabState extends State<ActionsTab> {
       setState(() {
         _userActions = response.actions;
         _isLoadingUser = false;
+        // Default-select the first action so the right settings pane is
+        // populated on load (unless the user already picked one).
+        _selectedAction ??=
+            _userActions.isNotEmpty ? _userActions.first : null;
       });
     } catch (e) {
       if (!mounted) return;
@@ -120,7 +140,7 @@ class _ActionsTabState extends State<ActionsTab> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('Delete'),
           ),
         ],
@@ -136,7 +156,7 @@ class _ActionsTabState extends State<ActionsTab> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('User action deleted successfully'),
-              backgroundColor: Colors.green,
+              backgroundColor: AppColors.success,
             ),
           );
         }
@@ -145,7 +165,7 @@ class _ActionsTabState extends State<ActionsTab> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Failed to delete: $e'),
-              backgroundColor: Colors.red,
+              backgroundColor: AppColors.error,
             ),
           );
         }
@@ -153,16 +173,18 @@ class _ActionsTabState extends State<ActionsTab> {
     }
   }
 
-  Future<void> _toggleUserAction(UserActionModel action) async {
+  Future<bool> _unifiedToggleUserAction(UserActionModel action) async {
     try {
       await _userActionService.toggleUserAction(action.uuid);
       await _loadUserActions();
+      return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to toggle: $e')),
         );
       }
+      return false;
     }
   }
 
@@ -183,7 +205,7 @@ class _ActionsTabState extends State<ActionsTab> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    final master = SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -198,6 +220,17 @@ class _ActionsTabState extends State<ActionsTab> {
         ],
       ),
     );
+    if (isWide(context)) {
+      return Row(
+        children: [
+          SizedBox(width: kMasterPaneWidth, child: master),
+          const VerticalDivider(width: 1),
+          const SizedBox(width: 4),
+          Expanded(child: _buildActionsDetailPane()),
+        ],
+      );
+    }
+    return master;
   }
 
   Widget _buildUserActionsSection() {
@@ -212,7 +245,7 @@ class _ActionsTabState extends State<ActionsTab> {
             final titleRow = Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.person, color: Colors.blue),
+                const Icon(Icons.person, color: AppColors.primary),
                 const SizedBox(width: 8),
                 Text(
                   'User Actions',
@@ -240,7 +273,7 @@ class _ActionsTabState extends State<ActionsTab> {
               icon: const Icon(Icons.add),
               label: const Text('Create Action'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
+                backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
               ),
             );
@@ -257,8 +290,8 @@ class _ActionsTabState extends State<ActionsTab> {
               icon: const Icon(Icons.history, size: 20),
               label: const Text('View Logs'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.green.shade300,
-                side: BorderSide(color: Colors.green.shade700),
+                foregroundColor: AppColors.success,
+                side: BorderSide(color: AppColors.success),
               ),
             );
 
@@ -297,6 +330,9 @@ class _ActionsTabState extends State<ActionsTab> {
         ),
         const SizedBox(height: 16),
         
+        _buildActionsSearchField(),
+        const SizedBox(height: 12),
+
         // Content
         if (_isLoadingUser)
           const Center(child: Padding(
@@ -308,15 +344,15 @@ class _ActionsTabState extends State<ActionsTab> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.red.shade900.withOpacity(0.3),
-              border: Border.all(color: Colors.red),
+              color: AppColors.error.withOpacity(0.3),
+              border: Border.all(color: AppColors.error),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               children: [
-                const Icon(Icons.error, color: Colors.red),
+                const Icon(Icons.error, color: AppColors.error),
                 const SizedBox(width: 8),
-                Expanded(child: Text(_errorMessageUser!, style: const TextStyle(color: Colors.red))),
+                Expanded(child: Text(_errorMessageUser!, style: const TextStyle(color: AppColors.error))),
                 TextButton(
                   onPressed: _loadUserActions,
                   child: const Text('Retry'),
@@ -425,15 +461,15 @@ class _ActionsTabState extends State<ActionsTab> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.red.shade900.withOpacity(0.3),
-              border: Border.all(color: Colors.red),
+              color: AppColors.error.withOpacity(0.3),
+              border: Border.all(color: AppColors.error),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               children: [
-                const Icon(Icons.error, color: Colors.red),
+                const Icon(Icons.error, color: AppColors.error),
                 const SizedBox(width: 8),
-                Expanded(child: Text(_errorMessageSystem!, style: const TextStyle(color: Colors.red))),
+                Expanded(child: Text(_errorMessageSystem!, style: const TextStyle(color: AppColors.error))),
                 TextButton(
                   onPressed: _loadSystemWorkflows,
                   child: const Text('Retry'),
@@ -468,6 +504,140 @@ class _ActionsTabState extends State<ActionsTab> {
   // User action cards
   // ─────────────────────────────────────────────────
 
+  Widget _buildActionsSearchField() {
+    return TextField(
+      controller: _searchControllerActions,
+      onChanged: (value) => setState(() => _searchQueryActions = value),
+      decoration: InputDecoration(
+        hintText: 'Search actions',
+        prefixIcon: const Icon(Icons.search),
+        isDense: true,
+        filled: true,
+        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionsDetailPane() {
+    final action = _selectedAction;
+    if (action == null) {
+      return ContentPane(
+        title: 'Action',
+        subtitle: 'Select a user action to inspect it',
+        child: const Center(
+          child: Text('Select a user action from the list'),
+        ),
+      );
+    }
+    return ContentPane(
+      title: action.name,
+      subtitle: action.actionTypeDisplay,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Status',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    UnifiedToggle(
+                      value: action.isActive,
+                      label: action.isActive ? 'Active' : 'Inactive',
+                      onToggle: (next) => _unifiedToggleUserAction(action),
+                    ),
+                    const SizedBox(height: 12),
+                    _actionsDetailRow('Type', action.actionTypeDisplay),
+                    if (action.description != null &&
+                        action.description!.isNotEmpty)
+                      _actionsDetailRow('Description', action.description!),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => setState(() => _editingAction = true),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Edit'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _deleteUserAction(action),
+                  icon: const Icon(Icons.delete_outline),
+                  style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
+                  label: const Text('Delete'),
+                ),
+              ],
+            ),
+            if (_editingAction) ...[
+              const SizedBox(height: 12),
+              _UserActionDialog(
+                action: action,
+                onSave: () async {
+                  await _loadUserActions();
+                  if (!mounted) return;
+                  setState(() {
+                    if (action.uuid != null) {
+                      _selectedAction = _userActions.firstWhere(
+                        (a) => a.uuid == action.uuid,
+                        orElse: () => action,
+                      );
+                    }
+                    _editingAction = false;
+                  });
+                },
+                userActionService: _userActionService,
+                authService: _authService,
+                embedded: true,
+                onCancel: () => setState(() => _editingAction = false),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _actionsDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.grey.shade500),
+            ),
+          ),
+          Expanded(
+            child: Text(value, style: Theme.of(context).textTheme.bodyMedium),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildUserActionsCards() {
     return LayoutBuilder(builder: (context, constraints) {
       final crossAxisCount = constraints.maxWidth > 1200
@@ -475,6 +645,12 @@ class _ActionsTabState extends State<ActionsTab> {
           : constraints.maxWidth > 700
               ? 2
               : 1;
+      final q = _searchQueryActions.trim().toLowerCase();
+      final visible = q.isEmpty
+          ? _userActions
+          : _userActions
+                .where((a) => (a.name ?? '').toLowerCase().contains(q))
+                .toList();
       return GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
@@ -484,9 +660,9 @@ class _ActionsTabState extends State<ActionsTab> {
           crossAxisSpacing: 12,
           childAspectRatio: 1.7,
         ),
-        itemCount: _userActions.length,
+        itemCount: visible.length,
         itemBuilder: (context, index) =>
-            _buildUserActionCard(_userActions[index]),
+            _buildUserActionCard(visible[index]),
       );
     });
   }
@@ -509,7 +685,16 @@ class _ActionsTabState extends State<ActionsTab> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
-        onTap: () => _showCreateEditUserActionDialog(action: action),
+        onTap: () {
+          if (isWide(context)) {
+            setState(() {
+              _selectedAction = action;
+              _editingAction = false;
+            });
+          } else {
+            _showCreateEditUserActionDialog(action: action);
+          }
+        },
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
           child: Column(
@@ -538,27 +723,37 @@ class _ActionsTabState extends State<ActionsTab> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (!isWide(context)) ...[
+                    const SizedBox(width: 4),
+                    IconButton(
+                      onPressed: () =>
+                          _showCreateEditUserActionDialog(action: action),
+                      icon: const Icon(Icons.settings_outlined, size: 20),
+                      iconSize: 20,
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Action settings',
+                    ),
+                  ],
                   const SizedBox(width: 6),
-                  GestureDetector(
-                    onTap: () => _toggleUserAction(action),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
+                  // Informational status chip — editing/toggle lives in the
+                  // right-hand detail pane (or pending editor on mobile).
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: action.isActive
+                          ? AppColors.success.withValues(alpha: 0.14)
+                          : AppColors.error.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      action.isActive ? 'Active' : 'Inactive',
+                      style: TextStyle(
                         color: action.isActive
-                            ? Colors.green.shade900
-                            : Colors.red.shade900,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        action.isActive ? 'Active' : 'Inactive',
-                        style: TextStyle(
-                          color: action.isActive
-                              ? Colors.green.shade300
-                              : Colors.red.shade300,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
+                            ? AppColors.success
+                            : AppColors.error,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -610,34 +805,9 @@ class _ActionsTabState extends State<ActionsTab> {
               ),
 
               // ── Footer ──────────────────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  SizedBox(
-                    width: 30,
-                    height: 30,
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.edit_outlined,
-                          size: 18, color: Colors.blue),
-                      onPressed: () =>
-                          _showCreateEditUserActionDialog(action: action),
-                      tooltip: 'Edit',
-                    ),
-                  ),
-                  SizedBox(
-                    width: 30,
-                    height: 30,
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.delete_outline,
-                          size: 18, color: Colors.red),
-                      onPressed: () => _deleteUserAction(action),
-                      tooltip: 'Delete',
-                    ),
-                  ),
-                ],
-              ),
+              // Editing (edit/delete/toggle) lives in the right detail pane
+              // (new editor dialog is the entry point on mobile).
+              const SizedBox(height: 4),
             ],
           ),
         ),
@@ -772,16 +942,16 @@ class _ActionsTabState extends State<ActionsTab> {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: workflow.isActive
-                        ? Colors.green.shade900
-                        : Colors.red.shade900,
+                        ? AppColors.success.withValues(alpha: 0.14)
+                        : AppColors.error.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     workflow.isActive ? 'Active' : 'Inactive',
                     style: TextStyle(
                       color: workflow.isActive
-                          ? Colors.green.shade300
-                          : Colors.red.shade300,
+                          ? AppColors.success
+                          : AppColors.error,
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
@@ -874,16 +1044,16 @@ class _ActionsTabState extends State<ActionsTab> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: workflow.isActive ? Colors.green.shade900 : Colors.grey.shade800,
+                        color: workflow.isActive ? AppColors.success : Colors.grey.shade800,
                         border: Border.all(
-                          color: workflow.isActive ? Colors.green.shade700 : Colors.grey.shade600,
+                          color: workflow.isActive ? AppColors.success : Colors.grey.shade600,
                         ),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
                         workflow.isActive ? 'Active' : 'Inactive',
                         style: TextStyle(
-                          color: workflow.isActive ? Colors.green.shade300 : Colors.grey.shade400,
+                          color: workflow.isActive ? AppColors.success : Colors.grey.shade400,
                           fontSize: 12,
                         ),
                       ),
@@ -969,11 +1139,20 @@ class _UserActionDialog extends StatefulWidget {
   final UserActionService userActionService;
   final AuthService authService;
 
+  /// When false (default) the editor renders as a modal AlertDialog; when true
+  /// it renders inline (embedded in the settings pane) without a dialog route.
+  final bool embedded;
+
+  /// Called instead of popping the route when [embedded] is true.
+  final VoidCallback? onCancel;
+
   const _UserActionDialog({
     this.action,
     required this.onSave,
     required this.userActionService,
     required this.authService,
+    this.embedded = false,
+    this.onCancel,
   });
 
   @override
@@ -1157,7 +1336,7 @@ class _UserActionDialogState extends State<_UserActionDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to load signage data: $e'),
-            backgroundColor: Colors.orange,
+            backgroundColor: AppColors.warning,
           ),
         );
       }
@@ -1315,7 +1494,7 @@ class _UserActionDialogState extends State<_UserActionDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to save: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -1364,7 +1543,7 @@ class _UserActionDialogState extends State<_UserActionDialog> {
                   children: [
                     Text(
                       'No devices discovered from signage service',
-                      style: TextStyle(color: Colors.orange.shade400, fontSize: 14),
+                      style: TextStyle(color: AppColors.warning, fontSize: 14),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -1377,7 +1556,7 @@ class _UserActionDialogState extends State<_UserActionDialog> {
                       icon: const Icon(Icons.refresh, size: 16),
                       label: const Text('Retry'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue.shade800,
+                        backgroundColor: AppColors.primary,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       ),
                     ),
@@ -1394,7 +1573,7 @@ class _UserActionDialogState extends State<_UserActionDialog> {
                     subtitle: Text(
                       '${device.host}:${device.port} - ${device.isOnline ? "Online" : "Offline"}',
                       style: TextStyle(
-                        color: device.isOnline ? Colors.green.shade300 : Colors.red.shade300,
+                        color: device.isOnline ? AppColors.success : AppColors.error,
                         fontSize: 12,
                       ),
                     ),
@@ -1419,7 +1598,7 @@ class _UserActionDialogState extends State<_UserActionDialog> {
                     subtitle: Text(
                       'Currently unavailable (offline or removed)',
                       style: TextStyle(
-                        color: Colors.orange.shade300,
+                        color: AppColors.warning,
                         fontSize: 12,
                       ),
                     ),
@@ -1772,110 +1951,147 @@ class _UserActionDialogState extends State<_UserActionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.action == null ? 'Create User Action' : 'Edit User Action'),
-      content: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
+    final form = SingleChildScrollView(
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                hintText: 'Alert on High Traffic',
+              ),
+              validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _descriptionController,
+              decoration: const InputDecoration(
+                labelText: 'Description (Optional)',
+                hintText: 'Shows alert when threshold is met',
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _selectedActionType,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Action Type'),
+              items: const [
+                DropdownMenuItem(value: 'alert', child: Text('Alert (On-Screen)')),
+                DropdownMenuItem(value: 'email', child: Text('Email')),
+                DropdownMenuItem(value: 'webhook', child: Text('Webhook')),
+                DropdownMenuItem(value: 'log', child: Text('Log')),
+                DropdownMenuItem(value: 'digital_signage', child: Text('Digital Signage')),
+                DropdownMenuItem(value: 'messaging_app', child: Text('Messaging App (Slack / Teams)')),
+              ],
+              selectedItemBuilder: (context) => const [
+                Text('Alert (On-Screen)', overflow: TextOverflow.ellipsis),
+                Text('Email', overflow: TextOverflow.ellipsis),
+                Text('Webhook', overflow: TextOverflow.ellipsis),
+                Text('Log', overflow: TextOverflow.ellipsis),
+                Text('Digital Signage', overflow: TextOverflow.ellipsis),
+                Text('Messaging App (Slack / Teams)', overflow: TextOverflow.ellipsis),
+              ],
+              onChanged: (value) {
+                setState(() => _selectedActionType = value!);
+                if (value == 'digital_signage' && _availableDevices.isEmpty && _availablePlaylists.isEmpty) {
+                  _loadSignageData();
+                }
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // Show different config UI based on action type
+            if (_selectedActionType == 'digital_signage')
+              _buildDigitalSignageConfig()
+            else if (_selectedActionType == 'email')
+              _buildEmailConfig()
+            else if (_selectedActionType == 'webhook')
+              _buildWebhookConfig()
+            else if (_selectedActionType == 'log')
+              _buildLogConfig()
+            else if (_selectedActionType == 'alert')
+              _buildAlertConfig()
+            else if (_selectedActionType == 'messaging_app')
+              _buildMessagingAppConfig()
+            else
+              TextFormField(
+                controller: _configController,
+                decoration: const InputDecoration(
+                  labelText: 'Configuration (Optional JSON)',
+                  hintText: '{"message": "High traffic detected!"}',
+                ),
+                maxLines: 3,
+              ),
+            const SizedBox(height: 16),
+            SwitchListTile(
+              title: const Text('Active'),
+              value: _isActive,
+              onChanged: (value) => setState(() => _isActive = value),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final cancelButton = TextButton(
+      onPressed: _isSaving
+          ? null
+          : (widget.embedded
+              ? widget.onCancel ?? () => Navigator.pop(context)
+              : () => Navigator.pop(context)),
+      child: const Text('Cancel'),
+    );
+    final saveButton = ElevatedButton(
+      onPressed: _isSaving ? null : _save,
+      child: _isSaving
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Text(widget.action == null ? 'Create' : 'Update'),
+    );
+
+    if (widget.embedded) {
+      return Card(
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  hintText: 'Alert on High Traffic',
-                ),
-                validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
+              Text(
+                widget.action == null
+                    ? 'Create User Action'
+                    : 'Edit User Action',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _descriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Description (Optional)',
-                  hintText: 'Shows alert when threshold is met',
-                ),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: _selectedActionType,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Action Type'),
-                items: const [
-                  DropdownMenuItem(value: 'alert', child: Text('Alert (On-Screen)')),
-                  DropdownMenuItem(value: 'email', child: Text('Email')),
-                  DropdownMenuItem(value: 'webhook', child: Text('Webhook')),
-                  DropdownMenuItem(value: 'log', child: Text('Log')),
-                  DropdownMenuItem(value: 'digital_signage', child: Text('Digital Signage')),
-                  DropdownMenuItem(value: 'messaging_app', child: Text('Messaging App (Slack / Teams)')),
-                ],
-                selectedItemBuilder: (context) => const [
-                  Text('Alert (On-Screen)', overflow: TextOverflow.ellipsis),
-                  Text('Email', overflow: TextOverflow.ellipsis),
-                  Text('Webhook', overflow: TextOverflow.ellipsis),
-                  Text('Log', overflow: TextOverflow.ellipsis),
-                  Text('Digital Signage', overflow: TextOverflow.ellipsis),
-                  Text('Messaging App (Slack / Teams)', overflow: TextOverflow.ellipsis),
-                ],
-                onChanged: (value) {
-                  setState(() => _selectedActionType = value!);
-                  // Load signage data when switching to digital_signage
-                  if (value == 'digital_signage' && _availableDevices.isEmpty && _availablePlaylists.isEmpty) {
-                    _loadSignageData();
-                  }
-                },
-              ),
-              const SizedBox(height: 16),
-              
-              // Show different config UI based on action type
-              if (_selectedActionType == 'digital_signage')
-                _buildDigitalSignageConfig()
-              else if (_selectedActionType == 'email')
-                _buildEmailConfig()
-              else if (_selectedActionType == 'webhook')
-                _buildWebhookConfig()
-              else if (_selectedActionType == 'log')
-                _buildLogConfig()
-              else if (_selectedActionType == 'alert')
-                _buildAlertConfig()
-              else if (_selectedActionType == 'messaging_app')
-                _buildMessagingAppConfig()
-              else
-                TextFormField(
-                  controller: _configController,
-                  decoration: const InputDecoration(
-                    labelText: 'Configuration (Optional JSON)',
-                    hintText: '{"message": "High traffic detected!"}',
-                  ),
-                  maxLines: 3,
-                ),
-              const SizedBox(height: 16),
-              SwitchListTile(
-                title: const Text('Active'),
-                value: _isActive,
-                onChanged: (value) => setState(() => _isActive = value),
+              const SizedBox(height: 12),
+              form,
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [cancelButton, const SizedBox(width: 8), saveButton],
               ),
             ],
           ),
         ),
+      );
+    }
+
+    return AlertDialog(
+      title: Text(
+        widget.action == null ? 'Create User Action' : 'Edit User Action',
       ),
-      actions: [
-        TextButton(
-          onPressed: _isSaving ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _isSaving ? null : _save,
-          child: _isSaving
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(widget.action == null ? 'Create' : 'Update'),
-        ),
-      ],
+      content: form,
+      actions: [cancelButton, saveButton],
     );
   }
 }

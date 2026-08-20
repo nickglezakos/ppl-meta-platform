@@ -26,6 +26,8 @@ import '../presentation/widgets/settings/workflow_settings_section.dart'
 import 'person_objects_detail_screen.dart';
 import '../core/providers/features_providers.dart';
 import '../widgets/media_privacy_placeholder.dart';
+import '../presentation/widgets/common/ux_breakpoints.dart';
+import '../presentation/widgets/common/content_pane.dart';
 
 /// Collections screen with management and media display
 class CollectionsScreen extends ConsumerStatefulWidget {
@@ -256,9 +258,25 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
               ]
             : null,
       ),
-      body: _selectedCollection == null
-          ? _buildCollectionsList()
-          : _buildCollectionDetails(apiClient),
+      body: isWide(context)
+          ? Row(
+              children: [
+                SizedBox(
+                  width: kMasterPaneWidth,
+                  child: _buildCollectionsList(),
+                ),
+                const VerticalDivider(width: 1),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: _selectedCollection == null
+                      ? _buildEmptyDetailPane()
+                      : _buildCollectionDetails(apiClient),
+                ),
+              ],
+            )
+          : _selectedCollection == null
+              ? _buildCollectionsList()
+              : _buildCollectionDetails(apiClient),
       floatingActionButton: _selectedCollection != null && 
                           _isSelectionMode && 
                           _selectedItems.isNotEmpty &&
@@ -270,6 +288,16 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
               backgroundColor: AppColors.primary,
             )
           : null,
+    );
+  }
+
+  Widget _buildEmptyDetailPane() {
+    return ContentPane(
+      title: 'Collections',
+      subtitle: 'Select a collection to view its media',
+      child: const Center(
+        child: Text('Select a collection from the list to view its media'),
+      ),
     );
   }
 
