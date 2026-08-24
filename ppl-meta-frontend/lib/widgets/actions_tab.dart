@@ -568,6 +568,7 @@ class ActionsTabState extends State<ActionsTab> {
     final configSummary = _actionConfigSummary(action);
 
     return ListableCard(
+      isSelected: _selectedAction?.uuid == action.uuid,
       onTap: () {
         if (isWide(context)) {
           setState(() {

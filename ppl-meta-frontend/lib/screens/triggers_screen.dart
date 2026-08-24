@@ -3,6 +3,7 @@ import '../core/theme/theme_kit.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/triggers_tab.dart';
 import '../widgets/actions_tab.dart';
+import '../widgets/analytics_tab.dart';
 
 /// Standalone Triggers and Actions management screen
 /// 
@@ -24,7 +25,7 @@ class _TriggersScreenState extends State<TriggersScreen> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -172,6 +173,10 @@ class _TriggersScreenState extends State<TriggersScreen> with SingleTickerProvid
               icon: Icon(AppIcons.actions),
               text: 'Actions',
             ),
+            Tab(
+              icon: Icon(Icons.insights),
+              text: 'Analytics',
+            ),
           ],
         ),
       ),
@@ -180,6 +185,7 @@ class _TriggersScreenState extends State<TriggersScreen> with SingleTickerProvid
         children: [
           TriggersTab(key: _triggersTabKey),
           ActionsTab(key: _actionsTabKey),
+          const AnalyticsTab(),
         ],
       ),
     );

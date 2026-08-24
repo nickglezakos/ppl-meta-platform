@@ -11,6 +11,7 @@ import '../services/individual_groups_api_client.dart';
 import '../models/individual_group_models.dart';
 import '../presentation/widgets/common/ux_breakpoints.dart';
 import '../presentation/widgets/common/content_pane.dart';
+import '../presentation/widgets/common/item_logs_list.dart';
 import '../presentation/widgets/common/unified_toggle.dart';
 
 class TriggersTab extends ConsumerStatefulWidget {
@@ -686,6 +687,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
       return ContentPane(
         title: 'Trigger',
         subtitle: 'Select a trigger to inspect it',
+        modeToggle: true,
         child: const Center(
           child: Text('Select a trigger from the list to view its details'),
         ),
@@ -698,6 +700,9 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     return ContentPane(
       title: trigger.name ?? 'Unnamed',
       subtitle: modeLabel,
+      modeToggle: true,
+      emptyPlaceholder:
+          trigger.uuid != null ? ItemLogsList(itemId: trigger.uuid!) : null,
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

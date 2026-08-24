@@ -19,7 +19,15 @@ import '../widgets/people_counters_tile.dart';
 /// MVR Analytics Dashboard - showing people detection insights from camera collections
 /// Based on MVRsearch cached results from camera cards endpoint
 class AnalyticsScreen extends ConsumerStatefulWidget {
-  const AnalyticsScreen({super.key});
+  const AnalyticsScreen({super.key, this.initialCameraId, this.showAppBar = true});
+
+  /// When provided, the dashboard is pre-filtered to this camera/collection
+  /// id (used when embedding the dashboard for a single selected camera).
+  final String? initialCameraId;
+
+  /// Whether to show the screen-level app bar. Disable when embedding the
+  /// dashboard inside another pane that provides its own chrome.
+  final bool showAppBar;
 
   @override
   ConsumerState<AnalyticsScreen> createState() => _AnalyticsScreenState();
@@ -129,6 +137,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialCameraId != null &&
+        widget.initialCameraId!.trim().isNotEmpty) {
+      _selectedCollectionIds = [widget.initialCameraId!.trim()];
+    }
     _restorePreferencesAndLoadAnalytics();
   }
 
@@ -375,6 +387,26 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final body = Column(
+      children: [
+        // Filter summary bar
+        _buildFilterBar(),
+
+        // Main content
+        Expanded(
+          child: _isLoading
+              ? _buildLoadingState()
+              : _error != null
+                  ? _buildErrorState()
+                  : _buildAnalyticsDashboard(),
+        ),
+      ],
+    );
+
+    if (!widget.showAppBar) {
+      return Scaffold(body: body);
+    }
+
     return Scaffold(
       appBar: CustomAppBar(
         title: 'MVR Analytics',
@@ -393,21 +425,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Filter summary bar
-          _buildFilterBar(),
-          
-          // Main content
-          Expanded(
-            child: _isLoading
-                ? _buildLoadingState()
-                : _error != null
-                    ? _buildErrorState()
-                    : _buildAnalyticsDashboard(),
-          ),
-        ],
-      ),
+      body: body,
     );
   }
 
