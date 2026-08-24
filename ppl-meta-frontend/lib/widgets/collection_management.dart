@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../core/theme/app_theme.dart';
+import '../core/theme/theme_kit.dart';
 import '../core/models/api_response.dart';
 import '../core/models/collection_models.dart';
 import '../core/api/api_client.dart';
@@ -29,10 +29,10 @@ class CollectionManagement extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<CollectionManagement> createState() => _CollectionManagementState();
+  CollectionManagementState createState() => CollectionManagementState();
 }
 
-class _CollectionManagementState extends ConsumerState<CollectionManagement>
+class CollectionManagementState extends ConsumerState<CollectionManagement>
     with TickerProviderStateMixin {
   final TextEditingController _createController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
@@ -111,6 +111,10 @@ class _CollectionManagementState extends ConsumerState<CollectionManagement>
         if (widget.initialCollectionId != null && !_hasAutoSelected) {
           _autoSelectCollection(widget.initialCollectionId!);
           _hasAutoSelected = true;
+        } else if (_selectedCollection == null && _filteredCollections.isNotEmpty) {
+          // Default-select the first collection so the left sidebar highlights
+          // it and the right detail pane shows its content on load.
+          _autoSelectCollection(_filteredCollections.first.id);
         }
       } else {
         setState(() {
@@ -352,6 +356,11 @@ class _CollectionManagementState extends ConsumerState<CollectionManagement>
   }
 
   /// Show create collection dialog
+  void showCreateDialog() {
+    _showCreateDialog();
+  }
+
+  /// Show create collection dialog
   void _showCreateDialog() {
     _createAnimationController.forward();
   }
@@ -442,12 +451,13 @@ class _CollectionManagementState extends ConsumerState<CollectionManagement>
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Header with search and create button
-        _buildHeader(),
-        
-        // Filter toggles
-        _buildFilterToggles(),
-        
+        // Search bar, create + icon, and centered filters
+        ListableItemsActionBar(
+          searchController: _searchController,
+          onSearchChanged: (_) => _onSearchChanged(),
+          filterContent: Center(child: _buildFilterToggles()),
+        ),
+
         // Create collection form
         AnimatedBuilder(
           animation: _createAnimation,
@@ -468,196 +478,87 @@ class _CollectionManagementState extends ConsumerState<CollectionManagement>
   }
 
   /// Build header section
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isCompact = constraints.maxWidth < 640;
-
-          final searchField = TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Search collections...',
-              prefixIcon: const Icon(Icons.search, size: 20),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm,
-                vertical: AppSpacing.sm,
-              ),
-              isDense: true,
-            ),
-          );
-
-          final createButton = ElevatedButton.icon(
-            onPressed: _showCreateDialog,
-            icon: const Icon(Icons.add),
-            label: const Text('Create'),
-          );
-
-          if (isCompact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Collections',
-                  style: AppTextStyles.h5,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                searchField,
-                const SizedBox(height: AppSpacing.sm),
-                createButton,
-              ],
-            );
-          }
-
-          return Row(
-            children: [
-              Text(
-                'Collections',
-                style: AppTextStyles.h5,
-              ),
-              const Spacer(),
-              SizedBox(
-                width: 200,
-                child: searchField,
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              createButton,
-            ],
-          );
-        },
-      ),
-    );
-  }
 
   /// Build filter toggles
+  /// Build filter toggles - just the buttons, no labels.
   Widget _buildFilterToggles() {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
+    final isCompact = MediaQuery.of(context).size.width < AppBreakpoints.mobile;
+
+    final filterButtons = ToggleButtons(
+      constraints: BoxConstraints(
+        minHeight: 32,
+        minWidth: isCompact ? 0 : 80,
       ),
-      decoration: const BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: AppColors.border),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      isSelected: [
+        _currentFilter == CollectionFilter.all,
+        _currentFilter == CollectionFilter.cameraOnly,
+        _currentFilter == CollectionFilter.userOnly,
+      ],
+      onPressed: (index) {
+        switch (index) {
+          case 0:
+            _setCollectionFilter(CollectionFilter.all);
+            break;
+          case 1:
+            _setCollectionFilter(CollectionFilter.cameraOnly);
+            break;
+          case 2:
+            _setCollectionFilter(CollectionFilter.userOnly);
+            break;
+        }
+      },
+      children: [
+        Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: isCompact ? AppSpacing.xs : AppSpacing.sm,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.collections, size: 16),
+              const SizedBox(width: AppSpacing.xs),
+              const Text('All'),
+            ],
+          ),
         ),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isCompact = constraints.maxWidth < 640;
-
-          final filterLabel = Text(
-            'Filter:',
-            style: AppTextStyles.labelMedium.copyWith(
-              color: AppColors.textSecondary,
-            ),
-          );
-
-          final filterButtons = ToggleButtons(
-            constraints: BoxConstraints(
-              minHeight: 32,
-              minWidth: isCompact ? 0 : 80,
-            ),
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-            isSelected: [
-              _currentFilter == CollectionFilter.all,
-              _currentFilter == CollectionFilter.cameraOnly,
-              _currentFilter == CollectionFilter.userOnly,
-            ],
-            onPressed: (index) {
-              switch (index) {
-                case 0:
-                  _setCollectionFilter(CollectionFilter.all);
-                  break;
-                case 1:
-                  _setCollectionFilter(CollectionFilter.cameraOnly);
-                  break;
-                case 2:
-                  _setCollectionFilter(CollectionFilter.userOnly);
-                  break;
-              }
-            },
+        Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: isCompact ? AppSpacing.xs : AppSpacing.sm,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: isCompact ? AppSpacing.xs : AppSpacing.sm,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.collections, size: 16),
-                    const SizedBox(width: AppSpacing.xs),
-                    const Text('All'),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: isCompact ? AppSpacing.xs : AppSpacing.sm,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.videocam, size: 16),
-                    const SizedBox(width: AppSpacing.xs),
-                    const Text('Camera'),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: isCompact ? AppSpacing.xs : AppSpacing.sm,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.person, size: 16),
-                    const SizedBox(width: AppSpacing.xs),
-                    const Text('User'),
-                  ],
-                ),
-              ),
+              const Icon(Icons.videocam, size: 16),
+              const SizedBox(width: AppSpacing.xs),
+              const Text('Camera'),
             ],
-          );
-
-          final countLabel = Text(
-            '${_filteredCollections.length} collections',
-            style: AppTextStyles.caption.copyWith(
-              color: AppColors.textTertiary,
-            ),
-          );
-
-          if (isCompact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                filterLabel,
-                const SizedBox(height: AppSpacing.sm),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: filterButtons,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                countLabel,
-              ],
-            );
-          }
-
-          return Row(
+          ),
+        ),
+        Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: isCompact ? AppSpacing.xs : AppSpacing.sm,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              filterLabel,
-              const SizedBox(width: AppSpacing.md),
-              filterButtons,
-              const Spacer(),
-              countLabel,
+              const Icon(Icons.person, size: 16),
+              const SizedBox(width: AppSpacing.xs),
+              const Text('User'),
             ],
-          );
-        },
-      ),
+          ),
+        ),
+      ],
     );
+
+    if (isCompact) {
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: filterButtons,
+      );
+    }
+
+    return filterButtons;
   }
 
   /// Build create collection form
@@ -896,34 +797,37 @@ class _CollectionListItem extends StatelessWidget {
       onMove: (_) => onDragEnter(),
       onLeave: (_) => onDragLeave(),
       builder: (context, candidateData, rejectedData) {
+        final highlight = isSelected || isDragTarget;
+
         return AnimatedContainer(
           duration: AppDurations.fast,
           margin: const EdgeInsets.only(bottom: AppSpacing.sm),
           decoration: BoxDecoration(
             color: isSelected
-                ? AppColors.primary.withOpacity(0.1)
-                : (isDragTarget 
-                    ? AppColors.secondary.withOpacity(0.1)
+                ? AppColors.primary.withValues(alpha: 0.1)
+                : (isDragTarget
+                    ? AppColors.secondary.withValues(alpha: 0.1)
                     : AppColors.surface),
             border: Border.all(
               color: isSelected
                   ? AppColors.primary
-                  : (isDragTarget 
+                  : (isDragTarget
                       ? AppColors.secondary
                       : AppColors.border),
-              width: isSelected || isDragTarget ? 2 : 1,
+              width: highlight ? 2 : 1,
             ),
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
-          child: ListTile(
-            contentPadding: const EdgeInsets.all(AppSpacing.md),
-            leading: Container(
+          child: ListableCard(
+            isSelected: false, // selection ring handled by AnimatedContainer above
+            onTap: onTap,
+            leadingIcon: Container(
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: isCameraCollection 
-                    ? AppColors.secondary.withOpacity(0.1)
-                    : AppColors.primary.withOpacity(0.1),
+                color: isCameraCollection
+                    ? AppColors.secondary.withValues(alpha: 0.1)
+                    : AppColors.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(AppRadius.sm),
               ),
               child: Icon(
@@ -931,56 +835,55 @@ class _CollectionListItem extends StatelessWidget {
                 color: isCameraCollection ? AppColors.secondary : AppColors.primary,
               ),
             ),
-            title: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    collection.name,
-                    style: AppTextStyles.bodyLarge.copyWith(
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                    ),
-                  ),
-                ),
-                // Collection type badge
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: AppSpacing.xs,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isCameraCollection 
-                        ? AppColors.secondary.withOpacity(0.1)
-                        : AppColors.info.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(AppRadius.xs),
-                    border: Border.all(
-                      color: isCameraCollection 
-                          ? AppColors.secondary.withOpacity(0.3)
-                          : AppColors.info.withOpacity(0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        isCameraCollection ? Icons.videocam : Icons.person,
-                        size: 12,
-                        color: isCameraCollection ? AppColors.secondary : AppColors.info,
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Text(
-                        isCameraCollection ? 'Camera' : 'User',
-                        style: AppTextStyles.caption.copyWith(
-                          color: isCameraCollection ? AppColors.secondary : AppColors.info,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            title: Text(
+              collection.name,
+              style: AppTextStyles.bodyLarge.copyWith(
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            subtitle: Column(
+            titleBadge: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.xs,
+              ),
+              decoration: BoxDecoration(
+                color: isCameraCollection
+                    ? AppColors.secondary.withValues(alpha: 0.1)
+                    : AppColors.info.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppRadius.xs),
+                border: Border.all(
+                  color: isCameraCollection
+                      ? AppColors.secondary.withValues(alpha: 0.3)
+                      : AppColors.info.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isCameraCollection ? Icons.videocam : Icons.person,
+                    size: 12,
+                    color: isCameraCollection ? AppColors.secondary : AppColors.info,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Flexible(
+                    child: Text(
+                      isCameraCollection ? 'Camera' : 'User',
+                      style: AppTextStyles.caption.copyWith(
+                        color: isCameraCollection ? AppColors.secondary : AppColors.info,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            body: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: AppSpacing.xs),
@@ -1001,15 +904,17 @@ class _CollectionListItem extends StatelessWidget {
                 ],
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  collection.createdAt != null 
+                  collection.createdAt != null
                       ? 'Created ${_formatDate(collection.createdAt!)}'
                       : 'Created recently',
                   style: AppTextStyles.caption,
                 ),
               ],
             ),
-            trailing: _buildTrailingActions(),
-            onTap: onTap,
+            footer: Align(
+              alignment: Alignment.centerRight,
+              child: _buildTrailingActions(),
+            ),
           ),
         );
       },

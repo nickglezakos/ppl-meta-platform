@@ -11,6 +11,8 @@ import '../models/mvr_best_image.dart';
 import '../core/api/api_client.dart';
 import '../core/config.dart';
 import '../core/config/app_config.dart';
+import '../widgets/individual_groups/edit_group_dialog.dart';
+import '../core/theme/theme_kit.dart';
 import 'individual_group_detail_screen.dart';
 import 'person_objects_detail_screen.dart';
 import '../widgets/individual_groups/create_group_dialog.dart';
@@ -33,9 +35,9 @@ class _IndividualGroupsScreenState
   List<IndividualGroup> _groups = [];
   bool _isLoading = true;
   String? _errorMessage;
+  final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   GroupVisibility? _selectedVisibility;
-  bool _isGridView = true;
   String? _selectedGroupId;
 
   IndividualGroup? get _selectedGroup {
@@ -52,6 +54,12 @@ class _IndividualGroupsScreenState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadGroups();
     });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   IndividualGroupsApiClient get _apiClient {
@@ -72,9 +80,13 @@ class _IndividualGroupsScreenState
     );
 
     if (response.success && response.data != null) {
+      final groups = response.data!.groups;
       setState(() {
-        _groups = response.data!.groups;
+        _groups = groups;
         _isLoading = false;
+        // Default-select the first group so the sidebar highlights it and the
+        // right pane shows its content immediately.
+        _selectedGroupId ??= groups.isNotEmpty ? groups.first.id : null;
       });
     } else {
       setState(() {
@@ -117,73 +129,62 @@ class _IndividualGroupsScreenState
         showBackButton: true,
         showHomeButton: true,
         actions: [
-          IconButton(
-            icon: Icon(_isGridView ? Icons.list : Icons.grid_view),
-            onPressed: () {
-              setState(() {
-                _isGridView = !_isGridView;
-              });
-            },
-            tooltip: _isGridView ? 'List View' : 'Grid View',
-          ),
-          PopupMenuButton<GroupVisibility?>(
-            icon: const Icon(Icons.filter_list),
-            onSelected: (visibility) {
-              setState(() {
-                _selectedVisibility = visibility;
-              });
-              _loadGroups();
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: null,
-                child: Text('All Groups'),
-              ),
-              const PopupMenuItem(
-                value: GroupVisibility.private,
-                child: Text('Private'),
-              ),
-              const PopupMenuItem(
-                value: GroupVisibility.shared,
-                child: Text('Shared'),
-              ),
-              const PopupMenuItem(
-                value: GroupVisibility.public,
-                child: Text('Public'),
-              ),
-            ],
-          ),
           const SizedBox(width: 8),
+          IconButton(
+            onPressed: _showCreateGroupDialog,
+            icon: const Icon(Icons.add, color: AppColors.secondary),
+            tooltip: 'New Group',
+          ),
         ],
       ),
       body: isWide(context) ? _buildWideLayout() : _buildNarrowLayout(),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showCreateGroupDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('New Group'),
-      ),
     );
   }
 
   Widget _searchBar() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: TextField(
-        decoration: InputDecoration(
-          hintText: 'Search groups...',
-          prefixIcon: const Icon(Icons.search),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+    return ListableItemsActionBar(
+      searchController: _searchController,
+      onSearchChanged: (value) {
+        setState(() {
+          _searchQuery = value;
+        });
+      },
+      filterContent: Center(child: _buildVisibilityFilterToggles()),
+    );
+  }
+
+  /// Visibility filter toggles (All / Private / Shared / Public).
+  Widget _buildVisibilityFilterToggles() {
+    const values = <GroupVisibility?>[null, GroupVisibility.private, GroupVisibility.shared, GroupVisibility.public];
+    const labels = <String>['All', 'Private', 'Shared', 'Public'];
+    const icons = <IconData>[Icons.dashboard_outlined, Icons.lock_outline, Icons.group_outlined, Icons.public];
+
+    return ToggleButtons(
+      constraints: const BoxConstraints(minHeight: 32),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      isSelected: [for (final v in values) v == _selectedVisibility],
+      onPressed: (index) {
+        setState(() => _selectedVisibility = values[index]);
+        _loadGroups();
+      },
+      selectedColor: AppColors.accent,
+      fillColor: AppColors.accent.withValues(alpha: 0.1),
+      borderColor: AppColors.gray700,
+      selectedBorderColor: AppColors.accent.withValues(alpha: 0.4),
+      children: [
+        for (var i = 0; i < labels.length; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icons[i], size: AppIconSize.sm),
+                const SizedBox(width: AppSpacing.xs),
+                Text(labels[i], style: AppTextStyles.caption),
+              ],
+            ),
           ),
-          filled: true,
-        ),
-        onChanged: (value) {
-          setState(() {
-            _searchQuery = value;
-          });
-        },
-        onSubmitted: (_) => _loadGroups(),
-      ),
+      ],
     );
   }
 
@@ -318,38 +319,10 @@ class _IndividualGroupsScreenState
 
     return RefreshIndicator(
       onRefresh: _loadGroups,
-      child: _isGridView ? _buildGridView() : _buildListView(),
+      child: _buildListView(),
     );
   }
 
-  Widget _buildGridView() {
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 300,
-        childAspectRatio: 0.85,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-      ),
-      itemCount: _groups.length,
-      itemBuilder: (context, index) {
-        final group = _groups[index];
-        final selected = isWide(context) && _selectedGroupId == group.id;
-        return _GroupCard(
-          group: group,
-          apiClient: _apiClient,
-          selected: selected,
-          onTap: () {
-            if (isWide(context)) {
-              setState(() => _selectedGroupId = group.id);
-            } else {
-              _navigateToGroupDetail(group);
-            }
-          },
-        );
-      },
-    );
-  }
 
   Widget _buildListView() {
     return ListView.builder(
@@ -358,80 +331,151 @@ class _IndividualGroupsScreenState
       itemBuilder: (context, index) {
         final group = _groups[index];
         final selected = isWide(context) && _selectedGroupId == group.id;
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: selected
-                ? BorderSide(
-                    color: Theme.of(context).colorScheme.primary, width: 2)
-                : BorderSide.none,
+
+        final visibilityLabel = group.visibility.toString().split('.').last;
+        final IconData visibilityIcon;
+        final Color visibilityColor;
+        switch (group.visibility) {
+          case GroupVisibility.private:
+            visibilityIcon = Icons.lock_outline;
+            visibilityColor = AppColors.info;
+          case GroupVisibility.shared:
+            visibilityIcon = Icons.people_outline;
+            visibilityColor = AppColors.warning;
+          case GroupVisibility.public:
+            visibilityIcon = Icons.public;
+            visibilityColor = AppColors.success;
+        }
+
+        return ListableCard(
+          isSelected: selected,
+          onTap: () {
+            if (isWide(context)) {
+              setState(() => _selectedGroupId = group.id);
+            } else {
+              _navigateToGroupDetail(group);
+            }
+          },
+          leadingIcon: CircleAvatar(
+            radius: 24,
+            backgroundColor: AppColors.secondary.withValues(alpha: 0.15),
+            child: Text(
+              group.memberCount.toString(),
+              style: AppTextStyles.h6.copyWith(
+                color: AppColors.secondary, fontWeight: FontWeight.bold),
+            ),
           ),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-              child: Text(
-                group.memberCount.toString(),
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                  fontWeight: FontWeight.bold,
-                ),
+          title: Text(
+            group.name,
+            style: AppTextStyles.bodyLarge.copyWith(
+              fontWeight: selected ? FontWeight.w600 : FontWeight.normal),
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+          ),
+          titleBadge: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+            decoration: BoxDecoration(
+              color: visibilityColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppRadius.xs),
+              border: Border.all(
+                color: visibilityColor.withValues(alpha: 0.3), width: 1),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(visibilityIcon, size: 12, color: visibilityColor),
+              SizedBox(width: AppSpacing.xs),
+              Flexible(child: Text(visibilityLabel,
+                style: AppTextStyles.caption.copyWith(
+                  color: visibilityColor, fontWeight: FontWeight.w500),
+                overflow: TextOverflow.ellipsis, maxLines: 1)),
+            ]),
+          ),
+          body: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (group.description?.isNotEmpty ?? false) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text(group.description!,
+                style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary),
+                maxLines: 2, overflow: TextOverflow.ellipsis),
+            ],
+            const SizedBox(height: AppSpacing.xs),
+            Text('${group.memberCount} ${group.memberCount == 1 ? 'member' : 'members'}',
+              style: AppTextStyles.caption),
+            if (group.tags.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs,
+                children: group.tags.take(3).map((tag) => Chip(
+                  label: Text(tag),
+                  labelStyle: AppTextStyles.caption.copyWith(fontSize: 10),
+                  backgroundColor: AppColors.widgetFill,
+                  padding: EdgeInsets.zero,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                )).toList(),
               ),
-            ),
-            title: Text(group.name),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  group.description ?? 'No description',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+            ],
+          ]),
+          footer: Align(
+            alignment: Alignment.centerRight,
+            child: PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, size: 20),
+              tooltip: 'Group actions',
+              style: IconButton.styleFrom(
+                foregroundColor: AppColors.secondary,
+              ),
+              onSelected: (value) {
+                switch (value) {
+                  case 'camera_search':
+                    _showGroupCameraSearch(group);
+                    break;
+                  case 'edit':
+                    _showEditGroupDialog(group);
+                    break;
+                  case 'delete':
+                    _showDeleteGroupDialog(group);
+                    break;
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'camera_search',
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(AppIcons.cameras, size: 18, color: AppColors.secondary),
+                      SizedBox(width: AppSpacing.sm),
+                      Text('Camera Search'),
+                    ],
+                  ),
                 ),
-                ],
+                const PopupMenuItem(
+                  value: 'edit',
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.edit_outlined, size: 18),
+                      SizedBox(width: AppSpacing.sm),
+                      Text('Edit Group'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.delete_outline, size: 18, color: AppColors.error),
+                      SizedBox(width: AppSpacing.sm),
+                      Text('Delete Group', style: TextStyle(color: AppColors.error)),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            trailing: _buildVisibilityChip(group.visibility),
-            onTap: () {
-              if (isWide(context)) {
-                setState(() => _selectedGroupId = group.id);
-              } else {
-                _navigateToGroupDetail(group);
-              }
-            },
           ),
         );
       },
     );
   }
 
-  Widget _buildVisibilityChip(GroupVisibility visibility) {
-    IconData icon;
-    Color color;
-    
-    switch (visibility) {
-      case GroupVisibility.private:
-        icon = Icons.lock_outline;
-        color = Colors.blue;
-        break;
-      case GroupVisibility.shared:
-        icon = Icons.people_outline;
-        color = Colors.orange;
-        break;
-      case GroupVisibility.public:
-        icon = Icons.public;
-        color = Colors.green;
-        break;
-    }
 
-    return Chip(
-      avatar: Icon(icon, size: 16, color: color),
-      label: Text(
-        visibility.toString().split('.').last,
-        style: TextStyle(color: color, fontSize: 12),
-      ),
-      backgroundColor: color.withOpacity(0.1),
-      padding: EdgeInsets.zero,
-    );
-  }
 
   void _navigateToGroupDetail(IndividualGroup group) {
     Navigator.push(
@@ -443,143 +487,65 @@ class _IndividualGroupsScreenState
       ),
     ).then((_) => _loadGroups()); // Refresh on return
   }
-}
 
-/// Group Card Widget
-class _GroupCard extends StatelessWidget {
-  final IndividualGroup group;
-  final IndividualGroupsApiClient apiClient;
-  final VoidCallback onTap;
+  /// Show the edit group dialog (reuses EditGroupDialog from the detail screen).
+  Future<void> _showEditGroupDialog(IndividualGroup group) async {
+    await showDialog(
+      context: context,
+      builder: (context) => EditGroupDialog(group: group),
+    );
+    if (mounted) _loadGroups();
+  }
 
-  const _GroupCard({
-    required this.group,
-    required this.apiClient,
-    required this.onTap,
-    this.selected = false,
-  });
-
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    final coverIndividualId = group.metadata?['cover_individual_id'] as String?;
-    
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: selected
-            ? BorderSide(
-                color: Theme.of(context).colorScheme.primary, width: 2)
-            : BorderSide.none,
-      ),
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Cover image or placeholder with search button overlay
-            Expanded(
-              child: Stack(
-                children: [
-                  Container(
-                    width: double.infinity,
-                    color: Theme.of(context).colorScheme.surfaceVariant,
-                    child: coverIndividualId != null
-                        ? Image.network(
-                            apiClient.getThumbnailUrl(
-                              coverIndividualId,
-                              size: 'medium',
-                            ),
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                _buildPlaceholder(context),
-                          )
-                        : _buildPlaceholder(context),
-                  ),
-                  // Search button overlay
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Material(
-                      color: Colors.white.withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(20),
-                      elevation: 2,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(20),
-                        onTap: () => _showCameraSearchDialog(context),
-                        child: Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Icon(
-                            Icons.video_camera_front,
-                            size: 20,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            // Group info
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    group.name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${group.memberCount} ${group.memberCount == 1 ? 'member' : 'members'}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey[600],
-                        ),
-                  ),
-                  if (group.tags.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 4,
-                      children: group.tags.take(2).map((tag) {
-                        return Chip(
-                          label: Text(tag),
-                          labelStyle: const TextStyle(fontSize: 10),
-                          padding: EdgeInsets.zero,
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
+  /// Show a confirmation dialog and delete the group.
+  Future<void> _showDeleteGroupDialog(IndividualGroup group) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Group'),
+        content: Text(
+          'Are you sure you want to delete "${group.name}"?\n\n'
+          'This action cannot be undone.',
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
+
+    if (confirmed != true || !mounted) return;
+
+    final response = await _apiClient.deleteGroup(group.id);
+    if (!mounted) return;
+
+    if (response.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Group "${group.name}" deleted successfully')),
+      );
+      setState(() {
+        if (_selectedGroupId == group.id) _selectedGroupId = null;
+        _groups.removeWhere((g) => g.id == group.id);
+      });
+      await _loadGroups();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response.error ?? 'Failed to delete group'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
-  Widget _buildPlaceholder(BuildContext context) {
-    return Center(
-      child: Icon(
-        Icons.group,
-        size: 64,
-        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.3),
-      ),
-    );
-  }
-
-  void _showCameraSearchDialog(BuildContext context) async {
+Future<void> _showGroupCameraSearch(IndividualGroup group) async {
     final searchParams = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => CameraSearchDialog(
@@ -589,27 +555,23 @@ class _GroupCard extends StatelessWidget {
       ),
     );
 
-    if (searchParams != null && context.mounted) {
-      // Handle both single and multiple cameras
+    if (searchParams != null && mounted) {
       final cameraIds = searchParams['camera_ids'] as List<dynamic>?;
       final cameraUuids = searchParams['camera_uuids'] as List<dynamic>?;
       final cameraNames = searchParams['camera_names'] as List<dynamic>?;
-      
-      // Format camera names for display
       final displayNames = cameraNames?.join(', ') ?? 'Unknown';
-      
-      // Navigate to cross-video analysis with camera search context
+
       final analysisContext = CrossVideoAnalysisContext(
-        individualUuids: [], // Will be populated by backend
+        individualUuids: [],
         sessionUuid: 'camera_search_${group.id}_${DateTime.now().millisecondsSinceEpoch}',
         sessionData: {
           'source': 'individual_group_camera_search',
           'group_id': group.id,
           'group_name': group.name,
-          'camera_names': displayNames,  // Display string for UI
+          'camera_names': displayNames,
           'search_parameters': {
-            'camera_ids': cameraIds,    // Collection names — used by group-camera-search API
-            'camera_uuids': cameraUuids, // Collection UUIDs — used by routes filtering
+            'camera_ids': cameraIds,
+            'camera_uuids': cameraUuids,
             'start_time': searchParams['start_time'],
             'end_time': searchParams['end_time'],
           },
@@ -628,6 +590,8 @@ class _GroupCard extends StatelessWidget {
     }
   }
 }
+
+/// Group Card Widget
 
 /// Tappable member cards for the content-first right pane.
 /// Each card shows the member's avatar + label ("Group Member NN") + name;

@@ -9,6 +9,7 @@ import '../../../core/providers/multi_camera_providers.dart';
 import '../../../core/services/camera_service.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/config/app_config.dart';
+import '../../../core/theme/theme_kit.dart';
 import '../../pages/camera_stream_page.dart';
 import '../../screens/cameras/camera_pipeline_settings_screen.dart';
 import '../../../widgets/camera/camera_counter_widget.dart';
@@ -95,353 +96,219 @@ class CameraCard extends ConsumerWidget {
     debugPrint('   ✅ Final isConnected: $isConnected');
     debugPrint('   🎬 Play button visible: $isConnected');
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return ListableCard(
+      isSelected: selected,
       onTap: onTap,
-      child: Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: selected
-            ? BorderSide(color: colorScheme.primary, width: 2)
-            : BorderSide.none,
+      leadingIcon: Icon(
+        _getCameraIcon(updatedCamera.type),
+        color: isConnected ? AppColors.success : AppColors.textDisabled,
+        size: 24,
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-              // Header: camera type icon + camera title (wraps onto next line on
-              // narrow/mobile cards instead of truncating or overflowing).
-              Row(
-                children: [
-                  Icon(
-                    _getCameraIcon(updatedCamera.type),
-                    color: isConnected ? Colors.green : Colors.grey,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      updatedCamera.name,
-                      style: textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  // Settings is always available in the content pane on desktop;
-                  // on mobile it is opened from this card instead.
-                  if (isMobileView) ...[
-                    const SizedBox(width: 4),
-                    IconButton(
-                      onPressed: () => _showPipelineSettings(context, ref, updatedCamera),
-                      icon: const Icon(Icons.settings_outlined, size: 20),
-                      iconSize: 20,
-                      padding: const EdgeInsets.all(4),
-                      constraints: const BoxConstraints(),
-                      tooltip: 'Camera settings',
-                    ),
-                  ],
-                ],
-              ),
-
-              // Pipeline status indicators
-              Padding(
-                padding: const EdgeInsets.only(top: 8, left: 32),
-                child: Row(
-                  children: [
-                    if (updatedCamera.instantDetectionEnabled) ...[
-                      Tooltip(
-                        message: 'Instant Detection Active',
-                        child: Container(
-                          padding: EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Color(0x1AFF9800),
-                            borderRadius: BorderRadius.all(Radius.circular(4)),
-                          ),
-                          child: Icon(Icons.bolt, color: Colors.orange, size: 16),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                    ],
-                    if (updatedCamera.recordingPipelineEnabled) ...[
-                      Tooltip(
-                        message: 'Recording Pipeline Active',
-                        child: Container(
-                          padding: EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Color(0x1A000000),
-                            borderRadius: BorderRadius.all(Radius.circular(4)),
-                          ),
-                          child: Icon(
-                            Icons.fiber_manual_record,
-                            color: Colors.red,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                    ],
-                    _StatusIndicator(camera: updatedCamera),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 12),
-              
-              // Camera details
-              if (camera.manufacturer != null || camera.model != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    '${camera.manufacturer ?? ''} ${camera.model ?? ''}'.trim(),
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.outline,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              
-              // Resolution
-              if (camera.resolution != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.high_quality,
-                        size: 16,
-                        color: colorScheme.outline,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        camera.resolution!,
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colorScheme.outline,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              
-              const SizedBox(height: 12),
-              
-              // Counter widgets - MVR People Counter
-              CameraCounterWidget(
-                cameraId: camera.deviceId,
-              ),
-              const SizedBox(height: 8),
-              
-              // Counter widgets - Instant Detection
-              InstantDetectionWidget(
-                cameraId: camera.deviceId,
-              ),
-              
-              const SizedBox(height: 12),
-              
-              // Inline stream preview (thumbnail) when connected - TEMPORARILY DISABLED
-              // Uncomment to enable inline thumbnails:
-              // if (isConnected)
-              //   _StreamThumbnail(camera: camera),
-              // 
-              // if (isConnected)
-              //   const SizedBox(height: 12),
-              
-              // Recording status row (isolated widget)
-              if (isConnected)
-                _RecordingStatusRow(cameraId: camera.deviceId),
-              
-              if (isConnected)
-                const SizedBox(height: 8),
-              
-              // Bottom actions
-              Wrap(
-                spacing: actionSpacingMedium,
-                runSpacing: actionSpacingMedium,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  // Active status
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: camera.isActive 
-                          ? Colors.green.withOpacity(0.1)
-                          : Colors.grey.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: camera.isActive 
-                            ? Colors.green.withOpacity(0.3)
-                            : Colors.grey.withOpacity(0.3),
-                      ),
-                    ),
-                    child: Text(
-                      camera.isActive ? 'Active' : 'Inactive',
-                      style: textTheme.bodySmall?.copyWith(
-                        color: camera.isActive ? Colors.green : Colors.grey,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  
-                  // Spacer removed so the action icons wrap onto additional // lines when the card is too narrow to fit them in one row.
-                  if (updatedCamera.type == CameraType.rtsp) ...[
-                    IconButton(
-                      onPressed: () => _showDeleteRTSPDialog(context, ref, updatedCamera),
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      iconSize: actionIconSize,
-                      padding: actionPadding,
-                      constraints: const BoxConstraints(),
-                      tooltip: 'Delete camera',
-                    ),
-                    SizedBox(width: actionSpacingSmall),
-                  ],
-                  
-                  // Edge Camera Settings button (only for Edge cameras)
-                  if (updatedCamera.type == CameraType.edge) ...[
-                    IconButton(
-                      onPressed: () {
-                        context.go('/edge-cameras/${updatedCamera.deviceId}?name=${Uri.encodeComponent(updatedCamera.name)}');
-                      },
-                      icon: const Icon(Icons.settings),
-                      iconSize: actionIconSize,
-                      padding: actionPadding,
-                      constraints: const BoxConstraints(),
-                      tooltip: 'Edge Camera Settings',
-                    ),
-                    SizedBox(width: actionSpacingSmall),
-                  ],
-                  
-                  // Archive/Unarchive button
-                  IconButton(
-                    onPressed: () async {
-                      print('🗃️ [CameraCard] Archive button pressed for camera: ${updatedCamera.deviceId}');
-                      print('🗃️ [CameraCard] Current archived state: ${updatedCamera.archived}');
-                      
-                      final cameraActions = ref.read(cameraActionsProvider);
-                      final scaffoldMessenger = ScaffoldMessenger.of(context);
-                      
-                      try {
-                        if (updatedCamera.archived) {
-                          // Unarchive camera
-                          print('🗃️ [CameraCard] Calling unarchiveCamera for ${updatedCamera.deviceId}');
-                          final success = await cameraActions.unarchiveCamera(updatedCamera.deviceId);
-                          print('🗃️ [CameraCard] Unarchive result: $success');
-                          
-                          if (success) {
-                            scaffoldMessenger.showSnackBar(
-                              SnackBar(
-                                content: Text('${updatedCamera.name} restored from archive'),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-                          } else {
-                            print('❌ [CameraCard] Unarchive failed for ${updatedCamera.deviceId}');
-                            scaffoldMessenger.showSnackBar(
-                              SnackBar(
-                                content: Text('Failed to unarchive ${updatedCamera.name}'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        } else {
-                          // Archive camera
-                          print('🗃️ [CameraCard] Calling archiveCamera for ${updatedCamera.deviceId}');
-                          final success = await cameraActions.archiveCamera(updatedCamera.deviceId);
-                          print('🗃️ [CameraCard] Archive result: $success');
-                          
-                          if (success) {
-                            scaffoldMessenger.showSnackBar(
-                              SnackBar(
-                                content: Text('${updatedCamera.name} archived'),
-                                backgroundColor: Colors.orange,
-                              ),
-                            );
-                          } else {
-                            print('❌ [CameraCard] Archive failed for ${updatedCamera.deviceId}');
-                            scaffoldMessenger.showSnackBar(
-                              SnackBar(
-                                content: Text('Failed to archive ${updatedCamera.name}'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        }
-                      } catch (e, stackTrace) {
-                        print('❌ [CameraCard] Archive/unarchive error: $e');
-                        print('❌ [CameraCard] Stack trace: $stackTrace');
-                        scaffoldMessenger.showSnackBar(
-                          SnackBar(
-                            content: Text('Failed to ${updatedCamera.archived ? "unarchive" : "archive"} camera: $e'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      }
-                    },
-                    icon: Icon(
-                      Icons.archive,
-                      color: updatedCamera.archived ? Colors.orange : Colors.grey,
-                    ),
-                    iconSize: actionIconSize,
-                    padding: actionPadding,
-                    constraints: const BoxConstraints(),
-                    tooltip: updatedCamera.archived ? 'Unarchive camera' : 'Archive camera',
-                  ),
-                  SizedBox(width: actionSpacingSmall),
-                  
-                  // Connection toggle button
-                  _ConnectionButton(camera: updatedCamera),
-                  SizedBox(width: actionSpacingMedium),
-                  
-                  // Recording and stream controls
-                  if (isConnected) ...[
-                    // For USB/RTSP/edge cameras, show recording controls
-                    if (updatedCamera.type != CameraType.edge) ...[
-                      InstantDetectionControls(cameraId: updatedCamera.deviceId),
-                      _RecordingControls(cameraId: updatedCamera.deviceId),
-                      SizedBox(width: actionSpacingMedium),
-                    ],
-                    IconButton(
-                      onPressed: () {
-                        // 🔍 DEBUG: Log navigation attempt
-                        debugPrint('🎬 [CameraCard] Navigating to stream for ${updatedCamera.deviceId}');
-                        debugPrint('🎬 [CameraCard] Camera: ${updatedCamera.toJson()}');
-                        
-                        // Navigate to full-screen stream page
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => CameraStreamPage(camera: updatedCamera),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.play_circle_outline),
-                      iconSize: actionIconSize,
-                      padding: actionPadding,
-                      constraints: const BoxConstraints(),
-                      tooltip: 'View stream',
-                    ),
-                  ] else ...[
-                    // 🔍 DEBUG: Show why play button is hidden
-                    Tooltip(
-                      message: 'Camera must be connected to view stream',
-                      child: Icon(
-                        Icons.play_circle_outline,
-                        size: 28,
-                        color: Colors.grey.withOpacity(0.3),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ],
+      title: Text(
+        updatedCamera.name,
+        style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.bold),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      statusBadge: isMobileView
+          ? IconButton(
+              onPressed: () => _showPipelineSettings(context, ref, updatedCamera),
+              icon: const Icon(AppIcons.settings, size: 20),
+              iconSize: 20,
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(),
+              tooltip: 'Camera settings',
+            )
+          : null,
+      titleBadge: _buildPipelineIndicators(updatedCamera),
+      body: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (camera.manufacturer != null || camera.model != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              '${camera.manufacturer ?? ''} ${camera.model ?? ''}'.trim(),
+              style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ),
+        if (camera.resolution != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(children: [
+              Icon(Icons.high_quality, size: 16, color: AppColors.textTertiary),
+              const SizedBox(width: 4),
+              Text(camera.resolution!, style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary)),
+            ]),
+          ),
+        const SizedBox(height: 8),
+        CameraCounterWidget(cameraId: camera.deviceId),
+        const SizedBox(height: 8),
+        InstantDetectionWidget(cameraId: camera.deviceId),
+        if (isConnected) ...[
+          const SizedBox(height: 8),
+          _RecordingStatusRow(cameraId: camera.deviceId),
+        ],
+      ]),
+      footer: _buildActionFooter(
+        context, ref, updatedCamera, camera, isConnected,
+        actionIconSize, actionPadding, actionSpacingSmall, actionSpacingMedium,
       ),
     );
   }
   
+Widget _buildPipelineIndicators(Camera cam) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (cam.instantDetectionEnabled) ...[
+          Tooltip(
+            message: 'Instant Detection Active',
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+              child: const Icon(Icons.bolt, color: AppColors.warning, size: 16),
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+        if (cam.recordingPipelineEnabled) ...[
+          Tooltip(
+            message: 'Recording Pipeline Active',
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: AppColors.widgetFill,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+              child: const Icon(Icons.fiber_manual_record, color: AppColors.error, size: 16),
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+        _StatusIndicator(camera: cam),
+      ],
+    );
+  }
+Widget _buildActionFooter(
+    BuildContext context,
+    WidgetRef ref,
+    Camera updatedCamera,
+    Camera camera,
+    bool isConnected,
+    double actionIconSize,
+    EdgeInsetsGeometry actionPadding,
+    double actionSpacingSmall,
+    double actionSpacingMedium,
+  ) {
+    return Wrap(
+      spacing: actionSpacingMedium,
+      runSpacing: actionSpacingMedium,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+          decoration: BoxDecoration(
+            color: camera.isActive
+                ? AppColors.success.withValues(alpha: 0.1)
+                : AppColors.textDisabled.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(
+              color: camera.isActive
+                  ? AppColors.success.withValues(alpha: 0.3)
+                  : AppColors.textDisabled.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Text(
+            camera.isActive ? 'Active' : 'Inactive',
+            style: AppTextStyles.caption.copyWith(
+              color: camera.isActive ? AppColors.success : AppColors.textDisabled,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        if (updatedCamera.type == CameraType.rtsp) ...[
+          IconButton(
+            onPressed: () => _showDeleteRTSPDialog(context, ref, updatedCamera),
+            icon: const Icon(AppIcons.delete, color: AppColors.error),
+            iconSize: actionIconSize,
+            padding: actionPadding,
+            constraints: const BoxConstraints(),
+            tooltip: 'Delete camera',
+          ),
+          SizedBox(width: actionSpacingSmall),
+        ],
+        if (updatedCamera.type == CameraType.edge) ...[
+          IconButton(
+            onPressed: () => context.go('/edge-cameras/${updatedCamera.deviceId}?name=${Uri.encodeComponent(updatedCamera.name)}'),
+            icon: const Icon(AppIcons.settings),
+            iconSize: actionIconSize,
+            padding: actionPadding,
+            constraints: const BoxConstraints(),
+            tooltip: 'Edge Camera Settings',
+          ),
+          SizedBox(width: actionSpacingSmall),
+        ],
+        IconButton(
+          onPressed: () async {
+            final cameraActions = ref.read(cameraActionsProvider);
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              if (updatedCamera.archived) {
+                final ok = await cameraActions.unarchiveCamera(updatedCamera.deviceId);
+                messenger.showSnackBar(SnackBar(
+                  content: Text(ok ? '${updatedCamera.name} restored' : 'Failed to unarchive ${updatedCamera.name}'),
+                  backgroundColor: ok ? AppColors.success : AppColors.error,
+                ));
+              } else {
+                final ok = await cameraActions.archiveCamera(updatedCamera.deviceId);
+                messenger.showSnackBar(SnackBar(
+                  content: Text(ok ? '${updatedCamera.name} archived' : 'Failed to archive ${updatedCamera.name}'),
+                  backgroundColor: ok ? AppColors.warning : AppColors.error,
+                ));
+              }
+            } catch (e) {
+              messenger.showSnackBar(SnackBar(content: Text('Failed: $e'), backgroundColor: AppColors.error));
+            }
+          },
+          icon: Icon(Icons.archive, color: updatedCamera.archived ? AppColors.warning : AppColors.textDisabled),
+          iconSize: actionIconSize,
+          padding: actionPadding,
+          constraints: const BoxConstraints(),
+          tooltip: updatedCamera.archived ? 'Unarchive camera' : 'Archive camera',
+        ),
+        SizedBox(width: actionSpacingSmall),
+        _ConnectionButton(camera: updatedCamera),
+        SizedBox(width: actionSpacingMedium),
+        if (isConnected) ...[
+          if (updatedCamera.type != CameraType.edge) ...[
+            InstantDetectionControls(cameraId: updatedCamera.deviceId),
+            _RecordingControls(cameraId: updatedCamera.deviceId),
+            SizedBox(width: actionSpacingMedium),
+          ],
+          IconButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => CameraStreamPage(camera: updatedCamera)),
+            ),
+            icon: const Icon(Icons.play_circle_outline),
+            iconSize: actionIconSize,
+            padding: actionPadding,
+            constraints: const BoxConstraints(),
+            tooltip: 'View stream',
+          ),
+        ] else ...[
+          Tooltip(
+            message: 'Camera must be connected to view stream',
+            child: Icon(Icons.play_circle_outline, size: 28,
+                color: Colors.grey.withValues(alpha: 0.3)),
+          ),
+        ],
+      ],
+    );
+  }
+
   static void _showPipelineSettings(BuildContext context, WidgetRef ref, Camera camera) {
     Navigator.of(context).push(
       MaterialPageRoute(

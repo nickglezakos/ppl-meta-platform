@@ -43,6 +43,8 @@ class CollectionsScreen extends ConsumerStatefulWidget {
 }
 
 class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
+  final GlobalKey<CollectionManagementState> _collectionMgmtKey =
+      GlobalKey<CollectionManagementState>();
   MediaCollection? _selectedCollection;
   bool _isLoading = false;
   bool _isSelectionMode = false;
@@ -88,12 +90,20 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     return const [];
   }
 
-  @override
+    @override
   void initState() {
     super.initState();
     print('🏗️ CollectionsScreen initState - initialCollectionId: ${widget.initialCollectionId}');
-    // Note: Don't set _selectedCollection here directly, let CollectionManagement handle auto-selection
-    // This ensures proper coordination between the widgets
+    // Pre-set the selected collection immediately if initialCollectionId is provided
+    // This prevents a flash of empty right pane before CollectionManagement auto-selects
+        if (widget.initialCollectionId != null && _selectedCollection == null) {
+      _selectedCollection ??= MediaCollection(
+        id: widget.initialCollectionId!,
+        name: '', // Temporary — CollectionManagement will replace with full data
+        createdAt: null,
+        itemCount: 0,
+      );
+    }
   }
   
   // Keep a reference to the gallery widget to prevent recreating it
@@ -148,115 +158,142 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         title: _selectedCollection != null
             ? _selectedCollection!.name
             : 'Collections',
-        showBackButton: true, // Always show back button on collections screen
-        onBackPressed: _selectedCollection != null 
+        showBackButton: _selectedCollection != null,
+        showHomeButton: false,
+        onBackPressed: _selectedCollection != null
             ? () {
-                print('🔙 Back button pressed - navigating to collections list');
-                // Clear selected collection and navigate back
-                setState(() {
-                  _selectedCollection = null;
-                  _isSelectionMode = false;
-                  _selectedItems.clear();
-                  _showOrganizationWidget = false;
-                });
-                // Navigate back to collections list using router
-                context.go('/collections');
+                print('🔙 Back button pressed');
+                // If we arrived with an explicit collection id, "back" means
+                // returning to the collections list view.
+                if (widget.initialCollectionId != null) {
+                  setState(() {
+                    _selectedCollection = null;
+                    _isSelectionMode = false;
+                    _selectedItems.clear();
+                    _showOrganizationWidget = false;
+                  });
+                  context.go('/collections');
+                  return;
+                }
+                // Otherwise we landed directly on this screen: navigate to
+                // the previous screen in history (or home as fallback).
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go('/');
+                }
               }
             : null,
-        actions: _selectedCollection != null 
-            ? [
-                if (_isSelectionMode) ...[
-                  // Selection count and actions
-                  if (_selectedItems.isNotEmpty) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${_selectedItems.length}',
-                        style: AppTextStyles.labelMedium.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                actions: [
+            // Home icon (always visible)
+            IconButton(
+              onPressed: () {
+                context.go('/');
+              },
+              icon: const Icon(Icons.home, color: AppColors.secondary),
+              tooltip: 'Go to Home',
+            ),
+            // Create collection button (always visible)
+            IconButton(
+              onPressed: () =>
+                  _collectionMgmtKey.currentState?.showCreateDialog(),
+              icon: Icon(Icons.add, color: AppColors.secondary),
+              tooltip: 'Create collection',
+            ),
+            // Contextual buttons for selection mode or collection detail
+            if (_selectedCollection != null) ...[
+              if (_isSelectionMode) ...[
+                // Selection count and actions
+                if (_selectedItems.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    
-                    // Vision button (NEW)
-                    IconButton(
-                      onPressed: _processWithVision,
-                      icon: Icon(
-                        Icons.visibility,
+                    child: Text(
+                      '${_selectedItems.length}',
+                      style: AppTextStyles.labelMedium.copyWith(
                         color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
                       ),
-                      tooltip: 'Process with Vision AI',
                     ),
-                    
-                    // Share button
-                    IconButton(
-                      onPressed: _shareSelectedItems,
-                      icon: const Icon(Icons.share),
-                      tooltip: 'Share selected',
-                    ),
-                    
-                    // Add to collection button
-                    IconButton(
-                      onPressed: _addSelectedToCollection,
-                      icon: const Icon(Icons.add_to_photos),
-                      tooltip: 'Add to collection',
-                    ),
-                    
-                    // Delete button
-                    IconButton(
-                      onPressed: _deleteSelectedItems,
-                      icon: const Icon(Icons.delete),
-                      tooltip: 'Delete selected',
-                    ),
-                  ],
-                  
-                  // Exit selection mode
-                  IconButton(
-                    onPressed: _exitSelectionMode,
-                    icon: const Icon(Icons.close),
-                    tooltip: 'Exit selection',
                   ),
-                ] else ...[
-                  // Search button
+                  
+                  // Vision button (NEW)
                   IconButton(
-                    onPressed: _showSearchDialog,
+                    onPressed: _processWithVision,
                     icon: Icon(
-                      _startDate != null || _endDate != null 
-                          ? Icons.filter_alt 
-                          : Icons.search,
+                      Icons.visibility,
+                      color: AppColors.primary,
                     ),
-                    tooltip: 'Search by date/time',
+                    tooltip: 'Process with Vision AI',
                   ),
                   
-                  // Enter selection mode
+                  // Share button
                   IconButton(
-                    onPressed: _enterSelectionMode,
-                    icon: const Icon(Icons.checklist),
-                    tooltip: 'Multi-select',
+                    onPressed: _shareSelectedItems,
+                    icon: const Icon(Icons.share),
+                    tooltip: 'Share selected',
+                  ),
+                  
+                  // Add to collection button
+                  IconButton(
+                    onPressed: _addSelectedToCollection,
+                    icon: const Icon(Icons.add_to_photos),
+                    tooltip: 'Add to collection',
+                  ),
+                  
+                  // Delete button
+                  IconButton(
+                    onPressed: _deleteSelectedItems,
+                    icon: const Icon(Icons.delete),
+                    tooltip: 'Delete selected',
                   ),
                 ],
                 
-                // Organization button (only when in selection mode with items)
-                if (_isSelectionMode && _selectedItems.isNotEmpty)
-                  IconButton(
-                    onPressed: _toggleOrganizationWidget,
-                    icon: Icon(
-                      _showOrganizationWidget 
-                          ? Icons.keyboard_arrow_up 
-                          : Icons.drive_file_move,
-                    ),
-                    tooltip: _showOrganizationWidget 
-                        ? 'Hide organization panel' 
-                        : 'Organize items',
+                // Exit selection mode
+                IconButton(
+                  onPressed: _exitSelectionMode,
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Exit selection',
+                ),
+              ] else ...[
+                // Search button
+                IconButton(
+                  onPressed: _showSearchDialog,
+                  icon: Icon(
+                    _startDate != null || _endDate != null 
+                        ? Icons.filter_alt 
+                        : Icons.search,
                   ),
-              ]
-            : null,
+                  tooltip: 'Search by date/time',
+                ),
+                
+                // Enter selection mode
+                IconButton(
+                  onPressed: _enterSelectionMode,
+                  icon: const Icon(Icons.checklist),
+                  tooltip: 'Multi-select',
+                ),
+              ],
+              
+              // Organization button (only when in selection mode with items)
+              if (_isSelectionMode && _selectedItems.isNotEmpty)
+                IconButton(
+                  onPressed: _toggleOrganizationWidget,
+                  icon: Icon(
+                    _showOrganizationWidget 
+                        ? Icons.keyboard_arrow_up 
+                        : Icons.drive_file_move,
+                  ),
+                  tooltip: _showOrganizationWidget 
+                      ? 'Hide organization panel' 
+                      : 'Organize items',
+                ),
+            ],
+          ],
       ),
       body: isWide(context)
           ? Row(
@@ -305,6 +342,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   Widget _buildCollectionsList() {
     final apiClient = ref.watch(apiClientProvider);
     return CollectionManagement(
+      key: _collectionMgmtKey,
       apiClient: apiClient,
       initialCollectionId: widget.initialCollectionId,
       onCollectionSelected: (collection) {

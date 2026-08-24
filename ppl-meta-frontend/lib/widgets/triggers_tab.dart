@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/trigger_model.dart'; 
 import '../services/trigger_service.dart';
 import '../core/models/camera.dart';
-import '../core/theme/app_theme.dart';
+import '../core/theme/theme_kit.dart';
 import '../core/providers/camera_providers.dart';
 import '../core/api/api_client.dart';
 import '../services/individual_groups_api_client.dart';
@@ -17,10 +17,10 @@ class TriggersTab extends ConsumerStatefulWidget {
   const TriggersTab({super.key});
 
   @override
-  ConsumerState<TriggersTab> createState() => _TriggersTabState();
+  ConsumerState<TriggersTab> createState() => TriggersTabState();
 }
 
-class _TriggersTabState extends ConsumerState<TriggersTab> {
+class TriggersTabState extends ConsumerState<TriggersTab> {
   final TriggerService _triggerService = TriggerService();
   final Map<String, String> _groupNameById = {};
   // Legacy age bracket fields migrate to age_threshold on edit.
@@ -74,7 +74,23 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     });
   }
 
-  bool _isAgeThresholdField(String field) => field == 'age_threshold';
+    bool _isAgeThresholdField(String field) => field == 'age_threshold';
+
+  /// Public method to show the create/edit trigger dialog from parent.
+  /// Used by TriggersScreen's navigation bar + icon button.
+  Future<Widget?> showCreateEditDialog({
+    TriggerModel? trigger,
+    bool embedded = false,
+    VoidCallback? onCancel,
+    VoidCallback? onSaved,
+  }) {
+    return _showCreateEditDialog(
+      trigger: trigger,
+      embedded: embedded,
+      onCancel: onCancel,
+      onSaved: onSaved,
+    );
+  }
 
   /// Migrates legacy age bracket / percent_age fields to age_threshold.
   DemographicCondition _normalizeConditionForEdit(DemographicCondition condition) {
@@ -310,38 +326,38 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
 
     if (uuids.isEmpty) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.sm),
         decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.shade700),
-          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: AppColors.gray700),
+          borderRadius: BorderRadius.circular(AppRadius.chipBadge),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('None', style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
+            Flexible(child: Text('None', style: TextStyle(color: AppColors.gray500, fontSize: 13), overflow: TextOverflow.ellipsis)),
             const SizedBox(width: 4),
-            Icon(Icons.arrow_drop_down, color: Colors.grey.shade500, size: 18),
+            Icon(AppIcons.arrowDropDown, color: AppColors.gray500, size: AppIconSize.md),
           ],
         ),
       );
     }
 
     return Wrap(
-      spacing: 4,
-      runSpacing: 4,
+      spacing: 6,
+      runSpacing: 6,
       children: [
         for (int i = 0; i < uuids.length; i++)
           Chip(
             label: Text(
               i < names.length ? names[i] : uuids[i].substring(0, 8),
-              style: const TextStyle(color: Colors.white70, fontSize: 11),
+              style: const TextStyle(color: AppColors.white, fontSize: 11),
+              overflow: TextOverflow.ellipsis,
             ),
-            backgroundColor: AppColors.primary,
+            backgroundColor: AppColors.widgetFill,
             padding: EdgeInsets.zero,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             visualDensity: VisualDensity.compact,
           ),
-        Icon(Icons.edit, color: Colors.grey.shade500, size: 14),
       ],
     );
   }
@@ -460,88 +476,17 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
       body: LayoutBuilder(
         builder: (context, _) {
           final master = Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-            // Header
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isCompact = constraints.maxWidth < 720;
-
-                final createButton = ElevatedButton.icon(
-                  onPressed: () => _showCreateEditDialog(),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Create Trigger'),
-                );
-
-                final filterDropdown = DropdownButton<bool?>(
-                  value: _filterIsActive,
-                  hint: const Text('All Statuses'),
-                  isExpanded: isCompact,
-                  items: const [
-                    DropdownMenuItem(value: null, child: Text('All Statuses')),
-                    DropdownMenuItem(value: true, child: Text('Active Only')),
-                    DropdownMenuItem(value: false, child: Text('Inactive Only')),
-                  ],
-                  onChanged: (value) {
-                    setState(() => _filterIsActive = value);
-                    _loadTriggers();
-                  },
-                );
-
-                final refreshButton = IconButton(
-                  icon: const Icon(Icons.refresh),
-                  onPressed: () async {
-                    await _loadTriggers();
-                    await _loadAvailableGroups();
-                  },
-                  tooltip: 'Refresh',
-                );
-
-                if (isCompact) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Automation',
-                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 12),
-                      createButton,
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(child: filterDropdown),
-                          const SizedBox(width: 8),
-                          refreshButton,
-                        ],
-                      ),
-                    ],
-                  );
-                }
-
-                return Row(
-                  children: [
-                    const Text(
-                      'Automation',
-                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(width: 16),
-                    createButton,
-                    const Spacer(),
-                    filterDropdown,
-                    const SizedBox(width: 16),
-                    refreshButton,
-                  ],
-                );
-              },
+            // Search + status filter (shared listable action bar)
+            ListableItemsActionBar(
+              searchController: _searchController,
+              onSearchChanged: (value) => setState(() => _searchQuery = value),
+              filterContent: Center(child: _buildFilterToggles()),
             ),
-            const SizedBox(height: 16),
-            
-            // Content
-            _buildSearchField(),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
 
             // Content
             Expanded(
@@ -566,7 +511,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(Icons.notifications_none, size: 64, color: Colors.grey),
+                                  const Icon(Icons.notifications_none, size: 64, color: AppColors.gray500),
                                   const SizedBox(height: 16),
                                   const Text('No triggers found'),
                                   const SizedBox(height: 16),
@@ -657,21 +602,40 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     'vprofile_match': AppColors.info,
   };
 
-  Widget _buildSearchField() {
-    return TextField(
-      controller: _searchController,
-      onChanged: (value) => setState(() => _searchQuery = value),
-      decoration: InputDecoration(
-        hintText: 'Search triggers',
-        prefixIcon: const Icon(Icons.search),
-        isDense: true,
-        filled: true,
-        contentPadding: const EdgeInsets.symmetric(vertical: 8),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide.none,
-        ),
-      ),
+  /// Status filter toggles (All / Active / Inactive) for the action bar.
+  Widget _buildFilterToggles() {
+    const values = <bool?>[null, true, false];
+    const labels = <String>['All', 'Active', 'Inactive'];
+
+    return ToggleButtons(
+      constraints: const BoxConstraints(minHeight: 32),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      isSelected: [for (final v in values) v == _filterIsActive],
+      onPressed: (index) {
+        setState(() => _filterIsActive = values[index]);
+        _loadTriggers();
+      },
+      selectedColor: AppColors.accent,
+      fillColor: AppColors.accent.withValues(alpha: 0.1),
+      borderColor: AppColors.gray700,
+      selectedBorderColor: AppColors.accent.withValues(alpha: 0.4),
+      children: [
+        for (final label in labels)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  label == 'All' ? Icons.dashboard_outlined : AppIcons.active,
+                  size: AppIconSize.sm,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Text(label, style: AppTextStyles.caption),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
@@ -740,7 +704,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
           children: [
             Card(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(AppSpacing.md),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -797,7 +761,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
 
   Widget _detailRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -806,7 +770,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
             child: Text(
               label,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey.shade500,
+                    color: AppColors.gray500,
                   ),
             ),
           ),
@@ -820,28 +784,12 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
 
   Widget _buildTriggerCards() {
     return LayoutBuilder(builder: (context, constraints) {
-      // Responsive column count: 1 on narrow, 2 on medium, 3 on wide.
       final crossAxisCount = constraints.maxWidth > 1200
           ? 3
           : constraints.maxWidth > 700
               ? 2
               : 1;
-
-      final gridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: crossAxisCount == 3
-            ? 1.55
-            : crossAxisCount == 2
-                ? 1.4
-                : 1.2,
-        mainAxisExtent: crossAxisCount == 3
-            ? null
-            : crossAxisCount == 2
-            ? 244
-            : 264,
-      );
+      final cardWidth = (constraints.maxWidth - (crossAxisCount - 1) * 12) / crossAxisCount;
 
       final q = _searchQuery.trim().toLowerCase();
       final visible = q.isEmpty
@@ -852,10 +800,25 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                     (t.triggerMode ?? '').toLowerCase().contains(q))
                 .toList();
 
-      return GridView.builder(
-        gridDelegate: gridDelegate,
-        itemCount: visible.length,
-        itemBuilder: (context, index) => _buildTriggerCard(visible[index]),
+      if (crossAxisCount == 1) {
+        return ListView.builder(
+          itemCount: visible.length,
+          itemBuilder: (context, index) => SizedBox(
+            width: cardWidth,
+            child: _buildTriggerCard(visible[index]),
+          ),
+        );
+      }
+
+      return SingleChildScrollView(
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: visible.map((trigger) => SizedBox(
+            width: cardWidth,
+            child: _buildTriggerCard(trigger),
+          )).toList(),
+        ),
       );
     });
   }
@@ -864,7 +827,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     final mode = trigger.triggerMode;
     final modeLabel = _modeLabels[mode] ?? mode;
     final modeIcon = _modeIcons[mode] ?? Icons.bolt;
-    final modeColor = _modeColors[mode] ?? Colors.grey;
+    final modeColor = _modeColors[mode] ?? AppColors.gray500;
 
     final isPplOrSearch = mode == 'ppl_match' || mode == 'search';
     final isSearchMode = mode == 'search' || mode == 'search_demographic';
@@ -884,180 +847,149 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     final latestMatchTime = _latestMatchTime(trigger);
     final hasMatch = latestMatchSummary != '—' && latestMatchSummary != 'No match yet';
 
-    return Card(
-      color: Colors.grey.shade900,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(
-          color: trigger.isActive
-              ? modeColor.withOpacity(0.45)
-              : Colors.grey.shade700,
-          width: 1,
-        ),
+    final bodyRows = <Widget>[
+      _cardInfoRow(
+        icon: isSearchMode ? Icons.videocam_outlined : Icons.camera_alt_outlined,
+        text: cameraLabel,
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () {
-          if (isWide(context)) {
-            setState(() {
-              _selectedTrigger = trigger;
-              _editingTrigger = false;
-              _inlineTriggerEditor = null;
-            });
-          } else {
-            _showCreateEditDialog(trigger: trigger);
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Header row ──────────────────────────
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: modeColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Icon(modeIcon, color: modeColor, size: 16),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      trigger.name ?? 'Unnamed',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.white,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (!isWide(context)) ...[
-                    const SizedBox(width: 4),
-                    IconButton(
-                      onPressed: () => _showCreateEditDialog(trigger: trigger),
-                      icon: const Icon(Icons.settings_outlined, size: 20),
-                      iconSize: 20,
-                      padding: const EdgeInsets.all(4),
-                      constraints: const BoxConstraints(),
-                      tooltip: 'Trigger settings',
-                    ),
-                  ],
-                  const SizedBox(width: 6),
-                  // Informational status chip — editing/toggle lives in the
-                  // right-hand detail pane (or pending editor on mobile).
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: trigger.isActive
-                          ? AppColors.success.withValues(alpha: 0.14)
-                          : AppColors.error.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      trigger.isActive ? 'Active' : 'Inactive',
-                      style: TextStyle(
-                        color: trigger.isActive
-                            ? AppColors.success
-                            : AppColors.error,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
+      const SizedBox(height: AppSpacing.xs),
+      _cardInfoRow(
+        icon: Icons.rule_outlined,
+        text: conditionsLabel,
+      ),
+      if (trigger.timeSpan.isNotEmpty && trigger.timeSpan != 'any') ...[
+        const SizedBox(height: AppSpacing.xs),
+        _cardInfoRow(
+          icon: Icons.schedule_outlined,
+          text: trigger.timeSpan,
+        ),
+      ],
+      if (hasMatch) ...[
+        const SizedBox(height: AppSpacing.xs),
+        _cardInfoRow(
+          icon: Icons.person_search_outlined,
+          text: latestMatchTime.isEmpty
+              ? latestMatchSummary
+              : '$latestMatchSummary  ·  $latestMatchTime',
+          color: AppColors.warning,
+        ),
+      ],
+    ];
 
-              // Mode pill
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: modeColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  modeLabel,
-                  style: TextStyle(color: modeColor, fontSize: 10, fontWeight: FontWeight.w600),
-                ),
-              ),
-
-              const SizedBox(height: 8),
-              const Divider(height: 1, thickness: 1),
-              const SizedBox(height: 8),
-
-              // ── Info grid ───────────────────────────
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _cardInfoRow(
-                      icon: isSearchMode ? Icons.videocam_outlined : Icons.camera_alt_outlined,
-                      text: cameraLabel,
-                    ),
-                    const SizedBox(height: 4),
-                    _cardInfoRow(
-                      icon: Icons.rule_outlined,
-                      text: conditionsLabel,
-                    ),
-                    if (trigger.timeSpan.isNotEmpty && trigger.timeSpan != 'any') ...[
-                      const SizedBox(height: 4),
-                      _cardInfoRow(
-                        icon: Icons.schedule_outlined,
-                        text: trigger.timeSpan,
-                      ),
-                    ],
-                    if (hasMatch) ...[
-                      const SizedBox(height: 4),
-                      _cardInfoRow(
-                        icon: Icons.person_search_outlined,
-                        text: latestMatchTime.isEmpty
-                            ? latestMatchSummary
-                            : '$latestMatchSummary  ·  $latestMatchTime',
-                        color: AppColors.warning,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 6),
-
-              // ── Footer: informational action chips ──
-              // Editing (edit/delete/toggle) lives in the detail pane.
-              _buildActionChips(trigger),
-            ],
+    return ListableCard(
+      isSelected: _selectedTrigger?.uuid == trigger.uuid,
+      onTap: () {
+        if (isWide(context)) {
+          setState(() {
+            _selectedTrigger = trigger;
+            _editingTrigger = false;
+            _inlineTriggerEditor = null;
+          });
+        } else {
+          _showCreateEditDialog(trigger: trigger);
+        }
+      },
+      leadingIcon: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: AppColors.secondary.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Icon(modeIcon, color: AppColors.secondary, size: AppIconSize.xl),
+      ),
+      title: Text(
+        trigger.name ?? 'Unnamed',
+        style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.normal),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      titleBadge: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          color: AppColors.secondary.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(AppRadius.xs),
+          border: Border.all(
+            color: AppColors.secondary.withValues(alpha: 0.3),
+            width: 1,
           ),
         ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(modeIcon, size: 12, color: AppColors.secondary),
+            const SizedBox(width: AppSpacing.xs),
+            Flexible(
+              child: Text(
+                modeLabel,
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.secondary,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
       ),
+      statusBadge: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: AppSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          color: trigger.isActive
+              ? AppColors.success.withValues(alpha: 0.1)
+              : AppColors.error.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(AppRadius.xs),
+          border: Border.all(
+            color: trigger.isActive
+                ? AppColors.success.withValues(alpha: 0.3)
+                : AppColors.error.withValues(alpha: 0.3),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              trigger.isActive ? Icons.check_circle : Icons.remove_circle,
+              size: 10,
+              color: trigger.isActive ? AppColors.success : AppColors.error,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Flexible(
+              child: Text(
+                trigger.isActive ? 'Active' : 'Inactive',
+                style: AppTextStyles.caption.copyWith(
+                  color: trigger.isActive ? AppColors.success : AppColors.error,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: bodyRows,
+      ),
+      footer: _buildActionChips(trigger),
     );
   }
+
 
   Widget _cardInfoRow({
     required IconData icon,
     required String text,
     Color? color,
   }) {
-    final textColor = color ?? Colors.white60;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 13, color: textColor),
-        const SizedBox(width: 5),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(fontSize: 11.5, color: textColor),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
+    return AppInfoRowStyle.build(icon: icon, text: text, color: color);
   }
 
   Future<Widget?> _showCreateEditDialog({
@@ -1648,8 +1580,8 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                               Container(
                                 constraints: const BoxConstraints(maxHeight: 180),
                                 decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey.shade400),
-                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: AppColors.gray400),
+                                  borderRadius: BorderRadius.circular(AppRadius.chipBadge),
                                 ),
                                 child: availableCameras.isEmpty
                                     ? const Padding(
@@ -1668,7 +1600,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                             dense: true,
                                             title: Text(camera.name, style: const TextStyle(fontSize: 13)),
                                             subtitle: Text(camera.deviceId,
-                                                style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                                style: const TextStyle(fontSize: 11, color: AppColors.gray500)),
                                             value: isSelected,
                                             onChanged: (checked) {
                                               setDialogState(() {
@@ -1688,7 +1620,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                   padding: const EdgeInsets.only(top: 4),
                                   child: Text(
                                     '${selectedSearchCameraIds.length} camera(s) selected',
-                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                    style: TextStyle(fontSize: 12, color: AppColors.gray600),
                                   ),
                                 ),
                               const SizedBox(height: 12),
@@ -1764,8 +1696,8 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                               Container(
                                 constraints: const BoxConstraints(maxHeight: 180),
                                 decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey.shade400),
-                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: AppColors.gray400),
+                                  borderRadius: BorderRadius.circular(AppRadius.chipBadge),
                                 ),
                                 child: availableCameras.isEmpty
                                     ? const Padding(
@@ -1784,7 +1716,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                             dense: true,
                                             title: Text(camera.name, style: const TextStyle(fontSize: 13)),
                                             subtitle: Text(camera.deviceId,
-                                                style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                                style: const TextStyle(fontSize: 11, color: AppColors.gray500)),
                                             value: isSelected,
                                             onChanged: (checked) {
                                               setDialogState(() {
@@ -1804,7 +1736,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                   padding: const EdgeInsets.only(top: 4),
                                   child: Text(
                                     '${selectedSearchCameraIds.length} camera(s) selected',
-                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                    style: TextStyle(fontSize: 12, color: AppColors.gray600),
                                   ),
                                 ),
                               const SizedBox(height: 12),
@@ -1996,8 +1928,8 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                               Container(
                                 constraints: const BoxConstraints(maxHeight: 140),
                                 decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey.shade400),
-                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: AppColors.gray400),
+                                  borderRadius: BorderRadius.circular(AppRadius.chipBadge),
                                 ),
                                 child: availableCameras.isEmpty
                                     ? const Padding(
@@ -2013,7 +1945,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                           return CheckboxListTile(
                                             dense: true,
                                             title: Text(camera.name, style: const TextStyle(fontSize: 13)),
-                                            subtitle: Text(camera.deviceId, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                            subtitle: Text(camera.deviceId, style: const TextStyle(fontSize: 11, color: AppColors.gray500)),
                                             value: isSelected,
                                             onChanged: (checked) {
                                               setDialogState(() {
@@ -2032,7 +1964,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4),
                                   child: Text('${selectedVProfileCameraIds.length} camera(s) selected',
-                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                      style: TextStyle(fontSize: 12, color: AppColors.gray600)),
                                 ),
                               const SizedBox(height: 12),
                               // Multi-group selector
@@ -2041,8 +1973,8 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                               Container(
                                 constraints: const BoxConstraints(maxHeight: 140),
                                 decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey.shade400),
-                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: AppColors.gray400),
+                                  borderRadius: BorderRadius.circular(AppRadius.chipBadge),
                                 ),
                                 child: availableGroups.isEmpty
                                     ? const Padding(
@@ -2076,7 +2008,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4),
                                   child: Text('${selectedVProfileGroupIds.length} group(s) selected',
-                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                      style: TextStyle(fontSize: 12, color: AppColors.gray600)),
                                 ),
                               const SizedBox(height: 12),
                               Row(
@@ -2175,7 +2107,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.help_outline, color: Colors.grey),
+                          icon: const Icon(Icons.help_outline, color: AppColors.gray500),
                           onPressed: () {
                             showDialog(
                               context: context,
@@ -2221,7 +2153,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                           if (selectedActionUuids.isEmpty)
                             Padding(
                               padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Text('None selected', style: TextStyle(color: Colors.grey.shade500)),
+                              child: Text('None selected', style: TextStyle(color: AppColors.gray500)),
                             ),
                           if (selectedActionUuids.isNotEmpty)
                             Wrap(
@@ -2269,7 +2201,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                             Text(
                                               action['type'] ?? '',
                                               style: TextStyle(
-                                                color: Colors.grey.shade500,
+                                                color: AppColors.gray500,
                                                 fontSize: 11,
                                               ),
                                               maxLines: 1,

@@ -5,7 +5,7 @@ import '../../../utils/offline_fonts.dart';
 import '../../../core/models/camera.dart';
 import '../../../core/providers/camera_providers.dart';
 import '../../../core/providers/camera_status_providers.dart';
-import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/theme_kit.dart';
 import '../../widgets/camera/camera_card.dart';
 import '../../widgets/camera/rtsp_camera_dialog.dart';
 import '../../widgets/camera/add_edge_camera_dialog.dart';
@@ -38,6 +38,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  CameraType? _typeFilter; // null = All camera types
 
   @override
   void initState() {
@@ -282,19 +283,27 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
     final bool isMasterDetail = isWide(context);
 
     final query = _searchQuery.trim().toLowerCase();
-    final List<Camera> filtered = query.isEmpty
-        ? cameras
-        : cameras
-              .where((c) =>
-                  c.name.toLowerCase().contains(query) ||
-                  c.deviceId.toLowerCase().contains(query))
-              .toList();
+    final List<Camera> filtered = cameras.where((c) {
+      final matchesQuery = query.isEmpty ||
+          c.name.toLowerCase().contains(query) ||
+          c.deviceId.toLowerCase().contains(query);
+      final matchesType = _typeFilter == null || c.type == _typeFilter;
+      return matchesQuery && matchesType;
+    }).toList();
+
+    // Default-select the first visible camera so the sidebar highlights it and
+    // the right detail pane shows its content on load.
+    final String? effectiveSelectedId =
+        _selectedDeviceId ?? (filtered.isNotEmpty ? filtered.first.deviceId : null);
 
     if (filtered.isEmpty) {
       return Column(
         children: [
-          _buildSearchField(),
-          const SizedBox(height: 8),
+          ListableItemsActionBar(
+            searchController: _searchController,
+            onSearchChanged: (value) => setState(() => _searchQuery = value),
+            filterContent: Center(child: _buildFilterToggles()),
+          ),
           Expanded(child: _buildNoMatches()),
         ],
       );
@@ -307,82 +316,83 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isWide = constraints.maxWidth >= 900;
-          final cardMainExtent = constraints.maxWidth >= 1200 ? 430.0 : 470.0;
-          return CustomScrollView(
-            slivers: [
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                sliver: SliverToBoxAdapter(
-                  child: _buildSearchField(),
-                ),
+          return Column(
+            children: [
+              // Sticky search + type filter action bar (always visible)
+              ListableItemsActionBar(
+                searchController: _searchController,
+                onSearchChanged: (value) => setState(() => _searchQuery = value),
+                filterContent: Center(child: _buildFilterToggles()),
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 8)),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                sliver: SliverToBoxAdapter(
-                  child: Text(
-                    'Cameras',
-                    style: OfflineFonts.inter(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ),
-              ),
-              if (isWide)
-                SliverPadding(
-                  padding: const EdgeInsets.all(16),
-                  sliver: SliverGrid(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: constraints.maxWidth >= 1400 ? 3 : 2,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 16,
-                      mainAxisExtent: cardMainExtent,
-                    ),
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) => CameraCard(
-                        camera: filtered[index],
-                        selected: isMasterDetail &&
-                            filtered[index].deviceId == _selectedDeviceId,
-                        onTap: () {
-                          final deviceId = filtered[index].deviceId;
-                          if (isMasterDetail) {
-                            setState(() => _selectedDeviceId = deviceId);
-                          } else {
-                            context.go('/cameras/$deviceId');
-                          }
-                        },
-                      ),
-                      childCount: filtered.length,
-                    ),
-                  ),
-                )
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.all(16),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) => Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: CameraCard(
-                          camera: filtered[index],
-                          selected: isMasterDetail &&
-                              filtered[index].deviceId == _selectedDeviceId,
-                          onTap: () {
-                            final deviceId = filtered[index].deviceId;
-                            if (isMasterDetail) {
-                              setState(() => _selectedDeviceId = deviceId);
-                            } else {
-                              context.go('/cameras/$deviceId');
-                            }
-                          },
+              Expanded(
+                child: CustomScrollView(
+                  slivers: [
+                    const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                    if (isWide)
+                      SliverPadding(
+                        padding: const EdgeInsets.all(16),
+                        sliver: SliverToBoxAdapter(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final cols = constraints.maxWidth >= 1400 ? 3 : 2;
+                              final spacing = 16.0;
+                              final cardWidth =
+                                  (constraints.maxWidth - spacing * (cols - 1)) / cols;
+                              return Wrap(
+                                spacing: spacing,
+                                runSpacing: spacing,
+                                children: [
+                                  for (final camera in filtered)
+                                    SizedBox(
+                                      width: cardWidth,
+                                      child: CameraCard(
+                                        camera: camera,
+                                        selected: isMasterDetail &&
+                                            camera.deviceId == effectiveSelectedId,
+                                        onTap: () {
+                                          final deviceId = camera.deviceId;
+                                          if (isMasterDetail) {
+                                            setState(() => _selectedDeviceId = deviceId);
+                                          } else {
+                                            context.go('/cameras/$deviceId');
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.all(16),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: CameraCard(
+                                camera: filtered[index],
+                                selected: isMasterDetail &&
+                                    filtered[index].deviceId == effectiveSelectedId,
+                                onTap: () {
+                                  final deviceId = filtered[index].deviceId;
+                                  if (isMasterDetail) {
+                                    setState(() => _selectedDeviceId = deviceId);
+                                  } else {
+                                    context.go('/cameras/$deviceId');
+                                  }
+                                },
+                              ),
+                            ),
+                            childCount: filtered.length,
+                          ),
                         ),
                       ),
-                      childCount: filtered.length,
-                    ),
-                  ),
+                  ],
                 ),
+              ),
             ],
           );
         },
@@ -432,22 +442,45 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
     );
   }
 
-  /// Search field shown above the cameras list.
-  Widget _buildSearchField() {
-    return TextField(
-      controller: _searchController,
-      onChanged: (value) => setState(() => _searchQuery = value),
-      decoration: InputDecoration(
-        hintText: 'Search cameras',
-        prefixIcon: const Icon(Icons.search),
-        isDense: true,
-        filled: true,
-        contentPadding: const EdgeInsets.symmetric(vertical: 8),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide.none,
-        ),
-      ),
+  /// Camera type filter toggles shown under the search field.
+  Widget _buildFilterToggles() {
+    const types = <CameraType?>[null, CameraType.rtsp, CameraType.edge, CameraType.mobile];
+
+    const icons = <IconData>[
+      Icons.dashboard_outlined, // All
+      AppIcons.cameras,         // RTSP
+      Icons.router,             // Edge
+      Icons.smartphone,         // Mobile
+    ];
+
+    return ToggleButtons(
+      constraints: const BoxConstraints(minHeight: 32),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      isSelected: types.map((t) => t == _typeFilter).toList(),
+      onPressed: (index) {
+        setState(() => _typeFilter = types[index]);
+      },
+      selectedColor: AppColors.accent,
+      fillColor: AppColors.accent.withValues(alpha: 0.1),
+      borderColor: AppColors.gray700,
+      selectedBorderColor: AppColors.accent.withValues(alpha: 0.4),
+      children: [
+        for (var i = 0; i < types.length; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icons[i], size: AppIconSize.sm),
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  types[i]?.displayName.split(' ').first ?? 'All',
+                  style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 

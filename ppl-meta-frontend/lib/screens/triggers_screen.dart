@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/theme/theme_kit.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/triggers_tab.dart';
 import '../widgets/actions_tab.dart';
@@ -17,6 +18,8 @@ class TriggersScreen extends StatefulWidget {
 
 class _TriggersScreenState extends State<TriggersScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final GlobalKey<TriggersTabState> _triggersTabKey = GlobalKey<TriggersTabState>();
+  final GlobalKey<ActionsTabState> _actionsTabKey = GlobalKey<ActionsTabState>();
 
   @override
   void initState() {
@@ -109,8 +112,43 @@ class _TriggersScreenState extends State<TriggersScreen> with SingleTickerProvid
         title: 'Automation',
         showBackButton: true,
         actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(AppIcons.add, color: AppColors.secondary),
+            tooltip: 'Add trigger or action',
+            onSelected: (value) {
+              if (value == 'trigger') {
+                _triggersTabKey.currentState?.showCreateEditDialog();
+              } else if (value == 'action') {
+                _actionsTabKey.currentState?.showCreateEditDialog();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'trigger',
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.bolt, size: 18),
+                    SizedBox(width: AppSpacing.sm),
+                    Text('Add Trigger'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'action',
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.smart_button_outlined, size: 18),
+                    SizedBox(width: AppSpacing.sm),
+                    Text('Add Action'),
+                  ],
+                ),
+              ),
+            ],
+          ),
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(AppIcons.refresh),
             tooltip: 'Refresh',
             onPressed: () {
               // Trigger a rebuild to reload data
@@ -118,33 +156,30 @@ class _TriggersScreenState extends State<TriggersScreen> with SingleTickerProvid
             },
           ),
           IconButton(
-            icon: const Icon(Icons.help_outline),
+            icon: Icon(AppIcons.help),
             tooltip: 'Help',
             onPressed: _showHelp,
           ),
         ],
-        bottom: TabBar(
+        bottom: AppTabTheme.tabBar(
           controller: _tabController,
           tabs: const [
             Tab(
-              icon: Icon(Icons.precision_manufacturing),
+              icon: Icon(AppIcons.triggers),
               text: 'Triggers',
             ),
             Tab(
-              icon: Icon(Icons.play_circle_outline),
+              icon: Icon(AppIcons.actions),
               text: 'Actions',
             ),
           ],
-          indicatorColor: Colors.orange,
-          labelColor: Colors.orange,
-          unselectedLabelColor: Colors.grey,
         ),
       ),
       body: TabBarView(
         controller: _tabController,
-        children: const [
-          TriggersTab(),
-          ActionsTab(),
+        children: [
+          TriggersTab(key: _triggersTabKey),
+          ActionsTab(key: _actionsTabKey),
         ],
       ),
     );

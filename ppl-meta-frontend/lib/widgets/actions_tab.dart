@@ -9,7 +9,7 @@ import '../services/auth_service.dart';
 import '../services/signage_api_client.dart';
 import '../services/discovery_service_client.dart';
 import '../core/api/api_client.dart';
-import '../core/theme/app_theme.dart';
+import '../core/theme/theme_kit.dart';
 import '../presentation/widgets/common/ux_breakpoints.dart';
 import '../presentation/widgets/common/content_pane.dart';
 import '../presentation/widgets/common/unified_toggle.dart';
@@ -22,10 +22,10 @@ class ActionsTab extends StatefulWidget {
   const ActionsTab({Key? key}) : super(key: key);
 
   @override
-  State<ActionsTab> createState() => _ActionsTabState();
+  State<ActionsTab> createState() => ActionsTabState();
 }
 
-class _ActionsTabState extends State<ActionsTab> {
+class ActionsTabState extends State<ActionsTab> {
   bool _isLoadingUser = false;
   bool _isLoadingSystem = false;
   String? _errorMessageUser;
@@ -188,6 +188,12 @@ class _ActionsTabState extends State<ActionsTab> {
     }
   }
 
+  /// Public method to show the create/edit user action dialog from parent.
+  /// Used by TriggersScreen's navigation bar + icon button.
+  void showCreateEditDialog({UserActionModel? action}) {
+    _showCreateEditUserActionDialog(action: action);
+  }
+
   void _showCreateEditUserActionDialog({UserActionModel? action}) {
     showDialog(
       context: context,
@@ -205,20 +211,32 @@ class _ActionsTabState extends State<ActionsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final master = SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // USER ACTIONS SECTION
-          _buildUserActionsSection(),
-          
-          const SizedBox(height: 32),
-          
-          // SYSTEM WORKFLOWS SECTION
-          _buildSystemWorkflowsSection(),
-        ],
-      ),
+    final master = Column(
+      children: [
+        // Shared search + status filter action bar
+        ListableItemsActionBar(
+          searchController: _searchControllerActions,
+          onSearchChanged: (value) => setState(() => _searchQueryActions = value),
+          filterContent: Center(child: _buildFilterToggles()),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // USER ACTIONS SECTION
+                _buildUserActionsSection(),
+
+                const SizedBox(height: 32),
+
+                // SYSTEM WORKFLOWS SECTION
+                _buildSystemWorkflowsSection(),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
     if (isWide(context)) {
       return Row(
@@ -237,102 +255,6 @@ class _ActionsTabState extends State<ActionsTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Header
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final isCompact = constraints.maxWidth < 760;
-
-            final titleRow = Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.person, color: AppColors.primary),
-                const SizedBox(width: 8),
-                Text(
-                  'User Actions',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ],
-            );
-
-            final filterDropdown = DropdownButton<bool?>(
-              value: _filterIsActiveUser,
-              dropdownColor: Colors.grey.shade900,
-              items: const [
-                DropdownMenuItem(value: null, child: Text('All')),
-                DropdownMenuItem(value: true, child: Text('Active')),
-                DropdownMenuItem(value: false, child: Text('Inactive')),
-              ],
-              onChanged: (value) {
-                setState(() => _filterIsActiveUser = value);
-                _loadUserActions();
-              },
-            );
-
-            final createButton = ElevatedButton.icon(
-              onPressed: () => _showCreateEditUserActionDialog(),
-              icon: const Icon(Icons.add),
-              label: const Text('Create Action'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-              ),
-            );
-
-            final logsButton = OutlinedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const CommunicationLogsScreen(),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.history, size: 20),
-              label: const Text('View Logs'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.success,
-                side: BorderSide(color: AppColors.success),
-              ),
-            );
-
-            if (isCompact) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  titleRow,
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      filterDropdown,
-                      createButton,
-                      logsButton,
-                    ],
-                  ),
-                ],
-              );
-            }
-
-            return Row(
-              children: [
-                titleRow,
-                const Spacer(),
-                filterDropdown,
-                const SizedBox(width: 16),
-                createButton,
-                const SizedBox(width: 12),
-                logsButton,
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 16),
-        
-        _buildActionsSearchField(),
-        const SizedBox(height: 12),
-
         // Content
         if (_isLoadingUser)
           const Center(child: Padding(
@@ -344,9 +266,9 @@ class _ActionsTabState extends State<ActionsTab> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppColors.error.withOpacity(0.3),
+              color: AppColors.error.withValues(alpha: 0.3),
               border: Border.all(color: AppColors.error),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.md),
             ),
             child: Row(
               children: [
@@ -367,16 +289,16 @@ class _ActionsTabState extends State<ActionsTab> {
             alignment: Alignment.center,
             child: Column(
               children: [
-                Icon(Icons.add_circle_outline, size: 64, color: Colors.grey.shade600),
+                Icon(Icons.add_circle_outline, size: 64, color: AppColors.gray600),
                 const SizedBox(height: 16),
                 Text(
                   'No user actions yet',
-                  style: TextStyle(fontSize: 18, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 18, color: AppColors.gray500),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Create your first custom action to get started',
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                  style: TextStyle(fontSize: 14, color: AppColors.gray600),
                 ),
               ],
             ),
@@ -392,64 +314,6 @@ class _ActionsTabState extends State<ActionsTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Header
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final isCompact = constraints.maxWidth < 640;
-
-            final titleBlock = Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                const Icon(Icons.settings, color: Colors.grey),
-                Text(
-                  'System Workflows',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                Chip(
-                  label: const Text('Read-only', style: TextStyle(fontSize: 12)),
-                  backgroundColor: Colors.grey.shade800,
-                ),
-              ],
-            );
-
-            final filterDropdown = DropdownButton<bool?>(
-              value: _filterIsActiveSystem,
-              dropdownColor: Colors.grey.shade900,
-              items: const [
-                DropdownMenuItem(value: null, child: Text('All')),
-                DropdownMenuItem(value: true, child: Text('Active')),
-                DropdownMenuItem(value: false, child: Text('Inactive')),
-              ],
-              onChanged: (value) {
-                setState(() => _filterIsActiveSystem = value);
-                _loadSystemWorkflows();
-              },
-            );
-
-            if (isCompact) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  titleBlock,
-                  const SizedBox(height: 12),
-                  filterDropdown,
-                ],
-              );
-            }
-
-            return Row(
-              children: [
-                Expanded(child: titleBlock),
-                const SizedBox(width: 12),
-                filterDropdown,
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 16),
-        
         // Content
         if (_isLoadingSystem)
           const Center(child: Padding(
@@ -461,9 +325,9 @@ class _ActionsTabState extends State<ActionsTab> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppColors.error.withOpacity(0.3),
+              color: AppColors.error.withValues(alpha: 0.3),
               border: Border.all(color: AppColors.error),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.md),
             ),
             child: Row(
               children: [
@@ -484,11 +348,11 @@ class _ActionsTabState extends State<ActionsTab> {
             alignment: Alignment.center,
             child: Column(
               children: [
-                Icon(Icons.inbox_outlined, size: 64, color: Colors.grey.shade600),
+                Icon(Icons.inbox_outlined, size: 64, color: AppColors.gray600),
                 const SizedBox(height: 16),
                 Text(
                   'No system workflows found',
-                  style: TextStyle(fontSize: 18, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 18, color: AppColors.gray500),
                 ),
               ],
             ),
@@ -504,21 +368,40 @@ class _ActionsTabState extends State<ActionsTab> {
   // User action cards
   // ─────────────────────────────────────────────────
 
-  Widget _buildActionsSearchField() {
-    return TextField(
-      controller: _searchControllerActions,
-      onChanged: (value) => setState(() => _searchQueryActions = value),
-      decoration: InputDecoration(
-        hintText: 'Search actions',
-        prefixIcon: const Icon(Icons.search),
-        isDense: true,
-        filled: true,
-        contentPadding: const EdgeInsets.symmetric(vertical: 8),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide.none,
-        ),
-      ),
+  /// Status filter toggles (All / Active / Inactive) for the shared action bar.
+  Widget _buildFilterToggles() {
+    const values = <bool?>[null, true, false];
+    const labels = <String>['All', 'Active', 'Inactive'];
+
+    return ToggleButtons(
+      constraints: const BoxConstraints(minHeight: 32),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      isSelected: [for (final v in values) v == _filterIsActiveUser],
+      onPressed: (index) {
+        setState(() => _filterIsActiveUser = values[index]);
+        _loadUserActions();
+      },
+      selectedColor: AppColors.accent,
+      fillColor: AppColors.accent.withValues(alpha: 0.1),
+      borderColor: AppColors.gray700,
+      selectedBorderColor: AppColors.accent.withValues(alpha: 0.4),
+      children: [
+        for (final label in labels)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  label == 'All' ? Icons.dashboard_outlined : AppIcons.active,
+                  size: AppIconSize.sm,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Text(label, style: AppTextStyles.caption),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
@@ -542,7 +425,7 @@ class _ActionsTabState extends State<ActionsTab> {
           children: [
             Card(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(AppSpacing.md),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -616,7 +499,7 @@ class _ActionsTabState extends State<ActionsTab> {
 
   Widget _actionsDetailRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -627,7 +510,7 @@ class _ActionsTabState extends State<ActionsTab> {
               style: Theme.of(context)
                   .textTheme
                   .bodySmall
-                  ?.copyWith(color: Colors.grey.shade500),
+                  ?.copyWith(color: AppColors.gray500),
             ),
           ),
           Expanded(
@@ -645,24 +528,36 @@ class _ActionsTabState extends State<ActionsTab> {
           : constraints.maxWidth > 700
               ? 2
               : 1;
+      final cardWidth = (constraints.maxWidth - (crossAxisCount - 1) * 12) / crossAxisCount;
       final q = _searchQueryActions.trim().toLowerCase();
       final visible = q.isEmpty
           ? _userActions
           : _userActions
                 .where((a) => (a.name ?? '').toLowerCase().contains(q))
                 .toList();
-      return GridView.builder(
-        shrinkWrap: true,
+
+      if (crossAxisCount == 1) {
+        return ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: visible.length,
+          itemBuilder: (context, index) => SizedBox(
+            width: cardWidth,
+            child: _buildUserActionCard(visible[index]),
+          ),
+        );
+      }
+
+      return SingleChildScrollView(
         physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: crossAxisCount,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.7,
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: visible.map((action) => SizedBox(
+            width: cardWidth,
+            child: _buildUserActionCard(action),
+          )).toList(),
         ),
-        itemCount: visible.length,
-        itemBuilder: (context, index) =>
-            _buildUserActionCard(visible[index]),
       );
     });
   }
@@ -672,146 +567,63 @@ class _ActionsTabState extends State<ActionsTab> {
     final typeIcon = action.actionTypeIcon;
     final configSummary = _actionConfigSummary(action);
 
-    return Card(
-      color: Colors.grey.shade900,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(
-          color: action.isActive
-              ? typeColor.withOpacity(0.45)
-              : Colors.grey.shade700,
-          width: 1,
+    return ListableCard(
+      onTap: () {
+        if (isWide(context)) {
+          setState(() {
+            _selectedAction = action;
+            _editingAction = false;
+          });
+        } else {
+          _showCreateEditUserActionDialog(action: action);
+        }
+      },
+      leadingIcon: Container(
+        width: 48, height: 48,
+        decoration: BoxDecoration(
+          color: AppColors.secondary.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
         ),
+        child: Icon(typeIcon, color: AppColors.secondary, size: AppIconSize.xl),
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () {
-          if (isWide(context)) {
-            setState(() {
-              _selectedAction = action;
-              _editingAction = false;
-            });
-          } else {
-            _showCreateEditUserActionDialog(action: action);
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Header ──────────────────────────────
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: typeColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Icon(typeIcon, color: typeColor, size: 16),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      action.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.white,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (!isWide(context)) ...[
-                    const SizedBox(width: 4),
-                    IconButton(
-                      onPressed: () =>
-                          _showCreateEditUserActionDialog(action: action),
-                      icon: const Icon(Icons.settings_outlined, size: 20),
-                      iconSize: 20,
-                      padding: const EdgeInsets.all(4),
-                      constraints: const BoxConstraints(),
-                      tooltip: 'Action settings',
-                    ),
-                  ],
-                  const SizedBox(width: 6),
-                  // Informational status chip — editing/toggle lives in the
-                  // right-hand detail pane (or pending editor on mobile).
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: action.isActive
-                          ? AppColors.success.withValues(alpha: 0.14)
-                          : AppColors.error.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      action.isActive ? 'Active' : 'Inactive',
-                      style: TextStyle(
-                        color: action.isActive
-                            ? AppColors.success
-                            : AppColors.error,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-
-              // Type pill
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: typeColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  action.actionTypeDisplay,
-                  style: TextStyle(
-                      color: typeColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600),
-                ),
-              ),
-
-              const SizedBox(height: 8),
-              const Divider(height: 1, thickness: 1),
-              const SizedBox(height: 8),
-
-              // ── Body ────────────────────────────────
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if ((action.description ?? '').isNotEmpty)
-                      _actionInfoRow(
-                        icon: Icons.notes_outlined,
-                        text: action.description!,
-                      ),
-                    if (configSummary != null) ...[  
-                      const SizedBox(height: 4),
-                      _actionInfoRow(
-                        icon: Icons.tune_outlined,
-                        text: configSummary,
-                        color: Colors.white54,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-
-              // ── Footer ──────────────────────────────
-              // Editing (edit/delete/toggle) lives in the right detail pane
-              // (new editor dialog is the entry point on mobile).
-              const SizedBox(height: 4),
-            ],
-          ),
+      title: Text(action.name, style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.normal),
+        maxLines: 1, overflow: TextOverflow.ellipsis),
+      titleBadge: Container(
+        padding: EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+        decoration: BoxDecoration(
+          color: AppColors.secondary.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(AppRadius.xs),
+          border: Border.all(color: AppColors.secondary.withValues(alpha: 0.3), width: 1),
         ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(typeIcon, size: 12, color: AppColors.secondary),
+          SizedBox(width: AppSpacing.xs),
+          Flexible(child: Text(action.actionTypeDisplay, style: AppTextStyles.caption.copyWith(color: AppColors.secondary, fontWeight: FontWeight.w500),
+            overflow: TextOverflow.ellipsis, maxLines: 1)),
+        ]),
       ),
+      statusBadge: Container(
+        padding: EdgeInsets.symmetric(horizontal: AppSpacing.xs, vertical: AppSpacing.xs),
+        decoration: BoxDecoration(
+          color: action.isActive ? AppColors.success.withValues(alpha: 0.1) : AppColors.error.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(AppRadius.xs),
+          border: Border.all(color: action.isActive ? AppColors.success.withValues(alpha: 0.3) : AppColors.error.withValues(alpha: 0.3), width: 1),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(action.isActive ? Icons.check_circle : Icons.remove_circle, size: 10, color: action.isActive ? AppColors.success : AppColors.error),
+          SizedBox(width: AppSpacing.xs),
+          Flexible(child: Text(action.isActive ? 'Active' : 'Inactive', style: AppTextStyles.caption.copyWith(color: action.isActive ? AppColors.success : AppColors.error, fontWeight: FontWeight.w500),
+            overflow: TextOverflow.ellipsis)),
+        ]),
+      ),
+      body: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if ((action.description ?? '').isNotEmpty)
+          _actionInfoRow(icon: Icons.notes_outlined, text: action.description!),
+        if (configSummary != null) ...[
+          SizedBox(height: AppSpacing.xs),
+          _actionInfoRow(icon: Icons.tune_outlined, text: configSummary, color: AppColors.textTertiary),
+        ],
+      ]),
     );
   }
 
@@ -854,22 +666,7 @@ class _ActionsTabState extends State<ActionsTab> {
     required String text,
     Color? color,
   }) {
-    final textColor = color ?? Colors.white60;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 13, color: textColor),
-        const SizedBox(width: 5),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(fontSize: 11.5, color: textColor),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
+    return AppInfoRowStyle.build(icon: icon, text: text, color: color);
   }
 
   // ─────────────────────────────────────────────────
@@ -883,32 +680,44 @@ class _ActionsTabState extends State<ActionsTab> {
           : constraints.maxWidth > 700
               ? 2
               : 1;
-      return GridView.builder(
-        shrinkWrap: true,
+      final cardWidth = (constraints.maxWidth - (crossAxisCount - 1) * 12) / crossAxisCount;
+
+      if (crossAxisCount == 1) {
+        return ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: _systemWorkflows.length,
+          itemBuilder: (context, index) => SizedBox(
+            width: cardWidth,
+            child: _buildSystemWorkflowCard(_systemWorkflows[index]),
+          ),
+        );
+      }
+
+      return SingleChildScrollView(
         physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: crossAxisCount,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.8,
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: _systemWorkflows.map((workflow) => SizedBox(
+            width: cardWidth,
+            child: _buildSystemWorkflowCard(workflow),
+          )).toList(),
         ),
-        itemCount: _systemWorkflows.length,
-        itemBuilder: (context, index) =>
-            _buildSystemWorkflowCard(_systemWorkflows[index]),
       );
     });
   }
 
   Widget _buildSystemWorkflowCard(WorkflowAction workflow) {
-    const typeColor = Colors.grey;
+    const typeColor = AppColors.gray500;
     return Card(
-      color: Colors.grey.shade900,
+      color: AppColors.gray900,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: Colors.grey.shade700, width: 1),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        side: BorderSide(color: AppColors.gray700, width: 1),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+        padding: AppSpacing.cardInset,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -916,10 +725,10 @@ class _ActionsTabState extends State<ActionsTab> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(AppSpacing.sm),
                   decoration: BoxDecoration(
-                    color: Colors.grey.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(6),
+                    color: AppColors.gray500.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(AppRadius.chip),
                   ),
                   child: const Icon(Icons.settings_outlined,
                       color: typeColor, size: 16),
@@ -931,20 +740,20 @@ class _ActionsTabState extends State<ActionsTab> {
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
-                      color: Colors.white,
+                      color: AppColors.white,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: AppSpacing.sm),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 4),
                   decoration: BoxDecoration(
                     color: workflow.isActive
                         ? AppColors.success.withValues(alpha: 0.14)
                         : AppColors.error.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(AppRadius.lg),
                   ),
                   child: Text(
                     workflow.isActive ? 'Active' : 'Inactive',
@@ -959,34 +768,34 @@ class _ActionsTabState extends State<ActionsTab> {
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpacing.xs),
 
             // Type pill
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.grey.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(4),
+                color: AppColors.gray500.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(AppRadius.chipBadge),
               ),
               child: Text(
                 workflow.workflowType.replaceAll('_', ' ').toUpperCase(),
                 style: TextStyle(
-                    color: Colors.grey.shade400,
+                    color: AppColors.gray400,
                     fontSize: 10,
                     fontWeight: FontWeight.w600),
               ),
             ),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             const Divider(height: 1, thickness: 1),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
 
             // ── Body ────────────────────────────────
             Expanded(
               child: Text(
                 workflow.description,
                 style:
-                    TextStyle(fontSize: 11.5, color: Colors.grey.shade400),
+                    TextStyle(fontSize: 11.5, color: AppColors.gray400),
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -999,7 +808,7 @@ class _ActionsTabState extends State<ActionsTab> {
                 'Read-only',
                 style: TextStyle(
                     fontSize: 10,
-                    color: Colors.grey.shade600,
+                    color: AppColors.gray600,
                     fontStyle: FontStyle.italic),
               ),
             ),
@@ -1019,12 +828,12 @@ class _ActionsTabState extends State<ActionsTab> {
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: Colors.grey.shade900,
-            border: Border.all(color: Colors.grey.shade700),
-            borderRadius: BorderRadius.circular(8),
+            color: AppColors.gray900,
+            border: Border.all(color: AppColors.gray700),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.md),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1044,16 +853,16 @@ class _ActionsTabState extends State<ActionsTab> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: workflow.isActive ? AppColors.success : Colors.grey.shade800,
+                        color: workflow.isActive ? AppColors.success : AppColors.gray800,
                         border: Border.all(
-                          color: workflow.isActive ? AppColors.success : Colors.grey.shade600,
+                          color: workflow.isActive ? AppColors.success : AppColors.gray600,
                         ),
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: BorderRadius.circular(AppRadius.chipBadge),
                       ),
                       child: Text(
                         workflow.isActive ? 'Active' : 'Inactive',
                         style: TextStyle(
-                          color: workflow.isActive ? AppColors.success : Colors.grey.shade400,
+                          color: workflow.isActive ? AppColors.success : AppColors.gray400,
                           fontSize: 12,
                         ),
                       ),
@@ -1075,8 +884,8 @@ class _ActionsTabState extends State<ActionsTab> {
                       icon: const Icon(Icons.edit, size: 16),
                       label: const Text('Edit'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.grey.shade700,
-                        side: BorderSide(color: Colors.grey.shade700),
+                        foregroundColor: AppColors.gray700,
+                        side: BorderSide(color: AppColors.gray700),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1085,8 +894,8 @@ class _ActionsTabState extends State<ActionsTab> {
                       icon: const Icon(Icons.delete, size: 16),
                       label: const Text('Delete'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.grey.shade700,
-                        side: BorderSide(color: Colors.grey.shade700),
+                        foregroundColor: AppColors.gray700,
+                        side: BorderSide(color: AppColors.gray700),
                       ),
                     ),
                   ],
@@ -1110,7 +919,7 @@ class _ActionsTabState extends State<ActionsTab> {
             child: Text(
               '$label:',
               style: TextStyle(
-                color: Colors.grey.shade400,
+                color: AppColors.gray400,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -1118,7 +927,7 @@ class _ActionsTabState extends State<ActionsTab> {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: AppColors.white),
             ),
           ),
         ],
@@ -1523,15 +1332,15 @@ class _UserActionDialogState extends State<_UserActionDialog> {
           'Target Devices *',
           style: TextStyle(
             fontSize: 12,
-            color: Colors.grey.shade400,
+            color: AppColors.gray400,
             fontWeight: FontWeight.w500,
           ),
         ),
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade700),
-            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: AppColors.gray700),
+            borderRadius: BorderRadius.circular(AppRadius.chipBadge),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Column(
@@ -1548,7 +1357,7 @@ class _UserActionDialogState extends State<_UserActionDialog> {
                     const SizedBox(height: 8),
                     Text(
                       'Make sure signage devices are running and registered with discovery service',
-                      style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                      style: TextStyle(color: AppColors.gray500, fontSize: 12),
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(

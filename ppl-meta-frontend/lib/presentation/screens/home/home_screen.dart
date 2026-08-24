@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/providers/auth_provider.dart';
-import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/theme_kit.dart';
 import '../../../widgets/app_logo.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -20,7 +20,7 @@ class HomeScreen extends ConsumerWidget {
           PopupMenuButton<String>(
             color: AppColors.widgetFill,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
               side: BorderSide(color: Theme.of(context).colorScheme.outline),
             ),
             elevation: 0,
@@ -53,7 +53,7 @@ class HomeScreen extends ConsumerWidget {
                 child: Container(
                   decoration: const BoxDecoration(),
                   child: const ListTile(
-                    leading: Icon(Icons.person),
+                    leading: Icon(AppIcons.person),
                     title: Text('Profile'),
                     contentPadding: EdgeInsets.symmetric(horizontal: 16),
                     visualDensity: VisualDensity.compact,
@@ -66,9 +66,9 @@ class HomeScreen extends ConsumerWidget {
                 child: Container(
                   decoration: const BoxDecoration(),
                   child: const ListTile(
-                    leading: Icon(Icons.settings),
+                    leading: Icon(AppIcons.settings),
                     title: Text('Settings'),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                    contentPadding: EdgeInsets.symmetric(horizontal: AppSpacing.md),
                     visualDensity: VisualDensity.compact,
                   ),
                 ),
@@ -79,9 +79,9 @@ class HomeScreen extends ConsumerWidget {
                 child: Container(
                   decoration: const BoxDecoration(),
                   child: const ListTile(
-                    leading: Icon(Icons.people),
+                    leading: Icon(AppIcons.people),
                     title: Text('Users'),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                    contentPadding: EdgeInsets.symmetric(horizontal: AppSpacing.md),
                     visualDensity: VisualDensity.compact,
                   ),
                 ),
@@ -93,7 +93,7 @@ class HomeScreen extends ConsumerWidget {
                   child: Container(
                     decoration: const BoxDecoration(),
                     child: ListTile(
-                      leading: const Icon(Icons.badge),
+                      leading: const Icon(AppIcons.badge),
                       title: const Text('Roles'),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                       visualDensity: VisualDensity.compact,
@@ -106,7 +106,7 @@ class HomeScreen extends ConsumerWidget {
                 child: Container(
                   decoration: const BoxDecoration(),
                   child: const ListTile(
-                    leading: Icon(Icons.logout),
+                    leading: Icon(AppIcons.logout),
                     title: Text('Logout'),
                     contentPadding: EdgeInsets.symmetric(horizontal: 16),
                     visualDensity: VisualDensity.compact,
@@ -127,7 +127,7 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Icon(Icons.arrow_drop_down),
+                const Icon(AppIcons.arrowDropDown),
               ],
             ),
           ),
@@ -135,7 +135,7 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -148,28 +148,28 @@ class HomeScreen extends ConsumerWidget {
                   int crossAxisCount;
                   double childAspectRatio;
                   
-                  if (constraints.maxWidth < 600) {
+                  if (constraints.maxWidth < AppBreakpoints.mobile) {
                     // Mobile: 2 buttons per row
                     crossAxisCount = 2;
-                    childAspectRatio = 1.0;
-                  } else if (constraints.maxWidth < 900) {
+                    childAspectRatio = 0.9;
+                  } else if (constraints.maxWidth < AppBreakpoints.tablet) {
                     // Tablet: 3 buttons per row
                     crossAxisCount = 3;
-                    childAspectRatio = 1.1;
+                    childAspectRatio = 1.0;
                   } else {
                     // Desktop: 4 buttons per row
                     crossAxisCount = 4;
-                    childAspectRatio = 1.2;
+                    childAspectRatio = 1.1;
                   }
                   
                   return GridView.count(
                     crossAxisCount: crossAxisCount,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
+                    crossAxisSpacing: AppSpacing.lg,
+                    mainAxisSpacing: AppSpacing.lg,
                     childAspectRatio: childAspectRatio,
                     children: [
                       _ActionCard(
-                        icon: Icons.videocam,
+                        icon: AppIcons.cameras,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Cameras',
                         subtitle: 'Manage live cameras',
@@ -178,7 +178,7 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.collections,
+                        icon: AppIcons.collections,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Collections',
                         subtitle: 'Organize your media',
@@ -187,7 +187,7 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.precision_manufacturing,
+                        icon: AppIcons.triggers,
                         iconColor: AppColors.secondary,
                         title: 'Automation',
                         subtitle: 'Manage automated triggers & actions',
@@ -196,7 +196,7 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.groups,
+                        icon: AppIcons.groups,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Individual Groups',
                         subtitle: 'Organize people by groups',
@@ -205,7 +205,7 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.analytics,
+                        icon: AppIcons.analytics,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Analytics',
                         subtitle: 'View statistics',
@@ -214,7 +214,7 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.how_to_reg,
+                        icon: AppIcons.presence,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Presence',
                         subtitle: 'Presence flows and assurance analytics',
@@ -223,7 +223,7 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.display_settings,
+                        icon: AppIcons.signage,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Signage Management',
                         subtitle: 'Manage digital signage playlists',
@@ -232,7 +232,7 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.photo_library,
+                        icon: AppIcons.media,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'My Media',
                         subtitle: 'View your uploads',
@@ -241,7 +241,7 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.cloud_upload,
+                        icon: AppIcons.upload,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Upload Media',
                         subtitle: 'Upload photos and videos',
@@ -250,7 +250,7 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.monitor_heart,
+                        icon: AppIcons.cameraOps,
                         iconColor: AppColors.secondary,
                         title: 'Camera Ops',
                         subtitle: 'Live status, health, and aggregates',
@@ -260,7 +260,7 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.storage,
+                        icon: AppIcons.storage,
                         iconColor: AppColors.secondary,
                         title: 'Storage',
                         subtitle: 'Manage storage locations & usage',
@@ -270,7 +270,7 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.auto_awesome,
+                        icon: AppIcons.workflows,
                         iconColor: AppColors.secondary,
                         title: 'Monitoring',
                         subtitle: 'System & workflow monitoring',
@@ -280,7 +280,7 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.dns,
+                        icon: AppIcons.network,
                         iconColor: AppColors.secondary,
                         title: 'Network',
                         subtitle: 'Network & service connections',
@@ -320,40 +320,39 @@ class _ActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Get screen width for responsive sizing
     final screenWidth = MediaQuery.of(context).size.width;
-    final isCompact = screenWidth < 600; // Mobile
-    
+    final isCompact = screenWidth < AppBreakpoints.mobile;
+
     final theme = Theme.of(context);
     final resolvedBackgroundColor = isHighlighted
-      ? const Color(0x1622D3EE)
+      ? AppColors.selectedBg
       : null;
     final resolvedBorderColor = isHighlighted
-      ? const Color(0x4022D3EE)
+      ? AppColors.selectedBorder
       : theme.colorScheme.outline;
 
     return Card(
       color: resolvedBackgroundColor,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         side: BorderSide(
           color: resolvedBorderColor,
         ),
       ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         child: Padding(
-          padding: EdgeInsets.all(isCompact ? 12 : 16),
+          padding: EdgeInsets.all(isCompact ? AppSpacing.sm : AppSpacing.lg),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 icon,
-                size: isCompact ? 36 : 48,
-                color: iconColor, // Use the contextual color
+                size: isCompact ? AppIconSize.cardCompact : AppIconSize.cardExpanded,
+                color: iconColor,
               ),
-              SizedBox(height: isCompact ? 8 : 12),
+              SizedBox(height: isCompact ? AppSpacing.xsm : AppSpacing.md),
               Text(
                 title,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -364,7 +363,7 @@ class _ActionCard extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              SizedBox(height: isCompact ? 2 : 4),
+              SizedBox(height: isCompact ? AppSpacing.xs : AppSpacing.sm),
               Text(
                 subtitle,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(

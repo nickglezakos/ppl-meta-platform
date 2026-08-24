@@ -8,12 +8,25 @@ from typing import Any, Dict, Optional, Tuple
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from src.config import settings
 from src.services.user_service import user_service_client
 
 logger = logging.getLogger(__name__)
 
 # Security scheme for JWT tokens
 security = HTTPBearer()
+
+# Base URL of the API gateway used to validate user tokens.
+# The configured GATEWAY_SERVICE_URL is used (resolves to the gateway's Docker
+# service name, e.g. http://ppl-meta-gateway:8080). Hardcoding "localhost:8080"
+# is wrong inside a container, where it points at the media service itself and
+# causes every authenticated request to fail with 401.
+def _gateway_base_url() -> str:
+    return str(settings.GATEWAY_SERVICE_URL).rstrip("/")
+
+
+def _user_profile_url() -> str:
+    return f"{_gateway_base_url()}/api/v1/user/profile"
 
 # In-memory cache: token -> (AuthUser, expiry_timestamp)
 # Avoids re-validating the same token via gateway on every request
@@ -106,9 +119,7 @@ async def get_current_user(
 
         async with httpx.AsyncClient(timeout=30) as client:
             headers = {"Authorization": f"Bearer {token}"}
-            response = await client.get(
-                "http://localhost:8080/api/v1/user/profile", headers=headers
-            )
+            response = await client.get(_user_profile_url(), headers=headers)
 
             if response.status_code == 200:
                 user_data = response.json()
@@ -216,9 +227,7 @@ async def get_user_from_token(token: str) -> AuthUser:
 
         async with httpx.AsyncClient(timeout=30) as client:
             headers = {"Authorization": f"Bearer {token}"}
-            response = await client.get(
-                "http://localhost:8080/api/v1/user/profile", headers=headers
-            )
+            response = await client.get(_user_profile_url(), headers=headers)
 
             if response.status_code == 200:
                 user_data = response.json()

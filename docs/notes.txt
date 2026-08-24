@@ -375,6 +375,10 @@ flutter pub get
 flutter run -d chrome   # resize window for mobile / tablet / desktop
 # also: flutter run -d macos|android, and flutter test
 
+theme kit lab
+
+cd /Users/nickgklezakos/Documents/ppl-meta-code/autonomous/mockups/theme_kit_lab && flutter run -d chrome
+
 
 
 ****************************************************************************************************
@@ -392,7 +396,7 @@ OK -- FINETUNE what type of info someone gets
       from triggers and presense combination (from the product value view)
 OK -- FIX the camera shuffle on the camera screen upon (de)activation
 
-DEBUG the media search that looks to be produsing no results and this is
+DEBUG the media search that looks to be producing no results and this is
 probably due to the analytics modifications.
 
 DEBUG the TMA member lost !
