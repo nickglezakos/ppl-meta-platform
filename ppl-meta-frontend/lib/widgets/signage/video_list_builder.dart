@@ -14,7 +14,22 @@ class VideoListBuilder extends ConsumerStatefulWidget {
   final VideoList? videoList;
   final SignageProvider? signageProvider;
 
-  const VideoListBuilder({Key? key, this.videoList, this.signageProvider}) : super(key: key);
+  /// When true, renders the builder content inline (e.g. inside a settings
+  /// pane) instead of as a modal [Dialog]. Use [onClosed] to be notified when
+  /// the user cancels or successfully saves.
+  final bool inline;
+
+  /// Called when the inline builder should close. The payload is `true` when
+  /// the playlist was saved successfully, `false` on cancel.
+  final ValueChanged<bool>? onClosed;
+
+  const VideoListBuilder({
+    Key? key,
+    this.videoList,
+    this.signageProvider,
+    this.inline = false,
+    this.onClosed,
+  }) : super(key: key);
 
   @override
   ConsumerState<VideoListBuilder> createState() => _VideoListBuilderState();
@@ -48,6 +63,17 @@ class _VideoListBuilderState extends ConsumerState<VideoListBuilder> {
       _nameController.text = widget.videoList!.name;
       _descriptionController.text = widget.videoList!.description ?? '';
       _selectedCollectionIds = List.from(widget.videoList!.collectionIds ?? []);
+      // The backend historically did not return collection_ids; derive them from
+      // the playlist's video items (each carries its source collection) so the
+      // form is still pre-seeded with the stored collections.
+      if (_selectedCollectionIds.isEmpty &&
+          (widget.videoList!.videoItems?.isNotEmpty ?? false)) {
+        _selectedCollectionIds = widget.videoList!.videoItems!
+            .map((item) => item.collectionId)
+            .where((id) => id.isNotEmpty)
+            .toSet()
+            .toList();
+      }
       _loopMode = widget.videoList!.loopMode ?? LoopMode.continuous;
       _transitionDuration = widget.videoList!.transitionDurationMs ?? 1000;
       _orderedVideos = widget.videoList!.videoItems
@@ -157,6 +183,42 @@ class _VideoListBuilderState extends ConsumerState<VideoListBuilder> {
 
   @override
   Widget build(BuildContext context) {
+    // Inline mode: render the builder content plus Cancel/Save actions directly
+    // inside the host Pane (no Dialog chrome).
+    if (widget.inline) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _buildForm(),
+          ),
+          const Divider(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => widget.onClosed?.call(false),
+                child: const Text('Cancel'),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton(
+                onPressed: _isSaving ? null : _savePlaylist,
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(widget.videoList == null ? 'Create' : 'Save'),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
     return Dialog(
       child: Container(
         width: MediaQuery.of(context).size.width * 0.8,
@@ -222,6 +284,9 @@ class _VideoListBuilderState extends ConsumerState<VideoListBuilder> {
       ),
     );
   }
+
+  /// Whether the builder is running as a modal dialog (has a route to pop).
+  bool get _isModal => !widget.inline;
 
   Widget _buildForm() {
     return Form(
@@ -475,14 +540,18 @@ class _VideoListBuilderState extends ConsumerState<VideoListBuilder> {
   }
 
   Map<String, dynamic>? _getVideoDetails(String collectionId, String videoId) {
-    final videos = _collectionVideos[collectionId] ?? [];
-    try {
-      return videos.firstWhere(
-        (v) => v['uuid']?.toString() == videoId,
-      );
-    } catch (e) {
-      return null;
+    // The playlist items carry integer DB collection IDs, while
+    // _collectionVideos is keyed by collection UUID. Search every loaded
+    // collection so the human-readable filename is found regardless.
+    for (final videos in _collectionVideos.values) {
+      for (final v in videos) {
+        if (v['uuid']?.toString() == videoId ||
+            v['id']?.toString() == videoId) {
+          return v;
+        }
+      }
     }
+    return null;
   }
 
   String _getCollectionName(String collectionId) {
@@ -557,7 +626,11 @@ class _VideoListBuilderState extends ConsumerState<VideoListBuilder> {
 
       if (mounted) {
         if (success) {
-          Navigator.pop(context, true);
+          if (_isModal) {
+            Navigator.pop(context, true);
+          } else {
+            widget.onClosed?.call(true);
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(widget.videoList == null

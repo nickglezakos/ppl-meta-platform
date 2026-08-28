@@ -110,6 +110,7 @@ class VideoListItemResponse(VideoListItemBase):
     uuid: UUID
     video_list_id: int
     video_filename: Optional[str]
+    video_title: Optional[str]
     video_file_path: Optional[str]
     duration_ms: Optional[int]
     thumbnail_url: Optional[str]
@@ -158,6 +159,10 @@ class VideoListUpdate(BaseModel):
     description: Optional[str] = None
     loop_mode: Optional[LoopMode] = None
     transition_duration: Optional[int] = Field(None, ge=0)
+    video_order: Optional[List[dict]] = Field(
+        None,
+        description='Manual video order: [{"collection_id": "uuid", "video_id": "uuid", "sequence": 1}]',
+    )
     is_active: Optional[bool] = None
     is_published: Optional[bool] = None
 
@@ -185,6 +190,10 @@ class VideoListDetailResponse(VideoListResponse):
     """Detailed video list response with items."""
 
     video_items: List[VideoListItemResponse] = []
+    # Collection UUIDs whose videos are aggregated into this playlist.
+    # Populated by the detail endpoint from the video items' collections
+    # (the VideoList entity itself does not store collection_ids).
+    collection_ids: List[str] = []
 
     class Config:
         from_attributes = True

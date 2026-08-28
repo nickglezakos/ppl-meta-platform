@@ -188,7 +188,10 @@ class SignageService:
         )
 
         if include_items:
-            query = query.options(joinedload(VideoList.video_items))
+            query = query.options(
+                joinedload(VideoList.video_items).joinedload(VideoListItem.media),
+                joinedload(VideoList.video_items).joinedload(VideoListItem.collection)
+            )
 
         return query.first()
 
@@ -211,7 +214,10 @@ class SignageService:
         )
 
         if include_items:
-            query = query.options(joinedload(VideoList.video_items))
+            query = query.options(
+                joinedload(VideoList.video_items).joinedload(VideoListItem.media),
+                joinedload(VideoList.video_items).joinedload(VideoListItem.collection)
+            )
 
         return query.first()
 
@@ -270,12 +276,16 @@ class SignageService:
         Raises:
             ValueError: If video list not found or unauthorized
         """
-        video_list = self.get_video_list(list_id, user_id)
+        video_list = self.get_video_list(list_id, user_id, include_items=True)
         if not video_list:
             raise ValueError("Video list not found or unauthorized")
 
-        # Update fields
+        # Pop video_order from the update data before the field loop so it
+        # isn't blindly setattr'd onto the ORM model (which lacks that column).
         update_data = data.dict(exclude_unset=True)
+        video_order = update_data.pop("video_order", None)
+
+        # Update scalar fields
         for field, value in update_data.items():
             if hasattr(video_list, field):
                 if field == "loop_mode" and value:
@@ -285,6 +295,60 @@ class SignageService:
 
         video_list.last_modified_by = user_id
 
+        # If a new video order was submitted, replace the entire item list
+        # with the new order so drag-reorder survives the edit.
+        if video_order is not None:
+            # The frontend sends integer DB IDs (as strings) for both
+            # collection_id and video_id — these come from the detail
+            # endpoint's VideoListItemResponse.  Try int conversion first;
+            # fall back to UUID→int lookup for the create pathway.
+            internal_order = []
+            for item in video_order:
+                try:
+                    cid = int(item["collection_id"])
+                    vid = int(item["video_id"])
+                except (ValueError, TypeError):
+                    # UUID lookup — client used the create-via-UUID pathway
+                    try:
+                        from uuid import UUID as UUIDType
+                        cid_q = self.db.query(MediaCollection.id).filter(
+                            MediaCollection.uuid == UUIDType(item["collection_id"])
+                        ).scalar()
+                        vid_q = self.db.query(Media.id).filter(
+                            Media.uuid == UUIDType(item["video_id"])
+                        ).scalar()
+                    except Exception:
+                        cid_q = vid_q = None
+                    if cid_q is None or vid_q is None:
+                        logger.warning(
+                            "Skipping video_order item – "
+                            "collection %s or video %s not found",
+                            item.get("collection_id"),
+                            item.get("video_id"),
+                        )
+                        continue
+                    cid = cid_q
+                    vid = vid_q
+                internal_order.append({
+                    "collection_id": cid,
+                    "video_id": vid,
+                    "sequence": item["sequence"],
+                })
+
+            # Clear existing items — cascade will remove them from the DB.
+            for old_item in list(video_list.video_items):
+                self.db.delete(old_item)
+            self.db.flush()
+            video_list.video_items = []
+
+            # Re-add videos in the new order.
+            self._add_videos_from_collections(
+                video_list,
+                list(set(item["collection_id"] for item in internal_order)),
+                internal_order,
+            )
+
+        video_list.update_cached_stats()
         self.db.commit()
         self.db.refresh(video_list)
 
@@ -381,7 +445,7 @@ class SignageService:
             duration_ms = int(media.media_details.duration * 1000)
 
         item = VideoListItem(
-            video_list_id=video_list.id,
+            video_list=video_list,
             collection_id=collection_id,
             video_id=video_id,
             sequence_order=sequence,
@@ -391,6 +455,10 @@ class SignageService:
             is_available=True,
         )
 
+        # Attaching via the relationship (not just the FK) keeps the parent's
+        # `video_list.video_items` collection populated, so the cached stats
+        # (video_count / total_duration_ms) computed by update_cached_stats()
+        # right after the add loop reflect these new items.
         self.db.add(item)
 
     def reorder_video_items(

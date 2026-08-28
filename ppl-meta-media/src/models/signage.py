@@ -8,6 +8,7 @@ and playback control for the Signage Simple Player microservice in the PPL Meta 
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Optional
 
 from sqlalchemy import (
     Boolean,
@@ -188,6 +189,15 @@ class VideoListItem(BaseModel):
         if self.media:
             return self.media.title or self.media.original_filename
         return self.video_filename or "Unknown"
+
+    @property
+    def video_title(self) -> Optional[str]:
+        """Human-readable title exposed to the API."""
+        if self.title_override:
+            return self.title_override
+        if self.media:
+            return self.media.title or self.media.original_filename
+        return self.video_filename
 
 
 class VideoListSyncHistory(BaseModel):

@@ -116,7 +116,37 @@ class VideoList {
     this.totalDurationMs,
   });
 
-  factory VideoList.fromJson(Map<String, dynamic> json) => _$VideoListFromJson(json);
+  factory VideoList.fromJson(Map<String, dynamic> json) {
+    // Tolerant parsing: the backend serializes the transition duration under
+    // `transition_duration` (the DB/schema field name), while the generated
+    // code reads `transition_duration_ms`. Accept both so stored settings
+    // restore correctly.
+    final transition = (json['transition_duration_ms'] as num?)?.toInt() ??
+        (json['transition_duration'] as num?)?.toInt();
+
+    return VideoList(
+      databaseId: (json['id'] as num?)?.toInt(),
+      id: json['uuid'] as String,
+      name: json['name'] as String,
+      description: json['description'] as String?,
+      userId: json['user_id'] as String?,
+      collectionIds: (json['collection_ids'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+      videoItems: (json['video_items'] as List<dynamic>?)
+          ?.map((e) => VideoListItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      loopMode: $enumDecodeNullable(_$LoopModeEnumMap, json['loop_mode']),
+      transitionDurationMs: transition,
+      isActive: json['is_active'] as bool? ?? true,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: json['updated_at'] == null
+          ? null
+          : DateTime.parse(json['updated_at'] as String),
+      videoCount: (json['video_count'] as num?)?.toInt(),
+      totalDurationMs: (json['total_duration_ms'] as num?)?.toInt(),
+    );
+  }
   Map<String, dynamic> toJson() => _$VideoListToJson(this);
 
   VideoList copyWith({
@@ -189,7 +219,28 @@ class VideoListItem {
     this.thumbnailUrl,
   });
 
-  factory VideoListItem.fromJson(Map<String, dynamic> json) => _$VideoListItemFromJson(json);
+  /// Tolerant parsing: the backend may send `video_id` / `collection_id`
+  /// either as integer DB IDs or UUID strings depending on the endpoint.
+  /// Also falls back to `title_override` when no resolved video title exists.
+  factory VideoListItem.fromJson(Map<String, dynamic> json) {
+    String asId(dynamic value) => value == null ? '' : value.toString();
+    return VideoListItem(
+      id: json['uuid']?.toString() ?? '',
+      videoId: asId(json['video_id']),
+      collectionId: asId(json['collection_id']),
+      sequenceOrder: (json['sequence_order'] as num?)?.toInt() ?? 0,
+      durationOverride: (json['duration_override'] as num?)?.toInt(),
+      metadata: json['metadata'] is Map<String, dynamic>
+          ? json['metadata'] as Map<String, dynamic>
+          : null,
+      videoTitle:
+          (json['video_title'] as String?) ??
+          json['title_override'] as String? ??
+          json['video_filename'] as String?,
+      videoUrl: json['video_url'] as String?,
+      thumbnailUrl: json['thumbnail_url'] as String?,
+    );
+  }
   Map<String, dynamic> toJson() => _$VideoListItemToJson(this);
 
   VideoListItem copyWith({

@@ -183,7 +183,23 @@ async def get_video_list(
                 detail="Video list not found or unauthorized",
             )
 
-        return VideoListDetailResponse.model_validate(video_list)
+        response = VideoListDetailResponse.model_validate(video_list)
+
+        # The VideoList entity does not store collection_ids — derive the
+        # assigned collection UUIDs (deduplicated) from its video items so the
+        # frontend can pre-select the playlist's collections in the editor.
+        seen: set = set()
+        collection_ids: List[str] = []
+        for item in video_list.video_items:
+            if item.collection_id in seen:
+                continue
+            seen.add(item.collection_id)
+            collection = item.collection  # lazy-loaded relationship
+            if collection is not None and collection.uuid is not None:
+                collection_ids.append(str(collection.uuid))
+        response.collection_ids = collection_ids
+
+        return response
 
     except HTTPException:
         raise
@@ -197,7 +213,7 @@ async def get_video_list(
 
 @router.put(
     "/video-lists/{list_uuid}",
-    response_model=VideoListResponse,
+    response_model=VideoListDetailResponse,
     summary="Update video list",
     description="Update video list properties",
 )
@@ -206,7 +222,7 @@ async def update_video_list(
     data: VideoListUpdate,
     current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> VideoListResponse:
+) -> VideoListDetailResponse:
     """
     Update a video list's properties.
 
@@ -226,10 +242,24 @@ async def update_video_list(
                 detail="Video list not found or unauthorized",
             )
 
-        # Update
+        # Update — returns full detail
         updated_list = service.update_video_list(video_list.id, user_id, data)
 
-        return VideoListResponse.model_validate(updated_list)
+        response = VideoListDetailResponse.model_validate(updated_list)
+
+        # Derive collection_ids for the frontend (same as the detail endpoint)
+        seen: set = set()
+        collection_ids: List[str] = []
+        for item in updated_list.video_items:
+            if item.collection_id in seen:
+                continue
+            seen.add(item.collection_id)
+            collection = item.collection
+            if collection is not None and collection.uuid is not None:
+                collection_ids.append(str(collection.uuid))
+        response.collection_ids = collection_ids
+
+        return response
 
     except HTTPException:
         raise

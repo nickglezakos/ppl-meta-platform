@@ -13,6 +13,12 @@ import '../widgets/signage/playback_controls.dart';
 import '../widgets/custom_app_bar.dart';
 import '../core/providers/auth_provider.dart';
 import '../core/theme/app_theme.dart';
+import '../presentation/widgets/common/ux_breakpoints.dart';
+import '../presentation/widgets/common/content_pane.dart';
+import '../widgets/responsive_media_gallery.dart';
+import '../models/media_models.dart';
+import '../services/media_api_client.dart';
+import '../core/api/api_client.dart';
 
 class SignageManagementScreen extends ConsumerStatefulWidget {
   const SignageManagementScreen({Key? key}) : super(key: key);
@@ -25,7 +31,15 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
-  
+
+  /// Currently selected playlist shown in the right detail pane
+  /// (master/detail UX mirroring the Collections screen).
+  VideoList? _selectedPlaylist;
+
+  /// Whether the right pane shows the settings (edit) view instead of the
+  /// playlist content. Toggled via the mode pill in the pane header.
+  bool _paneShowSettings = false;
+
   // Helper to get SignageProvider without conflict with Riverpod
   SignageProvider _getSignageProvider({bool listen = true}) {
     return provider.Provider.of<SignageProvider>(context, listen: listen);
@@ -147,113 +161,365 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
           );
         }
 
-        return Column(
-          children: [
-            // Search + create row
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final isCompact = constraints.maxWidth < 700;
+        // Resolve the selected playlist against freshly-loaded data so a
+        // deleted/refreshed playlist does not leave a stale selection.
+        VideoList? selected;
+        for (final list in provider.videoLists) {
+          if (list.id == _selectedPlaylist?.id) {
+            selected = list;
+            break;
+          }
+        }
 
-                  final searchField = TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: 'Search playlists...',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: _searchController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _searchController.clear();
-                                provider.loadVideoLists();
-                              },
-                            )
-                          : null,
-                      border: const OutlineInputBorder(),
-                    ),
-                    onSubmitted: (value) {
-                      provider.loadVideoLists(search: value);
-                    },
-                  );
+        final searchAndCreate = Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isCompact = constraints.maxWidth < 700;
 
-                  final newPlaylistButton = ElevatedButton.icon(
-                    onPressed: _showCreatePlaylistDialog,
-                    icon: const Icon(Icons.add),
-                    label: const Text('New Playlist'),
-                  );
-
-                  if (isCompact) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        searchField,
-                        const SizedBox(height: 12),
-                        newPlaylistButton,
-                      ],
-                    );
-                  }
-
-                  return Row(
-                    children: [
-                      Expanded(child: searchField),
-                      const SizedBox(width: 16),
-                      newPlaylistButton,
-                    ],
-                  );
+              final searchField = TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Search playlists...',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            _searchController.clear();
+                            provider.loadVideoLists();
+                          },
+                        )
+                      : null,
+                  border: const OutlineInputBorder(),
+                ),
+                onSubmitted: (value) {
+                  provider.loadVideoLists(search: value);
                 },
-              ),
-            ),
+              );
 
-            // Playlists list
+              final newPlaylistButton = ElevatedButton.icon(
+                onPressed: _showCreatePlaylistDialog,
+                icon: const Icon(Icons.add),
+                label: const Text('New Playlist'),
+              );
+
+              if (isCompact) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    searchField,
+                    const SizedBox(height: 12),
+                    newPlaylistButton,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: searchField),
+                  const SizedBox(width: 16),
+                  newPlaylistButton,
+                ],
+              );
+            },
+          ),
+        );
+
+        final sidebar = Column(
+          children: [
+            searchAndCreate,
             Expanded(
               child: ListView.builder(
                 itemCount: provider.videoLists.length,
                 itemBuilder: (context, index) {
                   final playlist = provider.videoLists[index];
-                  return _buildPlaylistCard(playlist);
+                  return _buildPlaylistSidebarTile(
+                    playlist,
+                    isSelected: selected?.id == playlist.id,
+                  );
                 },
               ),
             ),
           ],
         );
+
+        final detailPane = selected == null
+            ? ContentPane(
+                title: 'Playlists',
+                subtitle: 'Select a playlist to view its content',
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.playlist_play,
+                          size: 48, color: Colors.grey[400]),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Select a playlist from the list to view its videos',
+                        style:
+                            TextStyle(color: Colors.grey[600], fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : _buildPlaylistDetailPane(selected);
+
+        return isWide(context)
+            ? Row(
+                children: [
+                  SizedBox(width: kMasterPaneWidth, child: sidebar),
+                  const VerticalDivider(width: 1),
+                  const SizedBox(width: 4),
+                  Expanded(child: detailPane),
+                ],
+              )
+            : (selected == null ? sidebar : detailPane);
       },
     );
   }
 
-  Widget _buildPlaylistCard(VideoList playlist) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: ListTile(
-        leading: CircleAvatar(
-          child: Text(playlist.videoCount?.toString() ?? '0'),
+  /// Left-sidebar listable item for a playlist with its three-dot actions.
+  Widget _buildPlaylistSidebarTile(VideoList playlist,
+      {required bool isSelected}) {
+    return ListTile(
+      selected: isSelected,
+      leading: CircleAvatar(
+        child: Text(playlist.videoCount?.toString() ?? '0'),
+      ),
+      title: Text(
+        playlist.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        '${playlist.videoCount ?? 0} videos • '
+        '${_formatDuration(playlist.totalDurationMs ?? 0)}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: PopupMenuButton<String>(
+        icon: const Icon(Icons.more_vert),
+        tooltip: 'Playlist actions',
+        onSelected: (value) => _handlePlaylistAction(value, playlist),
+        itemBuilder: (context) => [
+          const PopupMenuItem(value: 'edit', child: Text('Edit')),
+          const PopupMenuItem(value: 'sync', child: Text('Sync to Devices')),
+          const PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
+          const PopupMenuItem(
+            value: 'delete',
+            child: Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+      onTap: () => _selectPlaylist(playlist),
+    );
+  }
+
+  Future<void> _selectPlaylist(VideoList playlist) async {
+    setState(() {
+      _selectedPlaylist = playlist;
+      _paneShowSettings = false;
+    });
+    // The list endpoint only returns summaries (no video_items). Fetch the
+    // full detail — videos aggregated from the assigned collections — and
+    // update the provider, which refreshes the pane and counters.
+    final signageProvider = _getSignageProvider(listen: false);
+    await signageProvider.loadVideoList(playlist.id);
+
+    // Re-point _selectedPlaylist at the hydrated full playlist (with its
+    // collection_ids, video_items, loop_mode, description, ...) so the
+    // settings form is populated with the stored values.
+    if (mounted) {
+      for (final updated in signageProvider.videoLists) {
+        if (updated.id == playlist.id) {
+          setState(() => _selectedPlaylist = updated);
+          break;
+        }
+      }
+    }
+  }
+
+
+  /// Right pane for the selected playlist: content mode shows the videos
+  /// aggregated from the playlist's collections; settings mode renders the
+  /// edit-playlist form inline. Switched via the mode toggle pill.
+  Widget _buildPlaylistDetailPane(VideoList playlist) {
+    // Resolve the latest (hydrated) copy of this playlist from the provider so
+    // both the content and settings views reflect the full stored settings
+    // (collection_ids, video_items, description, loop_mode, ...).
+    final signageProvider = _getSignageProvider(listen: false);
+    for (final updated in signageProvider.videoLists) {
+      if (updated.id == playlist.id) {
+        playlist = updated;
+        break;
+      }
+    }
+
+    final videoItems = playlist.videoItems ?? const <VideoListItem>[];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ContentBar(
+          title: playlist.name,
+          subtitle:
+              '${videoItems.length} videos • ${_formatDuration(playlist.totalDurationMs ?? 0)}',
+          showModePill: true,
+          showSettings: _paneShowSettings,
+          onToggleMode: () =>
+              setState(() => _paneShowSettings = !_paneShowSettings),
         ),
-        title: Text(playlist.name),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        const SizedBox(height: 8),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: _paneShowSettings
+                ? _buildPlaylistSettings(playlist)
+                : _buildPlaylistContent(playlist, videoItems),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Content mode: the videos of the lists assigned to this playlist,
+  /// rendered in the playlist's stored `sequence_order` (backend truth),
+  /// with the same standard video items used by the Collections screen
+  /// content pane.
+  Widget _buildPlaylistContent(
+      VideoList playlist, List<VideoListItem> videoItems) {
+    // Reuse the authenticated API client from the provider tree so the gallery
+    // can reach the media service (without it, media requests fail auth).
+    final apiClient = ref.watch(apiClientProvider);
+    final mediaClient = MediaApiClient(apiClient);
+
+    // Render the playlist's video_items in their stored sequence_order.
+    if (videoItems.isNotEmpty) {
+      final orderedItems = [...videoItems]
+        ..sort((a, b) => a.sequenceOrder.compareTo(b.sequenceOrder));
+      final orderedIds = orderedItems
+          .map((i) => i.videoId)
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      return FutureBuilder<List<MediaItem>>(
+        key: ValueKey('playlist_content_${playlist.id}_${orderedIds.join(',')}'),
+        future: () async {
+          // /api/v1/media/{media_id} accepts both UUIDs and integer DB IDs,
+          // so the playlist's video_id works directly. Failures are skipped
+          // per-item so one missing video doesn't blank the pane.
+          final items = await Future.wait(
+            orderedIds.map((id) async {
+              try {
+                return await mediaClient.getMediaByUuid(id);
+              } catch (_) {
+                return null;
+              }
+            }),
+          );
+          return items.whereType<MediaItem>().toList();
+        }(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final orderedMedia = snapshot.data ?? const <MediaItem>[];
+          if (orderedMedia.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.video_library_outlined,
+                      size: 48, color: Colors.grey[400]),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No videos in this playlist yet',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                  ),
+                ],
+              ),
+            );
+          }
+          return ResponsiveMediaGallery(
+            key: ValueKey('playlist_preloaded_${playlist.id}_${orderedMedia.length}'),
+            apiClient: apiClient,
+            preloadedItems: orderedMedia, // exact sequence_order from backend
+            enableInfiniteScroll: false, // static list — nothing to paginate
+            showItemNames: true,
+            onItemTap: _openPlaylistItem,
+          );
+        },
+      );
+    }
+
+    // Fallback: no hydrated video_items — show the collections' media
+    // (create-time playlists, or detail not yet hydrated).
+    final collectionIds = <String>{
+      ...(playlist.collectionIds ?? const <String>[]),
+      ...videoItems.map((i) => i.collectionId).where((c) => c.isNotEmpty),
+    }.toList();
+
+    if (collectionIds.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (playlist.description != null) Text(playlist.description!),
+            Icon(Icons.video_library_outlined,
+                size: 48, color: Colors.grey[400]),
+            const SizedBox(height: 8),
+            Text(
+              'No videos in this playlist yet',
+              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+            ),
             const SizedBox(height: 4),
             Text(
-              '${playlist.videoCount ?? 0} videos • '
-              '${_formatDuration(playlist.totalDurationMs ?? 0)}',
-              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              'Use the mode toggle to edit assigned collections',
+              style: TextStyle(color: Colors.grey[500], fontSize: 12),
             ),
           ],
         ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) => _handlePlaylistAction(value, playlist),
-          itemBuilder: (context) => [
-            const PopupMenuItem(value: 'edit', child: Text('Edit')),
-            const PopupMenuItem(value: 'sync', child: Text('Sync to Devices')),
-            const PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
-            const PopupMenuItem(
-              value: 'delete',
-              child: Text('Delete', style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        ),
-        onTap: () => _showPlaylistDetails(playlist),
+      );
+    }
+
+    return ResponsiveMediaGallery(
+      key: ValueKey('playlist_content_${playlist.id}_${collectionIds.join(',')}'),
+      apiClient: apiClient,
+      filters: MediaSearchFilters(
+        collectionIds: collectionIds,
+        sortBy: 'created_at',
+        sortOrder: 'desc',
+      ),
+      enableInfiniteScroll: true,
+      showItemNames: true,
+      onItemTap: _openPlaylistItem,
+    );
+  }
+
+  /// Open the standard media preview/playback screen for a playlist video —
+  /// mirroring the media service — so its back button returns to the playlist.
+  void _openPlaylistItem(MediaItem item) {
+    // Use push (not go) so the previous route (/signage) stays on the stack
+    // and the preview's back button can pop back to it.
+    context.push('/media-preview', extra: item);
+  }
+
+  /// Settings mode: the existing edit-playlist dialog rendered inline.
+  Widget _buildPlaylistSettings(VideoList playlist) {
+    final signageProvider = _getSignageProvider(listen: false);
+    return provider.ChangeNotifierProvider<SignageProvider>.value(
+      value: signageProvider,
+      child: VideoListBuilder(
+        key: ValueKey('playlist_settings_${playlist.id}'),
+        videoList: playlist,
+        signageProvider: signageProvider,
+        inline: true,
+        onClosed: (_) {
+          if (mounted) {
+            setState(() => _paneShowSettings = false);
+          }
+        },
       ),
     );
   }
@@ -507,23 +773,15 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
     );
   }
 
-  void _showPlaylistDetails(VideoList playlist) {
-    _getSignageProvider(listen: false).selectVideoList(playlist);
-    showDialog(
-      context: context,
-      builder: (dialogContext) => provider.ChangeNotifierProvider<SignageProvider>.value(
-        value: _getSignageProvider(listen: false),
-        child: VideoListBuilder(videoList: playlist),
-      ),
-    );
-  }
-
   void _handlePlaylistAction(String action, VideoList playlist) async {
-    final provider = _getSignageProvider(listen: false);
-    
     switch (action) {
       case 'edit':
-        _showPlaylistDetails(playlist);
+        // Open the selected playlist's settings mode in the detail pane.
+        setState(() {
+          _selectedPlaylist = playlist;
+          _paneShowSettings = true;
+        });
+        _getSignageProvider(listen: false).loadVideoList(playlist.id);
         break;
       case 'sync':
         _showSyncDialog(playlist);

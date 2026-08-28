@@ -22,6 +22,20 @@ class ResponsiveMediaGallery extends StatefulWidget {
   final int itemsPerPage;
   final ApiClient? apiClient;
 
+  /// When true, each tile renders the media's filename label at its bottom
+  /// (used by the playlist Content pane so cards are identifiable).
+  final bool showItemNames;
+
+  /// Optional pre-loaded, pre-ordered list of media items.
+  ///
+  /// When provided, the gallery renders exactly these items (in the given
+  /// order) instead of fetching/searching the collection itself. This is used
+  /// by the playlist Content pane, which must display the videos in the
+  /// playlist's stored `sequence_order` rather than re-sorting them by
+  /// `created_at` (the default collection sort). Infinite scroll and search
+  /// are skipped in this mode — the list is static and already complete.
+  final List<MediaItem>? preloadedItems;
+
   ResponsiveMediaGallery({
     super.key,
     this.collectionId,
@@ -33,6 +47,8 @@ class ResponsiveMediaGallery extends StatefulWidget {
     this.enableInfiniteScroll = true,
     this.itemsPerPage = 20,
     this.apiClient,
+    this.preloadedItems,
+    this.showItemNames = false,
   }) {
     print('🔥 GALLERY WIDGET CREATED 🔥');
   }
@@ -63,8 +79,28 @@ class ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
     print('DEBUG: ResponsiveMediaGallery initState called');
     _apiClient = MediaApiClient(widget.apiClient);
     _scrollController.addListener(_onScroll);
-    print('DEBUG: About to call _loadInitialItems');
-    _loadInitialItems();
+
+    // In preloaded mode the item order comes from the caller (e.g. the
+    // playlist's sequence_order), so we must NOT re-fetch/re-sort.
+    if (widget.preloadedItems != null) {
+      _applyPreloadedItems();
+      print('DEBUG: ResponsiveMediaGallery using ${widget.preloadedItems!.length} preloaded items');
+    } else {
+      print('DEBUG: About to call _loadInitialItems');
+      _loadInitialItems();
+    }
+  }
+
+  /// Install the pre-supplied, pre-ordered item list and disable pagination.
+  void _applyPreloadedItems() {
+    setState(() {
+      _items = List<MediaItem>.of(widget.preloadedItems!);
+      _selectedItems.clear();
+      _currentPage = 1;
+      _hasMoreItems = false; // static list — no more pages to fetch
+      _isLoading = false;
+      _error = null;
+    });
   }
 
   @override
@@ -76,9 +112,17 @@ class ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
   @override
   void didUpdateWidget(ResponsiveMediaGallery oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
-    // Reload if filters changed
-    if (widget.filters != oldWidget.filters ||
+
+    // New preloaded list supplied — swap items and disable fetching.
+    if (widget.preloadedItems != oldWidget.preloadedItems &&
+        widget.preloadedItems != null) {
+      _applyPreloadedItems();
+      return;
+    }
+
+    // Leaving preloaded mode (or filters changed) — fall back to fetching.
+    if ((widget.preloadedItems == null && oldWidget.preloadedItems != null) ||
+        widget.filters != oldWidget.filters ||
         widget.collectionId != oldWidget.collectionId) {
       _refreshItems();
     }
@@ -416,6 +460,7 @@ class ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
                 isSelected: _selectedItems.contains(item.id),
                 enableSelection: widget.enableSelection,
                 apiClient: widget.apiClient,
+                showName: widget.showItemNames,
                 onTap: () => widget.onItemTap?.call(item),
                 onLongPress: () {
                   if (widget.enableSelection) {
@@ -547,6 +592,10 @@ class _MediaGridItem extends ConsumerWidget {
   final VoidCallback? onSelectionToggle;
   final ApiClient? apiClient;
 
+  /// When true, renders the media's filename on a bottom gradient overlay
+  /// (used by the playlist Content pane so each card is identifiable).
+  final bool showName;
+
   const _MediaGridItem({
     required this.item,
     required this.isSelected,
@@ -555,6 +604,7 @@ class _MediaGridItem extends ConsumerWidget {
     this.onLongPress,
     this.onSelectionToggle,
     this.apiClient,
+    this.showName = false,
   });
 
   @override
@@ -596,6 +646,8 @@ class _MediaGridItem extends ConsumerWidget {
               if (item.mediaType == MediaType.video)
                 _buildVideoPlayOverlay(),
               
+// Media name label (bottom gradient)
+              if (showName) _buildNameLabel(),
               // Selection overlay
               if (enableSelection)
                 _buildSelectionOverlay(),
@@ -673,6 +725,40 @@ class _MediaGridItem extends ConsumerWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// Media name label (bottom gradient overlay)
+  Widget _buildNameLabel() {
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.sm,
+          AppSpacing.md,
+          AppSpacing.sm,
+          AppSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.transparent, AppColors.black.withOpacity(0.7)],
+          ),
+        ),
+        child: Text(
+          item.originalFilename,
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.white,
+            fontWeight: FontWeight.w500,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.left,
+        ),
       ),
     );
   }
