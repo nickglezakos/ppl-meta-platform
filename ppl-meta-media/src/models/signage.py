@@ -226,6 +226,7 @@ class VideoListSyncHistory(BaseModel):
     # Statistics
     videos_synced = Column(Integer, default=0)
     videos_failed = Column(Integer, default=0)
+    videos_skipped = Column(Integer, default=0)
     total_videos = Column(Integer, nullable=True)
     data_transferred_bytes = Column(Integer, default=0)
 
@@ -266,7 +267,9 @@ class VideoListSyncHistory(BaseModel):
         self.sync_status = SyncStatus.IN_PROGRESS.value
         self.sync_started_at = datetime.now(timezone.utc)
 
-    def mark_completed(self, videos_synced: int, videos_failed: int = 0):
+    def mark_completed(
+        self, videos_synced: int, videos_failed: int = 0, videos_skipped: int = 0
+    ):
         """Mark sync as completed with statistics."""
         self.sync_status = (
             SyncStatus.COMPLETED.value
@@ -275,6 +278,7 @@ class VideoListSyncHistory(BaseModel):
         )
         self.videos_synced = videos_synced
         self.videos_failed = videos_failed
+        self.videos_skipped = videos_skipped
         self.sync_completed_at = datetime.now(timezone.utc)
 
         if self.sync_started_at:

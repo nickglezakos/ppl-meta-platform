@@ -8,7 +8,7 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from uuid import UUID
 
 import httpx
@@ -594,10 +594,23 @@ class SignageService:
         return device
 
     def get_device_by_id(self, device_id: UUID) -> Optional[SignageDevice]:
-        """Get a signage device by device_id."""
-        return (
+        """
+        Get a signage device by its `device_id`.
+
+        As a fallback, also matches the device's API `uuid`. This makes callers
+        that pass either identifier work — e.g. the frontend sends the API
+        `uuid`, while device heartbeat / direct backend calls send `device_id`.
+        """
+        device = (
             self.db.query(SignageDevice)
             .filter(SignageDevice.device_id == device_id)
+            .first()
+        )
+        if device:
+            return device
+        return (
+            self.db.query(SignageDevice)
+            .filter(SignageDevice.uuid == device_id)
             .first()
         )
 
@@ -704,6 +717,7 @@ class SignageService:
         status: str,
         videos_synced: int = 0,
         videos_failed: int = 0,
+        videos_skipped: int = 0,
         error_message: str = None,
     ):
         """
@@ -714,6 +728,7 @@ class SignageService:
             status: Sync status
             videos_synced: Number of videos successfully synced
             videos_failed: Number of videos that failed
+            videos_skipped: Number of videos already present and unchanged
             error_message: Error message if failed
         """
         history = (
@@ -729,7 +744,7 @@ class SignageService:
         if status == SyncStatus.FAILED.value:
             history.mark_failed(error_message or "Unknown error")
         else:
-            history.mark_completed(videos_synced, videos_failed)
+            history.mark_completed(videos_synced, videos_failed, videos_skipped)
 
         self.db.commit()
 
@@ -866,8 +881,80 @@ class SignageSyncService:
         )
 
         try:
-            # Prepare video list data
-            video_list_data = self._prepare_video_list_data(video_list)
+            # Query the device's current content manifest so we can compute a
+            # delta (idempotent sync). Fall back to a full push if the device
+            # doesn't expose /api/v1/assets (older player) or the fetch fails.
+            existing_ids: Optional[Set[str]] = None
+            existing_ordered: Optional[List[str]] = None
+            if not force_update:
+                existing_ids, existing_ordered = await self._get_device_assets(
+                    device, str(video_list.uuid)
+                )
+
+            playlist_ordered_ids = [
+                str(item.video_id)
+                for item in sorted(
+                    video_list.video_items, key=lambda x: x.sequence_order
+                )
+            ]
+            playlist_ordered_set = set(playlist_ordered_ids)
+
+            # Reorder-aware classification of every playlist video:
+            #  - added     : new to the device (not in its manifest)
+            #  - reordered : already on device but in a different position
+            #  - skipped   : already on device and in the same position
+            #  - removed   : on device but no longer in the playlist
+            added_ids: Set[str] = set()
+            reordered_ids: Set[str] = set()
+            skipped_count = 0
+            if existing_ids is not None and existing_ordered is not None:
+                existing_set = set(existing_ids)
+                existing_pos = {
+                    str(vid): i for i, vid in enumerate(existing_ordered)
+                }
+                added_ids = playlist_ordered_set - existing_set
+                for i, vid in enumerate(playlist_ordered_ids):
+                    if vid in added_ids:
+                        continue
+                    if existing_pos.get(vid) == i:
+                        skipped_count += 1
+                    else:
+                        reordered_ids.add(vid)
+                # Only count removed if we want to log it (delivery below uses
+                # the playlist's own list, so removed videos simply drop out).
+                removed_count = len(existing_set - playlist_ordered_set)
+
+            same_content = existing_ids is not None and not added_ids
+            same_order = existing_ids is not None and existing_ordered == playlist_ordered_ids
+
+            if same_content and same_order:
+                # Device already has every video in the same order: nothing new
+                # to deliver. Send an empty videos[] as a no-op confirmation.
+                video_list_data = self._prepare_video_list_data(
+                    video_list, include_videos=False
+                )
+                videos_synced = 0
+                videos_skipped = skipped_count
+            else:
+                # Deliver the full (ordered) list. This satisfies both:
+                #  - new content (added) must reach the device, and
+                #  - reordered videos must be delivered so the order-sensitive
+                #    player re-applies the new sequence.
+                video_list_data = self._prepare_video_list_data(video_list)
+                if existing_ids is not None:
+                    videos_synced = len(added_ids)
+                    videos_skipped = skipped_count
+                else:
+                    # No manifest available -> full push counts everything.
+                    videos_synced = len(video_list.video_items)
+                    videos_skipped = 0
+
+            logger.info(
+                f"Delta for '{video_list.name}' -> device '{device.device_name}': "
+                f"added={len(added_ids)}, reordered={len(reordered_ids)}, "
+                f"skipped={skipped_count}, removed={removed_count if existing_ids is not None else 'n/a'}, "
+                f"forced={force_update}"
+            )
 
             # Send to device
             success = await self._send_to_device(
@@ -875,12 +962,13 @@ class SignageSyncService:
             )
 
             if success:
-                # Update sync history
+                # Update sync history with accurate counts
                 self.signage_service.update_sync_history(
                     history.id,
                     SyncStatus.COMPLETED.value,
-                    videos_synced=len(video_list.video_items),
+                    videos_synced=videos_synced,
                     videos_failed=0,
+                    videos_skipped=videos_skipped,
                 )
 
                 # Update device's current video list
@@ -888,7 +976,8 @@ class SignageSyncService:
                 self.db.commit()
 
                 logger.info(
-                    f"Successfully synced video list '{video_list.name}' to device '{device.device_name}'"
+                    f"Successfully synced video list '{video_list.name}' to device '{device.device_name}' "
+                    f"(synced={videos_synced}, skipped={videos_skipped})"
                 )
             else:
                 self.signage_service.update_sync_history(
@@ -906,12 +995,17 @@ class SignageSyncService:
 
         return history
 
-    def _prepare_video_list_data(self, video_list: VideoList) -> dict:
+    def _prepare_video_list_data(
+        self, video_list: VideoList, include_videos: bool = True
+    ) -> dict:
         """
         Prepare video list data for transmission to device.
 
         Args:
             video_list: VideoList object with loaded items
+            include_videos: When False, emit an empty videos[] (used when the
+                device already has all videos in the correct order and only the
+                playlist metadata needs to be (re)confirmed).
 
         Returns:
             Dictionary with video list data
@@ -950,7 +1044,7 @@ class SignageSyncService:
                     "thumbnail_url": f"{media_service_url}/api/v1/media/thumbnail/{item.video_id}?size=medium" if item.thumbnail_url else None,
                 }
                 for item in sorted(video_list.video_items, key=lambda x: x.sequence_order)
-            ],
+            ] if include_videos else [],
         }
 
     async def _send_to_device(
@@ -1029,7 +1123,61 @@ class SignageSyncService:
             logger.error(f"❌ Failed to send to device {device.device_name}: {str(e)}")
             logger.exception("Full traceback:")
             return False
-    
+
+    async def _get_device_assets(
+        self, device: SignageDevice, playlist_id: str
+    ) -> tuple[Optional[Set[str]], Optional[List[str]]]:
+        """
+        Query the device's current content manifest (GET /api/v1/assets) and
+        return the set and ordered list of video IDs it holds for the given
+        playlist.
+
+        Args:
+            device: SignageDevice object
+            playlist_id: The playlist UUID (source list id) to look up
+
+        Returns:
+            Tuple of (set_of_video_ids, ordered_list_of_video_ids) for the
+            matching playlist, or (None, None) if the manifest is unreachable,
+            the player is old, or the playlist is not present on the device.
+        """
+        try:
+            # Resolve the device endpoint (mirror _send_to_device logic).
+            discovery_device = await self._get_device_from_discovery(device.device_id)
+            if discovery_device:
+                host = self._translate_ip_for_tailscale(discovery_device["host"])
+                port = discovery_device["port"]
+            else:
+                host = device.ip_address
+                port = device.port or 8009
+            url = f"http://{host}:{port}/api/v1/assets"
+
+            logger.info(f"Querying device assets manifest for {device.device_name}: {url}")
+
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(url, headers=_discovery_auth_headers())
+                response.raise_for_status()
+                data = response.json()
+
+            playlists = data.get("playlists", []) or []
+            for pl in playlists:
+                if pl.get("playlist_id") != playlist_id:
+                    continue
+                videos = pl.get("videos", []) or []
+                ordered_ids = [v["video_id"] for v in videos]
+                return set(ordered_ids), ordered_ids
+
+            # Playlist not present on the device yet -> all videos are "added".
+            logger.info(f"Playlist {playlist_id} not found in device assets manifest")
+            return set(), []
+
+        except Exception as e:
+            logger.warning(
+                f"Could not fetch device assets manifest for {device.device_name}: {e}. "
+                f"Falling back to full push."
+            )
+            return None, None
+
     def _translate_ip_for_tailscale(self, host: str) -> str:
         """
         Translate local network IPs to Tailscale IP if running in Tailscale environment.

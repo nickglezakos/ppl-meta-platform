@@ -7,7 +7,6 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:logger/logger.dart';
 import 'package:signage_simple_player/database/playlist_database.dart';
 import 'package:signage_simple_player/services/player_engine.dart';
-import 'package:signage_simple_player/models/playback_models.dart';
 import 'package:signage_simple_player/models/video_list.dart';
 import 'package:signage_simple_player/config/app_config.dart';
 import 'package:signage_simple_player/services/config_service.dart';
@@ -111,6 +110,9 @@ class SignageHttpServer {
 
     // Sync endpoint
     router.post('/api/v1/sync', _handleSync);
+
+    // Assets / manifest endpoint (delta-sync support)
+    router.get('/api/v1/assets', _handleAssets);
 
     // Configuration endpoints (for remote setup)
     router.get('/api/v1/config', _handleGetConfig);
@@ -555,6 +557,47 @@ class SignageHttpServer {
       return Response.internalServerError(
         body: jsonEncode({
           'error': 'Failed to process sync notification',
+          'message': e.toString(),
+        }),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
+  }
+
+  /// Assets / manifest endpoint — returns the device's current stored playlist
+  /// content (video IDs in sequence order) so the ETL can compute a delta and
+  /// avoid re-pushing unchanged assets.
+  Future<Response> _handleAssets(Request request) async {
+    try {
+      _logger.d('📦 Assets/manifest query received');
+
+      final playlists = await _database.getAllPlaylists();
+      final result = <String, dynamic>{
+        'device_id': _deviceId,
+        'playlists': playlists.map((pl) => {
+              'playlist_id': pl.sourceListId.isNotEmpty
+                  ? pl.sourceListId
+                  : pl.id,
+              'name': pl.name,
+              'sync_version': pl.syncVersion,
+              'videos': pl.videos
+                  .map((v) => {
+                        'video_id': v.videoId,
+                        'sequence_order': v.sequenceOrder,
+                      })
+                  .toList(),
+            }),
+      };
+
+      return Response.ok(
+        jsonEncode(result),
+        headers: {'Content-Type': 'application/json'},
+      );
+    } catch (e, stack) {
+      _logger.e('Error getting assets manifest', error: e, stackTrace: stack);
+      return Response.internalServerError(
+        body: jsonEncode({
+          'error': 'Failed to get assets manifest',
           'message': e.toString(),
         }),
         headers: {'Content-Type': 'application/json'},

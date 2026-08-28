@@ -8,6 +8,8 @@ import logging
 from typing import List, Optional
 from uuid import UUID
 
+import httpx
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -26,6 +28,7 @@ from ...schemas.signage import (
     SyncMode,
     SyncRequest,
     SyncResponse,
+    SyncStatus,
     VideoListCreate,
     VideoListDetailResponse,
     VideoListListResponse,
@@ -348,27 +351,49 @@ async def sync_video_list(
     """
     try:
         user_id = current_user.user_id
-        service = SignageSyncService(db)
+        if not data.target_devices:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No target devices specified",
+            )
 
-        # For now, sync to first device (can be extended to batch sync)
-        device_id = data.target_devices[0]
+        # Resolve the video list UUID to its integer DB id (the ETL worker
+        # operates on integer list ids).
+        signage_service = SignageService(db)
+        video_list = signage_service.get_video_list_by_uuid(
+            data.video_list_id, user_id
+        )
+        if not video_list:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Video list not found or unauthorized",
+            )
 
-        history = await service.sync_video_list_to_device(
-            data.video_list_id,
-            device_id,
-            data.sync_mode,
-            user_id,
-            data.force_update,
+        # Enqueue a single job that syncs the playlist to ALL requested
+        # devices (not just the first), reusing the batch worker (retries,
+        # concurrency, job-status tracking).
+        # NOTE: `data.target_devices` is already a List[UUID] (Pydantic), so do
+        # NOT re-wrap with UUID(...) — that raises "'UUID' object has no
+        # attribute 'replace'".
+        batch_manager = get_batch_sync_manager()
+        job_id = await batch_manager.sync_list_to_devices(
+            video_list_id=video_list.id,
+            device_ids=data.target_devices,
+            sync_mode=data.sync_mode.value,
+            user_id=user_id,
+            force_update=data.force_update,
         )
 
         return SyncResponse(
-            sync_job_id=history.uuid,
-            status=history.sync_status,
+            sync_job_id=job_id,
+            status=SyncStatus.PENDING,
             target_device_count=len(data.target_devices),
-            estimated_completion_at=None,  # Could be calculated based on video count
-            message=f"Sync initiated for {len(data.target_devices)} device(s)",
+            estimated_completion_at=None,
+            message=f"Sync queued for {len(data.target_devices)} device(s)",
         )
 
+    except HTTPException:
+        raise
     except ValueError as e:
         logger.warning(f"Validation error during sync: {str(e)}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

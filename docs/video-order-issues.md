@@ -19,6 +19,21 @@ Scope: `ppl-meta-media` (backend) and `ppl-meta-frontend` (Flutter).
    `_buildVideoOrderList()` calls `_autoOrderVideos()` only when `_orderedVideos.isEmpty` (line ~465). When editing an existing playlist, order is preloaded from `videoList.videoItems` in `initState` (lines 79–85) — this works, but only if the detail endpoint returned hydrated `video_items` (it does after the `loadVideoList` hydration in `_selectPlaylist`).
 6. **Live verification via curl requires a valid JWT (verified).**
    Anonymous curls against the running backend on port 8000 return `{"detail":"Not authenticated"}`. A token obtained from `POST http://localhost:8001/api/v1/users/login` (Node service, form-encoded) works — used for the live verification in §4.
+7. **`SYNC-1` — "Sync to Devices" only syncs the FIRST online device (backend) — ✅ FIXED.**
+   Tracking doc: `docs/modules/digital signage/Digital Signage.md` §3.5.1.
+   **Fix applied:** backend `POST /etl/sync` now enqueues a single batch job covering **all** `target_devices` (via `get_batch_sync_manager().sync_list_to_devices`) instead of `target_devices[0]`; frontend `_showSyncDialog` now uses functional `CheckboxListTile`s that track user selection and sends only the selected devices through `syncVideoListToDevices`.
+   **Residual (pre-existing, not introduced here):** the batch worker's `enqueue_sync_job` builds `job_id` from an in-memory counter (`UUID(int=len(active)+len(completed)+1)`), which is fragile across restarts — worth a separate ticket if it matters.
+
+8. **`SYNC-2` — UI-triggered sync to signage devices failed at device lookup (device-ID mismatch) — ✅ FIXED + related bugs.**
+   Tracking: `docs/modules/digital signage/Plan-DELTA-SYNC-1.md` → Workstream E (RESOLVED section).
+   - **Root cause:** the frontend sends `device.id` (= API `uuid`), but the backend `get_device_by_id` + discovery/auto-registration key on `device_id` → uuid lookup returned None → `ValueError("Device not found...")`.
+   - **Fix:** `get_device_by_id` now falls back to matching `SignageDevice.uuid`; `POST /etl/sync` with the frontend uuid verified live → **202** (was 500).
+   - **Additionally fixed (pre-existing, surfaced while exercising the real HTTP sync path):**
+     1. `import httpx` missing in `src/api/v1/signage.py` (except clauses referenced it → `NameError` → 500).
+     2. `UUID(...)` re-wrap of an already-`List[UUID]` field → `'UUID' object has no attribute 'replace'`.
+     3. ETL worker passed a `str` as `SyncMode` (service calls `sync_mode.value`) → silent "0/1 synced".
+     4. Worker counted a device as synced even when the push failed (history `failed`) — now counts only `completed`/`partial` and logs per-device errors.
+   - **Noted:** the live device's `POST /api/v1/sync` was intermittently timing out (~30s) this session — device/network-level, not code.
 
 
 ---

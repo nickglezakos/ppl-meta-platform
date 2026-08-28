@@ -280,6 +280,7 @@ class VideoListSyncHistoryResponse(BaseModel):
     sync_mode: str
     videos_synced: int
     videos_failed: int
+    videos_skipped: int
     total_videos: Optional[int]
     data_transferred_bytes: int
     sync_started_at: Optional[datetime]

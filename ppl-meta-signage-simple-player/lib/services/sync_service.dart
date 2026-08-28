@@ -315,11 +315,23 @@ class SyncService extends ChangeNotifier {
       return true;
     }
 
-    // Check video IDs
-    final existingIds = existing.videos.map((v) => v.id).toSet();
-    final updatedIds = updated.videos.map((v) => v.id).toSet();
-    if (!existingIds.containsAll(updatedIds) || !updatedIds.containsAll(existingIds)) {
+    // Compare the ORDERED sequence of video IDs, not just the set.
+    // The backend may reorder a playlist (sequence_order changed) with the
+    // same set of videos; without this, a reorder would be treated as
+    // "unchanged" and never propagate to the device.
+    final existingOrderedIds = existing.videos
+        .map((v) => v.videoId)
+        .toList(growable: false);
+    final updatedOrderedIds = updated.videos
+        .map((v) => v.videoId)
+        .toList(growable: false);
+    if (existingOrderedIds.length != updatedOrderedIds.length) {
       return true;
+    }
+    for (var i = 0; i < existingOrderedIds.length; i++) {
+      if (existingOrderedIds[i] != updatedOrderedIds[i]) {
+        return true;
+      }
     }
 
     // Check other fields

@@ -170,6 +170,10 @@ When a playlist is created:
 
 ### 3.5 Sync flow
 
+> ⚠️ **STALE / OUTDATED — superseded by recent changes.** This section predates the
+> reworked Playlists UX (the ⋮ **"Sync to Devices"** menu action). See the current flow
+> documented below, and issue `SYNC-1` in the tracked issues doc (`docs/video-order-issues.md`).
+
 Sync is initiated from the management UI but recorded and executed by backend services:
 
 ```text
@@ -186,6 +190,18 @@ There are two sync modes:
 - `incremental` - push only changes since the last successful sync
 
 The ETL worker also supports queued batch jobs for syncing multiple lists and/or multiple devices.
+
+#### 3.5.1 CURRENT flow (post-refactor) — ⋮ "Sync to Devices"
+
+> ✅ **Fixed (SYNC-1).** Section updated to the current, working behavior.
+
+1. User taps the three-dot menu on a playlist card → **"Sync to Devices"** → `_handlePlaylistAction('sync', playlist)` (signage_management_screen.dart).
+2. `_showSyncDialog(playlist)` opens an `AlertDialog` listing the provider's `onlineDevices`, each in a **functional** `CheckboxListTile` (default all selected; the user can check/uncheck which devices to target).
+3. Tapping **Sync** (disabled if nothing is selected) calls `signageProvider.syncVideoListToDevices(videoListId, selectedDeviceIds)` → `POST /api/v1/signage/etl/sync` with a `SyncRequest` (`video_list_id`, `target_devices` = the selected devices, `sync_mode=incremental`, `force_update=false`).
+4. **Backend** (`POST /etl/sync`): resolves the list's UUID → int DB id, then enqueues a **single batch job** via `get_batch_sync_manager().sync_list_to_devices(...)` covering **all** requested devices (not just the first). Returns `202 SyncResponse` (`sync_job_id`, `status=pending`, `target_device_count = len(target_devices)`).
+5. The ETL worker processes the job (retries + concurrency) and syncs the playlist to every target device, recording per-device `VideoListSyncHistory`.
+6. Provider stores result under `_syncResults[syncJobId]`, returns `true`; the dialog pops and a SnackBar shows "Sync started successfully (N devices)".
+
 
 ### 3.6 Playback control flow
 

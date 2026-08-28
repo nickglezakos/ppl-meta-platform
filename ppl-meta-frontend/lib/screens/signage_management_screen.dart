@@ -798,50 +798,68 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
   void _showSyncDialog(VideoList playlist) {
     final signageProvider = _getSignageProvider(listen: false);
     final onlineDevices = signageProvider.onlineDevices;
-    
+
+    // Track which devices the user actually selects (default all).
+    final selectedDeviceIds = onlineDevices.map((d) => d.id).toSet();
+
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Sync "${playlist.name}"'),
-        content: onlineDevices.isEmpty
-            ? const Text('No online devices available')
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Select devices to sync:'),
-                  const SizedBox(height: 16),
-                  ...onlineDevices.map((device) => CheckboxListTile(
-                    title: Text(device.name),
-                    value: true,
-                    onChanged: (value) {},
-                  )),
-                ],
-              ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final signageProvider = _getSignageProvider(listen: false);
-              final success = await signageProvider.syncToAllDevices(playlist.id);
-              if (mounted && dialogContext.mounted) {
-                Navigator.pop(dialogContext);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(success
-                          ? 'Sync started successfully'
-                          : 'Failed to start sync'),
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('Sync'),
-          ),
-        ],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Sync "${playlist.name}"'),
+          content: onlineDevices.isEmpty
+              ? const Text('No online devices available')
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Select devices to sync:'),
+                    const SizedBox(height: 16),
+                    ...onlineDevices.map((device) => CheckboxListTile(
+                      title: Text(device.name),
+                      value: selectedDeviceIds.contains(device.id),
+                      onChanged: (value) {
+                        setDialogState(() {
+                          if (value == true) {
+                            selectedDeviceIds.add(device.id);
+                          } else {
+                            selectedDeviceIds.remove(device.id);
+                          }
+                        });
+                      },
+                    )),
+                  ],
+                ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: selectedDeviceIds.isEmpty
+                  ? null
+                  : () async {
+                      final signageProvider = _getSignageProvider(listen: false);
+                      final success = await signageProvider.syncVideoListToDevices(
+                        videoListId: playlist.id,
+                        deviceIds: selectedDeviceIds.toList(),
+                      );
+                      if (mounted && dialogContext.mounted) {
+                        Navigator.pop(dialogContext);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(success
+                                  ? 'Sync started successfully (${selectedDeviceIds.length} device${selectedDeviceIds.length == 1 ? '' : 's'})'
+                                  : 'Failed to start sync'),
+                            ),
+                          );
+                        }
+                      }
+                    },
+              child: const Text('Sync'),
+            ),
+          ],
+        ),
       ),
     );
   }

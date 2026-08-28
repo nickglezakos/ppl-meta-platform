@@ -6,7 +6,7 @@ NewPassword234!
 
 curl -X POST 'http://localhost:8001/api/v1/users/login' \§
   -H 'Content-Type: application/x-www-form-urlencoded' \
-  -d 'username=fresh.user@example.com&password=NewPassword234!' 
+  -d 'username=fresh.user@example.com&password=Kodikos@23' 
 
 curl -X POST 'http://localhost:8001/api/v1/users/login' \
   -H 'Content-Type: application/x-www-form-urlencoded' \

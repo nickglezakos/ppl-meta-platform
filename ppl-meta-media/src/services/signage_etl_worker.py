@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
 from ..models.signage import SyncStatus, VideoList, SignageDevice
+from ..schemas.signage import SyncMode
 from .signage_service import SignageService, SignageSyncService
 
 logger = logging.getLogger(__name__)
@@ -253,13 +254,17 @@ class SignageETLWorker:
             # Get video list UUID
             video_list_uuid = video_list.uuid
 
+            # job.sync_mode is a string; convert to the SyncMode enum the
+            # service expects (it calls sync_mode.value internally).
+            sync_mode = SyncMode(job.sync_mode)
+
             # Sync to each device in parallel (with rate limiting)
             sync_tasks = []
             for device_id in job.device_ids:
                 task = service.sync_video_list_to_device(
                     video_list_uuid,
                     device_id,
-                    job.sync_mode,
+                    sync_mode,
                     job.user_id,
                     job.force_update,
                 )
@@ -277,11 +282,36 @@ class SignageETLWorker:
                 return_exceptions=True,
             )
 
-            # Analyze results
-            successful = sum(
-                1 for r in results if not isinstance(r, Exception)
-            )
+            # Analyze results.
+            # `sync_video_list_to_device` returns a VideoListSyncHistory and does
+            # NOT raise when the device push itself fails (it records a "failed"
+            # history row). So count a device as successful ONLY when the returned
+            # history is `completed` (or `partial` == some succeeded). An exception
+            # is also a failure.
+            successful = 0
+            for result in results:
+                if isinstance(result, Exception):
+                    continue
+                status = getattr(result, "sync_status", None)
+                if status == SyncStatus.COMPLETED.value or status == SyncStatus.PARTIAL.value:
+                    successful += 1
             failed = len(results) - successful
+
+            # Log any per-device failures (collect with device ids) so silent
+            # swallow in `gather(return_exceptions=True)` doesn't hide errors.
+            for device_id, result in zip(job.device_ids, results):
+                if isinstance(result, Exception):
+                    logger.error(
+                        f"Sync to device {device_id} failed for video list "
+                        f"{video_list.name}: {result}"
+                    )
+                else:
+                    status = getattr(result, "sync_status", None)
+                    if status == SyncStatus.FAILED.value:
+                        logger.error(
+                            f"Sync to device {device_id} FAILED for video list "
+                            f"{video_list.name} (history status=failed)"
+                        )
 
             return {
                 "total_devices": len(job.device_ids),
