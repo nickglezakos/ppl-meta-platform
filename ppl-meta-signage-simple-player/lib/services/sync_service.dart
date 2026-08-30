@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:logger/logger.dart';
 import 'package:signage_simple_player/api/signage_api_client.dart';
 import 'package:signage_simple_player/api/api_exceptions.dart';
+import 'package:signage_simple_player/config/app_config.dart';
 import 'package:signage_simple_player/database/playlist_database.dart';
 import 'package:signage_simple_player/models/video_list.dart';
 
@@ -61,6 +63,7 @@ class SyncService extends ChangeNotifier {
   SyncResult? _lastResult;
   DateTime? _lastSyncTime;
   bool _isSyncing = false;
+  Timer? _pollTimer;
 
   SyncService({
     required SignageApiClient apiClient,
@@ -374,6 +377,29 @@ class SyncService extends ChangeNotifier {
     } else {
       return '${duration.inDays}d ago';
     }
+  }
+
+  /// Start periodic pull-sync so the player fetches its assigned playlist over
+  /// VPN (outbound) without relying on an inbound push from the platform.
+  void startAutoPoll({Duration? interval}) {
+    stopAutoPoll();
+    _pollTimer = Timer.periodic(
+      interval ?? AppConfig.syncPollInterval,
+      (_) => syncPlaylists(),
+    );
+    _logger.i('Auto pull-sync started (${interval ?? AppConfig.syncPollInterval})');
+  }
+
+  /// Stop periodic pull-sync.
+  void stopAutoPoll() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  @override
+  void dispose() {
+    stopAutoPoll();
+    super.dispose();
   }
 
   /// Reset sync state

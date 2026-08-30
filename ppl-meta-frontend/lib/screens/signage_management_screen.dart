@@ -8,10 +8,8 @@ import 'package:go_router/go_router.dart';
 import '../providers/signage_provider.dart';
 import '../models/signage_models.dart';
 import '../widgets/signage/video_list_builder.dart';
-import '../widgets/signage/device_manager.dart';
 import '../widgets/signage/playback_controls.dart';
 import '../widgets/custom_app_bar.dart';
-import '../core/providers/auth_provider.dart';
 import '../core/theme/app_theme.dart';
 import '../presentation/widgets/common/ux_breakpoints.dart';
 import '../presentation/widgets/common/content_pane.dart';
@@ -48,7 +46,7 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     
     // Load initial data
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -91,7 +89,6 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
               tabs: const [
                 Tab(icon: Icon(Icons.playlist_play), text: 'Playlists'),
                 Tab(icon: Icon(Icons.devices), text: 'Devices'),
-                Tab(icon: Icon(Icons.play_circle), text: 'Control'),
               ],
             ),
           ),
@@ -101,7 +98,6 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
               children: [
                 _buildPlaylistsTab(),
                 _buildDevicesTab(),
-                _buildControlTab(),
               ],
             ),
           ),
@@ -575,181 +571,104 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
           );
         }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
+        // Resolve the selected device against fresh data so a removed device
+        // doesn't leave a stale selection in the right pane.
+        final selected = provider.selectedDevice;
+        SignageDevice? resolvedSelected;
+        for (final d in provider.devices) {
+          if (d.id == selected?.id) {
+            resolvedSelected = d;
+            break;
+          }
+        }
+
+        final sidebar = ListView.builder(
+          padding: const EdgeInsets.only(bottom: 8),
           itemCount: provider.devices.length,
           itemBuilder: (context, index) {
             final device = provider.devices[index];
-            final status = provider.deviceStatuses[device.id];
-            return _buildDeviceCard(device, status);
+            return _buildDeviceListableTile(
+              device,
+              isSelected: resolvedSelected?.id == device.id,
+            );
           },
         );
-      },
-    );
-  }
 
-  Widget _buildDeviceCard(SignageDevice device, PlaybackStatus? status) {
-    final isOnline = device.isOnline;
-    
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isOnline ? Colors.green : Colors.red,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
+        final detailPane = resolvedSelected == null
+            ? ContentPane(
+                title: 'Devices',
+                subtitle: 'Select a device to view its controls',
+                child: Center(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
+                      Icon(Icons.touch_app, size: 48, color: Colors.grey[400]),
+                      const SizedBox(height: 8),
                       Text(
-                        device.name,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        '${device.host}:${device.port}',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                        'Select a device from the list to open playback controls',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 13),
                       ),
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.more_vert),
-                  onPressed: () => _showDeviceOptions(device),
-                ),
-              ],
-            ),
-            
-            if (status != null) ...[
-              const Divider(height: 24),
-              _buildDeviceStatus(status),
-            ],
+              )
+            : _buildDeviceDetailPane(resolvedSelected);
 
-            const SizedBox(height: 16),
-            // Simplified actions - Playback controls on Control tab
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildDeviceAction(
-                  icon: Icons.sync,
-                  label: 'Sync',
-                  onPressed: isOnline ? () => _syncToDevice(device) : null,
-                ),
-                _buildDeviceAction(
-                  icon: Icons.info_outline,
-                  label: 'Details',
-                  onPressed: () => _showDeviceOptions(device),
-                ),
-                _buildDeviceAction(
-                  icon: Icons.settings_remote,
-                  label: 'Control',
-                  onPressed: isOnline ? () => _goToControl(device) : null,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDeviceStatus(PlaybackStatus status) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (status.currentVideo != null) ...[
-          Text(
-            'Now Playing:',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(status.currentVideo!.title),
-          LinearProgressIndicator(
-            value: status.currentVideo!.progressPercent / 100,
-          ),
-        ],
-        if (status.playlist != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            'Playlist: ${status.playlist!.name}',
-            style: TextStyle(color: Colors.grey[600], fontSize: 12),
-          ),
-          Text(
-            'Video ${status.playlist!.currentIndex + 1} of ${status.playlist!.totalVideos}',
-            style: TextStyle(color: Colors.grey[600], fontSize: 12),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildDeviceAction({
-    required IconData icon,
-    required String label,
-    VoidCallback? onPressed,
-  }) {
-    final isEnabled = onPressed != null;
-    return Column(
-      children: [
-        IconButton(
-          icon: Icon(icon),
-          onPressed: onPressed,
-          color: isEnabled ? Theme.of(context).colorScheme.primary : null,
-          disabledColor: Colors.grey[400],
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: isEnabled ? Theme.of(context).colorScheme.onSurface : Colors.grey[600],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ==================== Control Tab ====================
-
-  Widget _buildControlTab() {
-    return provider.Consumer<SignageProvider>(
-      builder: (context, provider, child) {
-        if (provider.selectedDevice == null) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.touch_app, size: 64, color: Colors.grey[400]),
-                const SizedBox(height: 16),
-                Text(
-                  'Select a device',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                const Text('Go to Devices tab and select a device to control'),
-              ],
-            ),
-          );
-        }
-
-        return PlaybackControls(device: provider.selectedDevice!);
+        return isWide(context)
+            ? Row(
+                children: [
+                  SizedBox(width: kMasterPaneWidth, child: sidebar),
+                  const VerticalDivider(width: 1),
+                  const SizedBox(width: 4),
+                  Expanded(child: detailPane),
+                ],
+              )
+            : (resolvedSelected == null ? sidebar : detailPane);
       },
+    );
+  }
+
+  /// Left-sidebar listable item for a device: refresh icon on its left, then
+  /// the name and ip — and nothing else.
+  Widget _buildDeviceListableTile(SignageDevice device,
+      {required bool isSelected}) {
+    final provider = _getSignageProvider(listen: false);
+    return ListTile(
+      selected: isSelected,
+      leading: IconButton(
+        icon: const Icon(Icons.refresh),
+        tooltip: 'Refresh devices',
+        onPressed: () => provider.loadDevices(),
+      ),
+      title: Text(device.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        '${device.host}:${device.port}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      onTap: () => provider.selectDevice(device),
+    );
+  }
+
+  /// Right content pane for the selected device — renders whatever the Control
+  /// tab previously rendered (playback controls), with a device header bar.
+  Widget _buildDeviceDetailPane(SignageDevice device) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ContentBar(
+          title: device.name,
+          subtitle: '${device.host}:${device.port}',
+          showModePill: false,
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: PlaybackControls(device: device),
+          ),
+        ),
+      ],
     );
   }
 
@@ -898,59 +817,6 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
         ],
       ),
     );
-  }
-
-  void _showDeviceOptions(SignageDevice device) {
-    _getSignageProvider(listen: false).selectDevice(device);
-    _tabController.animateTo(2); // Switch to Control tab
-  }
-
-  Future<void> _syncToDevice(SignageDevice device) async {
-    // Show playlist selection dialog
-    final provider = _getSignageProvider(listen: false);
-    
-    if (provider.videoLists.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No playlists available to sync')),
-      );
-      return;
-    }
-
-    final playlist = await showDialog<VideoList>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Select Playlist to Sync'),
-        children: provider.videoLists.map((list) {
-          return SimpleDialogOption(
-            child: Text(list.name),
-            onPressed: () => Navigator.pop(context, list),
-          );
-        }).toList(),
-      ),
-    );
-
-    if (playlist != null) {
-      final success = await provider.syncVideoListToDevices(
-        videoListId: playlist.id,
-        deviceIds: [device.id],
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(success
-                ? 'Sync started successfully'
-                : 'Failed to start sync'),
-          ),
-        );
-      }
-    }
-  }
-
-  void _goToControl(SignageDevice device) {
-    // Select this device and navigate to Control tab
-    _getSignageProvider(listen: false).selectDevice(device);
-    _tabController.animateTo(2); // Switch to Control tab (index 2)
   }
 
   // ==================== Utilities ====================

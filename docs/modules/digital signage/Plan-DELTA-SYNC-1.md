@@ -120,13 +120,22 @@ discovery endpoint `10.95.78.104:8009` (playlist 14 "Males only", 3 videos, owne
 ### ✅ Verified live
 
 - **Criterion 6 — manifest-down fallback:** player's `GET /10.95.78.104:8009/api/v1/assets` → **404**
-  (it is an older build without Workstream A). The backend logged
-  *"Could not fetch device assets manifest ... Falling back to full push."* and the sync **succeeded**:
-  history `id=324 status=completed videos_synced=3 videos_failed=0 videos_skipped=0`.
-  ⇒ No error, full-push fallback works against a real device. 
-- **Criterion 7 + history:** `/api/v1/health` healthy (media service on `--reload`), `py_compile` clean,
-  and the new `videos_skipped` column persisted (0 here, expected with no manifest) in
-  `video_list_sync_history`. `signage_devices.current_video_list_id` updated to 14 after sync.
+  (old build). The backend logged *"Could not fetch device assets manifest ... Falling back to full
+  push."* and the sync **succeeded**: history `id=324 status=completed videos_synced=3` ⇒ fallback works.
+- **Criterion 7 + history:** `/api/v1/health` healthy (media service `--reload`), `py_compile` clean,
+  `videos_skipped` column persisted (0 with no manifest). `signage_devices.current_video_list_id` updated.
+- **New live player + `/assets` gap fixed:** a fresh live player at `192.168.1.81:8009` responded
+  `/health → healthy` and exposed `/api/v1/assets`, but that endpoint **errorred** because
+  `playlists.map(...)` wasn't `.toList()`-ed (`jsonEncode` error). **Fixed in the player** (Workstream A),
+  verified `flutter analyze` clean — **must be built into the APK you deploy.** The backend is hardened to
+  treat a manifest without a `playlists` key as unavailable → full-push fallback.
+
+### ⚠️ SYNC-3 (environment/network) — blocks live sync to the .81 player
+The media process currently cannot reach `192.168.1.81:8009` (`[Errno 65] No route to host`) even though
+the shell/curl/ping can — a macOS multi-interface routing quirk (en0 + Tailscale). Discovery doesn't list
+the player. Sync queues 202 but history = `failed`. See `docs/video-order-issues.md` → `SYNC-3` for
+resolution options (media service network context, Discovery registration, or Tailscale routing). **Not a
+code defect** in DELTA-SYNC-1.
 
 ### ✅ RESOLVED — frontend↔backend device identifier mismatch (pre-existing, BLOCKED UI sync)
 
@@ -184,6 +193,35 @@ The delta logic (B/D) is code-verified; this is runtime confirmation against a n
 7. **Manifest endpoint down** → sync still succeeds via full-push fallback (no error).
 8. Run `flutter analyze` on the player and `py_compile` on the backend; run the signage service
    tests (`tests/test_signage_*.py`) if the env allows.
+
+---
+
+## ⚠️ BUG FIX — empty `videos[]` no-op wiped device content (FIXED)
+
+**Symptom:** device shows as "synced" in the frontend but the player has no playlist and nothing plays.
+
+**Root cause:** Workstream D's "unchanged → send an empty `videos[]`" no-op (`include_videos=False`)
+was sent to the player's `POST /api/v1/sync` handler. That handler always *replaced* the stored
+playlist via `PlaylistDatabase.upsertPlaylist`, which **deletes all existing `playlist_videos` rows**
+and re-inserts only the incoming list. An empty `videos[]` therefore **wiped the device's playlist**
+on the idempotent re-sync, then `loadPlaylist` loaded an empty list → nothing to play. The backend
+saw success (`synced=0, skipped=N`) so history + frontend said "synced", but the device had no content.
+
+**Fix (both sides, defense-in-depth, restoring pre-commit behaviour):**
+- **Backend (root fix)** — `sync_video_list_to_device` no longer sends an empty `videos[]` as a "no-op
+  confirmation". Even when the device manifest shows identical content+order, the ETL now delivers the
+  **full ordered list** (exactly as it did before the delta-sync commit), while still recording the
+  accurate history (`videos_synced=0, videos_skipped=N`). This is what actually makes the device play
+  and also self-heals devices whose local DB was already wiped by a prior bad empty-push. An explicit
+  `"videos_noop": (not include_videos)` marker remains on the payload so the player can unambiguously
+  tell "unchanged" apart from "emptied".
+- **Player (defense-in-depth)** — `_handleSync` (http_server.dart) treats a no-op payload as "keep
+  existing device content": it does **not** upsert/wipe, just (re)loads the stored playlist and returns
+  success. It honors the explicit `videos_noop` marker, and as a defensive fallback for older backends
+  (that send an empty list without the marker) it also refuses to wipe a non-empty existing playlist.
+
+Because the backend now always delivers the full list, true playlist *clearing* still propagates when
+the backend genuinely has 0 videos, and reorders still deliver the full ordered list.
 
 ---
 

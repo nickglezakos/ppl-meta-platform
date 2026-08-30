@@ -4,6 +4,7 @@ import 'package:logger/logger.dart';
 import '../models/device_info_model.dart';
 import '../config/app_config.dart';
 import '../utils/device_info_helper.dart';
+import 'authority_api_client.dart';
 import 'config_service.dart';
 
 /// Service for discovering and registering with ppl-meta-discovery.
@@ -27,6 +28,9 @@ class SignageDiscoveryService {
 
   /// Cached VPN node IP for direct discovery (Phase 5)
   String? _vpnNodeIp;
+
+  /// Cached player's own Tailscale IP resolved from the Authority.
+  String? _ownTailscaleIp;
 
   /// Most recent VPN-direct topology fetched from ppl-meta-discovery (Phase 5).
   Map<String, dynamic>? _lastTopology;
@@ -159,6 +163,48 @@ class SignageDiscoveryService {
     }
   }
 
+  /// Resolve this player's own Tailscale (VPN) IP from the Authority.
+  ///
+  /// On Android the VPN tun interface is not visible to NetworkInterface.list(),
+  /// so DeviceInfoHelper.getLocalIpAddress() can't find the 100.x address.
+  /// Instead we ask the Authority for the matrix group's nodes and match our own
+  /// installation_uuid (populated from the tag:install-* ACL tag).
+  Future<String?> _resolveOwnTailscaleIp() async {
+    if (_ownTailscaleIp != null && _ownTailscaleIp!.isNotEmpty) {
+      return _ownTailscaleIp;
+    }
+
+    final matrixGroupId = _configService.vpnMatrixGroupId;
+    final installationUuid = _configService.authorityInstallationUuid;
+    if (matrixGroupId == null ||
+        matrixGroupId.isEmpty ||
+        installationUuid.isEmpty) {
+      return null;
+    }
+
+    try {
+      final authority = AuthorityApiClient(
+        baseUrl: _configService.authorityServiceUrl,
+      );
+      final nodes = await authority.listMatrixGroupNodes(matrixGroupId);
+      for (final node in nodes) {
+        if (node.installationUuid == installationUuid &&
+            node.tailscaleIp != null &&
+            node.tailscaleIp!.isNotEmpty) {
+          _ownTailscaleIp = node.tailscaleIp;
+          _logger.i(
+              'Resolved own Tailscale IP from Authority: ${node.tailscaleIp}');
+          return _ownTailscaleIp;
+        }
+      }
+      _logger.w('Own node not found in Authority matrix group $matrixGroupId '
+          '(installation_uuid=$installationUuid)');
+    } catch (e) {
+      _logger.w('Failed to resolve own Tailscale IP from Authority: $e');
+    }
+    return null;
+  }
+
   /// Register service with ppl-meta-discovery
   Future<bool> register() async {
     if (_deviceInfo == null) {
@@ -173,9 +219,15 @@ class SignageDiscoveryService {
       final localIp = await DeviceInfoHelper.getLocalIpAddress();
       // Include the Tailscale IP in registration metadata so ppl-meta-discovery
       // marks the player as VPN-reachable and returns it in ?vpn=true topology.
+      // Prefer the Authority (works on Android where the VPN tun is invisible to
+      // NetworkInterface.list()); fall back to a locally-detected 100.x address
+      // for desktop/Linux players.
+      final authorityTailscaleIp = await _resolveOwnTailscaleIp();
       final metadata = _deviceInfo!.toJson();
-      if (localIp.startsWith('100.')) {
-        metadata['tailscale_ip'] = localIp;
+      final tailscaleIp = authorityTailscaleIp ??
+          (localIp.startsWith('100.') ? localIp : null);
+      if (tailscaleIp != null && tailscaleIp.isNotEmpty) {
+        metadata['tailscale_ip'] = tailscaleIp;
       }
 
 
@@ -275,9 +327,12 @@ class SignageDiscoveryService {
     }
     try {
       final localIp = await DeviceInfoHelper.getLocalIpAddress();
+      final authorityTailscaleIp = await _resolveOwnTailscaleIp();
       final metadata = _deviceInfo!.toJson();
-      if (localIp.startsWith('100.')) {
-        metadata['tailscale_ip'] = localIp;
+      final tailscaleIp = authorityTailscaleIp ??
+          (localIp.startsWith('100.') ? localIp : null);
+      if (tailscaleIp != null && tailscaleIp.isNotEmpty) {
+        metadata['tailscale_ip'] = tailscaleIp;
       }
 
       final deviceData = {

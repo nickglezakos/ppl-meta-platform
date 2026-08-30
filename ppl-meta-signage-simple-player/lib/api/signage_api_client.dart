@@ -105,7 +105,7 @@ class SignageApiClient {
       _logger.i('Syncing playlist for device: $deviceId');
 
       final response = await _dio.post(
-        '/api/v1/signage/etl/sync',
+        '/api/v1/signage/devices/pull',
         data: {
           'device_id': deviceId,
           'last_sync_version': lastSyncVersion,

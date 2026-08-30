@@ -17,6 +17,10 @@ github push
 
 ./scripts/git-push-release.sh
 
+rotate headescale key:
+`headscale -c ~/.headscale/config.yaml apikeys create`
+
+
 
 Authority
 https://authority.eyenet-vision.com/admin

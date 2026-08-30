@@ -485,6 +485,54 @@ class SignageHttpServer {
         }
       }
 
+      // Delta-sync no-op handling.
+      //
+      // The ETL sends an empty videos[] as a "content unchanged" confirmation
+      // when this device's manifest already shows the same videos in the same
+      // order (backends include "videos_noop": true to make this explicit).
+      // A naive replace here would WIPE our stored playlist (upsertPlaylist
+      // deletes existing playlist_videos rows) and leave nothing to play - the
+      // classic "device shows synced but doesn't play" failure. So on a no-op
+      // we MUST keep the existing content instead of overwriting with empty.
+      //
+      // The explicit marker is unambiguous. As a defensive fallback (older
+      // backends that send empty videos[] without the marker), we also treat an
+      // empty incoming list as a no-op when we already hold a non-empty
+      // playlist for this id, rather than risk blanking the screen.
+      final isExplicitNoop = videoListData['videos_noop'] == true;
+      final hasIncomingVideos = videoCount > 0;
+
+      if (!hasIncomingVideos || isExplicitNoop) {
+        final existing = await _database.getPlaylist(playlistId);
+        if (isExplicitNoop || (existing != null && existing.videos.isNotEmpty)) {
+          _logger.i('🔄 Delta no-op: playlist `$playlistName` unchanged '
+              '(${existing?.videos.length ?? 0} videos kept on device)');
+
+          // Keep the stored content; just (re)load it so it plays.
+          if (existing != null) {
+            final loaded = await _playerEngine.loadPlaylist(playlistId);
+            if (loaded) {
+              _logger.i('✅ Kept existing playlist and loaded into player - ready to play!');
+            } else {
+              _logger.w('⚠️  Failed to (re)load existing playlist into player');
+            }
+          }
+
+          return Response.ok(
+            jsonEncode({
+              'status': 'success',
+              'message': 'Playlist unchanged - kept existing device content',
+              'playlist_id': playlistId,
+              'playlist_name': playlistName,
+              'videos_count': existing?.videos.length ?? 0,
+              'noop': true,
+              'timestamp': DateTime.now().toIso8601String(),
+            }),
+            headers: {'Content-Type': 'application/json'},
+          );
+        }
+      }
+
       // Convert the received data to VideoList model and save to database
       try {
         final videoItems = (videos ?? []).map((video) {
@@ -574,19 +622,21 @@ class SignageHttpServer {
       final playlists = await _database.getAllPlaylists();
       final result = <String, dynamic>{
         'device_id': _deviceId,
-        'playlists': playlists.map((pl) => {
-              'playlist_id': pl.sourceListId.isNotEmpty
-                  ? pl.sourceListId
-                  : pl.id,
-              'name': pl.name,
-              'sync_version': pl.syncVersion,
-              'videos': pl.videos
-                  .map((v) => {
-                        'video_id': v.videoId,
-                        'sequence_order': v.sequenceOrder,
-                      })
-                  .toList(),
-            }),
+        'playlists': playlists
+            .map((pl) => {
+                  'playlist_id': pl.sourceListId.isNotEmpty
+                      ? pl.sourceListId
+                      : pl.id,
+                  'name': pl.name,
+                  'sync_version': pl.syncVersion,
+                  'videos': pl.videos
+                      .map((v) => {
+                            'video_id': v.videoId,
+                            'sequence_order': v.sequenceOrder,
+                          })
+                      .toList(),
+                })
+            .toList(),
       };
 
       return Response.ok(

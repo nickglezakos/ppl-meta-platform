@@ -11,6 +11,7 @@ from uuid import UUID
 import httpx
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ...auth import AuthUser, get_current_user
@@ -745,6 +746,34 @@ async def device_heartbeat(
 # ============================================================================
 # Batch Sync Endpoints
 # ============================================================================
+
+
+class DevicePullRequest(BaseModel):
+    device_id: str
+    last_sync_version: Optional[int] = None
+
+
+@router.post(
+    "/devices/pull",
+    summary="Pull assigned playlist (device-initiated over VPN)",
+)
+async def pull_device_playlist(
+    data: DevicePullRequest,
+    db: Session = Depends(get_db),
+):
+    """Return the playlist assigned to a device.
+
+    Android players dial out over VPN and receive their assigned playlist here,
+    avoiding the Android VPN limitation where inbound connections to the
+    player's own HTTP port are not delivered.
+    """
+    service = SignageService(db)
+    video_list = service.get_device_assigned_video_list(data.device_id)
+    if not video_list:
+        return {"playlist": None}
+
+    sync_service = SignageSyncService(db)
+    return {"playlist": sync_service._prepare_video_list_pull_data(video_list)}
 
 
 @router.post(

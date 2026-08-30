@@ -34,6 +34,20 @@ Scope: `ppl-meta-media` (backend) and `ppl-meta-frontend` (Flutter).
      3. ETL worker passed a `str` as `SyncMode` (service calls `sync_mode.value`) → silent "0/1 synced".
      4. Worker counted a device as synced even when the push failed (history `failed`) — now counts only `completed`/`partial` and logs per-device errors.
    - **Noted:** the live device's `POST /api/v1/sync` was intermittently timing out (~30s) this session — device/network-level, not code.
+   - **Also fixed (player, Workstream A gap):** `GET /api/v1/assets` returned an error because `playlists.map(...)` (a lazy iterable) wasn't `jsonDecode`-able. Added `.toList()` on the outer map. Verified `flutter analyze` clean. **This change must be built into the APK you deploy.**
+   - **Backend hardened:** `_get_device_assets` now treats a manifest response without a `playlists` key as "unavailable" → falls back to full push (so a player with the old/broken manifest never yields an incorrect delta).
+
+9. **`SYNC-3` — Sync to the live player fails with `[Errno 65] No route to host` (environment/network routing).**
+   - Symptom: `POST /etl/sync` queues (202) but history = `failed`; log shows the media backend cannot reach the player.
+   - Findings:
+     - A live player runs at `192.168.1.81:8009` (`/health` → `healthy`, version 1.0.0). The interactive shell's `curl` and `ping` reach it.
+     - The **media service process** (local uvicorn, PID running `/opt/anaconda3` python) gets `[Errno 65] No route to host` for `192.168.1.81`, while it reaches `127.0.0.1` and `192.168.1.85` (its own host) fine.
+     - The same anaconda python with `source 192.168.1.85` still fails → this is a **macOS multi-interface routing quirk** (host has `en0` 192.168.1.85 + Tailscale `100.64.0.22`); the LAN host `.81` isn't routable from the media process.
+     - Discovery does **not** currently list the signage player (only 4 backend services), and the DB `ip_address` was stale (`192.168.1.66`) — updated manually to `192.168.1.81`.
+   - **Not a code defect in DELTA-SYNC-1.** Options to resolve (environment):
+     1. Run the media service on the same network context as the player (or fix the macOS route so the media process reaches `192.168.1.81`).
+     2. Ensure the player registers in Discovery with a routable `host`/`port` (it currently isn't listed).
+     3. If using Tailscale, use the player's Tailscale IP and make the media process route it.
 
 
 ---

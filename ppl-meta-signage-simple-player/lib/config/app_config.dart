@@ -10,6 +10,7 @@ class AppConfig {
   static const Duration heartbeatInterval = Duration(seconds: 30);
   static const Duration registrationRetryDelay = Duration(seconds: 10);
   static const Duration syncTimeout = Duration(minutes: 5);
+  static const Duration syncPollInterval = Duration(seconds: 30);
 
   // Network Timeouts (discovery service) — single source of truth for the
   // registration / heartbeat / deregister / topology requests.

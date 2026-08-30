@@ -7,6 +7,7 @@ Keys are scoped with ACL tags matching the installation's Matrix group.
 All endpoints require authority admin authentication (session-based).
 """
 
+import base64
 import hashlib
 import hmac
 import json
@@ -241,6 +242,38 @@ def _node_tags(node: dict) -> list[str]:
     return raw_tags
 
 
+def _installation_uuid_to_tag(installation_uuid: str) -> str:
+    """Encode an installation UUID as a Headscale-safe ACL tag.
+
+    Installation UUIDs are ``{owner_email}-{index}`` (e.g.
+    ``nick.glezakos@gmail.com-0``) and contain characters Headscale tags do
+    not allow. base64url encodes it into a reversible, tag-safe token.
+    """
+    encoded = (
+        base64.urlsafe_b64encode(str(installation_uuid).encode("utf-8"))
+        .decode("ascii")
+        .rstrip("=")
+    )
+    return f"tag:install-{encoded}"
+
+
+def _installation_uuid_from_tags(tags: list[str]) -> str:
+    """Decode the installation UUID from a node's ACL tags.
+
+    Reverse of :func:`_installation_uuid_to_tag`. Returns "" when the node has
+    no ``tag:install-*`` tag (e.g. legacy enrollments).
+    """
+    for tag in tags or []:
+        if tag.startswith("tag:install-"):
+            payload = tag[len("tag:install-"):]
+            payload += "=" * (-len(payload) % 4)
+            try:
+                return base64.urlsafe_b64decode(payload.encode("ascii")).decode("utf-8")
+            except Exception:
+                return payload
+    return ""
+
+
 def _find_primary_node_ip(matrix_group_id: str) -> str | None:
     """Return the Tailscale IP of the primary (node) in a matrix group, if any."""
     if not matrix_group_id:
@@ -338,9 +371,7 @@ def _fetch_all_nodes() -> VpnNodeListResponse:
         nodes.append(VpnNodeInfo(
             node_id=node_id,
             hostname=hostname,
-            installation_uuid=str(
-                (node.get("pre_auth_key") or {}).get("user", {}).get("name", "")
-            ).replace("matrix-", ""),
+            installation_uuid=_installation_uuid_from_tags(raw_tags),
             tailscale_ip=(
                 (node.get("ip_addresses") or [None])[0]
                 if node.get("ip_addresses") else None
@@ -425,6 +456,13 @@ async def enroll_installation(payload: EnrollInstallationRequest):
     if type_tag not in tags:
         tags.append(type_tag)
 
+    # Per-installation identity tag so the platform can map a node back to
+    # its installation (and hence its VPN IP) via /nodes.
+    if payload.installation_uuid:
+        install_tag = _installation_uuid_to_tag(payload.installation_uuid)
+        if install_tag not in tags:
+            tags.append(install_tag)
+
     # Ensure headscale user namespace exists
     try:
         _ensure_user(headscale_user)
@@ -500,16 +538,17 @@ async def list_matrix_group_nodes(matrix_id: str, _request: Request):
 
     nodes = []
     for node in nodes_data:
+        node_tags = _node_tags(node)
         nodes.append(VpnNodeInfo(
             node_id=str(node.get("id", node.get("node_key", ""))),
             hostname=str(node.get("name", node.get("given_name", ""))),
-            installation_uuid="",
+            installation_uuid=_installation_uuid_from_tags(node_tags),
             tailscale_ip=(
                 (node.get("ip_addresses") or [None])[0] if node.get("ip_addresses") else None
             ),
             online=node.get("online", False),
             last_seen=str(node.get("last_seen", "")),
-            tags=_node_tags(node),
+            tags=node_tags,
         ))
 
     return VpnNodeListResponse(nodes=nodes)

@@ -1031,6 +1031,12 @@ async def control_device_playback(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.post("/signage/devices/pull")
+async def pull_device_playlist(request: Request):
+    """Proxy device-initiated playlist pull to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.get("/signage/sync-history")
 async def get_sync_history(request: Request):
     """Proxy get sync history to Media service."""

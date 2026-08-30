@@ -276,6 +276,7 @@ class _InitializationScreenState extends State<InitializationScreen> {
         database: _database!,
         logger: logger,
       );
+      _syncService!.startAutoPoll();
       
       await Future.delayed(const Duration(milliseconds: 300));
       

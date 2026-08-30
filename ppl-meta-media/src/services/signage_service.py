@@ -4,6 +4,8 @@ Signage Simple Player Service
 Business logic for video list management, synchronization, and playback control.
 """
 
+import asyncio
+import json
 import logging
 import os
 import uuid
@@ -41,6 +43,91 @@ def _discovery_auth_headers() -> dict:
         "Authorization": f"Bearer {os.getenv('INTERNAL_SERVICE_TOKEN', 'ppl-meta-internal-service-secret-key-change-in-production')}",
         "X-Service-Name": "ppl-meta-media",
     }
+
+
+def _endpoint_candidates(
+    discovery_info: Optional[dict],
+    fallback_host: Optional[str],
+    fallback_port: Optional[int],
+) -> list[tuple[str, int, str]]:
+    """Return device endpoint candidates in VPN-first order.
+
+    The Headscale/Tailscale mesh IP (``tailscale_ip``) is tried first, with the
+    local-network IP as the fallback. This keeps devices reachable over the
+    self-hosted VPN whenever possible while still working on the LAN when the
+    mesh path is unavailable.
+    """
+    candidates: list[tuple[str, int, str]] = []
+    seen: set[tuple[str, int]] = set()
+
+    def add(host: Optional[str], port: Optional[int], label: str) -> None:
+        if not host:
+            return
+        try:
+            port_int = int(port) if port is not None else 8009
+        except (TypeError, ValueError):
+            port_int = 8009
+        key = (host, port_int)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append((host, port_int, label))
+
+    if discovery_info:
+        vpn_port = discovery_info.get("tailscale_port") or discovery_info.get("port")
+        add(discovery_info.get("tailscale_ip"), vpn_port, "vpn")
+        add(discovery_info.get("host"), discovery_info.get("port"), "lan")
+    else:
+        add(fallback_host, fallback_port or 8009, "lan")
+
+    return candidates
+
+
+async def _request_via_curl(
+    method: str,
+    url: str,
+    *,
+    json_body: Optional[dict] = None,
+    timeout: float = 30.0,
+) -> str:
+    """Perform an HTTP request via Apple's /usr/bin/curl; return the body text.
+
+    Workaround for macOS hosts where a network filter blocks third-party
+    processes (Python/httpx) from reaching LAN peers, while Apple-signed curl is
+    allowed through.
+    """
+    cmd = ["/usr/bin/curl", "-sS", "-m", str(int(timeout))]
+    if json_body is not None:
+        cmd += [
+            "-X",
+            method,
+            "-H",
+            "Content-Type: application/json",
+            "--data-binary",
+            json.dumps(json_body),
+        ]
+    else:
+        cmd += ["-X", method]
+    cmd.append(url)
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout + 10)
+    except asyncio.TimeoutError:
+        proc.kill()
+        raise RuntimeError(f"curl timed out for {url}")
+
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"curl failed ({proc.returncode}) for {url}: "
+            f"{err.decode(errors='replace')[:300]}"
+        )
+    return out.decode(errors="replace")
+
 
 
 class SignageService:
@@ -614,6 +701,59 @@ class SignageService:
             .first()
         )
 
+    def resolve_device(self, identifier: str) -> Optional[SignageDevice]:
+        """Resolve a device by UUID, device_name, or `signage-simple-{id}` suffix.
+
+        The Android player identifies itself by its `deviceId` (e.g.
+        `android-TKQ1.221114.001`), while the backend stores the discovery
+        service UUID in `device_id` and the player's discovery name in
+        `device_name` (`signage-simple-android-TKQ1.221114.001`). This resolves
+        all three forms.
+        """
+        try:
+            device_uuid = UUID(str(identifier))
+        except (ValueError, TypeError):
+            device_uuid = None
+
+        if device_uuid:
+            device = self.get_device_by_id(device_uuid)
+            if device:
+                return device
+
+        for candidate in (identifier, f"signage-simple-{identifier}"):
+            device = (
+                self.db.query(SignageDevice)
+                .filter(SignageDevice.device_name == candidate)
+                .first()
+            )
+            if device:
+                return device
+
+        return (
+            self.db.query(SignageDevice)
+            .filter(SignageDevice.device_name.endswith(str(identifier)))
+            .first()
+        )
+
+    def get_device_assigned_video_list(self, identifier: str) -> Optional[VideoList]:
+        """Return the video list assigned to a device, with items loaded.
+
+        The device's assigned list is its `current_video_list_id` (set when the
+        platform assigns/syncs a list to it).
+        """
+        device = self.resolve_device(identifier)
+        if not device or not device.current_video_list_id:
+            return None
+        return (
+            self.db.query(VideoList)
+            .filter(VideoList.id == device.current_video_list_id)
+            .options(
+                joinedload(VideoList.video_items).joinedload(VideoListItem.media),
+                joinedload(VideoList.video_items).joinedload(VideoListItem.collection),
+            )
+            .first()
+        )
+
     def list_devices(
         self,
         page: int = 1,
@@ -928,11 +1068,14 @@ class SignageSyncService:
             same_order = existing_ids is not None and existing_ordered == playlist_ordered_ids
 
             if same_content and same_order:
-                # Device already has every video in the same order: nothing new
-                # to deliver. Send an empty videos[] as a no-op confirmation.
-                video_list_data = self._prepare_video_list_data(
-                    video_list, include_videos=False
-                )
+                # Device already has every video in the same order. Deliver the
+                # full (ordered) list anyway. This restores the pre-delta-sync
+                # behaviour where the ETL always pushed the full manifest, and
+                # is safe: the player's `/api/v1/sync` handler replaces content
+                # with what it receives, so an empty videos[] here would WIPE a
+                # non-empty playlist and leave the device with nothing to play
+                # ("frontend says synced but the player stays blank").
+                video_list_data = self._prepare_video_list_data(video_list)
                 videos_synced = 0
                 videos_skipped = skipped_count
             else:
@@ -956,7 +1099,14 @@ class SignageSyncService:
                 f"forced={force_update}"
             )
 
-            # Send to device
+            # Record the assignment BEFORE attempting the push so Android
+            # players can pull the playlist over VPN even when the push fails
+            # (Android's VPN cannot accept inbound connections to the player's
+            # own HTTP port).
+            device.current_video_list_id = video_list.id
+            self.db.commit()
+
+            # Send to device (best-effort push; the pull model covers failures).
             success = await self._send_to_device(
                 device, video_list_data, sync_mode, force_update
             )
@@ -970,10 +1120,6 @@ class SignageSyncService:
                     videos_failed=0,
                     videos_skipped=videos_skipped,
                 )
-
-                # Update device's current video list
-                device.current_video_list_id = video_list.id
-                self.db.commit()
 
                 logger.info(
                     f"Successfully synced video list '{video_list.name}' to device '{device.device_name}' "
@@ -1005,7 +1151,10 @@ class SignageSyncService:
             video_list: VideoList object with loaded items
             include_videos: When False, emit an empty videos[] (used when the
                 device already has all videos in the correct order and only the
-                playlist metadata needs to be (re)confirmed).
+                playlist metadata needs to be (re)confirmed). In this case an
+                explicit ``videos_noop: true`` marker is added so the player can
+                unambiguously keep its existing content instead of interpreting
+                the empty list as "the playlist was emptied".
 
         Returns:
             Dictionary with video list data
@@ -1032,6 +1181,11 @@ class SignageSyncService:
             "description": video_list.description,
             "loop_mode": video_list.loop_mode,
             "transition_duration": video_list.transition_duration,
+            # Explicit marker so the player's /api/v1/sync handler knows that an
+            # empty videos[] means "content unchanged - keep what you have" and
+            # NOT "the playlist has been emptied". Without this the player would
+            # overwrite (wipe) its stored playlist on the idempotent re-sync.
+            "videos_noop": not include_videos,
             "videos": [
                 {
                     "id": str(item.uuid),
@@ -1047,6 +1201,52 @@ class SignageSyncService:
             ] if include_videos else [],
         }
 
+    def _prepare_video_list_pull_data(self, video_list: VideoList) -> dict:
+        """Serialize a video list in the shape the player's VideoList.fromJson expects.
+
+        Used by the device pull endpoint (Android players dial out over VPN and
+        receive their assigned playlist, instead of being pushed to).
+        """
+        media_service_url = "http://localhost:8000"  # Default fallback
+        try:
+            import httpx
+            with httpx.Client(timeout=2.0) as client:
+                response = client.get(
+                    "http://localhost:8006/api/v1/services",
+                    headers=_discovery_auth_headers(),
+                )
+                if response.status_code == 200:
+                    services = response.json().get("services", [])
+                    for service in services:
+                        if service.get("service_type") == "backend" and "media" in service.get("name", "").lower():
+                            media_service_url = f"http://{service['host']}:{service['port']}"
+                            break
+        except Exception as e:
+            logger.warning(f"Could not query discovery for media service, using default: {e}")
+
+        return {
+            "id": str(video_list.uuid),
+            "name": video_list.name,
+            "description": video_list.description,
+            "source_list_id": str(video_list.uuid),
+            "sync_version": 1,
+            "is_active": True,
+            "loop_mode": video_list.loop_mode,
+            "transition_duration_ms": video_list.transition_duration or 0,
+            "videos": [
+                {
+                    "id": str(item.uuid),
+                    "video_id": str(item.video_id),
+                    "title": item.effective_title,
+                    "url": f"{media_service_url}/api/v1/media/stream/{item.video_id}",
+                    "sequence_order": item.sequence_order,
+                    "duration_ms": item.effective_duration_ms,
+                    "metadata": {},
+                }
+                for item in sorted(video_list.video_items, key=lambda x: x.sequence_order)
+            ],
+        }
+
     async def _send_to_device(
         self,
         device: SignageDevice,
@@ -1054,110 +1254,170 @@ class SignageSyncService:
         sync_mode: SyncMode,
         force_update: bool,
     ) -> bool:
+        """Send video list data to a signage device via HTTP.
+
+        Endpoints are tried VPN-first (Headscale/Tailscale mesh IP) with the
+        local-network IP as a fallback, so devices are reached over the VPN
+        whenever possible and only fall back to the LAN when the mesh path is
+        unreachable.
         """
-        Send video list data to signage device via HTTP.
+        payload = {
+            "video_list": video_list_data,
+            "sync_mode": sync_mode.value,
+            "force_update": force_update,
+        }
 
-        Args:
-            device: SignageDevice object
-            video_list_data: Prepared video list data
-            sync_mode: Sync mode (full/incremental)
-            force_update: Force update even if device has current list
+        logger.info(
+            f"Querying discovery service for device {device.device_id} "
+            f"({device.device_name}) current endpoint"
+        )
+        discovery_device = await self._get_device_from_discovery(device.device_id)
+        if not discovery_device:
+            logger.warning(
+                f"Device {device.device_id} not found in discovery or unhealthy; "
+                f"falling back to database IP"
+            )
 
-        Returns:
-            Success status
-        """
-        try:
-            # Query discovery service for current device endpoint (handles network changes)
-            logger.info(f"Querying discovery service for device {device.device_id} ({device.device_name}) current endpoint")
-            discovery_device = await self._get_device_from_discovery(device.device_id)
-            
-            if not discovery_device:
-                logger.error(f"Device {device.device_id} not found in discovery service or unhealthy")
-                # Fall back to database IP (may be stale)
-                logger.warning(f"Falling back to database IP: {device.ip_address}:{device.port or 8009}")
-                url = f"http://{device.ip_address}:{device.port or 8009}/api/v1/sync"
-            else:
-                # Use fresh endpoint from discovery service
-                host = discovery_device['host']
-                port = discovery_device['port']
-                
-                # Apply IP translation for Tailscale scenarios
-                host = self._translate_ip_for_tailscale(host)
-                
-                logger.info(f"Using discovery endpoint for {device.device_name}: http://{host}:{port}")
-                url = f"http://{host}:{port}/api/v1/sync"
+        endpoints = _endpoint_candidates(
+            discovery_device,
+            device.ip_address,
+            device.port or 8009,
+        )
+        if not endpoints:
+            logger.error(f"No reachable endpoints for device {device.device_name}")
+            return False
 
-            payload = {
-                "video_list": video_list_data,
-                "sync_mode": sync_mode.value,
-                "force_update": force_update,
-            }
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                logger.info(f"Sending sync request to device: {url}")
-                logger.info(f"Sync payload: video_list_id={video_list_data['id']}, "
-                           f"videos={len(video_list_data['videos'])}, "
-                           f"sync_mode={sync_mode.value}, force_update={force_update}")
-                
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
+        for host, port, label in endpoints:
+            url = f"http://{host}:{port}/api/v1/sync"
+            logger.info(
+                f"Sending sync request to device {device.device_name} "
+                f"via {label} endpoint: {url}"
+            )
+            logger.info(
+                f"Sync payload: video_list_id={video_list_data['id']}, "
+                f"videos={len(video_list_data['videos'])}, "
+                f"sync_mode={sync_mode.value}, force_update={force_update}"
+            )
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(url, json=payload)
+                    response.raise_for_status()
 
                 result = response.json()
                 success = result.get("status") == "success"
-                
                 if success:
-                    logger.info(f"✅ Successfully synced video list to {device.device_name} "
-                               f"({len(video_list_data['videos'])} videos)")
-                else:
-                    logger.warning(f"⚠️ Sync returned non-success status: {result}")
-                
-                return success
+                    logger.info(
+                        f"✅ Successfully synced video list to {device.device_name} "
+                        f"via {label} ({len(video_list_data['videos'])} videos)"
+                    )
+                    return True
+                logger.warning(
+                    f"⚠️ Sync via {label} ({host}:{port}) returned "
+                    f"non-success status: {result}"
+                )
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    f"❌ HTTP error syncing to {device.device_name} via {label} "
+                    f"({host}:{port}): {e.response.status_code} - {e.response.text}"
+                )
+            except httpx.RequestError as e:
+                logger.warning(
+                    f"⚠️ {label} endpoint {host}:{port} unreachable via httpx for "
+                    f"{device.device_name}: {str(e)}; trying curl fallback"
+                )
+                try:
+                    body = await _request_via_curl(
+                        "POST", url, json_body=payload, timeout=30.0
+                    )
+                    result = json.loads(body) if body else {}
+                    success = result.get("status") == "success"
+                    if success:
+                        logger.info(
+                            f"✅ Successfully synced video list to {device.device_name} "
+                            f"via {label} (curl fallback, {len(video_list_data['videos'])} videos)"
+                        )
+                        return True
+                    logger.warning(
+                        f"⚠️ Sync via {label} (curl fallback) returned "
+                        f"non-success status: {result}"
+                    )
+                except Exception as ce:
+                    logger.error(
+                        f"❌ curl fallback also failed for {device.device_name} via "
+                        f"{label} ({host}:{port}): {ce}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"❌ Failed to send to device {device.device_name} via "
+                    f"{label} ({host}:{port}): {str(e)}"
+                )
+                logger.exception("Full traceback:")
 
-        except httpx.HTTPStatusError as e:
-            logger.error(f"❌ HTTP error syncing to {device.device_name}: {e.response.status_code} - {e.response.text}")
-            return False
-        except httpx.RequestError as e:
-            logger.error(f"❌ Request error syncing to {device.device_name}: {str(e)}")
-            return False
-        except Exception as e:
-            logger.error(f"❌ Failed to send to device {device.device_name}: {str(e)}")
-            logger.exception("Full traceback:")
-            return False
-
+        return False
     async def _get_device_assets(
         self, device: SignageDevice, playlist_id: str
     ) -> tuple[Optional[Set[str]], Optional[List[str]]]:
-        """
-        Query the device's current content manifest (GET /api/v1/assets) and
-        return the set and ordered list of video IDs it holds for the given
-        playlist.
+        """Query the device's current content manifest (GET /api/v1/assets).
 
-        Args:
-            device: SignageDevice object
-            playlist_id: The playlist UUID (source list id) to look up
-
-        Returns:
-            Tuple of (set_of_video_ids, ordered_list_of_video_ids) for the
-            matching playlist, or (None, None) if the manifest is unreachable,
-            the player is old, or the playlist is not present on the device.
+        Endpoints are tried VPN-first (Headscale/Tailscale mesh IP) with the
+        local-network IP as a fallback, mirroring _send_to_device.
         """
-        try:
-            # Resolve the device endpoint (mirror _send_to_device logic).
-            discovery_device = await self._get_device_from_discovery(device.device_id)
-            if discovery_device:
-                host = self._translate_ip_for_tailscale(discovery_device["host"])
-                port = discovery_device["port"]
-            else:
-                host = device.ip_address
-                port = device.port or 8009
+        discovery_device = await self._get_device_from_discovery(device.device_id)
+        if not discovery_device:
+            logger.warning(
+                f"Device {device.device_name} not found in discovery; "
+                f"using database IP for manifest query"
+            )
+        endpoints = _endpoint_candidates(
+            discovery_device,
+            device.ip_address,
+            device.port or 8009,
+        )
+
+        for host, port, label in endpoints:
             url = f"http://{host}:{port}/api/v1/assets"
+            logger.info(
+                f"Querying device assets manifest for {device.device_name} "
+                f"via {label}: {url}"
+            )
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.get(url, headers=_discovery_auth_headers())
+                    response.raise_for_status()
+                    data = response.json()
+            except httpx.HTTPStatusError as e:
+                logger.warning(
+                    f"Assets manifest via {label} ({host}:{port}) returned "
+                    f"{e.response.status_code}; trying next"
+                )
+                continue
+            except httpx.RequestError as e:
+                logger.warning(
+                    f"Assets manifest via {label} ({host}:{port}) unreachable via httpx: "
+                    f"{e}; trying curl fallback"
+                )
+                try:
+                    body = await _request_via_curl("GET", url, timeout=5.0)
+                    data = json.loads(body) if body else {}
+                except Exception as ce:
+                    logger.warning(
+                        f"Assets manifest via {label} ({host}:{port}) curl fallback failed: {ce}; trying next"
+                    )
+                    continue
+            except Exception as e:
+                logger.warning(
+                    f"Could not fetch assets manifest via {label} "
+                    f"({host}:{port}): {e}"
+                )
+                continue
 
-            logger.info(f"Querying device assets manifest for {device.device_name}: {url}")
-
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(url, headers=_discovery_auth_headers())
-                response.raise_for_status()
-                data = response.json()
+            # A healthy manifest always includes "playlists".
+            if not isinstance(data, dict) or "playlists" not in data:
+                logger.warning(
+                    f"Device {device.device_name} returned an invalid assets "
+                    f"manifest via {label}; falling back to full push."
+                )
+                return None, None
 
             playlists = data.get("playlists", []) or []
             for pl in playlists:
@@ -1167,17 +1427,10 @@ class SignageSyncService:
                 ordered_ids = [v["video_id"] for v in videos]
                 return set(ordered_ids), ordered_ids
 
-            # Playlist not present on the device yet -> all videos are "added".
             logger.info(f"Playlist {playlist_id} not found in device assets manifest")
             return set(), []
 
-        except Exception as e:
-            logger.warning(
-                f"Could not fetch device assets manifest for {device.device_name}: {e}. "
-                f"Falling back to full push."
-            )
-            return None, None
-
+        return None, None
     def _translate_ip_for_tailscale(self, host: str) -> str:
         """
         Translate local network IPs to Tailscale IP if running in Tailscale environment.
@@ -1269,6 +1522,8 @@ class SignageSyncService:
                         'name': service_data['name'],
                         'host': service_data['host'],
                         'port': service_data['port'],
+                        'tailscale_ip': service_data.get('tailscale_ip'),
+                        'tailscale_port': service_data.get('tailscale_port'),
                         'status': service_data['status'],
                         'service_id': service_data['service_id']
                     }
@@ -1331,17 +1586,27 @@ class SignagePlaybackService:
                 continue
 
             try:
-                # Apply IP translation for Tailscale scenarios
-                translated_host = self._translate_ip_for_tailscale(device_info['host'])
-                
-                logger.info(f"Sending {request.command.value} command to device {device_info['name']} ({translated_host}:{device_info['port']})")
-                control_result = await self._send_control_command_to_endpoint(
-                    host=translated_host,
-                    port=device_info['port'],
-                    device_name=device_info['name'],
-                    request=request
-                )
-                success = control_result.get("success", False)
+                endpoints = _endpoint_candidates(device_info, None, None)
+
+                control_result: Dict[str, Any] = {"success": False}
+                success = False
+                for host, port, label in endpoints:
+                    logger.info(
+                        f"Sending {request.command.value} command to device "
+                        f"{device_info['name']} via {label} ({host}:{port})"
+                    )
+                    control_result = await self._send_control_command_to_endpoint(
+                        host=host,
+                        port=port,
+                        device_name=device_info['name'],
+                        request=request,
+                    )
+                    success = control_result.get("success", False)
+                    if success:
+                        break
+                    logger.warning(
+                        f"Command via {label} ({host}:{port}) not successful; trying next"
+                    )
 
                 if (
                     not success
@@ -1367,18 +1632,19 @@ class SignagePlaybackService:
                         )
 
                         if sync_success:
-                            retry_result = await self._send_control_command_to_endpoint(
-                                host=translated_host,
-                                port=device_info['port'],
-                                device_name=device_info['name'],
-                                request=request,
-                            )
-                            success = retry_result.get("success", False)
-                            if success:
-                                logger.info(
-                                    f"✅ Playback start succeeded on retry after sync for {device_info['name']}"
+                            for host, port, label in endpoints:
+                                retry_result = await self._send_control_command_to_endpoint(
+                                    host=host,
+                                    port=port,
+                                    device_name=device_info['name'],
+                                    request=request,
                                 )
-
+                                success = retry_result.get("success", False)
+                                if success:
+                                    logger.info(
+                                        f"✅ Playback start succeeded on retry after sync for {device_info['name']}"
+                                    )
+                                    break
                 if success:
                     success_count += 1
                     logger.info(f"✅ Command {request.command.value} executed successfully on {device_info['name']}")
@@ -1434,6 +1700,8 @@ class SignagePlaybackService:
                         'name': service_data['name'],
                         'host': service_data['host'],
                         'port': service_data['port'],
+                        'tailscale_ip': service_data.get('tailscale_ip'),
+                        'tailscale_port': service_data.get('tailscale_port'),
                         'status': service_data['status'],
                         'service_id': service_data['service_id']
                     }
@@ -1581,8 +1849,14 @@ class SignagePlaybackService:
             logger.error(f"HTTP error from device {device_name}: {e.response.status_code} - {e.response.text}")
             return {"success": False, "message": str(e), "raw": None}
         except httpx.ConnectError as e:
-            logger.error(f"Cannot connect to device {device_name} at {host}:{port}: {e}")
-            return {"success": False, "message": str(e), "raw": None}
+            logger.error(f"Cannot connect to device {device_name} at {host}:{port} via httpx: {e}; trying curl fallback")
+            try:
+                body = await _request_via_curl("POST", url, json_body=payload, timeout=10.0)
+                result = json.loads(body) if body else {}
+                success = bool(result.get("success")) or result.get("status") == "success"
+                return {"success": success, "message": result.get("message"), "raw": result}
+            except Exception as ce:
+                return {"success": False, "message": f"httpx: {e}; curl: {ce}", "raw": None}
         except Exception as e:
             logger.error(f"Failed to send control command to {device_name}: {str(e)}")
             return {"success": False, "message": str(e), "raw": None}
