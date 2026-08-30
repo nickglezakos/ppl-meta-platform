@@ -58,8 +58,49 @@ curl -s https://authority.eyenet-vision.com/health
 curl -s https://authority.eyenet-vision.com/api/v1/installations/tenant-a
 curl -s https://authority.eyenet-vision.com/api/v1/owners/nick.glezakos@gmail.com
 
+lic_6f3c8d1e2b4a5c7d8e9f0a1b2c3d4e5f
+
+Confirmed the device's installation is tenant-a:
+
+installation_uuid = tenant-a
+application_key = lic_6f3c8d1e2b4a5c7d8e9f0a1b2c3d4e5f
+licence_name = Tenant A Development Licence
+owner nick.glezakos@gmail.com (approved, active)
+Expected tag: tag:install-dGVuYW50LWE (base64 of tenant-a)
+
+
+
+Field	Value
+auth_key	hskey-auth-wVy7EF3FJoZ2-gVC4JQNAiqa7Y4m2D67LWg_aeebRjeTDTX2xODc_Pm1jHiPDLU9sBUNlDXqKgag_
+headscale_server	https://vpn.eyenet-vision.com
+matrix_group_id	db47b628-3861-4e25-ad35-290dad3743ae
+install tag	tag:install-74656e616e742d61 ✅ (= tenant-a)
+api_token	d85cf5919fa99cae206a15737639d1bd963940eff4fca9f8ce23fedbbccffbb5
 
 *************************************************
+
+# 1) Sync source (vpn.py + storage.py changed)
+rsync -avz --delete \
+  --exclude '.venv' --exclude '.git' --exclude '.env' --exclude 'data' --exclude 'headscale' \
+  /Users/nickgklezakos/Documents/ppl-meta-code/autonomous/ppl-meta-authority/ \
+  hetzner:/home/deploy/apps/ppl-meta-authority/source/
+
+# 2) Rebuild
+ssh hetzner 'cd /home/deploy/apps/ppl-meta-authority/source && docker build -t ppl-meta-authority:2.25.62 .'
+
+# 3) Recreate container (migration runs on startup)
+ssh hetzner 'docker rm -f ppl-meta-authority && docker run -d \
+  --name ppl-meta-authority \
+  --network ppl-meta-authority_default \
+  --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -p 8000:8000 \
+  --env-file /home/deploy/apps/ppl-meta-authority/cicd/env/authority.env \
+  ppl-meta-authority:2.25.62'
+
+
+******************************************************************
+
 
 *** Known bugs
 

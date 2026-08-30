@@ -201,6 +201,23 @@ def initialize_database() -> None:
         _ensure_column(connection, "installations", "warning_period_days", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(connection, "installations", "warning_started_at", "TIMESTAMPTZ")
         _ensure_column(connection, "installations", "installation_name", "TEXT")
+        _ensure_column(connection, "installations", "matrix_group_id", "TEXT")
+        # Backfill installations.matrix_group_id from legacy entitlements.
+        connection.execute(
+            """
+            UPDATE installations
+            SET matrix_group_id = COALESCE(
+                matrix_group_id,
+                (
+                    SELECT matrix_group_id FROM entitlements
+                    WHERE entitlements.installation_uuid = installations.installation_uuid
+                      AND entitlements.matrix_group_id IS NOT NULL
+                    ORDER BY entitlements.updated_at DESC
+                    LIMIT 1
+                )
+            )
+            """
+        )
         connection.execute(
             "UPDATE entitlements SET licence_name = COALESCE(licence_name, tenant_name, application_key)"
         )
@@ -1599,6 +1616,26 @@ def get_installation_by_application_key(application_key: str) -> dict[str, Any] 
     return _row_to_dict(row)
 
 
+def set_installation_matrix_group(installation_uuid: str, matrix_group_id: str) -> None:
+    """Persist a VPN matrix group id for an installation.
+
+    Updates both the `installations` table (current model) and the legacy
+    `entitlements` table so enrollment and device lookup agree on one mesh.
+    """
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE installations SET matrix_group_id = ?, updated_at = CURRENT_TIMESTAMP "
+            "WHERE installation_uuid = ?",
+            (matrix_group_id, installation_uuid),
+        )
+        connection.execute(
+            "UPDATE entitlements SET matrix_group_id = ?, updated_at = CURRENT_TIMESTAMP "
+            "WHERE installation_uuid = ?",
+            (matrix_group_id, installation_uuid),
+        )
+        connection.commit()
+
+
 def get_entitlement_by_uuid(entitlement_uuid: str) -> dict[str, Any] | None:
     with _connect() as connection:
         row = connection.execute(
@@ -2113,6 +2150,7 @@ def _row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "tenant_name": row["tenant_name"],
         "notes": row["notes"],
         "installation_name": row["installation_name"] if "installation_name" in row.keys() else None,
+        "matrix_group_id": row["matrix_group_id"] if "matrix_group_id" in row.keys() else None,
     }
 
 

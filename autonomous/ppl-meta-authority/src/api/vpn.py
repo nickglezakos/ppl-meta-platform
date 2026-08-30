@@ -7,7 +7,6 @@ Keys are scoped with ACL tags matching the installation's Matrix group.
 All endpoints require authority admin authentication (session-based).
 """
 
-import base64
 import hashlib
 import hmac
 import json
@@ -24,6 +23,7 @@ from pydantic import BaseModel
 
 from core.storage import (
     get_installation_by_application_key,
+    set_installation_matrix_group,
 )
 from services.vpn_acl_service import vpn_acl_service
 
@@ -247,14 +247,10 @@ def _installation_uuid_to_tag(installation_uuid: str) -> str:
 
     Installation UUIDs are ``{owner_email}-{index}`` (e.g.
     ``nick.glezakos@gmail.com-0``) and contain characters Headscale tags do
-    not allow. base64url encodes it into a reversible, tag-safe token.
+    not allow (tags must be lowercase ``[a-z0-9-_]``). Hex-encoding keeps the
+    tag reversible and lowercase.
     """
-    encoded = (
-        base64.urlsafe_b64encode(str(installation_uuid).encode("utf-8"))
-        .decode("ascii")
-        .rstrip("=")
-    )
-    return f"tag:install-{encoded}"
+    return "tag:install-" + str(installation_uuid).encode("utf-8").hex()
 
 
 def _installation_uuid_from_tags(tags: list[str]) -> str:
@@ -266,10 +262,9 @@ def _installation_uuid_from_tags(tags: list[str]) -> str:
     for tag in tags or []:
         if tag.startswith("tag:install-"):
             payload = tag[len("tag:install-"):]
-            payload += "=" * (-len(payload) % 4)
             try:
-                return base64.urlsafe_b64decode(payload.encode("ascii")).decode("utf-8")
-            except Exception:
+                return bytes.fromhex(payload).decode("utf-8")
+            except (ValueError, UnicodeDecodeError):
                 return payload
     return ""
 
@@ -426,26 +421,21 @@ async def enroll_installation(payload: EnrollInstallationRequest):
             payload.installation_uuid,
         )
 
-    # Determine ACL tags and user namespace (per-matrix isolation)
+    # Determine ACL tags and user namespace (per-matrix isolation).
     matrix_group_id = installation.get("matrix_group_id")
-    if matrix_group_id:
-        tags = [f"tag:matrix-{matrix_group_id}"]
-        headscale_user = f"matrix-{matrix_group_id}"
-    else:
-        # Legacy installations without a matrix group — auto-provision one
-        from core.storage import _ensure_matrix_group
-        entitlement_uuid = installation.get("entitlement_uuid", "")
-        if entitlement_uuid:
-            matrix_group_id = _ensure_matrix_group(entitlement_uuid)
-        else:
-            matrix_group_id = str(uuid.uuid4())
-            logger.warning(
-                "Installation %s has no entitlement_uuid — using generated matrix group %s",
-                payload.installation_uuid,
-                matrix_group_id,
-            )
-        tags = [f"tag:matrix-{matrix_group_id}"]
-        headscale_user = f"matrix-{matrix_group_id}"
+    if not matrix_group_id:
+        # Auto-provision and PERSIST the matrix group so subsequent enrollments
+        # and device lookups reuse the same mesh.
+        matrix_group_id = str(uuid.uuid4())
+        set_installation_matrix_group(payload.installation_uuid, matrix_group_id)
+        logger.info(
+            "Auto-provisioned matrix group %s for installation %s",
+            matrix_group_id,
+            payload.installation_uuid,
+        )
+
+    tags = [f"tag:matrix-{matrix_group_id}"]
+    headscale_user = f"matrix-{matrix_group_id}"
 
     # Always include the base installation tag
     if "tag:installation" not in tags:
