@@ -6,6 +6,8 @@ import '../config/app_config.dart';
 import '../utils/device_info_helper.dart';
 import 'authority_api_client.dart';
 import 'config_service.dart';
+import 'tailscale_service.dart';
+import 'tailscale_http_adapter.dart';
 
 /// Service for discovering and registering with ppl-meta-discovery.
 /// Phase 5: VPN-first discovery — when a Tailscale IP is configured, the
@@ -40,10 +42,15 @@ class SignageDiscoveryService {
   /// Device id assigned by the edge-device registry (/api/v1/devices/register).
   String? _deviceRegistrationId;
 
+  /// Optional embedded Tailscale node (Phase 4). When provided and up, this
+  /// player's own mesh node routes discovery/registration over the tailnet.
+  final TailscaleService? _tailscaleService;
+
   SignageDiscoveryService({
     Dio? dio,
     Logger? logger,
     required ConfigService configService,
+    TailscaleService? tailscaleService,
   })  : _dio = dio ??
             Dio(
               BaseOptions(
@@ -53,8 +60,27 @@ class SignageDiscoveryService {
               ),
             ),
         _logger = logger ?? Logger(),
-        _configService = configService {
+        _configService = configService,
+        _tailscaleService = tailscaleService {
     _setupAuthInterceptor();
+    _setupTailscaleAdapter();
+  }
+
+  /// Route discovery / registration requests through the player's own mesh node
+  /// (Phase 4) when the embedded Tailscale node is up. Best-effort — the default
+  /// io adapter remains otherwise.
+  void _setupTailscaleAdapter() {
+    final tailscale = _tailscaleService;
+    if (tailscale == null || !tailscale.isUp) {
+      return;
+    }
+    final client = tailscale.httpClient;
+    if (client == null) {
+      return;
+    }
+    _dio.httpClientAdapter = TailscaleHttpClientAdapter(client);
+    _logger.i(
+        'Discovery service routing through embedded Tailscale node (${tailscale.tailscaleIp})');
   }
 
   /// Attach installation-token auth headers (Issue #8) to every request when the
@@ -163,14 +189,24 @@ class SignageDiscoveryService {
     }
   }
 
-  /// Resolve this player's own Tailscale (VPN) IP from the Authority.
+  /// Resolve this player's own Tailscale (VPN) IP.
   ///
-  /// On Android the VPN tun interface is not visible to NetworkInterface.list(),
-  /// so DeviceInfoHelper.getLocalIpAddress() can't find the 100.x address.
-  /// Instead we ask the Authority for the matrix group's nodes and match our own
-  /// installation_uuid (populated from the tag:install-* ACL tag).
+  /// Prefers the embedded per-app Tailscale node (Phase 4) — its own
+  /// `100.64.x.x` address is authoritative because the node *is* the player.
+  /// Falls back to asking the Authority for the matrix group's nodes and matching
+  /// our own installation_uuid (populated from the tag:install-* ACL tag). On
+  /// Android the VPN tun is otherwise invisible to NetworkInterface.list().
   Future<String?> _resolveOwnTailscaleIp() async {
     if (_ownTailscaleIp != null && _ownTailscaleIp!.isNotEmpty) {
+      return _ownTailscaleIp;
+    }
+
+    // 1. The embedded per-app node knows its own IP directly.
+    final tailscale = _tailscaleService;
+    final embeddedIp = tailscale?.tailscaleIp;
+    if (embeddedIp != null && embeddedIp.isNotEmpty) {
+      _ownTailscaleIp = embeddedIp;
+      _logger.i('Tailscale IP from embedded node: $embeddedIp');
       return _ownTailscaleIp;
     }
 

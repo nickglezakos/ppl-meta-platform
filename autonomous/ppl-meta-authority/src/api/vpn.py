@@ -22,8 +22,12 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from core.storage import (
+    clear_installation_platform,
     get_installation_by_application_key,
+    get_installation_by_uuid,
+    get_max_platform_nodes,
     set_installation_matrix_group,
+    set_installation_platform,
 )
 from services.vpn_acl_service import vpn_acl_service
 
@@ -38,7 +42,14 @@ router = APIRouter(prefix="/api/v1/vpn", tags=["vpn"])
 class EnrollInstallationRequest(BaseModel):
     installation_uuid: str
     application_key: str
-    node_type: str = "client"  # "node" for platform nodes, "client" for cameras/apps
+    # Role / type tag of the enrolling node. Tags are derived as ``tag:<node_type>``.
+    #   - platform  → tag:platform  (own DB/registry compute module)   [new]
+    #   - client    → tag:client    (leaf device/app)                  [existing]
+    #   - analytics → tag:analytics (read-only aggregator, follow-up)  [new]
+    #   - camera    → tag:camera    (edge camera)                      [existing]
+    #   - signage   → tag:signage   (signage player)                   [new]
+    #   - node      → tag:node (legacy, deprecated — use platform)
+    node_type: str = "client"
 
 
 class EnrollInstallationResponse(BaseModel):
@@ -50,6 +61,10 @@ class EnrollInstallationResponse(BaseModel):
     tags: list[str] = []
     expires_in_seconds: int = 86400  # 24 hours
     api_token: str = ""  # HMAC installation token for discovery auth (Issue #8)
+    # The client's *assigned* platform (the mesh IP it should dial after
+    # enrollment), or null when the installation has no platform assigned yet.
+    platform_tailscale_ip: str | None = None
+    platform_hostname: str | None = None
 
 
 class VpnNodeInfo(BaseModel):
@@ -71,6 +86,27 @@ class VpnMatrixAclResponse(BaseModel):
     tags: list[str]
     acl_status: str  # "synced", "pending", "error"
     last_synced_at: str | None = None
+
+
+class InstallationPlatformAssignRequest(BaseModel):
+    """Body for assigning an installation to a platform node.
+
+    Supply either the Headscale node id or the mesh (``100.64.x.x``) IP of the
+    platform. The Authority resolves the other from the VPN mesh.
+    """
+
+    platform_node_id: str | None = None
+    platform_tailscale_ip: str | None = None
+
+
+class InstallationPlatformResponse(BaseModel):
+    """Resolved client↔platform assignment for an installation."""
+
+    installation_uuid: str
+    platform_node_id: str | None = None
+    platform_tailscale_ip: str | None = None
+    platform_hostname: str | None = None
+    platform_assigned_at: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +138,18 @@ PREAUTH_KEY_EXPIRY_HOURS = 24
 INSTALLATION_AUTH_SECRET = os.getenv(
     "INSTALLATION_AUTH_SECRET", "ppl-meta-installation-auth-secret-dev"
 )
+
+# Authorised role/type tags for enrollment (Phase 1 tag taxonomy).
+# All are derived as ``tag:<node_type>``. ``node`` is the legacy platform role,
+# kept for backward compatibility but superseded by ``platform``.
+SUPPORTED_NODE_TYPES = {
+    "platform",
+    "client",
+    "analytics",
+    "camera",
+    "signage",
+    "node",
+}
 
 
 def _run_headscale(args: list[str]) -> str:
@@ -270,19 +318,69 @@ def _installation_uuid_from_tags(tags: list[str]) -> str:
 
 
 def _find_primary_node_ip(matrix_group_id: str) -> str | None:
-    """Return the Tailscale IP of the primary (node) in a matrix group, if any."""
+    """Return the Tailscale IP of the primary (platform) node in a matrix group, if any.
+
+    Recognises both the legacy ``tag:node`` role and the newer ``tag:platform`` role
+    (``tag:node`` is deprecated but existing deployments still use it).
+    """
     if not matrix_group_id:
         return None
     try:
         nodes_data = _list_nodes(f"matrix-{matrix_group_id}")
         for node in nodes_data:
-            if "tag:node" in _node_tags(node):
+            tags = _node_tags(node)
+            if "tag:node" in tags or "tag:platform" in tags:
                 ips = node.get("ip_addresses") or []
                 if ips:
                     return str(ips[0])
     except RuntimeError:
         return None
     return None
+
+
+def _count_platform_nodes(
+    matrix_group_id: str, exclude_installation_uuid: str | None = None
+) -> int:
+    """Count `tag:platform` nodes in a matrix, deduped by installation identity.
+
+    Multiple nodes for the *same* installation (same ``tag:install-<hex>`` / node
+    key) count once — re-enrolling an existing platform must not consume an extra
+    slot. Provisioning a new platform still counts, and deleting one frees a slot.
+
+    Args:
+        matrix_group_id: UUID of the matrix (headscale user ``matrix-<uuid>``).
+        exclude_installation_uuid: Installation whose own platforms are skipped,
+            so re-asserting an existing platform isn't gated against itself.
+
+    Returns:
+        Number of distinct platform installations currently enrolled.
+    """
+    if not matrix_group_id:
+        return 0
+    try:
+        nodes_data = _list_nodes(f"matrix-{matrix_group_id}")
+    except RuntimeError:
+        return 0
+
+    seen: set[str] = set()
+    count = 0
+    for node in nodes_data:
+        node_tags = _node_tags(node)
+        if "tag:platform" not in node_tags:
+            continue
+        install_uuid = _installation_uuid_from_tags(node_tags)
+        if exclude_installation_uuid and install_uuid == exclude_installation_uuid:
+            continue
+        dedup_key = (
+            f"install:{_installation_uuid_to_tag(install_uuid)}"
+            if install_uuid
+            else f"node:{node.get('id', node.get('node_key', ''))}"
+        )
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+        count += 1
+    return count
 
 
 def _issue_installation_token(installation_uuid: str) -> str:
@@ -421,6 +519,15 @@ async def enroll_installation(payload: EnrollInstallationRequest):
             payload.installation_uuid,
         )
 
+    # Validate node_type is a known role/type tag (Phase 1 taxonomy).
+    node_type = (payload.node_type or "client").lower()
+    if node_type not in SUPPORTED_NODE_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported node_type '{payload.node_type}'. "
+            f"Must be one of: {', '.join(sorted(SUPPORTED_NODE_TYPES))}",
+        )
+
     # Determine ACL tags and user namespace (per-matrix isolation).
     matrix_group_id = installation.get("matrix_group_id")
     if not matrix_group_id:
@@ -434,6 +541,25 @@ async def enroll_installation(payload: EnrollInstallationRequest):
             payload.installation_uuid,
         )
 
+    # Enforce the licence's platform-node limit at platform enrollment (Phase 2).
+    # ``tag:platform`` enrolments are gated by ``entitlements.max_platform_nodes``.
+    # 0 = unlimited. Re-asserting an existing platform (same installation_uuid)
+    # does not consume an extra slot.
+    if node_type == "platform":
+        max_platform_nodes = get_max_platform_nodes(payload.installation_uuid)
+        if max_platform_nodes and max_platform_nodes > 0:
+            current = _count_platform_nodes(
+                matrix_group_id, exclude_installation_uuid=payload.installation_uuid
+            )
+            if current >= max_platform_nodes:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        f"Platform node limit reached: {current}/{max_platform_nodes}. "
+                        "This licence cannot run another platform compute module."
+                    ),
+                )
+
     tags = [f"tag:matrix-{matrix_group_id}"]
     headscale_user = f"matrix-{matrix_group_id}"
 
@@ -441,8 +567,9 @@ async def enroll_installation(payload: EnrollInstallationRequest):
     if "tag:installation" not in tags:
         tags.insert(0, "tag:installation")
 
-    # Add node type tag for service discovery (tag:node or tag:client)
-    type_tag = f"tag:{payload.node_type}"
+    # Add node type tag for service discovery (tag:platform / tag:client /
+    # tag:analytics / tag:camera / tag:signage; legacy tag:node is deprecated)
+    type_tag = f"tag:{node_type}"
     if type_tag not in tags:
         tags.append(type_tag)
 
@@ -479,6 +606,17 @@ async def enroll_installation(payload: EnrollInstallationRequest):
     # Issue the installation token for discovery service authentication (Issue #8)
     api_token = _issue_installation_token(payload.installation_uuid)
 
+    # The client's *assigned* platform (mesh IP + hostname) so it knows where to
+    # dial after enrollment. A platform enrols as its own compute module, so its
+    # node_type is not ``client`` and it has no separate assigned platform.
+    assigned = get_installation_by_uuid(payload.installation_uuid) or {}
+    platform_tailscale_ip = (
+        assigned.get("platform_tailscale_ip") if node_type == "client" else None
+    )
+    platform_hostname = (
+        assigned.get("platform_hostname") if node_type == "client" else None
+    )
+
     return EnrollInstallationResponse(
         auth_key=auth_key,
         tags=tags,
@@ -487,11 +625,164 @@ async def enroll_installation(payload: EnrollInstallationRequest):
         headscale_server="https://vpn.eyenet-vision.com",
         expires_in_seconds=PREAUTH_KEY_EXPIRY_HOURS * 3600,
         api_token=api_token,
+        platform_tailscale_ip=platform_tailscale_ip,
+        platform_hostname=platform_hostname,
     )
 
 
-@router.get("/nodes", response_model=VpnNodeListResponse)
-async def list_vpn_nodes(_request: Request):
+def _find_platform_node_by_id_or_ip(identifier: str | None) -> dict | None:
+    """Return a `tag:platform` node matching a Headscale node id or mesh IP.
+
+    Args:
+        identifier: Either a Headscale node id or a mesh (``100.64.x.x``) IP.
+
+    Returns:
+        The matching headscale node dict, or None if not found.
+    """
+    if not identifier:
+        return None
+    identifier = identifier.strip()
+
+    try:
+        nodes_data = _run_headscale_and_load_nodes()
+    except RuntimeError:
+        return None
+
+    for node in nodes_data:
+        node_id = str(node.get("id", ""))
+        ips = [str(ip) for ip in (node.get("ip_addresses") or [])]
+        tags = _node_tags(node)
+        if "tag:platform" not in tags:
+            continue
+        if identifier in (node_id, *ips):
+            return node
+    return None
+
+
+def _run_headscale_and_load_nodes() -> list[dict]:
+    """Run ``headscale nodes list --output json`` and parse the JSON list."""
+    output = _run_headscale(["nodes", "list", "--output", "json"])
+    data = json.loads(output)
+    return data if isinstance(data, list) else []
+
+
+# ---------------------------------------------------------------------------
+# Client↔platform assignment (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/installations/{installation_uuid}/platform",
+    response_model=InstallationPlatformResponse,
+)
+async def get_installation_platform(installation_uuid: str, _request: Request):
+    """Resolve the platform assigned to an installation (admin only)."""
+    installation = get_installation_by_uuid(installation_uuid)
+    if not installation:
+        raise HTTPException(status_code=404, detail="Installation not found")
+
+    return InstallationPlatformResponse(
+        installation_uuid=installation_uuid,
+        platform_node_id=installation.get("platform_node_id"),
+        platform_tailscale_ip=installation.get("platform_tailscale_ip"),
+        platform_hostname=installation.get("platform_hostname"),
+        platform_assigned_at=installation.get("platform_assigned_at"),
+    )
+
+
+@router.post(
+    "/installations/{installation_uuid}/platform",
+    response_model=InstallationPlatformResponse,
+)
+async def assign_installation_platform(
+    installation_uuid: str,
+    payload: InstallationPlatformAssignRequest,
+    _request: Request,
+):
+    """Assign an installation to a platform node (admin only).
+
+    The only link between a client and a platform. Provide either the platform's
+    Headscale node id or its mesh (``100.64.x.x``) IP; the Authority resolves the
+    other fields from the mesh. Re-assigning is idempotent (flips the client).
+    """
+    installation = get_installation_by_uuid(installation_uuid)
+    if not installation:
+        raise HTTPException(status_code=404, detail="Installation not found")
+
+    if not payload.platform_node_id and not payload.platform_tailscale_ip:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide either platform_node_id or platform_tailscale_ip",
+        )
+
+    node = _find_platform_node_by_id_or_ip(
+        payload.platform_node_id or payload.platform_tailscale_ip
+    )
+    if node is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No tag:platform node found for the given node_id / tailscale_ip",
+        )
+
+    node_id = str(node.get("id", ""))
+    tailscale_ip = (
+        (node.get("ip_addresses") or [None])[0]
+        if node.get("ip_addresses") else None
+    )
+    hostname = str(node.get("given_name", node.get("name", "")))
+
+    set_installation_platform(
+        installation_uuid,
+        node_id,
+        tailscale_ip,
+        hostname,
+    )
+    logger.info(
+        "Installation %s assigned to platform %s (%s)",
+        installation_uuid, node_id, tailscale_ip,
+    )
+
+    refreshed = get_installation_by_uuid(installation_uuid)
+    return InstallationPlatformResponse(
+        installation_uuid=installation_uuid,
+        platform_node_id=node_id,
+        platform_tailscale_ip=tailscale_ip,
+        platform_hostname=hostname,
+        platform_assigned_at=refreshed.get("platform_assigned_at") if refreshed else None,
+    )
+
+
+@router.delete(
+    "/installations/{installation_uuid}/platform",
+    response_model=InstallationPlatformResponse,
+)
+async def unlink_installation_platform(installation_uuid: str, _request: Request):
+    """Clear an installation's platform link, leaving it unassigned (admin only)."""
+    installation = get_installation_by_uuid(installation_uuid)
+    if not installation:
+        raise HTTPException(status_code=404, detail="Installation not found")
+
+    clear_installation_platform(installation_uuid)
+    logger.info("Installation %s unlinked from its platform", installation_uuid)
+
+    return InstallationPlatformResponse(installation_uuid=installation_uuid)
+
+
+@router.get("/platforms", response_model=VpnNodeListResponse)
+async def list_platforms(_request: Request):
+    """List all platform compute modules (filter /nodes by tag:platform).
+
+    This is the discovery mechanism the analytics aggregator uses to enumerate
+    every platform in the mesh. Legacy ``tag:node`` platforms (enrolled before the
+    ``tag:platform`` role existed) are also matched, so existing deployments show
+    up immediately (they can later be retagged to ``tag:platform`` via headscale).
+    """
+    all_nodes = _fetch_all_nodes()
+    platforms = [
+        n for n in all_nodes.nodes
+        if "tag:platform" in n.tags or "tag:node" in n.tags
+    ]
+    return VpnNodeListResponse(nodes=platforms)
     """List all enrolled VPN nodes with online status.
 
     Uses a 30-second in-memory cache to avoid slow sequential

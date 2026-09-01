@@ -4,6 +4,8 @@ import '../config/app_config.dart';
 import '../models/video_list.dart';
 import '../models/playback_models.dart';
 import '../models/playback_history.dart';
+import '../services/tailscale_service.dart';
+import '../services/tailscale_http_adapter.dart';
 
 /// API client for communicating with PPL Meta backend services
 class SignageApiClient {
@@ -11,13 +13,16 @@ class SignageApiClient {
   final Logger _logger;
   final String baseUrl;
   final String deviceId;
+  final TailscaleService? _tailscaleService;
 
   SignageApiClient({
     required this.baseUrl,
     required this.deviceId,
     Logger? logger,
     Dio? dio,
+    TailscaleService? tailscaleService,
   })  : _logger = logger ?? Logger(),
+        _tailscaleService = tailscaleService,
         _dio = dio ??
             Dio(BaseOptions(
               baseUrl: baseUrl,
@@ -29,7 +34,26 @@ class SignageApiClient {
                 'Accept': 'application/json',
               },
             )) {
+    // Phase 4: route playlist pull & related calls through the player's own
+    // embedded Tailscale node when it's up (LAN-direct when co-located). The
+    // default io adapter is kept otherwise.
+    _setupTailscaleAdapter();
     _setupInterceptors();
+  }
+
+  /// Route this client's requests through the player's own mesh node (Phase 4).
+  void _setupTailscaleAdapter() {
+    final tailscale = _tailscaleService;
+    if (tailscale == null || !tailscale.isUp) {
+      return;
+    }
+    final client = tailscale.httpClient;
+    if (client == null) {
+      return;
+    }
+    _dio.httpClientAdapter = TailscaleHttpClientAdapter(client);
+    _logger.i(
+        'Signage API client routing through embedded Tailscale node (${tailscale.tailscaleIp})');
   }
 
   /// Setup Dio interceptors for logging and error handling

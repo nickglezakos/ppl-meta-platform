@@ -121,6 +121,25 @@ async def lifespan(_app: FastAPI):
                 # Fallback to hostname resolution
                 detected_ip = socket.gethostbyname(socket.gethostname())
 
+            # Detect our Headscale/Tailscale mesh IP so devices dialing in over
+            # the VPN can resolve stream URLs to a reachable address.
+            tailscale_ip = None
+            try:
+                from shared.networking.tailscale_utils import get_tailscale_ip
+
+                tailscale_ip = get_tailscale_ip()
+            except Exception as e:
+                logger.warning(f"Could not detect local tailscale IP: {e}")
+
+            metadata = {
+                "version": "1.0.0",
+                "environment": "development",
+                "features": "media_processing,image_analysis,facial_recognition",
+            }
+            if tailscale_ip:
+                metadata["tailscale_ip"] = tailscale_ip
+                metadata["tailscale_port"] = 8000
+
             await register_service(
                 name="ppl-meta-media",
                 service_type="backend",
@@ -129,11 +148,7 @@ async def lifespan(_app: FastAPI):
                 port=8000,
                 health_endpoint="/health",
                 capabilities=["media-processing", "image-analysis", "storage"],
-                metadata={
-                    "version": "1.0.0",
-                    "environment": "development",
-                    "features": "media_processing,image_analysis,facial_recognition",
-                },
+                metadata=metadata,
             )
             logger.info("Successfully registered ppl-meta-media with discovery service")
         except Exception as e:

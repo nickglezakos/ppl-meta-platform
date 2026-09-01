@@ -46,6 +46,7 @@ class EntitlementRecord(BaseModel):
     tenant_name: str | None = None
     activation_status: str
     notes: str | None = None
+    max_platform_nodes: int = Field(default=0, ge=0)
 
 
 class InstallationUpsertRequest(BaseModel):
@@ -62,6 +63,9 @@ class InstallationUpsertRequest(BaseModel):
     tenant_name: str | None = None
     installation_name: str | None = None
     notes: str | None = None
+    # Licence platform-node limit (0 = unlimited, default). Enforced by the
+    # Authority at ``tag:platform`` enrollment (Phase 2).
+    max_platform_nodes: int = Field(default=0, ge=0)
 
 
 class ActivationRequest(BaseModel):

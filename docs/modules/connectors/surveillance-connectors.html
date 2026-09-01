@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eyenet — Surveillance &amp; Network Connectors</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+    * { box-sizing: border-box; }
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    body { margin: 0; }
+    .page { max-width: var(--max-width); margin: 0 auto; padding: 32px 24px 72px; }
+    .print-bar { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+    .print-button {
+      border: 0; border-radius: 999px; padding: 12px 18px;
+      background: var(--brand-primary); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                  linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14); border-radius: 32px;
+      box-shadow: var(--shadow); overflow: hidden; position: relative; color: var(--text);
+    }
+    .hero::after {
+      content: ""; position: absolute; inset: auto -80px -80px auto;
+      width: 220px; height: 220px; border-radius: 50%; background: rgba(25, 118, 210, 0.26);
+    }
+    .hero-inner { display: grid; grid-template-columns: 1.35fr 0.9fr; gap: 28px; padding: 34px; position: relative; z-index: 1; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14); color: var(--brand-secondary);
+      font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1 { margin: 18px 0 16px; font-size: 42px; line-height: 1.05; letter-spacing: -0.03em; }
+    .lead { font-size: 18px; color: #334155; max-width: 62ch; }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+    .brand-stack { display: flex; align-items: center; gap: 14px; }
+    .brand-stack img { height: 36px; width: auto; }
+    .brand-chip {
+      padding: 8px 12px; border: 1px solid rgba(34, 211, 238, 0.24); border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9); color: #eef9ff; font-size: 13px; font-weight: 600;
+    }
+    .meta-card, .section {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04); border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px; align-self: start; color: var(--text);
+    }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+    .meta-item { padding-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+    .meta-label { display: block; margin-bottom: 6px; color: #9fb0c3; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .meta-value { font-size: 15px; font-weight: 600; color: #ffffff; }
+    .section { margin-top: 24px; padding: 28px; border-color: var(--panel-line); background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%); }
+    .section-title { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .section-number {
+      width: 34px; height: 34px; border-radius: 50%; display: inline-grid; place-items: center;
+      background: rgba(25, 118, 210, 0.1); color: var(--brand-primary); font-weight: 700;
+    }
+    h2 { margin-bottom: 0; font-size: 24px; letter-spacing: -0.02em; }
+    h3 { margin-bottom: 10px; font-size: 18px; }
+    h4 { margin-bottom: 6px; font-size: 16px; color: #334155; }
+    ul, ol { margin: 0; padding-left: 20px; }
+    li + li { margin-top: 8px; }
+    .callout {
+      padding: 18px 20px; border-left: 4px solid var(--brand-secondary); border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent); color: #f5fbff; font-weight: 600;
+    }
+    .callout.amber { border-left-color: #f59e0b; }
+    .callout.green { border-left-color: #4caf50; }
+    .footer-note { margin-top: 18px; color: #64748b; font-size: 13px; }
+    .grid-two { display: grid; gap: 22px; margin-top: 24px; grid-template-columns: 1.15fr 0.85fr; }
+    .grid-three { display: grid; gap: 22px; margin-top: 24px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .summary-card {
+      padding: 22px; border-color: var(--panel-line); background: #ffffff;
+      border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .summary-card strong { color: #0f172a; }
+    .summary-card p:last-child { margin-bottom: 0; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .badge {
+      display: inline-flex; align-items: center; padding: 4px 12px;
+      border-radius: 999px; font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
+      background: rgba(25, 118, 210, 0.08); color: var(--brand-primary);
+      border: 1px solid rgba(25, 118, 210, 0.18);
+    }
+    .badge.mode { background: rgba(34, 211, 238, 0.08); color: #0891b2; border-color: rgba(34, 211, 238, 0.18); }
+    .badge.user { background: rgba(245, 158, 11, 0.08); color: #b45309; border-color: rgba(245, 158, 11, 0.18); }
+    .badge.safety { background: rgba(239, 68, 68, 0.08); color: #b91c1c; border-color: rgba(239, 68, 68, 0.18); }
+    .badge.success { background: rgba(34, 197, 94, 0.08); color: #166534; border-color: rgba(34, 197, 94, 0.18); }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid rgba(15, 23, 42, 0.08); }
+    th { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+    td { font-size: 14px; }
+    .arch-diagram {
+      font-family: "Courier New", monospace; font-size: 11px; line-height: 1.35;
+      white-space: pre; color: #f5fbff; margin: 0; overflow-x: auto;
+    }
+    code {
+      font-family: "SFMono-Regular", ui-monospace, "Courier New", monospace;
+      font-size: 0.92em; background: rgba(25, 118, 210, 0.08); color: #125ea7;
+      padding: 1px 6px; border-radius: 6px;
+    }
+    @page { size: A4; margin: 12mm; }
+    @media (max-width: 920px) {
+      .hero-inner, .grid-two, .grid-three { grid-template-columns: 1fr; }
+      h1 { font-size: 34px; }
+      .page { padding: 18px 16px 54px; }
+    }
+    @media print {
+      html { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page { max-width: none; padding: 0; }
+      .print-bar { display: none; }
+      .hero, .meta-card, .section, .summary-card { box-shadow: none; break-inside: avoid; }
+      .hero {
+        margin-bottom: 12px;
+        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                    linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+        color: #ffffff; border-color: rgba(34, 211, 238, 0.14);
+      }
+      .meta-card { background: rgba(255, 255, 255, 0.04); color: #ffffff; border-color: rgba(34, 211, 238, 0.12); }
+      .brand-chip, .callout { color: #f5fbff; }
+      .brand-link, .meta-label { color: inherit; }
+      .section { margin-top: 12px; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="../../../ppl-meta-frontend/assets/images/eyenet-dark.svg" alt="EyeNet logo" />
+              <span class="brand-chip">Connector Module</span>
+            </div>
+          </div>
+          <span class="eyebrow">Video Surveillance Integration</span>
+          <h1>Eyenet — Surveillance &amp; Network Connectors</h1>
+          <p style="color: #d1d9e6; font-size: 15px; margin-top: 8px;">How the eyenet platform connects to IP cameras, NVR/VMS systems, and the supporting network — vendor-neutral by design.</p>
+          <p style="color: #9fb0c3; font-size: 13px; margin-top: 12px;">
+            <span style="margin-right: 20px;">eyenet-vision.com</span>
+            <span>nick@eyenet-vision.com</span>
+          </p>
+        </div>
+        <aside class="meta-card">
+          <h3>Document Info</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Type</span>
+              <span class="meta-value">Connector Module Design</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Date</span>
+              <span class="meta-value">1 September 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Products</span>
+              <span class="meta-value">eyenet-connectors</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Deployment</span>
+              <span class="meta-value">On-Premises / Edge</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+    <!-- 1. PURPOSE -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Purpose</h2>
+      </div>
+      <p class="lead">This document describes, at a high level and with <strong>generic technical specifications</strong>, how the platform connects to third-party physical hardware for video surveillance:</p>
+      <ul>
+        <li><strong>IP cameras</strong> — fixed dome, bullet, and PTZ models from any vendor.</li>
+        <li><strong>NVR / VMS systems</strong> — centralized recording and video-management platforms.</li>
+        <li><strong>Network infrastructure</strong> — industrial and managed Ethernet switches.</li>
+      </ul>
+      <p style="color: #475569;">The intent is to keep hardware-specific figures approximate. Any camera, NVR, or switch that exposes the standard protocols listed below should be connectable, regardless of vendor.</p>
+    </section>
+
+    <!-- 2. CONNECTION MODEL OVERVIEW -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>Connection Model Overview</h2>
+      </div>
+      <p>The platform treats physical devices as one edge of a larger pipeline:</p>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">
+        <pre class="arch-diagram">Physical layer                 Platform services
+─────────────────              ─────────────────────────────
+IP camera ──┐
+            ├──► Ethernet/PoE ──► switch ──► network
+NVR / VMS ──┘                                 │
+                                              ▼
+                              ┌─────────────────────────────┐
+                              │ eyenet-cameras            │  device registry + config
+                              │ eyenet-edge-camera        │  stream capture/ingest client
+                              │ eyenet-gateway            │  API entry / routing
+                              │ eyenet-media              │  recording &amp; storage
+                              │ eyenet-vision             │  analysis / detection
+                              │ eyenet-orchestrator       │  workflow coordination
+                              └─────────────────────────────┘</pre>
+      </div>
+      <p style="color: #475569;">Devices are reached over standard IP protocols; the platform does not require vendor-specific physical wiring beyond ordinary Ethernet.</p>
+    </section>
+    <!-- 3. IP CAMERAS -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>IP Cameras</h2>
+      </div>
+      <p>Applies to fixed dome, bullet, and PTZ IP cameras from any vendor.</p>
+      <h3>Generic connectivity requirements</h3>
+      <table>
+        <thead>
+          <tr><th>Aspect</th><th>Generic specification</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Physical interface</td><td>10/100/1000 Mbps Ethernet (RJ45), typically powered via PoE (802.3af) or PoE+ (802.3at)</td></tr>
+          <tr><td>Addressing</td><td>Static IP or DHCP, reachable on the camera VLAN/subnet</td></tr>
+          <tr><td>Discovery / control</td><td>ONVIF Profile S (and optionally Profile T) for discovery, configuration, PTZ, and streaming setup</td></tr>
+          <tr><td>Video streaming</td><td>RTSP (primary), optionally HTTP/MJPEG or vendor SDKs</td></tr>
+          <tr><td>Video codecs</td><td>H.264 (baseline/main/high), H.265/HEVC where supported</td></tr>
+          <tr><td>Audio</td><td>Optional two-way audio over RTSP/ONVIF where supported by the camera</td></tr>
+          <tr><td>Resolution</td><td>Generic HD range (e.g. 1 MP to 4K), chosen by deployment requirements</td></tr>
+          <tr><td>Frame rate / bitrate</td><td>Configurable per stream; main and substream profiles</td></tr>
+          <tr><td>Authentication</td><td>Username/password, optionally digest; credentials stored in the camera registry</td></tr>
+          <tr><td>Security</td><td>HTTPS/RTSP over TLS where available; MAC/IP allow-listing optional</td></tr>
+        </tbody>
+      </table>
+      <h3 style="margin-top: 22px;">How the platform connects</h3>
+      <ol>
+        <li>The camera is added in the platform camera registry (<code>eyenet-cameras</code>) with its IP, credentials, model/serial, and stream URLs.</li>
+        <li>ONVIF discovery (or manual entry) identifies available stream profiles and capabilities.</li>
+        <li><code>eyenet-edge-camera</code> (or an equivalent ingestion component) opens RTSP pull sessions for the main and/or substream.</li>
+        <li>Video frames are captured, decoded, and forwarded into <code>eyenet-vision</code> for detection/analysis.</li>
+        <li>Snapshots and recordings are persisted through <code>eyenet-media</code>.</li>
+      </ol>
+      <div class="callout green" style="margin-top: 16px; color: #f5fbff;">A camera that only speaks ONVIF/RTSP works the same regardless of vendor; no vendor lock-in is required.</div>
+    </section>
+    <!-- 4. NVR / VMS SYSTEMS -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>NVR / VMS Systems</h2>
+      </div>
+      <p>Applies to centralized NVR/VMS recording platforms from any vendor.</p>
+      <h3>Generic connectivity requirements</h3>
+      <table>
+        <thead>
+          <tr><th>Aspect</th><th>Generic specification</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Discovery / control</td><td>ONVIF Profile S / Profile T when available; otherwise the VMS vendor API or SDK</td></tr>
+          <tr><td>Video access</td><td>RTSP/RTSP-over-TLS streams re-exported by the NVR for live and recorded video</td></tr>
+          <tr><td>Event ingestion</td><td>HTTP(S) push/webhooks, ONVIF event subscriptions, or vendor event/API polling</td></tr>
+          <tr><td>Time sync</td><td>NTP recommended across cameras, NVR, and platform to keep timestamps consistent</td></tr>
+          <tr><td>Authentication</td><td>Per-system API keys or service accounts with least-privilege access</td></tr>
+          <tr><td>Network</td><td>Reachable over the same management/data network; typically higher bandwidth on uplinks</td></tr>
+        </tbody>
+      </table>
+      <h3 style="margin-top: 22px;">How the platform connects</h3>
+      <ol>
+        <li>The NVR/VMS is registered as a <strong>source system</strong> rather than as individual cameras when recording is centralized on the NVR.</li>
+        <li>The platform enumerates available cameras/channels through ONVIF or the vendor API.</li>
+        <li>Live and recorded streams are pulled over RTSP (or the vendor API) using the NVR as a proxy.</li>
+        <li>Events (motion, analytics, alarms) are subscribed to so the platform can trigger workflows in <code>eyenet-orchestrator</code>.</li>
+        <li>Recorded clips may remain on the NVR and be referenced by URL, or be copied into <code>eyenet-media</code> for long-term retention.</li>
+      </ol>
+      <div class="callout green" style="margin-top: 16px; color: #f5fbff;">If the NVR does not expose ONVIF/RTSP, the fallback is the vendor SDK/API. The platform abstracts this behind a connector so the rest of the system sees a uniform camera/stream model.</div>
+    </section>
+
+    <!-- 5. NETWORK INFRASTRUCTURE -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>Network Infrastructure</h2>
+      </div>
+      <p>Applies to industrial and managed Ethernet switches from any vendor.</p>
+      <h3>Generic connectivity requirements</h3>
+      <table>
+        <thead>
+          <tr><th>Aspect</th><th>Generic specification</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Access ports</td><td>Gigabit Ethernet for cameras/NVR, often with PoE/PoE+ (and PoE++/UPoE for PTZ/heaters)</td></tr>
+          <tr><td>Uplink ports</td><td>SFP/SFP+ fiber or copper uplinks to the core network</td></tr>
+          <tr><td>VLANs</td><td>Separate VLANs recommended: camera/VMS VLAN, management VLAN, and platform VLAN</td></tr>
+          <tr><td>QoS</td><td>Prioritize video traffic (e.g. DSCP/CoS marking) to protect streams from congestion</td></tr>
+          <tr><td>PoE budget</td><td>Verify total switch PoE budget exceeds the sum of powered device requirements</td></tr>
+          <tr><td>Management</td><td>SNMP, SSH, HTTPS for monitoring and configuration</td></tr>
+          <tr><td>Environment</td><td>Industrial/rugged rating where deployed in non-climate-controlled areas</td></tr>
+          <tr><td>Redundancy</td><td>Optional: RSTP, link aggregation, or dual uplinks for resilience</td></tr>
+        </tbody>
+      </table>
+      <h3 style="margin-top: 22px;">How the platform connects</h3>
+      <ol>
+        <li>Cameras and NVR are wired to switch access ports with PoE enabled.</li>
+        <li>The switch trunk/uplink connects to the network segment that hosts the platform services.</li>
+        <li>Traffic is segmented by VLAN and shaped with QoS so video streams and control traffic are stable.</li>
+        <li>The switch itself is monitored through standard network tooling; the platform only requires IP reachability to the devices, not direct switch integration.</li>
+      </ol>
+    </section>
+    <!-- 6. CONNECTOR MODULE DESIGN -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">6</span>
+        <h2>Connector Module Design</h2>
+      </div>
+      <p>The <code>eyenet-connectors</code> module is the single integration layer that manages every third-party hardware connection described in this document. It already exists within the eyenet platform and abstracts IP cameras, NVR/VMS systems, and network switches behind one common interface, so the rest of the platform only ever works with normalized devices and streams.</p>
+
+      <h3>Responsibilities</h3>
+      <table>
+        <thead>
+          <tr><th>Responsibility</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Device registry</td><td>Maintains the canonical list of connected hardware, its type, addressing, and capabilities</td></tr>
+          <tr><td>Credential handling</td><td>Stores and rotates device credentials in the platform secret store; secrets are never logged</td></tr>
+          <tr><td>Protocol adapters</td><td>Translates ONVIF, RTSP, HTTP/MJPEG, and vendor APIs/SDKs into a unified device model</td></tr>
+          <tr><td>Stream fan-out</td><td>Bridges live and recorded streams to <code>eyenet-edge-camera</code> and <code>eyenet-vision</code></td></tr>
+          <tr><td>Event ingestion</td><td>Subscribes to NVR/VMS motion/analytics/alarm events and forwards them to <code>eyenet-orchestrator</code></td></tr>
+          <tr><td>Health &amp; retry</td><td>Monitors connection health, auto-reconnects, and publishes status to <code>eyenet-gateway</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top: 22px;">Connector types</h3>
+      <p style="color: #475569;">The module ships three adapter families, selected automatically by device type.</p>
+      <div class="grid-three" style="margin-top: 14px;">
+        <div class="summary-card">
+          <p><strong>Camera connector</strong></p>
+          <p style="font-size: 13px; color: #475569;">ONVIF discovery and RTSP streaming for IP cameras.</p>
+          <div class="badge-row"><span class="badge mode">ONVIF</span><span class="badge">RTSP</span></div>
+        </div>
+        <div class="summary-card">
+          <p><strong>NVR/VMS connector</strong></p>
+          <p style="font-size: 13px; color: #475569;">ONVIF/RTSP re-export, plus a vendor API/SDK fallback.</p>
+          <div class="badge-row"><span class="badge mode">ONVIF</span><span class="badge user">Vendor SDK</span></div>
+        </div>
+        <div class="summary-card">
+          <p><strong>Network connector</strong></p>
+          <p style="font-size: 13px; color: #475569;">Read-only SNMP/SSH access to switches for status and PoE telemetry.</p>
+          <div class="badge-row"><span class="badge success">SNMP</span><span class="badge">SSH</span></div>
+        </div>
+      </div>
+      <h3 style="margin-top: 22px;">Common connector interface</h3>
+      <p style="color: #475569;">Every adapter implements the same interface:</p>
+      <table>
+        <thead>
+          <tr><th>Method</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>connect()</code></td><td>establish the session using stored credentials</td></tr>
+          <tr><td><code>discover()</code></td><td>enumerate cameras, channels, or ports</td></tr>
+          <tr><td><code>streams()</code></td><td>list available live/recorded stream URLs</td></tr>
+          <tr><td><code>subscribe()</code></td><td>subscribe to motion/analytics/alarm events</td></tr>
+          <tr><td><code>health()</code></td><td>report connection and stream health</td></tr>
+          <tr><td><code>disconnect()</code></td><td>cleanly tear down the session</td></tr>
+        </tbody>
+      </table>
+      <p style="color: #475569; margin-top: 14px;">Because every adapter shares this interface, adding a new vendor model is usually configuration-only: the device is registered and bound to the matching adapter, with no changes to upstream services.</p>
+    </section>
+
+    <!-- 7. DATA FLOW SUMMARY -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">7</span>
+        <h2>Data Flow Summary</h2>
+      </div>
+      <div class="callout" style="color: #f5fbff;">
+        <pre class="arch-diagram">Camera ──RTSP/ONVIF──► Switch ──► Network ──► eyenet-edge-camera ──► eyenet-vision
+   │                                                                         │
+   └──NVR/VMS ──► ONVIF/RTSP/API ─────────────────────────────────────────────┤
+                                                                             ▼
+                                                        eyenet-media (recording)
+                                                        eyenet-orchestrator (workflows)</pre>
+      </div>
+    </section>
+    <!-- 8. SECURITY & OPERATIONAL NOTES -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">8</span>
+        <h2>Security &amp; Operational Notes</h2>
+      </div>
+      <ul>
+        <li>Use a dedicated, segmented VLAN for cameras/NVR; do not expose devices directly to the internet.</li>
+        <li>Use least-privilege credentials per device; rotate passwords/API keys regularly.</li>
+        <li>Enable NTP across cameras, NVR, and platform for consistent timestamping in analysis.</li>
+        <li>Prefer RTSP-over-TLS / HTTPS where supported; otherwise restrict to the trusted LAN.</li>
+        <li>Monitor PoE budget and port bandwidth to avoid stream drops on busy switch stacks.</li>
+      </ul>
+    </section>
+
+    <!-- 9. RELATED COMPONENTS -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">9</span>
+        <h2>Related Components</h2>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Component</th><th>Role</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>eyenet-cameras</code></td><td>Camera/source registry, settings, and connection configuration</td></tr>
+          <tr><td><code>eyenet-edge-camera</code></td><td>Stream capture and ingest client for devices</td></tr>
+          <tr><td><code>eyenet-gateway</code></td><td>API entry point and routing for the platform</td></tr>
+          <tr><td><code>eyenet-media</code></td><td>Recording, storage, and media lifecycle</td></tr>
+          <tr><td><code>eyenet-vision</code></td><td>Detection and analysis of ingested frames</td></tr>
+          <tr><td><code>eyenet-orchestrator</code></td><td>Workflow coordination and event-driven processing</td></tr>
+        </tbody>
+      </table>
+    </section>
+    <!-- 10. ADDENDUM: REFERENCE HARDWARE CONFIGURATIONS -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">10</span>
+        <h2>Addendum: Reference Hardware Configurations</h2>
+      </div>
+      <p>The tables below give concrete, commonly deployed reference models per device class. Exact specs vary by model and firmware, so treat the figures as representative rather than exact.</p>
+
+      <h3>Cameras</h3>
+      <table>
+        <thead>
+          <tr><th>Vendor / model family</th><th>Form factor</th><th>Power</th><th>Control</th><th>Streaming</th><th>Typical resolution</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Avigilon H4A HD Dome</td><td>Fixed dome</td><td>PoE / PoE+</td><td>ONVIF Profile S</td><td>RTSP</td><td>HD (~2–4 MP)</td></tr>
+          <tr><td>Avigilon H4A Bullet</td><td>Fixed bullet</td><td>PoE / PoE+</td><td>ONVIF Profile S</td><td>RTSP</td><td>HD</td></tr>
+          <tr><td>TP-Link Tapo (C-series)</td><td>Fixed dome/bullet, some pan/tilt</td><td>PoE, USB, or Wi-Fi</td><td>ONVIF (select models), Tapo app</td><td>RTSP</td><td>HD / 2K</td></tr>
+          <tr><td>Axis Communications (P-series)</td><td>Fixed/PTZ dome &amp; bullet</td><td>PoE / PoE+</td><td>ONVIF Profile S/T, VAPIX</td><td>RTSP</td><td>HD to 4K</td></tr>
+          <tr><td>Hikvision (DS-2CD series)</td><td>Fixed dome/bullet</td><td>PoE / PoE+</td><td>ONVIF Profile S</td><td>RTSP</td><td>HD to 4K</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top: 22px;">NVR / VMS</h3>
+      <table>
+        <thead>
+          <tr><th>Vendor / platform</th><th>Recording</th><th>Control / API</th><th>Streaming out</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Avigilon Control Center 7</td><td>Centralized VMS</td><td>Vendor SDK/API, ONVIF</td><td>RTSP re-export</td><td>Reference in this doc</td></tr>
+          <tr><td>Hikvision (DS-76xx NVR / iVMS)</td><td>Embedded NVR</td><td>ISAPI / ONVIF</td><td>RTSP</td><td>—</td></tr>
+          <tr><td>Dahua (NVR / SmartPSS)</td><td>Embedded NVR</td><td>HTTP API / ONVIF</td><td>RTSP</td><td>—</td></tr>
+          <tr><td>TP-Link VIGI (NVR / VIGI app)</td><td>Embedded NVR</td><td>ONVIF (select models), VIGI API</td><td>RTSP</td><td>—</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top: 22px;">Network / PoE</h3>
+      <table>
+        <thead>
+          <tr><th>Vendor / model family</th><th>Class</th><th>PoE</th><th>Uplink</th><th>Management</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Cisco Catalyst IE-3300-8P2S-E</td><td>Industrial managed switch</td><td>PoE / PoE+</td><td>SFP fiber</td><td>CLI / SNMP / HTTPS</td></tr>
+          <tr><td>TP-Link Omada (JetStream)</td><td>Managed switch</td><td>PoE / PoE+</td><td>SFP / SFP+</td><td>Omada SDN / web</td></tr>
+          <tr><td>Ubiquiti UniFi (Switch series)</td><td>Managed switch</td><td>PoE / PoE+</td><td>SFP / SFP+</td><td>UniFi controller</td></tr>
+          <tr><td>Netgear (AV / ProSAFE)</td><td>Managed switch</td><td>PoE / PoE+</td><td>SFP</td><td>Web / SNMP</td></tr>
+        </tbody>
+      </table>
+
+      <p style="color: #475569; margin-top: 16px;">All of the above reduce to the same vendor-neutral protocols (Ethernet/PoE, ONVIF, and RTSP) described earlier, so the platform's single connector approach applies across vendors.</p>
+    </section>
+    <!-- 11. CONNECTING HARDWARE TO EYENET -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">11</span>
+        <h2>Connecting Hardware to eyenet</h2>
+      </div>
+      <p>This section gives high-level, step-by-step instructions for bringing any of the referenced hardware systems online. The steps assume the <code>eyenet-connectors</code> module is running and that the operator is signed in with the credentials described below.</p>
+
+      <h3>Prerequisites</h3>
+      <ul>
+        <li>Hardware is powered, addressed (static IP or DHCP reservation), and reachable from the eyenet network.</li>
+        <li>The device, NVR, or switch credentials are known (see "Credentials required at each level" below).</li>
+        <li>The site's eyenet licence matrix includes the connector tier for the device type.</li>
+      </ul>
+
+      <h3 style="margin-top: 18px;">Connect an IP camera</h3>
+      <ol>
+        <li>In the eyenet console, open <strong>Connectors → Add device → Camera</strong>.</li>
+        <li>Enter the camera IP/hostname and its ONVIF/RTSP credentials.</li>
+        <li>Run discovery to read the model, capabilities, and available stream profiles.</li>
+        <li>Select the main and substream profiles to ingest.</li>
+        <li>Save. The connector opens RTSP sessions and hands frames to <code>eyenet-vision</code>.</li>
+        <li>Confirm the camera shows <strong>Healthy</strong> in the connector status panel.</li>
+      </ol>
+
+      <h3 style="margin-top: 18px;">Connect an NVR / VMS</h3>
+      <ol>
+        <li>Open <strong>Connectors → Add device → NVR/VMS</strong>.</li>
+        <li>Choose the connection mode: ONVIF/RTSP (recommended) or vendor API/SDK.</li>
+        <li>Enter the NVR address and its API/service credentials.</li>
+        <li>Enumerate channels and map them to eyenet cameras, or leave them as NVR-managed sources.</li>
+        <li>Enable event subscription (motion, analytics, alarms) so <code>eyenet-orchestrator</code> can react.</li>
+        <li>Save and verify both live and recorded streams are reachable.</li>
+      </ol>
+
+      <h3 style="margin-top: 18px;">Connect a network switch</h3>
+      <ol>
+        <li>Open <strong>Connectors → Add device → Switch</strong>.</li>
+        <li>Enter the management IP and read-only SNMP/SSH credentials.</li>
+        <li>The connector discovers ports, PoE state, and VLAN membership for monitoring only.</li>
+        <li>Confirm the switch appears in the status panel; no video ingestion is performed.</li>
+      </ol>
+
+      <h3 style="margin-top: 18px;">Generic flow</h3>
+      <div class="callout" style="color: #f5fbff;">
+        <pre class="arch-diagram">Register device → select adapter → provide credentials → discover → map streams/channels → verify health</pre>
+      </div>
+      <h3 style="margin-top: 22px;">Credentials required at each level</h3>
+      <p>The connector needs credentials at every layer of the stack. Store each in the platform secret store and never commit them to configuration files or code.</p>
+
+      <h4>Device-level credentials</h4>
+      <table>
+        <thead>
+          <tr><th>Level</th><th>Credential needed</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>IP camera</td><td>ONVIF/RTSP username and password (a least-privilege view/stream account)</td></tr>
+          <tr><td>NVR / VMS</td><td>API key or service account for the vendor API, or an ONVIF/RTSP account</td></tr>
+          <tr><td>Network switch</td><td>Read-only SNMP community/credentials or an SSH account for status polling</td></tr>
+        </tbody>
+      </table>
+
+      <h4 style="margin-top: 22px;">eyenet platform credentials</h4>
+      <table>
+        <thead>
+          <tr><th>Level</th><th>Credential needed</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>System owner</td><td>A single eyenet <strong>system owner</strong> account (email + strong password + MFA) that owns the site and authorizes new device bindings</td></tr>
+          <tr><td>Connector service</td><td>A per-site connector API token issued by <code>eyenet-gateway</code>, used by <code>eyenet-connectors</code> to register devices and publish events</td></tr>
+        </tbody>
+      </table>
+      <div class="callout amber" style="margin-top: 16px; color: #f5fbff;">The system owner credential is the root of trust for the site. It is used only to authorize device onboarding and licence changes; day-to-day device access uses the lower-privilege accounts listed above.</div>
+
+      <h4 style="margin-top: 22px;">Premium software licence matrix (multiplatform enabled)</h4>
+      <p style="color: #475569;">eyenet gates connector capabilities through a licence matrix. The <strong>Premium</strong> tier is <strong>multiplatform enabled</strong>, meaning it unlocks all three connector families across web, desktop, and mobile clients:</p>
+      <table>
+        <thead>
+          <tr><th>Tier</th><th>Camera connector</th><th>NVR/VMS connector</th><th>Network connector</th><th>Multiplatform</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Basic</td><td>RTSP only</td><td>—</td><td>—</td><td>Web only</td></tr>
+          <tr><td>Standard</td><td>ONVIF + RTSP</td><td>ONVIF/RTSP</td><td>Read-only SNMP</td><td>Web + desktop</td></tr>
+          <tr><td>Premium</td><td>ONVIF + RTSP + vendor SDK</td><td>ONVIF + RTSP + vendor SDK/API</td><td>SNMP + SSH telemetry</td><td>Web + desktop + mobile</td></tr>
+        </tbody>
+      </table>
+      <div class="callout amber" style="margin-top: 16px; color: #f5fbff;">The Premium, multiplatform-enabled licence is required to use the vendor API/SDK adapters and to manage connectors from mobile clients. Without it, ONVIF/RTSP-only camera access still works, but NVR vendor-API integration and mobile management are disabled.</div>
+    </section>
+    <!-- 12. SHORT CONCLUSION -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">12</span>
+        <h2>Short Conclusion</h2>
+      </div>
+      <p>The platform connects to IP cameras, NVR/VMS systems, and the supporting network through <strong>standard, vendor-neutral protocols</strong> — primarily Ethernet/PoE, ONVIF, and RTSP, with a vendor API/SDK fallback for NVR/VMS. Specific reference hardware is listed in the Addendum.</p>
+      <p class="footer-note">Prepared by EyeNet for informational purposes. Product specifications and availability subject to change.</p>
+    </section>
+  </div>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+

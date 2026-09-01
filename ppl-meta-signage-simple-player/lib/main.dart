@@ -13,6 +13,7 @@ import 'services/http_server.dart';
 import 'services/history_tracking_service.dart';
 import 'services/sync_service.dart';
 import 'services/config_service.dart';
+import 'services/tailscale_service.dart';
 import 'database/playlist_database.dart';
 import 'api/signage_api_client.dart';
 import 'utils/device_info_helper.dart';
@@ -174,6 +175,7 @@ class _InitializationScreenState extends State<InitializationScreen> {
   SyncService? _syncService;
   SignageDiscoveryService? _discoveryService;
   ConfigService? _configService;
+  TailscaleService? _tailscaleService;
 
   @override
   void initState() {
@@ -189,7 +191,17 @@ class _InitializationScreenState extends State<InitializationScreen> {
       
       _configService = await ConfigService.getInstance();
       logger.i('Configuration loaded');
-      
+
+      // Phase 4: bring up this player's own per-app Tailscale node (best-effort).
+      // When VPN/auth metadata is configured the embedded runtime enrolls once and
+      // persists its node key; otherwise this returns false without error. The API
+      // and discovery clients below are then routed through the mesh node if it's up.
+      _tailscaleService = TailscaleService(configService: _configService!, logger: logger);
+      await _tailscaleService!.initialize();
+      if (_tailscaleService!.isUp) {
+        logger.i('Player own-node up — mesh IP ${_tailscaleService!.tailscaleIp}');
+      }
+
       await Future.delayed(const Duration(milliseconds: 300));
       
       setState(() {
@@ -219,6 +231,7 @@ class _InitializationScreenState extends State<InitializationScreen> {
         baseUrl: _configService!.gatewayUrl,
         deviceId: deviceId,
         logger: logger,
+        tailscaleService: _tailscaleService,
       );
       
       await Future.delayed(const Duration(milliseconds: 300));
@@ -287,6 +300,7 @@ class _InitializationScreenState extends State<InitializationScreen> {
       _discoveryService = SignageDiscoveryService(
         logger: logger,
         configService: _configService!,
+        tailscaleService: _tailscaleService,
       );
       
       final registered = await _discoveryService!.initialize();

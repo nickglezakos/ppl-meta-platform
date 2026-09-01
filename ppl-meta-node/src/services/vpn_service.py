@@ -29,6 +29,13 @@ AUTHORITY_URL = os.environ.get(
 INSTALLATION_UUID = os.environ.get("EYENET_INSTALLATION_UUID", "")
 APPLICATION_KEY = os.environ.get("EYENET_APPLICATION_KEY", "")
 
+# Node role/tag this service enrolls as. The platform compute module (this service,
+# ppl-meta-node) owns its DB/registry/media and participates in the mesh as a
+# ``tag:platform`` node (Phase 3 platform self-registration). Override with
+# ``EYENET_VPN_NODE_TYPE=client`` (or ``node`` for the legacy tag) when the peer
+# action differs.
+VPN_NODE_TYPE = os.environ.get("EYENET_VPN_NODE_TYPE", "platform")
+
 # Optional: set a custom hostname for MagicDNS.
 # If not set, derived from INSTALLATION_UUID (sanitized).
 VPN_HOSTNAME = os.environ.get("EYENET_VPN_HOSTNAME", "")
@@ -105,6 +112,10 @@ def enroll_once() -> bool:
             json={
                 "installation_uuid": INSTALLATION_UUID,
                 "application_key": APPLICATION_KEY,
+                # Phase 3: this platform node self-registers as ``tag:platform``.
+                # The Authority gates platform-node counts by ``max_platform_nodes``.
+
+                "node_type": VPN_NODE_TYPE,
             },
             timeout=15,
         )

@@ -5,7 +5,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.8.1
+  sdk: ^3.12.0
 
 dependencies:
   flutter:
@@ -33,6 +33,9 @@ dependencies:
   
   # UUID generation
   uuid: ^4.5.1
+
+  # Persistent application directory (for the embedded tailscale node's stateDir)
+  path_provider: ^2.1.5
   
   # JSON serialization
   json_annotation: ^4.9.0
@@ -49,6 +52,11 @@ dependencies:
   # Embedded HTTP server
   shelf: ^1.4.2
   shelf_router: ^1.1.4
+
+  # Per-app embedded Tailscale node (Phase 4 — one node per app): the
+  # player enrolls itself as its own 100.64.0.XX node and routes its in-app
+  # HTTP (pull + discovery) over the mesh (LAN-direct when co-located).
+  tailscale: ^0.5.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

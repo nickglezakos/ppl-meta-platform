@@ -33,6 +33,7 @@ class ConfigService {
   static const String _vpnEnrolledKey = 'vpn_enrolled';
   static const String _apiTokenKey = 'installation_api_token';
   static const String _installAuthSecretKey = 'installation_auth_secret';
+  static const String _tailscaleIpKey = 'tailscale_ip';
 
   /// Check if backend has been configured
   bool get isConfigured {
@@ -100,6 +101,34 @@ class ConfigService {
 
   /// Shared installation auth secret used for local (Option A) HMAC derivation.
   String get installationAuthSecret => _prefs?.getString(_installAuthSecretKey) ?? '';
+
+  /// This player's own mesh (``100.64.x.x``) IP, persisted once the embedded
+  /// tailscale node is up (Phase 4). Used to register the node's real VPN IP in
+  /// discovery without relying on NetworkInterface.list() (which never sees the
+  /// VPN tun on Android).
+  String? get tailscaleIp => _prefs?.getString(_tailscaleIpKey);
+
+  /// Persist this player's own mesh IP (Phase 4). Pass null/empty to clear it.
+  Future<bool> saveTailscaleIp(String? ip) async {
+    try {
+      if (ip == null || ip.trim().isEmpty) {
+        await _prefs?.remove(_tailscaleIpKey);
+      } else {
+        await _prefs?.setString(_tailscaleIpKey, ip.trim());
+      }
+      _logger.i('Tailscale IP saved: ${ip ?? 'cleared'}');
+      return true;
+    } catch (e, stackTrace) {
+      _logger.e('Failed to save tailscale IP', error: e, stackTrace: stackTrace);
+      return false;
+    }
+  }
+
+  /// Explicitly mark the player's VPN enrollment state (Phase 4). Used when the
+  /// embedded tailscale node brings itself up, complementing the Authority path.
+  Future<void> saveVpnEnrolled(bool value) async {
+    await _prefs?.setBool(_vpnEnrolledKey, value);
+  }
 
   /// Save backend configuration
   Future<bool> saveConfiguration({

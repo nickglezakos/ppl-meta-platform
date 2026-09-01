@@ -123,7 +123,9 @@ async def vpn_tags():
 
 
 class EnrollRequest(BaseModel):
-    node_type: str = "client"  # "node" for self-enrollment, "client" for cameras/apps
+    # Role/type tag valve node enrolls as ``tag:<node_type>``. The platform
+    # compute module (this node) self-registers as ``tag:platform`` (Phase 3).
+    node_type: str = "platform"  # "platform" for the compute module, "client" for cameras/apps
 
 
 @router.post("/enroll")

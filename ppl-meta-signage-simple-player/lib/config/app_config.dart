@@ -23,6 +23,9 @@ class AppConfig {
   static const Duration deregisterReceiveTimeout = Duration(seconds: 5);
   static const Duration topologySendTimeout = Duration(seconds: 5);
   static const Duration topologyReceiveTimeout = Duration(seconds: 8);
+  // Embedded tailscale node (Phase 4) — how long the embedded runtime may take to
+  // reach a stable state against the self-hosted headscale control plane.
+  static const Duration tailscaleUpTimeout = Duration(seconds: 30);
   
   // Backend Service URLs (default for local development)
   static const String mediaServiceUrl = 'http://localhost:8000';

@@ -1,11 +1,12 @@
 {
   "hosts": {},
-  "acls": [],
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["*"],
+      "dst": ["*:*"]
+    }
+  ],
   "groups": {},
-  "tagOwners": {
-    "tag:installation": ["*"],
-    "tag:node": ["*"],
-    "tag:client": ["*"],
-    "tag:camera": ["*"]
-  }
+  "tagOwners": {}
 }

@@ -61,6 +61,7 @@ def _schema_statements() -> list[str]:
             activation_status TEXT NOT NULL DEFAULT 'pending_activation',
             notes TEXT,
             matrix_group_id TEXT,
+            max_platform_nodes INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -79,6 +80,10 @@ def _schema_statements() -> list[str]:
             tenant_name TEXT,
             notes TEXT,
             installation_name TEXT,
+            platform_node_id TEXT,
+            platform_tailscale_ip TEXT,
+            platform_hostname TEXT,
+            platform_assigned_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -197,11 +202,16 @@ def initialize_database() -> None:
         _ensure_column(connection, "entitlements", "licence_name", "TEXT")
         _ensure_column(connection, "entitlements", "warning_period_days", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(connection, "entitlements", "warning_started_at", "TIMESTAMPTZ")
+        _ensure_column(connection, "entitlements", "max_platform_nodes", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(connection, "installations", "licence_name", "TEXT")
         _ensure_column(connection, "installations", "warning_period_days", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(connection, "installations", "warning_started_at", "TIMESTAMPTZ")
         _ensure_column(connection, "installations", "installation_name", "TEXT")
         _ensure_column(connection, "installations", "matrix_group_id", "TEXT")
+        _ensure_column(connection, "installations", "platform_node_id", "TEXT")
+        _ensure_column(connection, "installations", "platform_tailscale_ip", "TEXT")
+        _ensure_column(connection, "installations", "platform_hostname", "TEXT")
+        _ensure_column(connection, "installations", "platform_assigned_at", "TIMESTAMPTZ")
         # Backfill installations.matrix_group_id from legacy entitlements.
         connection.execute(
             """
@@ -1436,6 +1446,17 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
     warning_period_days = record.get("warning_period_days")
     if warning_period_days is None:
         warning_period_days = existing_entitlement.get("warning_period_days") if existing_entitlement else 0
+    max_platform_nodes = record.get("max_platform_nodes")
+    if max_platform_nodes is None:
+        max_platform_nodes = (
+            existing_entitlement.get("max_platform_nodes")
+            if existing_entitlement else 0
+        )
+    else:
+        try:
+            max_platform_nodes = int(max_platform_nodes)
+        except (TypeError, ValueError):
+            max_platform_nodes = 0
     warning_started_at = _resolve_warning_started_at(
         existing_entitlement=existing_entitlement,
         owner_enabled=owner_enabled,
@@ -1459,8 +1480,9 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                 tenant_name,
                 installation_uuid,
                 activation_status,
-                notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                notes,
+                max_platform_nodes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(entitlement_uuid) DO UPDATE SET
                 application_key = excluded.application_key,
                 licence_name = excluded.licence_name,
@@ -1474,6 +1496,7 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                 installation_uuid = excluded.installation_uuid,
                 activation_status = excluded.activation_status,
                 notes = excluded.notes,
+                max_platform_nodes = excluded.max_platform_nodes,
                 updated_at = CURRENT_TIMESTAMP
             """,
             (
@@ -1490,6 +1513,7 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                 installation_uuid,
                 activation_status,
                 record.get("notes"),
+                max_platform_nodes,
             ),
         )
 
@@ -1632,6 +1656,92 @@ def set_installation_matrix_group(installation_uuid: str, matrix_group_id: str) 
             "UPDATE entitlements SET matrix_group_id = ?, updated_at = CURRENT_TIMESTAMP "
             "WHERE installation_uuid = ?",
             (matrix_group_id, installation_uuid),
+        )
+        connection.commit()
+
+
+def set_installation_platform(
+    installation_uuid: str,
+    platform_node_id: str,
+    platform_tailscale_ip: str,
+    platform_hostname: str,
+) -> None:
+    """Link an installation to a platform node (the only client↔platform link).
+
+    The link is idempotent — re-assigning overwrites the previous platform.
+    ``platform_assigned_at`` is refreshed on every (re)assignment.
+
+    Args:
+        installation_uuid: UUID of the installation being assigned.
+        platform_node_id: Headscale node id of the linked platform.
+        platform_tailscale_ip: Mesh (``100.64.x.x``) IP of the linked platform.
+        platform_hostname: Human name of the linked platform.
+    """
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE installations SET
+                platform_node_id = ?,
+                platform_tailscale_ip = ?,
+                platform_hostname = ?,
+                platform_assigned_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE installation_uuid = ?
+            """,
+            (
+                platform_node_id,
+                platform_tailscale_ip,
+                platform_hostname,
+                installation_uuid,
+            ),
+        )
+        connection.commit()
+
+
+def clear_installation_platform(installation_uuid: str) -> None:
+    """Clear an installation's platform link, leaving it unassigned."""
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE installations SET
+                platform_node_id = NULL,
+                platform_tailscale_ip = NULL,
+                platform_hostname = NULL,
+                platform_assigned_at = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE installation_uuid = ?
+            """,
+            (installation_uuid,),
+        )
+        connection.commit()
+
+
+def get_max_platform_nodes(installation_uuid: str) -> int:
+    """Return the licence's ``max_platform_nodes`` limit for an installation.
+
+    The limit lives on the ``entitlements`` row (commercial gating). Returns 0
+    when no entitlement row / no limit is set (0 = unlimited).
+    """
+    if not installation_uuid:
+        return 0
+    entitlement = get_entitlement_by_installation_uuid(installation_uuid)
+    if entitlement is None:
+        return 0
+    return int(entitlement.get("max_platform_nodes") or 0)
+
+
+def set_entitlement_max_platform_nodes(installation_uuid: str, max_platform_nodes: int) -> None:
+    """Set (or clear) the licence's platform-node limit for an installation.
+
+    Args:
+        installation_uuid: UUID of the installation whose licence is updated.
+        max_platform_nodes: The new platform-node limit (0 = unlimited).
+    """
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE entitlements SET max_platform_nodes = ?, updated_at = CURRENT_TIMESTAMP "
+            "WHERE installation_uuid = ?",
+            (int(max_platform_nodes), installation_uuid),
         )
         connection.commit()
 
@@ -2151,6 +2261,10 @@ def _row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "notes": row["notes"],
         "installation_name": row["installation_name"] if "installation_name" in row.keys() else None,
         "matrix_group_id": row["matrix_group_id"] if "matrix_group_id" in row.keys() else None,
+        "platform_node_id": row["platform_node_id"] if "platform_node_id" in row.keys() else None,
+        "platform_tailscale_ip": row["platform_tailscale_ip"] if "platform_tailscale_ip" in row.keys() else None,
+        "platform_hostname": row["platform_hostname"] if "platform_hostname" in row.keys() else None,
+        "platform_assigned_at": _timestamp_value(row["platform_assigned_at"]) if "platform_assigned_at" in row.keys() else None,
     }
 
 
@@ -2173,6 +2287,7 @@ def _entitlement_row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "activation_status": row["activation_status"],
         "notes": row["notes"],
         "matrix_group_id": row["matrix_group_id"] if "matrix_group_id" in row.keys() else None,
+        "max_platform_nodes": row["max_platform_nodes"] if "max_platform_nodes" in row.keys() else 0,
     }
 
 

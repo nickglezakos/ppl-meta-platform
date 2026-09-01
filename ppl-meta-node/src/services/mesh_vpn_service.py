@@ -93,7 +93,7 @@ class MeshVPNService:
 
         # 1. Fetch pre-auth key from authority
         auth_key = await self._fetch_auth_key(
-            authority_url, installation_uuid, application_key
+            authority_url, installation_uuid, application_key, node_type="platform"
         )
         if not auth_key:
             logger.error("Failed to fetch pre-auth key from authority")
@@ -120,6 +120,7 @@ class MeshVPNService:
         authority_url: str,
         installation_uuid: str,
         application_key: str,
+        node_type: str = "platform",
     ) -> Optional[str]:
         """Fetch a pre-authorized key from the authority VPN API.
 
@@ -127,6 +128,9 @@ class MeshVPNService:
             authority_url: Base URL of the authority service.
             installation_uuid: This installation's UUID.
             application_key: The installation's application key.
+            node_type: Role/type tag valve node enrolls as ``tag:<node_type>``.
+                The platform compute module (this node) self-registers as ``tag:platform``
+                (Phase 3); override with ``client`` when the peer action differs.
 
         Returns:
             The pre-auth key string, or None on failure.
@@ -138,6 +142,7 @@ class MeshVPNService:
                     json={
                         "installation_uuid": installation_uuid,
                         "application_key": application_key,
+                        "node_type": node_type,
                     },
                 )
 

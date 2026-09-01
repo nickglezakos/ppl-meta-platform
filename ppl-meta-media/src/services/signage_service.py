@@ -83,6 +83,70 @@ def _endpoint_candidates(
     return candidates
 
 
+def _resolve_media_service_url() -> str:
+    """Return the base URL of this media service, VPN-first.
+
+    The playlist the player receives must point at stream URLs the player can
+    actually reach. On the local network that is the media service's LAN IP, but
+    once devices are dialing in over the Headscale/Tailscale mesh they can no
+    longer reach the LAN IP and need the media service's mesh (``100.64.x.x``)
+    address instead.
+
+    Resolution order:
+      1. Discovery's ``tailscale_ip``/``tailscale_port`` for the media service
+         (registered in ``main.py`` from the local Tailscale daemon).
+      2. The local Tailscale daemon directly (``shared.networking.tailscale_utils``)
+         — covers the window before discovery has been re-registered.
+      3. Discovery's LAN ``host``/``port``.
+      4. ``http://localhost:8000`` as a final fallback.
+    """
+    discovery_url = None
+
+    try:
+        with httpx.Client(timeout=2.0) as client:
+            response = client.get(
+                "http://localhost:8006/api/v1/services",
+                headers=_discovery_auth_headers(),
+            )
+            if response.status_code == 200:
+                services = response.json().get("services", [])
+                for service in services:
+                    name = service.get("name", "")
+                    if service.get("service_type") == "backend" and "media" in name.lower():
+                        tailscale_ip = service.get("tailscale_ip")
+                        tailscale_port = service.get("tailscale_port") or service.get("port")
+                        if tailscale_ip:
+                            url = f"http://{tailscale_ip}:{tailscale_port}"
+                            logger.info(f"🔍 Using media VPN URL from discovery: {url}")
+                            return url
+                        host = service.get("host")
+                        port = service.get("port")
+                        if host and port:
+                            discovery_url = f"http://{host}:{port}"
+                        break
+    except Exception as e:
+        logger.warning(f"Could not query discovery for media service, using default: {e}")
+
+    # Fall back to the local Tailscale daemon directly (self-detection).
+    try:
+        from shared.networking.tailscale_utils import get_tailscale_ip
+
+        vpn_ip = get_tailscale_ip()
+        if vpn_ip:
+            url = f"http://{vpn_ip}:8000"
+            logger.info(f"🔍 Using media VPN URL from local tailscale daemon: {url}")
+            return url
+    except Exception as e:
+        logger.warning(f"Could not detect local tailscale IP: {e}")
+
+    if discovery_url:
+        logger.info(f"🔍 Using media LAN URL from discovery: {discovery_url}")
+        return discovery_url
+
+    logger.info("🔍 Using default media service URL: http://localhost:8000")
+    return "http://localhost:8000"
+
+
 async def _request_via_curl(
     method: str,
     url: str,
@@ -1159,21 +1223,7 @@ class SignageSyncService:
         Returns:
             Dictionary with video list data
         """
-        # Get media service endpoint from discovery
-        media_service_url = "http://localhost:8000"  # Default fallback
-        try:
-            import httpx
-            with httpx.Client(timeout=2.0) as client:
-                response = client.get("http://localhost:8006/api/v1/services", headers=_discovery_auth_headers())
-                if response.status_code == 200:
-                    services = response.json().get("services", [])
-                    for service in services:
-                        if service.get("service_type") == "backend" and "media" in service.get("name", "").lower():
-                            media_service_url = f"http://{service['host']}:{service['port']}"
-                            logger.info(f"🔍 Using media service URL from discovery: {media_service_url}")
-                            break
-        except Exception as e:
-            logger.warning(f"Could not query discovery for media service, using default: {e}")
+        media_service_url = _resolve_media_service_url()
         
         return {
             "id": str(video_list.uuid),
@@ -1207,22 +1257,7 @@ class SignageSyncService:
         Used by the device pull endpoint (Android players dial out over VPN and
         receive their assigned playlist, instead of being pushed to).
         """
-        media_service_url = "http://localhost:8000"  # Default fallback
-        try:
-            import httpx
-            with httpx.Client(timeout=2.0) as client:
-                response = client.get(
-                    "http://localhost:8006/api/v1/services",
-                    headers=_discovery_auth_headers(),
-                )
-                if response.status_code == 200:
-                    services = response.json().get("services", [])
-                    for service in services:
-                        if service.get("service_type") == "backend" and "media" in service.get("name", "").lower():
-                            media_service_url = f"http://{service['host']}:{service['port']}"
-                            break
-        except Exception as e:
-            logger.warning(f"Could not query discovery for media service, using default: {e}")
+        media_service_url = _resolve_media_service_url()
 
         return {
             "id": str(video_list.uuid),
