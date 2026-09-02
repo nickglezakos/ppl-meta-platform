@@ -82,6 +82,23 @@ class TailscaleService {
         return false;
       }
 
+      final headscaleServer = _configService.vpnHeadscaleServer;
+      final controlUrl = Uri.tryParse(headscaleServer ?? '');
+      // A real control URL is required to bring up the node. If the persisted
+      // headscale server is missing/malformed (e.g. from a partial prior enroll),
+      // clear the stale VPN credentials so a later setup run starts clean, and do
+      // not call up() with a bad URL (which throws an invalid-base-url error).
+      if (headscaleServer == null ||
+          headscaleServer.trim().isEmpty ||
+          controlUrl == null ||
+          !controlUrl.hasAuthority) {
+        _logger.w(
+            'Tailscale: invalid/missing headscale server ($headscaleServer) — '
+            'clearing stale VPN metadata and skipping node bring-up');
+        await _configService.clearVpnMetadata();
+        return false;
+      }
+
       final stateDir = await _resolveStateDir();
       if (stateDir == null) {
         return false;
@@ -93,16 +110,11 @@ class TailscaleService {
       // Derive a stable per-app hostname from the installation UUID so the tailnet
       // shows one node per app, re-connectable across restarts.
       final hostname = _deriveHostname(_configService.authorityInstallationUuid);
-      final headscaleServer = _configService.vpnHeadscaleServer;
-      final controlUrl = Uri.tryParse(headscaleServer ?? '');
-      final controlUrlArg = (controlUrl != null && controlUrl.hasAuthority)
-          ? controlUrl
-          : null;
 
       final status = await Tailscale.instance.up(
         hostname: hostname,
         authKey: authKey,
-        controlUrl: controlUrlArg,
+        controlUrl: controlUrl,
         timeout: AppConfig.tailscaleUpTimeout,
       );
 

@@ -243,10 +243,10 @@ class ConfigService {
       if (platformHostname != null) {
         await _prefs?.setString(_vpnPlatformHostnameKey, platformHostname);
       }
-      await _prefs?.setBool(_vpnEnrolledKey, true);
+      await _prefs?.setBool(_vpnEnrolledKey, authKey != null && authKey.isNotEmpty);
       _logger.i(
         'VPN metadata saved (primary_node_ip=$primaryNodeIp, matrix_group=$matrixGroupId, '
-        'platform=$platformHostname@$platformTailscaleIp)',
+        'platform=$platformHostname@$platformTailscaleIp, enrolled=${authKey != null && authKey.isNotEmpty})',
       );
       return true;
     } catch (e, stackTrace) {
@@ -262,6 +262,8 @@ class ConfigService {
     await _prefs?.remove(_vpnHeadscaleServerKey);
     await _prefs?.remove(_vpnAuthKeyKey);
     await _prefs?.remove(_apiTokenKey);
+    await _prefs?.remove(_vpnPlatformTailscaleIpKey);
+    await _prefs?.remove(_vpnPlatformHostnameKey);
     await _prefs?.setBool(_vpnEnrolledKey, false);
     _logger.i('VPN metadata cleared');
   }
