@@ -103,6 +103,13 @@ class Settings(BaseSettings):
     user_service_url: str = "http://ppl-meta-node:8001"
     media_service_url: str = "http://ppl-meta-media:8000"
 
+    # Authority / one-time enrollment token (scenario b)
+    authority_base_url: str = "https://authority.eyenet-vision.com"
+    authority_admin_token: str = ""
+    onboarding_installation_uuid: str = "tenant-a"
+    onboarding_node_type: str = "signage"
+    onboarding_token_ttl_seconds: int = 300
+
     # Redis Configuration
     redis_url: str = "redis://localhost:6379/0"
 

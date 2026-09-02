@@ -22,6 +22,38 @@ final vpnPeersProvider = FutureProvider<List<VpnPeerInfo>>((ref) async {
   return await client.fetchPeers();
 });
 
+/// Mints a one-time signage enrollment token via the gateway (scenario b).
+/// Server-side admin token; the browser never sees it. Returns the token string.
+final enrollmentTokenMintProvider =
+    AsyncNotifierProvider<EnrollmentTokenMintNotifier, String>(
+  EnrollmentTokenMintNotifier.new,
+);
+
+class EnrollmentTokenMintNotifier extends AsyncNotifier<String> {
+  @override
+  Future<String> build() async => '';
+  // After build, we stay idle until the user taps "Generate".
+  // Call mint() to issue a fresh token.
+
+  Future<void> mint() async {
+    final apiClient = ref.read(apiClientProvider);
+    state = const AsyncLoading();
+    try {
+      final response = await apiClient.post(
+        '/api/v1/network/enrollment-token',
+        data: <String, dynamic>{},
+      );
+      final token = ((response.data as Map<String, dynamic>)['token'] as String?) ?? '';
+      if (token.isEmpty) {
+        throw Exception('Gateway returned no token');
+      }
+      state = AsyncData(token);
+    } catch (e) {
+      state = AsyncError(e, StackTrace.current);
+    }
+  }
+}
+
 class NetworkSettingsSection extends ConsumerWidget {
   const NetworkSettingsSection({super.key});
 
@@ -38,6 +70,8 @@ class NetworkSettingsSection extends ConsumerWidget {
         children: [
           _buildSectionHeader(),
           const SizedBox(height: 16),
+          _buildEnrollmentTokenCard(ref),
+          const SizedBox(height: 16),
           _buildVpnStatusCard(),
           const SizedBox(height: 16),
           const _VpnPeersCard(),
@@ -45,6 +79,65 @@ class NetworkSettingsSection extends ConsumerWidget {
           _buildDiscoveryStatus(context, discoveryState),
           const SizedBox(height: 24),
           _buildServicesTable(context, discoveryState, vpnIp),
+        ],
+      ),
+    );
+  }
+
+  /// Card to mint + display a one-time signage enrollment token (scenario b).
+  Widget _buildEnrollmentTokenCard(WidgetRef ref) {
+    final mintProvider = ref.watch(enrollmentTokenMintProvider);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.copy_all, color: AppColors.secondary, size: 20),
+              const SizedBox(width: 8),
+              const Text('Generate signage enrollment token',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Mint a short-lived one-time token to onboard a signage device. '
+            'Paste it into the device setup screen (VPN mesh path).',
+            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          mintProvider.when(
+            data: (token) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SelectableText(
+                  token,
+                  style: const TextStyle(fontSize: 13, fontFamily: 'monospace', color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 6),
+                const Text('Token valid 5 minutes, single-use.', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              ],
+            ),
+            loading: () => const Row(children: [SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)), SizedBox(width: 8), Text('Minting...')]),
+            error: (e, st) => Text('Mint failed: $e', style: const TextStyle(color: AppColors.error, fontSize: 13)),
+            skipLoadingOnRefresh: true,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              ElevatedButton.icon(
+                onPressed: () => ref.read(enrollmentTokenMintProvider.notifier).mint(),
+                icon: const Icon(Icons.add_card, size: 18),
+                label: const Text('Generate token'),
+              ),
+            ],
+          ),
         ],
       ),
     );

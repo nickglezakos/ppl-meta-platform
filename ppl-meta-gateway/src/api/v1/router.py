@@ -11,6 +11,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from jose import JWTError, jwt
 
+from config import settings
+
 # Add shared modules to path
 parent_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
 sys.path.append(parent_dir)
@@ -117,6 +119,8 @@ SERVICES = {
     "vmeta": "http://localhost:8008",
     "communications": "http://localhost:8009",
     "presence": "http://localhost:8011",
+    # Authority (licence/matrix/VPN). The admin token stays server-side.
+    "authority": settings.authority_base_url.rstrip("/"),
 }
 
 # Add validation support
@@ -159,6 +163,65 @@ async def gateway_status():
         "version": "1.0.0",
         "features": ["input_validation", "security_protection", "request_routing"],
     }
+
+
+@api_router.post("/network/enrollment-token")
+async def mint_enrollment_token(request: Request, payload: Optional[Dict[str, Any]] = None):
+    """Mint a one-time, short-lived enrollment token (scenario b).
+
+    Proxies to the Authority's admin-gated ``POST /api/v1/vpn/enrollment-tokens``
+    using the gateway's server-side admin token, so the admin token is never
+    exposed to the browser or a device. The device redeems the returned token at
+    ``{authority}/api/v1/vpn/enroll-token`` to self-register its own mesh node.
+
+    Body (optional): ``{ "installation_uuid": "...", "node_type": "...",
+    "expires_in_seconds": 300 }``. Defaults are taken from env.
+    """
+    if not settings.authority_admin_token:
+        raise HTTPException(
+            status_code=503,
+            detail="Authority admin token not configured on the gateway",
+        )
+
+    installation_uuid = (payload or {}).get(
+        "installation_uuid", settings.onboarding_installation_uuid
+    )
+    node_type = (payload or {}).get("node_type", settings.onboarding_node_type)
+    expires_in_seconds = int(
+        (payload or {}).get(
+            "expires_in_seconds", settings.onboarding_token_ttl_seconds
+        )
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{SERVICES['authority']}/api/v1/vpn/enrollment-tokens",
+                headers={
+                    "Authorization": f"Bearer {settings.authority_admin_token}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                json={
+                    "installation_uuid": installation_uuid,
+                    "node_type": node_type,
+                    "expires_in_seconds": expires_in_seconds,
+                },
+            )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Authority unreachable: {e}")
+
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=f"Authority token mint failed: {resp.text[:200]}",
+        )
+
+    data = resp.json()
+    # Tell the device which Authority to redeem against.
+    data["authority_base_url"] = SERVICES["authority"]
+    data["redeem_endpoint"] = f"{SERVICES['authority']}/api/v1/vpn/enroll-token"
+    return data
 
 
 @api_router.post("/validate")
