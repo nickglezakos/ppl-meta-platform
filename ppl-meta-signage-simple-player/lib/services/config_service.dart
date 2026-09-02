@@ -52,19 +52,23 @@ class ConfigService {
     return _prefs?.getInt(_discoveryPortKey) ?? 8006;
   }
 
-  /// Get full discovery service URL
+  /// Get full discovery service URL. Prefers the assigned platform's mesh IP
+  /// (VPN-first, after self-registration), falling back to the configured backend IP.
   String get discoveryServiceUrl {
-    return 'http://$backendIP:$discoveryPort';
+    final host = vpnPlatformTailscaleIp ?? backendIP;
+    return 'http://$host:$discoveryPort';
   }
 
-  /// Get media service URL (default port 8000)
+  /// Get media service URL (default port 8000).
   String get mediaServiceUrl {
-    return 'http://$backendIP:8000';
+    final host = vpnPlatformTailscaleIp ?? backendIP;
+    return 'http://$host:8000';
   }
 
-  /// Get gateway URL (default port 8080)
+  /// Get gateway URL (default port 8080).
   String get gatewayUrl {
-    return 'http://$backendIP:8080';
+    final host = vpnPlatformTailscaleIp ?? backendIP;
+    return 'http://$host:8080';
   }
 
   /// Get authority (licensing/VPN) service URL. Defaults to the same backend host
