@@ -241,36 +241,54 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   /// token from the platform's network screen helper endpoint, along with the
   /// Authority URL to redeem it against. Returns null when the platform does not
   /// expose one yet (the operator then pastes a token manually).
+  ///
+  /// When no backend IP is typed (empty), it probes localhost and the LAN gateway
+  /// so onboarding does not depend on manually entering the platform IP.
   Future<({String token, String? authorityUrl})?> _tryLanAutoDiscoveryToken({
     required String backendIP,
     required int port,
   }) async {
-    final candidates = [
-      'http://$backendIP:$port/api/v1/network/enroll-token',
-      'http://$backendIP:$port/api/v1/enroll-token',
-      'http://$backendIP:$port/enroll-token',
-    ];
-    for (final url in candidates) {
-      try {
-        final resp = await http
-            .get(
-              Uri.parse(url),
-              headers: {
-                'Accept': 'application/json',
-                'X-Enroll-Key': _installAuthSecret,
-              },
-            )
-            .timeout(const Duration(seconds: 3));
-        if (resp.statusCode == 200) {
-          final data = jsonDecode(resp.body) as Map<String, dynamic>;
-          final token = (data['token'] as String?)?.trim();
-          if (token != null && token.isNotEmpty) {
-            print('🔍 LAN auto-discovery found enrollment token at $url');
-            return (token: token, authorityUrl: data['authority_base_url'] as String?);
+    final hostCandidates = <String>{};
+    if (backendIP.isNotEmpty) {
+      hostCandidates.add(backendIP);
+    } else {
+      // No backend IP entered: try the loopback + likely LAN gateway addresses.
+      hostCandidates.add('127.0.0.1');
+      hostCandidates.add('192.168.1.1');
+      hostCandidates.add('192.168.0.1');
+      hostCandidates.add('10.0.0.1');
+    }
+    for (final host in hostCandidates) {
+      final candidates = [
+        'http://$host:$port/api/v1/network/enroll-token',
+        'http://$host:$port/api/v1/enroll-token',
+        'http://$host:$port/enroll-token',
+      ];
+      for (final url in candidates) {
+        try {
+          final resp = await http
+              .get(
+                Uri.parse(url),
+                headers: {
+                  'Accept': 'application/json',
+                  'X-Enroll-Key': _installAuthSecret,
+                },
+              )
+              .timeout(const Duration(seconds: 3));
+          if (resp.statusCode == 200) {
+            final data = jsonDecode(resp.body) as Map<String, dynamic>;
+            final token = (data['token'] as String?)?.trim();
+            if (token != null && token.isNotEmpty) {
+              print('🔍 LAN auto-discovery found enrollment token at $url');
+              return (
+                token: token,
+                authorityUrl: data['authority_base_url'] as String?,
+              );
+            }
           }
+        } catch (_) {
+          // Continue probing.
         }
-      } catch (_) {
-        // Continue probing.
       }
     }
     return null;
