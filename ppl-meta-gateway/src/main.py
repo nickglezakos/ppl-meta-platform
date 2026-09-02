@@ -116,6 +116,25 @@ async def lifespan(app: FastAPI):
         # Fallback to hostname resolution
         detected_ip = socket.gethostbyname(socket.gethostname())
 
+    # Detect our Headscale/Tailscale mesh IP so devices dialing in over the VPN
+    # can resolve the gateway to a reachable address.
+    tailscale_ip = None
+    try:
+        from shared.networking.tailscale_utils import get_tailscale_ip
+
+        tailscale_ip = get_tailscale_ip()
+    except Exception as e:
+        logger.warning(f"Could not detect local tailscale IP: {e}")
+
+    gateway_metadata = {
+        "version": settings.service_version,
+        "environment": settings.environment,
+        "features": "routing,load_balancing,rate_limiting",
+    }
+    if tailscale_ip:
+        gateway_metadata["tailscale_ip"] = tailscale_ip
+        gateway_metadata["tailscale_port"] = settings.port
+
     # Startup
     logger.info("Starting PPL Meta Gateway", version=settings.service_version)
 
@@ -153,11 +172,7 @@ async def lifespan(app: FastAPI):
             port=settings.port,
             health_endpoint="/health",
             tags=["api-gateway", "routing", "load-balancer"],
-            metadata={
-                "version": settings.service_version,
-                "environment": settings.environment,
-                "features": "routing,load_balancing,rate_limiting",
-            },
+            metadata=gateway_metadata,
         )
 
         if success:

@@ -294,6 +294,25 @@ async def lifespan(_app: FastAPI):
                 # Fallback to hostname resolution
                 detected_ip = socket.gethostbyname(socket.gethostname())
 
+            # Detect our Headscale/Tailscale mesh IP so devices dialing in over
+            # the VPN can resolve this node's API to a reachable address.
+            tailscale_ip = None
+            try:
+                from shared.networking.tailscale_utils import get_tailscale_ip
+
+                tailscale_ip = get_tailscale_ip()
+            except Exception as e:
+                logger.warning(f"Could not detect local tailscale IP: {e}")
+
+            node_metadata = {
+                "version": "1.0.0",
+                "environment": "development",
+                "features": "user_management,authentication,admin_api",
+            }
+            if tailscale_ip:
+                node_metadata["tailscale_ip"] = tailscale_ip
+                node_metadata["tailscale_port"] = settings.PORT
+
             await register_service(
                 name="ppl-meta-node",
                 service_type="backend",
@@ -302,11 +321,7 @@ async def lifespan(_app: FastAPI):
                 port=settings.PORT,
                 health_endpoint="/health/",
                 capabilities=["user-management", "authentication", "api"],
-                metadata={
-                    "version": "1.0.0",
-                    "environment": "development",
-                    "features": "user_management,authentication,admin_api",
-                },
+                metadata=node_metadata,
             )
             logger.info("Successfully registered ppl-meta-node with discovery service")
         except (ImportError, OSError, RuntimeError) as e:

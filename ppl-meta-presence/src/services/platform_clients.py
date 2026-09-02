@@ -8,10 +8,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import httpx
+import logging
 from fastapi import HTTPException, status
 from jose import jwt
 
 from config import config
+
+logger = logging.getLogger(__name__)
 
 workspace_root = Path(__file__).resolve().parents[3]
 if str(workspace_root) not in sys.path:
@@ -100,6 +103,25 @@ class PlatformClients:
     async def startup(self) -> None:
         if SERVICE_DISCOVERY_AVAILABLE:
             host = self._detect_ip()
+
+            # Detect our Headscale/Tailscale mesh IP so devices dialing in over
+            # the VPN can resolve this presence service to a reachable address.
+            tailscale_ip = None
+            try:
+                from shared.networking.tailscale_utils import get_tailscale_ip
+
+                tailscale_ip = get_tailscale_ip()
+            except Exception as exc:
+                logger.warning(f"Could not detect local tailscale IP: {exc}")
+
+            presence_metadata = {
+                "environment": os.getenv("ENVIRONMENT", "development"),
+                "gateway_url": self.gateway_url,
+            }
+            if tailscale_ip:
+                presence_metadata["tailscale_ip"] = tailscale_ip
+                presence_metadata["tailscale_port"] = self.service_port
+
             self._registered = await register_service(
                 name=self.service_name,
                 service_type="backend",
@@ -108,10 +130,7 @@ class PlatformClients:
                 port=self.service_port,
                 health_endpoint="/health",
                 capabilities=["presence", "qr", "session-orchestration"],
-                metadata={
-                    "environment": os.getenv("ENVIRONMENT", "development"),
-                    "gateway_url": self.gateway_url,
-                },
+                metadata=presence_metadata,
             )
 
     async def shutdown(self) -> None:
