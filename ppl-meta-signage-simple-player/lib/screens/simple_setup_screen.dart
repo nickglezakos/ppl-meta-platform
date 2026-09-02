@@ -36,7 +36,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   final _formKey = GlobalKey<FormState>();
   
   bool _isLoading = false;
-  bool _useEnrollmentToken = false;
+  bool _useEnrollmentToken = true; // token/self-register is the primary path
   String? _errorMessage;
   String? _successMessage;
 
@@ -317,64 +317,17 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                 ),
                 const SizedBox(height: 48),
 
-                // Backend IP Input
-                TextFormField(
-                  controller: _backendIPController,
-                  decoration: const InputDecoration(
-                    labelText: 'Backend IP Address',
-                    hintText: 'e.g., 192.168.1.100',
-                    prefixIcon: Icon(Icons.computer),
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Please enter backend IP address';
-                    }
-                    // Basic IP validation
-                    final parts = value.trim().split('.');
-                    if (parts.length != 4) {
-                      return 'Invalid IP address format';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // Port Input
-                TextFormField(
-                  controller: _portController,
-                  decoration: const InputDecoration(
-                    labelText: 'Discovery Service Port',
-                    hintText: '8006',
-                    prefixIcon: Icon(Icons.settings_ethernet),
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Please enter port number';
-                    }
-                    final port = int.tryParse(value.trim());
-                    if (port == null || port < 1 || port > 65535) {
-                      return 'Invalid port number';
-                    }
-                    return null;
-                  },
-                ),
-
-                const SizedBox(height: 32),
-
-                // Method selector: local discovery vs one-time enrollment token
+                // Primary: self-register via one-time enrollment token (VPN-first).
+                // LAN auto-discovery is tried first; a token can be pasted as fallback.
                 SwitchListTile(
                   value: _useEnrollmentToken,
                   onChanged: _isLoading
                       ? null
                       : (v) => setState(() => _useEnrollmentToken = v),
-                  title: const Text('Use one-time enrollment token'),
+                  title: const Text('Join the VPN mesh (enrollment token)'),
                   subtitle: const Text(
-                    'Onboard via a token minted on the platform network screen '
-                    '(LAN auto-discovery is tried first, paste to fall back).',
+                    'Recommended. The device auto-discovers its message token on '
+                    'your network and self-registers its own mesh node.',
                   ),
                 ),
                 if (_useEnrollmentToken) ...[
@@ -399,6 +352,72 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                     ),
                   ),
                 ],
+
+                const SizedBox(height: 16),
+
+                // Advanced / fallback: legacy local-discovery LAN fields.
+                // Kept (collapsed) so setups without LAN/VPN auto-discovery can
+                // still point at a backend host and use local device-enroll.
+                ExpansionTile(
+                  title: const Text('Advanced (local discovery)'),
+                  subtitle: const Text('Backend IP + discovery port + use local discovery.'),
+                  leading: const Icon(Icons.tune),
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(top: 8),
+                  children: [
+                    if (_useEnrollmentToken) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Used only as the network anchor when auto-discovery on '
+                        'this network is unavailable. For VPN onboarding, just '
+                        'press Connect above.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    TextFormField(
+                      controller: _backendIPController,
+                      decoration: const InputDecoration(
+                        labelText: 'Backend IP Address',
+                        hintText: 'e.g., 192.168.1.100',
+                        prefixIcon: Icon(Icons.computer),
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Please enter backend IP address';
+                        }
+                        final parts = value.trim().split('.');
+                        if (parts.length != 4) {
+                          return 'Invalid IP address format';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _portController,
+                      decoration: const InputDecoration(
+                        labelText: 'Discovery Service Port',
+                        hintText: '8006',
+                        prefixIcon: Icon(Icons.settings_ethernet),
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Please enter port number';
+                        }
+                        final port = int.tryParse(value.trim());
+                        if (port == null || port < 1 || port > 65535) {
+                          return 'Invalid port number';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 16),
 
                 // Connect Button
