@@ -28,6 +28,20 @@ class Settings(BaseSettings):
     # When true, register/heartbeat/topology endpoints require a valid
     # Authorization: Bearer <HMAC token> + X-Installation-Uuid header.
     AUTH_ENFORCE: bool = False
+
+    # Local onboarding / one-time enrollment token (scenario b, LAN auto-discovery)
+    # The discovery service can mint a short-lived single-use enrollment token on
+    # the Authority's behalf so a LAN device can self-register without manual paste.
+    # AUTHORITY_ADMIN_TOKEN is optional; when unset the LAN auto-discovery endpoint
+    # returns 404 and the device falls back to pasting a token from the network screen.
+    AUTHORITY_BASE_URL: str = "https://authority.eyenet-vision.com"
+    AUTHORITY_ADMIN_TOKEN: str = ""
+    # Installation the platform mints onboarding tokens for (e.g. "tenant-a").
+    ONBOARDING_INSTALLATION_UUID: str = "tenant-a"
+    # Default node_type assigned to LAN-onboarded signage devices.
+    ONBOARDING_NODE_TYPE: str = "signage"
+    # Token TTL for LAN auto-discovery minted tokens (seconds).
+    ONBOARDING_TOKEN_TTL_SECONDS: int = 300
     
     # Discovery Configuration
     ENABLE_MULTICAST: bool = True

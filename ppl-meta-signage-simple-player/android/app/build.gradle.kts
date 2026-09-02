@@ -8,7 +8,8 @@ plugins {
 android {
     namespace = "com.pplmeta.signage_simple_player"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "27.0.12077973"
+    // NDK 28.2 required by the `jni` / `integration_test` / tailscale native deps.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

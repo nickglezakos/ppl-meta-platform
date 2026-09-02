@@ -3,6 +3,7 @@
 import logging
 import socket
 import hmac
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
@@ -28,6 +29,11 @@ from auth import InstallationAuthMiddleware, compute_installation_token
 from services.edge_registry import EdgeRegistry
 from services.multicast_announcer import MulticastAnnouncer
 from services.service_registry import ServiceRegistry
+
+try:
+    import httpx
+except ImportError:  # pragma: no cover
+    httpx = None
 
 # Configure logging
 logging.basicConfig(
@@ -470,6 +476,70 @@ async def health_check_all():
     """Perform health check on all registered services."""
     results = await service_registry.health_check_all()
     return {"health_results": results}
+
+
+@app.get("/api/v1/network/enroll-token")
+async def lan_enroll_token(request: Request):
+    """Mint a one-time enrollment token for a LAN device (scenario b, auto-discovery).
+
+    Gated by ``X-Enroll-Key`` (the shared install secret), the same trust boundary
+    as ``POST /api/v1/device-enroll``. Delegates to the Authority's admin-gated
+    ``POST /api/v1/vpn/enrollment-tokens`` using the platform operator's admin
+    bearer token (``AUTHORITY_ADMIN_TOKEN`` env). When that token is not configured
+    the endpoint returns 404 so the device falls back to manual paste/QR.
+
+    Returns a fresh single-use token the device presents at the Authority's
+    ``POST /api/v1/vpn/enroll-token`` to self-register its own mesh node.
+    """
+    settings = get_settings()
+    provided = request.headers.get("X-Enroll-Key", "")
+    if not hmac.compare_digest(provided.strip(), settings.INSTALLATION_AUTH_SECRET):
+        raise HTTPException(status_code=401, detail="Invalid enroll key")
+
+    if not settings.AUTHORITY_ADMIN_TOKEN:
+        raise HTTPException(status_code=404, detail="Authority admin token not configured")
+
+    if httpx is None:
+        raise HTTPException(status_code=503, detail="httpx not available")
+
+    authority = settings.AUTHORITY_BASE_URL.rstrip("/")
+    headers = {
+        "Authorization": f"Bearer {settings.AUTHORITY_ADMIN_TOKEN}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    body = {
+        "installation_uuid": settings.ONBOARDING_INSTALLATION_UUID,
+        "node_type": settings.ONBOARDING_NODE_TYPE,
+        "expires_in_seconds": settings.ONBOARDING_TOKEN_TTL_SECONDS,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{authority}/api/v1/vpn/enrollment-tokens",
+                headers=headers,
+                json=body,
+            )
+    except Exception as exc:
+        logger.error("Failed to mint LAN enrollment token via Authority: %s", exc)
+        raise HTTPException(status_code=502, detail="Authority unreachable")
+
+    if resp.status_code != 200:
+        logger.warning(
+            "Authority rejected LAN token mint (HTTP %s): %s",
+            resp.status_code,
+            resp.text,
+        )
+        raise HTTPException(status_code=resp.status_code, detail="Token mint rejected")
+
+    data = resp.json()
+    logger.info(
+        "LAN enrollment token minted: installation=%s matrix=%s node_type=%s",
+        data.get("installation_uuid"),
+        data.get("matrix_group_id"),
+        data.get("node_type"),
+    )
+    return data
 
 
 @app.post("/api/v1/device-enroll")

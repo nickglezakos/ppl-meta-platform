@@ -34,6 +34,8 @@ class ConfigService {
   static const String _apiTokenKey = 'installation_api_token';
   static const String _installAuthSecretKey = 'installation_auth_secret';
   static const String _tailscaleIpKey = 'tailscale_ip';
+  static const String _vpnPlatformTailscaleIpKey = 'vpn_platform_tailscale_ip';
+  static const String _vpnPlatformHostnameKey = 'vpn_platform_hostname';
 
   /// Check if backend has been configured
   bool get isConfigured {
@@ -92,6 +94,12 @@ class ConfigService {
 
   /// Pre-auth key issued for this installation.
   String? get vpnAuthKey => _prefs?.getString(_vpnAuthKeyKey);
+
+  /// Assigned platform's mesh IP (the platform the client should dial over VPN).
+  String? get vpnPlatformTailscaleIp => _prefs?.getString(_vpnPlatformTailscaleIpKey);
+
+  /// Assigned platform's hostname (from the Authority).
+  String? get vpnPlatformHostname => _prefs?.getString(_vpnPlatformHostnameKey);
 
   /// Whether the Authority has supplied VPN metadata for this device.
   bool get vpnEnrolled => _prefs?.getBool(_vpnEnrolledKey) ?? false;
@@ -210,6 +218,8 @@ class ConfigService {
     String? headscaleServer,
     String? authKey,
     String? apiToken,
+    String? platformTailscaleIp,
+    String? platformHostname,
   }) async {
     try {
       if (primaryNodeIp != null) {
@@ -227,9 +237,16 @@ class ConfigService {
       if (apiToken != null) {
         await _prefs?.setString(_apiTokenKey, apiToken);
       }
+      if (platformTailscaleIp != null) {
+        await _prefs?.setString(_vpnPlatformTailscaleIpKey, platformTailscaleIp);
+      }
+      if (platformHostname != null) {
+        await _prefs?.setString(_vpnPlatformHostnameKey, platformHostname);
+      }
       await _prefs?.setBool(_vpnEnrolledKey, true);
       _logger.i(
-        'VPN metadata saved (primary_node_ip=$primaryNodeIp, matrix_group=$matrixGroupId)',
+        'VPN metadata saved (primary_node_ip=$primaryNodeIp, matrix_group=$matrixGroupId, '
+        'platform=$platformHostname@$platformTailscaleIp)',
       );
       return true;
     } catch (e, stackTrace) {

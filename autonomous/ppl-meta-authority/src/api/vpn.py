@@ -12,20 +12,27 @@ import hmac
 import json
 import logging
 import os
+import secrets
 import shlex
 import subprocess
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 
+from core.auth import require_platform_admin
 from core.storage import (
     clear_installation_platform,
+    consume_enrollment_token,
+    create_enrollment_token,
+    get_enrollment_token,
     get_installation_by_application_key,
     get_installation_by_uuid,
     get_max_platform_nodes,
+    list_enrollment_tokens,
+    revoke_enrollment_token,
     set_installation_matrix_group,
     set_installation_platform,
 )
@@ -107,6 +114,50 @@ class InstallationPlatformResponse(BaseModel):
     platform_tailscale_ip: str | None = None
     platform_hostname: str | None = None
     platform_assigned_at: str | None = None
+
+
+class EnrollmentTokenCreateRequest(BaseModel):
+    """Body for an admin to mint a one-time, short-lived enrollment token.
+
+    Binds the token to a single installation (and hence its matrix group) +
+    ``node_type``, so the receiving device can enroll into exactly the right mesh.
+    ``expires_in_seconds`` must be 60..86400 (default 300 = 5 minutes).
+    """
+
+    installation_uuid: str
+    node_type: str = Field(default="client")
+    expires_in_seconds: int = Field(default=300, ge=60, le=86400)
+
+
+class EnrollmentTokenCreateResponse(BaseModel):
+    """One-time enrollment token issued by an operator for onboarding a device."""
+
+    token: str
+    installation_uuid: str
+    matrix_group_id: str
+    node_type: str
+    headscale_server: str
+    expires_in_seconds: int
+    expires_at: str
+
+
+class EnrollmentTokenRedeemRequest(BaseModel):
+    """Body for a device to redeem a one-time enrollment token (scenario b)."""
+
+    token: str
+    node_type: str = Field(default="client")
+
+
+class EnrollmentTokenInfo(BaseModel):
+    token: str
+    installation_uuid: str
+    matrix_group_id: str
+    node_type: str
+    expires_at: str
+    used: bool
+    used_at: str | None = None
+    revoked: bool
+    revoked_at: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -478,6 +529,105 @@ def _fetch_all_nodes() -> VpnNodeListResponse:
 
 
 # ---------------------------------------------------------------------------
+# Shared enrollment issuance
+# ---------------------------------------------------------------------------
+
+
+def _issue_enrollment(
+    installation_uuid: str,
+    matrix_group_id: str,
+    node_type: str,
+    install_identity_tag: str | None = None,
+) -> EnrollInstallationResponse:
+    """Issue a pre-authorized key for an installation into a matrix mesh.
+
+    Used by both ``/enroll-installation`` (application-key auth) and the
+    ``/enroll-token`` redeem path (one-time token auth). Tags, headscale user,
+    pre-auth key, and the client's assigned platform are all derived here so the
+    two flows stay consistent.
+
+    Args:
+        installation_uuid: UUID of the enrolling installation.
+        matrix_group_id: UUID of the matrix group (headscale user namespace).
+        node_type: Role/type tag (``client``, ``signage``, ``platform``, ...).
+        install_identity_tag: Optional ``tag:install-<hex>`` identity tag to pin
+            the node back to its installation.
+
+    Returns:
+        The enrollment response with the pre-auth key, mesh metadata, and the
+        client's assigned platform (when the node is a client).
+    """
+    tags = [f"tag:matrix-{matrix_group_id}"]
+    headscale_user = f"matrix-{matrix_group_id}"
+
+    # Always include the base installation tag
+    if "tag:installation" not in tags:
+        tags.insert(0, "tag:installation")
+
+    # Add the node type tag (tag:platform / tag:client / tag:signage / ...)
+    type_tag = f"tag:{node_type}"
+    if type_tag not in tags:
+        tags.append(type_tag)
+
+    # Per-installation identity tag so the platform can map a node back to its
+    # installation (and hence its VPN IP) via /nodes.
+    identity_tag = install_identity_tag or (
+        _installation_uuid_to_tag(installation_uuid) if installation_uuid else None
+    )
+    if identity_tag and identity_tag not in tags:
+        tags.append(identity_tag)
+
+    # Ensure headscale user namespace exists
+    try:
+        _ensure_user(headscale_user)
+    except RuntimeError as exc:
+        logger.error("Failed to ensure headscale user %s: %s", headscale_user, exc)
+        raise HTTPException(status_code=503, detail=f"VPN user setup failed: {exc}")
+
+    try:
+        auth_key = _generate_preauth_key(headscale_user, tags)
+    except RuntimeError as exc:
+        logger.error("Failed to generate pre-auth key: %s", exc)
+        raise HTTPException(status_code=503, detail=f"VPN key generation failed: {exc}")
+
+    logger.info(
+        "VPN enrollment: installation=%s matrix_group=%s tags=%s",
+        installation_uuid,
+        matrix_group_id,
+        tags,
+    )
+
+    # Resolve the primary node's Tailscale IP (used by VPN-direct discovery)
+    primary_node_ip = _find_primary_node_ip(matrix_group_id)
+
+    # Issue the installation token for discovery service authentication (Issue #8)
+    api_token = _issue_installation_token(installation_uuid)
+
+    # The client's *assigned* platform (mesh IP + hostname) so it knows where to
+    # dial after enrollment. A platform enrols as its own compute module, so its
+    # node_type is not ``client`` and it has no separate assigned platform.
+    assigned = get_installation_by_uuid(installation_uuid) or {}
+    platform_tailscale_ip = (
+        assigned.get("platform_tailscale_ip") if node_type == "client" else None
+    )
+    platform_hostname = (
+        assigned.get("platform_hostname") if node_type == "client" else None
+    )
+
+    return EnrollInstallationResponse(
+        auth_key=auth_key,
+        tags=tags,
+        matrix_group_id=matrix_group_id,
+        primary_node_ip=primary_node_ip,
+        headscale_server="https://vpn.eyenet-vision.com",
+        expires_in_seconds=PREAUTH_KEY_EXPIRY_HOURS * 3600,
+        api_token=api_token,
+        platform_tailscale_ip=platform_tailscale_ip,
+        platform_hostname=platform_hostname,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
@@ -560,74 +710,188 @@ async def enroll_installation(payload: EnrollInstallationRequest):
                     ),
                 )
 
-    tags = [f"tag:matrix-{matrix_group_id}"]
-    headscale_user = f"matrix-{matrix_group_id}"
+    install_identity_tag = (
+        _installation_uuid_to_tag(payload.installation_uuid)
+        if payload.installation_uuid
+        else None
+    )
+    return _issue_enrollment(
+        installation_uuid=payload.installation_uuid,
+        matrix_group_id=matrix_group_id,
+        node_type=node_type,
+        install_identity_tag=install_identity_tag,
+    )
 
-    # Always include the base installation tag
-    if "tag:installation" not in tags:
-        tags.insert(0, "tag:installation")
 
-    # Add node type tag for service discovery (tag:platform / tag:client /
-    # tag:analytics / tag:camera / tag:signage; legacy tag:node is deprecated)
-    type_tag = f"tag:{node_type}"
-    if type_tag not in tags:
-        tags.append(type_tag)
+# ---------------------------------------------------------------------------
+# One-time enrollment tokens (scenario b: platform publishes a token)
+# ---------------------------------------------------------------------------
 
-    # Per-installation identity tag so the platform can map a node back to
-    # its installation (and hence its VPN IP) via /nodes.
-    if payload.installation_uuid:
-        install_tag = _installation_uuid_to_tag(payload.installation_uuid)
-        if install_tag not in tags:
-            tags.append(install_tag)
 
-    # Ensure headscale user namespace exists
-    try:
-        _ensure_user(headscale_user)
-    except RuntimeError as exc:
-        logger.error("Failed to ensure headscale user %s: %s", headscale_user, exc)
-        raise HTTPException(status_code=503, detail=f"VPN user setup failed: {exc}")
+@router.post(
+    "/enrollment-tokens",
+    response_model=EnrollmentTokenCreateResponse,
+)
+async def create_enrollment_token_endpoint(
+    payload: EnrollmentTokenCreateRequest,
+    current_admin: dict[str, str] = Depends(require_platform_admin),
+):
+    """Mint a one-time, short-lived enrollment token (platform admin only).
 
-    try:
-        auth_key = _generate_preauth_key(headscale_user, tags)
-    except RuntimeError as exc:
-        logger.error("Failed to generate pre-auth key: %s", exc)
-        raise HTTPException(status_code=503, detail=f"VPN key generation failed: {exc}")
+    Binds the token to one installation (and thereby its matrix group) +
+    ``node_type``. The device presents the token back at ``/enroll-token`` to
+    receive a real pre-auth key — the Authority knows exactly which mesh/tenant
+    to enroll it into from the token alone. Single-use, expiring in seconds.
+    """
+    installation = get_installation_by_uuid(payload.installation_uuid.strip())
+    if not installation:
+        raise HTTPException(status_code=404, detail="Installation not found")
+
+    node_type = (payload.node_type or "client").lower()
+    if node_type not in SUPPORTED_NODE_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported node_type '{payload.node_type}'. "
+            f"Must be one of: {', '.join(sorted(SUPPORTED_NODE_TYPES))}",
+        )
+
+    # Resolve (and pin) the matrix group so the token unambiguously targets a mesh.
+    matrix_group_id = installation.get("matrix_group_id")
+    if not matrix_group_id:
+        matrix_group_id = str(uuid.uuid4())
+        set_installation_matrix_group(payload.installation_uuid, matrix_group_id)
+        logger.info(
+            "Auto-provisioned matrix group %s for installation %s",
+            matrix_group_id,
+            payload.installation_uuid,
+        )
+
+    token = f"hsent-{secrets.token_urlsafe(24)}"
+    expires_dt = datetime.now(timezone.utc) + timedelta(
+        seconds=payload.expires_in_seconds
+    )
+    expires_at = expires_dt.isoformat()
+
+    create_enrollment_token(
+        token=token,
+        installation_uuid=installation["installation_uuid"],
+        matrix_group_id=matrix_group_id,
+        node_type=node_type,
+        expires_at=expires_at,
+        created_by_user_uuid=current_admin.get("user_uuid"),
+    )
 
     logger.info(
-        "VPN enrollment: installation=%s matrix_group=%s tags=%s",
-        payload.installation_uuid,
+        "Enrollment token minted: installation=%s matrix=%s node_type=%s ttl=%ss "
+        "by=%s",
+        installation["installation_uuid"],
         matrix_group_id,
-        tags,
+        node_type,
+        payload.expires_in_seconds,
+        current_admin.get("email"),
     )
 
-    # Resolve the primary node's Tailscale IP (used by VPN-direct discovery)
-    primary_node_ip = _find_primary_node_ip(matrix_group_id)
-
-    # Issue the installation token for discovery service authentication (Issue #8)
-    api_token = _issue_installation_token(payload.installation_uuid)
-
-    # The client's *assigned* platform (mesh IP + hostname) so it knows where to
-    # dial after enrollment. A platform enrols as its own compute module, so its
-    # node_type is not ``client`` and it has no separate assigned platform.
-    assigned = get_installation_by_uuid(payload.installation_uuid) or {}
-    platform_tailscale_ip = (
-        assigned.get("platform_tailscale_ip") if node_type == "client" else None
-    )
-    platform_hostname = (
-        assigned.get("platform_hostname") if node_type == "client" else None
-    )
-
-    return EnrollInstallationResponse(
-        auth_key=auth_key,
-        tags=tags,
+    return EnrollmentTokenCreateResponse(
+        token=token,
+        installation_uuid=installation["installation_uuid"],
         matrix_group_id=matrix_group_id,
-        primary_node_ip=primary_node_ip,
+        node_type=node_type,
         headscale_server="https://vpn.eyenet-vision.com",
-        expires_in_seconds=PREAUTH_KEY_EXPIRY_HOURS * 3600,
-        api_token=api_token,
-        platform_tailscale_ip=platform_tailscale_ip,
-        platform_hostname=platform_hostname,
+        expires_in_seconds=payload.expires_in_seconds,
+        expires_at=expires_at,
     )
+
+
+@router.post("/enroll-token", response_model=EnrollInstallationResponse)
+async def enroll_by_token(payload: EnrollmentTokenRedeemRequest):
+    """Redeem a one-time enrollment token and enroll the device into its mesh.
+
+    The device presents a token minted by a platform admin (scenario b). The
+    Authority validates the token (exists, not used, not revoked, not expired),
+    then issues a real pre-auth key bound to the mesh the token was minted for.
+
+    Redemption is single-use: the token is consumed before issuing so it cannot
+    be replayed.
+    """
+    token = (payload.token or "").strip()
+    if not token:
+        raise HTTPException(status_code=422, detail="Enrollment token is required")
+
+    record = get_enrollment_token(token)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Unknown enrollment token")
+
+    if record.get("revoked_at"):
+        raise HTTPException(status_code=403, detail="Enrollment token is revoked")
+    if record.get("used_at"):
+        raise HTTPException(status_code=403, detail="Enrollment token already used")
+
+    try:
+        expires_at = datetime.fromisoformat(record["expires_at"])
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=410, detail="Enrollment token has expired"
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(
+            "Could not parse token expiry %r: %s", record.get("expires_at"), exc
+        )
+        raise HTTPException(status_code=410, detail="Enrollment token has expired")
+
+    node_type = (payload.node_type or record.get("node_type") or "client").lower()
+    if node_type not in SUPPORTED_NODE_TYPES:
+        node_type = record.get("node_type") or "client"
+
+    # Bind to the minted installation + matrix — the exact mesh the device joins.
+    # Consume before issuing so a replay cannot generate a second key.
+    consume_enrollment_token(
+        record["token"],
+        used_by_installation_uuid=record["installation_uuid"],
+    )
+
+    logger.info(
+        "Enrolling device via one-time token: installation=%s matrix=%s node_type=%s",
+        record["installation_uuid"],
+        record["matrix_group_id"],
+        node_type,
+    )
+
+    return _issue_enrollment(
+        installation_uuid=record["installation_uuid"],
+        matrix_group_id=record["matrix_group_id"],
+        node_type=node_type,
+    )
+
+
+@router.get("/enrollment-tokens", response_model=list[EnrollmentTokenInfo])
+async def list_enrollment_tokens(
+    current_admin: dict[str, str] = Depends(require_platform_admin),
+):
+    """List outstanding (and recently used) enrollment tokens (admin only)."""
+    tokens: list[dict]
+    try:
+        tokens = list_enrollment_tokens(limit=100)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Failed to list tokens: {exc}")
+
+    return [
+        EnrollmentTokenInfo(
+            token=t["token"],
+            installation_uuid=t["installation_uuid"],
+            matrix_group_id=t["matrix_group_id"],
+            node_type=t["node_type"],
+            expires_at=t["expires_at"],
+            used=t["used_at"] is not None,
+            used_at=t["used_at"],
+            revoked=t["revoked_at"] is not None,
+            revoked_at=t["revoked_at"],
+        )
+        for t in tokens
+    ]
 
 
 def _find_platform_node_by_id_or_ip(identifier: str | None) -> dict | None:

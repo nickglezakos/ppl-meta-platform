@@ -27,9 +27,11 @@ class SimpleSetupScreen extends StatefulWidget {
 class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   final _backendIPController = TextEditingController(text: '');
   final _portController = TextEditingController(text: '8006');
+  final _enrollmentTokenController = TextEditingController(text: '');
   final _formKey = GlobalKey<FormState>();
   
   bool _isLoading = false;
+  bool _useEnrollmentToken = false;
   String? _errorMessage;
   String? _successMessage;
 
@@ -37,6 +39,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   void dispose() {
     _backendIPController.dispose();
     _portController.dispose();
+    _enrollmentTokenController.dispose();
     super.dispose();
   }
 
@@ -51,43 +54,67 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
 
     try {
       final backendIP = _backendIPController.text.trim();
-      final port = _portController.text.trim();
+      final portString = _portController.text.trim();
+      final discoveryPort = int.tryParse(portString) ?? 8006;
 
-      if (_installAuthSecret.isEmpty) {
-        throw Exception(
-          'Installation auth secret not configured. Rebuild with '
-          '--dart-define=INSTALL_AUTH_SECRET=<secret>.',
-        );
-      }
-
-      print('🔍 Attempting to connect to Discovery Service at $backendIP:$port');
+      print('🔍 Attempting to connect to Discovery Service at $backendIP:$discoveryPort');
 
       // Save configuration
       final configService = await ConfigService.getInstance();
-      await configService.saveBackendUrl(backendIP, port);
+      await configService.saveBackendUrl(backendIP, portString);
+      print('✅ Configuration saved for backend IP: $backendIP:$discoveryPort');
 
-      print('✅ Configuration saved for backend IP: $backendIP:$port');
+      if (_useEnrollmentToken) {
+        // ---- Scenario (b): one-time enrollment token (Both: LAN first, then paste) ----
+        var token = _enrollmentTokenController.text.trim();
+        if (token.isEmpty) {
+          // LAN auto-discovery of a freshly-minted token first.
+          if (_installAuthSecret.isNotEmpty) {
+            token = (await _tryLanAutoDiscoveryToken(
+              backendIP: backendIP,
+              port: discoveryPort,
+            )) ?? '';
+          }
+        }
+        if (token.isEmpty) {
+          throw Exception(
+            'No one-time enrollment token provided. Paste the token from the '
+            'platform network screen (http://$backendIP/#/network).',
+          );
+        }
+        await _redeemEnrollmentToken(
+          token: token,
+          authorityUrl: configService.authorityServiceUrl,
+        );
+        print('🔐 Enrollment via one-time token complete');
+        setState(() {
+          _successMessage = 'Enrolled with one-time token. VPN credentials saved.';
+        });
+      } else {
+        // ---- Local onboarding (Option 1): HMAC token from discovery ----
+        if (_installAuthSecret.isEmpty) {
+          throw Exception(
+            'Installation auth secret not configured. Rebuild with '
+            '--dart-define=INSTALL_AUTH_SECRET=<secret>.',
+          );
+        }
+        final enrollment = await _fetchLocalToken(
+          enrollKey: _installAuthSecret,
+          uuid: '', // blank -> server generates a stable signage-<uuid>
+          discoveryUrl: configService.discoveryServiceUrl,
+        );
 
-      // Local onboarding (Option 1): ask the local discovery service to issue the
-      // HMAC token using the build-time secret. No remote Authority round-trip.
-      final enrollment = await _fetchLocalToken(
-        enrollKey: _installAuthSecret,
-        uuid: '', // blank -> server generates a stable signage-<uuid>
-        discoveryUrl: configService.discoveryServiceUrl,
-      );
-
-      await configService.saveAuthorityCredentials(
-        applicationKey: '',
-        installationUuid: enrollment.uuid,
-      );
-      await configService.saveVpnMetadata(apiToken: enrollment.token);
-
-      print('🔐 Token issued by local discovery (Option 1)');
-
-      setState(() {
-        _successMessage =
-            'Configuration saved. Local token issued by discovery.';
-      });
+        await configService.saveAuthorityCredentials(
+          applicationKey: '',
+          installationUuid: enrollment.uuid,
+        );
+        await configService.saveVpnMetadata(apiToken: enrollment.token);
+        print('🔐 Token issued by local discovery (Option 1)');
+        setState(() {
+          _successMessage =
+              'Configuration saved. Local token issued by discovery.';
+        });
+      }
 
       // Wait a moment to show success message
       await Future.delayed(const Duration(seconds: 1));
@@ -145,6 +172,90 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
       throw Exception('Device enrollment returned no token.');
     }
     return (uuid: returnedUuid, token: token);
+  }
+
+  /// Scenario (b): redeem a one-time enrollment token minted by a platform admin
+  /// on the network screen (`http://<platform>/#/network`). The Authority returns
+  /// the full VPN enrollment (auth key, headscale server, matrix group, assigned
+  /// platform); we persist it so the app can self-register its own mesh node.
+  Future<void> _redeemEnrollmentToken({
+    required String token,
+    required String authorityUrl,
+  }) async {
+    final resp = await http
+        .post(
+          Uri.parse('$authorityUrl/api/v1/vpn/enroll-token'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode({'token': token.trim(), 'node_type': 'signage'}),
+        )
+        .timeout(const Duration(seconds: 12));
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Enrollment token rejected (HTTP ${resp.statusCode}): ${resp.body}',
+      );
+    }
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+
+    final configService = await ConfigService.getInstance();
+    await configService.saveAuthorityCredentials(
+      applicationKey: '',
+      installationUuid: (data['matrix_group_id'] as String?) ?? '',
+    );
+    await configService.saveVpnMetadata(
+      primaryNodeIp: data['primary_node_ip'] as String?,
+      matrixGroupId: data['matrix_group_id'] as String?,
+      headscaleServer: data['headscale_server'] as String?,
+      authKey: data['auth_key'] as String?,
+      apiToken: data['api_token'] as String?,
+      platformTailscaleIp: data['platform_tailscale_ip'] as String?,
+      platformHostname: data['platform_hostname'] as String?,
+    );
+    print('🔐 Enrollment token redeemed — VPN credentials saved');
+  }
+
+  /// LAN auto-discovery: attempt to fetch a freshly-generated one-time enrollment
+  /// token from the platform's network screen helper endpoint. If the platform
+  /// does not expose one yet, returns null so the operator can paste a token
+  /// manually (fallback).
+  Future<String?> _tryLanAutoDiscoveryToken({
+    required String backendIP,
+    required int port,
+  }) async {
+    // The platform could expose a small LAN helper that returns a freshly-minted
+    // token for onboarding. Probe several well-known paths, best-effort.
+    final candidates = [
+      'http://$backendIP:$port/api/v1/network/enroll-token',
+      'http://$backendIP:$port/api/v1/enroll-token',
+      'http://$backendIP:$port/enroll-token',
+    ];
+    for (final url in candidates) {
+      try {
+        final resp = await http
+            .get(
+              Uri.parse(url),
+              headers: {
+                'Accept': 'application/json',
+                'X-Enroll-Key': _installAuthSecret,
+              },
+            )
+            .timeout(const Duration(seconds: 3));
+        if (resp.statusCode == 200) {
+          final data = jsonDecode(resp.body) as Map<String, dynamic>;
+          final token = (data['token'] as String?)?.trim();
+          if (token != null && token.isNotEmpty) {
+            print('🔍 LAN auto-discovery found enrollment token at $url');
+            return token;
+          }
+        }
+      } catch (_) {
+        // Continue probing.
+      }
+    }
+    return null;
   }
 
   @override
@@ -235,6 +346,32 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                 ),
 
                 const SizedBox(height: 32),
+
+                // Method selector: local discovery vs one-time enrollment token
+                SwitchListTile(
+                  value: _useEnrollmentToken,
+                  onChanged: _isLoading
+                      ? null
+                      : (v) => setState(() => _useEnrollmentToken = v),
+                  title: const Text('Use one-time enrollment token'),
+                  subtitle: const Text(
+                    'Onboard via a token minted on the platform network screen '
+                    '(LAN auto-discovery is tried first, paste to fall back).',
+                  ),
+                ),
+                if (_useEnrollmentToken) ...[
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _enrollmentTokenController,
+                    decoration: const InputDecoration(
+                      labelText: 'One-time enrollment token (optional)',
+                      hintText: 'hsent-... — leave blank to auto-discover on LAN',
+                      prefixIcon: Icon(Icons.vpn_key),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
 
                 // Connect Button
                 ElevatedButton(

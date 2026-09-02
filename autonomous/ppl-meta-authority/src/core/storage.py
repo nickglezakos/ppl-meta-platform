@@ -186,6 +186,20 @@ def _schema_statements() -> list[str]:
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS enrollment_tokens (
+            token TEXT PRIMARY KEY,
+            installation_uuid TEXT NOT NULL,
+            matrix_group_id TEXT NOT NULL,
+            node_type TEXT NOT NULL DEFAULT 'client',
+            created_by_user_uuid TEXT,
+            expires_at TIMESTAMPTZ NOT NULL,
+            used_at TIMESTAMPTZ,
+            used_by_installation_uuid TEXT,
+            revoked_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
     ]
 
 
@@ -1744,6 +1758,115 @@ def set_entitlement_max_platform_nodes(installation_uuid: str, max_platform_node
             (int(max_platform_nodes), installation_uuid),
         )
         connection.commit()
+
+
+def create_enrollment_token(
+    token: str,
+    installation_uuid: str,
+    matrix_group_id: str,
+    node_type: str,
+    expires_at: str,
+    created_by_user_uuid: str | None = None,
+) -> None:
+    """Persist a one-time, short-lived VPN enrollment token.
+
+    The token is bound to exactly one installation (and hence its matrix group)
+    and node_type, so on redemption the Authority knows which mesh to enroll into.
+    ``expires_at`` is an ISO-8601 timestamp string.
+    """
+    with _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO enrollment_tokens (
+                token, installation_uuid, matrix_group_id, node_type,
+                created_by_user_uuid, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                token,
+                installation_uuid,
+                matrix_group_id,
+                node_type,
+                created_by_user_uuid,
+                expires_at,
+            ),
+        )
+        connection.commit()
+
+
+def get_enrollment_token(token: str) -> dict[str, Any] | None:
+    """Return a persisted enrollment token record, or None."""
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM enrollment_tokens WHERE token = ?",
+            (token,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return {
+        "token": row["token"],
+        "installation_uuid": row["installation_uuid"],
+        "matrix_group_id": row["matrix_group_id"],
+        "node_type": row["node_type"],
+        "created_by_user_uuid": row["created_by_user_uuid"],
+        "expires_at": _timestamp_value(row["expires_at"]),
+        "used_at": _timestamp_value(row["used_at"]),
+        "used_by_installation_uuid": row["used_by_installation_uuid"],
+        "revoked_at": _timestamp_value(row["revoked_at"]),
+    }
+
+
+def consume_enrollment_token(
+    token: str,
+    used_by_installation_uuid: str,
+) -> None:
+    """Mark a one-time enrollment token as used (single use)."""
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE enrollment_tokens
+            SET used_at = CURRENT_TIMESTAMP, used_by_installation_uuid = ?
+            WHERE token = ?
+            """,
+            (used_by_installation_uuid, token),
+        )
+        connection.commit()
+
+
+def revoke_enrollment_token(token: str) -> None:
+    """Revoke a persisted enrollment token (idempotent)."""
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE enrollment_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE token = ?",
+            (token,),
+        )
+        connection.commit()
+
+
+def list_enrollment_tokens(limit: int = 100) -> list[dict[str, Any]]:
+    """List enrollment tokens (most recent first), with timestamps normalized."""
+    with _connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM enrollment_tokens ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+
+    return [
+        {
+            "token": row["token"],
+            "installation_uuid": row["installation_uuid"],
+            "matrix_group_id": row["matrix_group_id"],
+            "node_type": row["node_type"],
+            "expires_at": _timestamp_value(row["expires_at"]),
+            "used_at": _timestamp_value(row["used_at"]),
+            "used_by_installation_uuid": row["used_by_installation_uuid"],
+            "revoked_at": _timestamp_value(row["revoked_at"]),
+            "created_at": _timestamp_value(row["created_at"]),
+        }
+        for row in rows
+    ]
 
 
 def get_entitlement_by_uuid(entitlement_uuid: str) -> dict[str, Any] | None:

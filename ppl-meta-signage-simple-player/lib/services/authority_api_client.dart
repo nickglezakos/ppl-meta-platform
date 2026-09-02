@@ -146,6 +146,28 @@ class AuthorityApiClient {
     return AuthorityVpnEnrollment.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// Redeem a one-time enrollment token (scenario b) issued by a platform admin
+  /// on the network screen. Returns the full VPN enrollment (auth key, headscale
+  /// server, matrix group, assigned platform) so the device can self-register its
+  /// own mesh node.
+  ///
+  /// The token is single-use and short-lived; it binds the device to exactly the
+  /// mesh/tenant the operator intended.
+  Future<AuthorityVpnEnrollment> redeemEnrollmentToken({
+    required String token,
+    String nodeType = 'signage',
+  }) async {
+    final response = await _dio.post(
+      '/api/v1/vpn/enroll-token',
+      data: {
+        'token': token.trim(),
+        'node_type': nodeType,
+      },
+    );
+    _logger.d('Authority token redemption response: ${response.data}');
+    return AuthorityVpnEnrollment.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// List all VPN nodes in a matrix group (used to locate the primary node and
   /// the player's own Tailscale IP after enrollment).
   Future<List<AuthorityVpnNode>> listMatrixGroupNodes(String matrixGroupId) async {
