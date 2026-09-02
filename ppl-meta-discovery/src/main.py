@@ -533,6 +533,11 @@ async def lan_enroll_token(request: Request):
         raise HTTPException(status_code=resp.status_code, detail="Token mint rejected")
 
     data = resp.json()
+    # Tell the device which Authority to redeem the token against. The player's
+    # default authority URL (http://<backendIP>:8000) is often the media service,
+    # not the Authority, so we must hand it the real one or redemption 404s.
+    data["authority_base_url"] = authority
+    data["redeem_endpoint"] = f"{authority}/api/v1/vpn/enroll-token"
     logger.info(
         "LAN enrollment token minted: installation=%s matrix=%s node_type=%s",
         data.get("installation_uuid"),

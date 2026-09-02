@@ -28,6 +28,11 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   final _backendIPController = TextEditingController(text: '');
   final _portController = TextEditingController(text: '8006');
   final _enrollmentTokenController = TextEditingController(text: '');
+  final _manualAuthorityUrlController = TextEditingController(
+    text:
+        // Default to the public authority for redemption; overridable so a
+        // specific licence/VPN authority can be targeted for manual pasted tokens.
+        'https://authority.eyenet-vision.com');
   final _formKey = GlobalKey<FormState>();
   
   bool _isLoading = false;
@@ -35,11 +40,14 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   String? _errorMessage;
   String? _successMessage;
 
+  String get _manualAuthorityUrl => _manualAuthorityUrlController.text.trim();
+
   @override
   void dispose() {
     _backendIPController.dispose();
     _portController.dispose();
     _enrollmentTokenController.dispose();
+    _manualAuthorityUrlController.dispose();
     super.dispose();
   }
 
@@ -67,24 +75,36 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
       if (_useEnrollmentToken) {
         // ---- Scenario (b): one-time enrollment token (Both: LAN first, then paste) ----
         var token = _enrollmentTokenController.text.trim();
+        String? authorityUrl = _manualAuthorityUrl.trim();
         if (token.isEmpty) {
           // LAN auto-discovery of a freshly-minted token first.
           if (_installAuthSecret.isNotEmpty) {
-            token = (await _tryLanAutoDiscoveryToken(
+            final discovered = await _tryLanAutoDiscoveryToken(
               backendIP: backendIP,
               port: discoveryPort,
-            )) ?? '';
+            );
+            if (discovered != null) {
+              token = discovered.token;
+              if ((discovered.authorityUrl ?? '').isNotEmpty) {
+                authorityUrl = discovered.authorityUrl;
+              }
+            }
           }
         }
         if (token.isEmpty) {
           throw Exception(
             'No one-time enrollment token provided. Paste the token from the '
-            'platform network screen (http://$backendIP/#/network).',
+            'platform network screen (http://$backendIP/#/network), or let LAN '
+            'auto-discovery find it.',
           );
+        }
+        if (authorityUrl == null || authorityUrl.isEmpty) {
+          // Fall back to the configured/default authority URL.
+          authorityUrl = configService.authorityServiceUrl;
         }
         await _redeemEnrollmentToken(
           token: token,
-          authorityUrl: configService.authorityServiceUrl,
+          authorityUrl: authorityUrl,
         );
         print('🔐 Enrollment via one-time token complete');
         setState(() {
@@ -218,15 +238,13 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   }
 
   /// LAN auto-discovery: attempt to fetch a freshly-generated one-time enrollment
-  /// token from the platform's network screen helper endpoint. If the platform
-  /// does not expose one yet, returns null so the operator can paste a token
-  /// manually (fallback).
-  Future<String?> _tryLanAutoDiscoveryToken({
+  /// token from the platform's network screen helper endpoint, along with the
+  /// Authority URL to redeem it against. Returns null when the platform does not
+  /// expose one yet (the operator then pastes a token manually).
+  Future<({String token, String? authorityUrl})?> _tryLanAutoDiscoveryToken({
     required String backendIP,
     required int port,
   }) async {
-    // The platform could expose a small LAN helper that returns a freshly-minted
-    // token for onboarding. Probe several well-known paths, best-effort.
     final candidates = [
       'http://$backendIP:$port/api/v1/network/enroll-token',
       'http://$backendIP:$port/api/v1/enroll-token',
@@ -248,7 +266,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
           final token = (data['token'] as String?)?.trim();
           if (token != null && token.isNotEmpty) {
             print('🔍 LAN auto-discovery found enrollment token at $url');
-            return token;
+            return (token: token, authorityUrl: data['authority_base_url'] as String?);
           }
         }
       } catch (_) {
@@ -367,6 +385,16 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                       labelText: 'One-time enrollment token (optional)',
                       hintText: 'hsent-... — leave blank to auto-discover on LAN',
                       prefixIcon: Icon(Icons.vpn_key),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _manualAuthorityUrlController,
+                    decoration: const InputDecoration(
+                      labelText: 'Authority URL',
+                      hintText: 'https://authority.eyenet-vision.com',
+                      prefixIcon: Icon(Icons.dns),
                       border: OutlineInputBorder(),
                     ),
                   ),
