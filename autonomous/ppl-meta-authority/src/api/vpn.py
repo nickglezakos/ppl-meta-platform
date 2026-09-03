@@ -604,14 +604,16 @@ def _issue_enrollment(
     api_token = _issue_installation_token(installation_uuid)
 
     # The client's *assigned* platform (mesh IP + hostname) so it knows where to
-    # dial after enrollment. A platform enrols as its own compute module, so its
-    # node_type is not ``client`` and it has no separate assigned platform.
+    # dial after enrollment. A platform/analytics node enrols as its own compute
+    # module, so it has no separate assigned platform — but leaf nodes (client,
+    # signage, camera, ...) need the platform's mesh IP to reach it over the mesh.
     assigned = get_installation_by_uuid(installation_uuid) or {}
+    is_leaf = node_type not in ("platform", "analytics")
     platform_tailscale_ip = (
-        assigned.get("platform_tailscale_ip") if node_type == "client" else None
+        assigned.get("platform_tailscale_ip") if is_leaf else None
     )
     platform_hostname = (
-        assigned.get("platform_hostname") if node_type == "client" else None
+        assigned.get("platform_hostname") if is_leaf else None
     )
 
     return EnrollInstallationResponse(
