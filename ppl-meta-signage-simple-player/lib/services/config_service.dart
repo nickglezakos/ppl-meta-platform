@@ -42,6 +42,26 @@ class ConfigService {
     return _prefs?.getBool(_configuredKey) ?? false;
   }
 
+  /// Whether the app should skip onboarding and proceed to initialization.
+  /// Treats an existing VPN enrollment (or configured backend) as "already set
+  /// up" so the player re-registers on next launch instead of re-demanding an
+  /// enrollment token. Guards against a partially-persisted config where
+  /// `isConfigured` was not set but enrollment metadata exists.
+  bool get skipOnboarding {
+    if (isConfigured) {
+      return true;
+    }
+    // Enrollment or an issued installation API token implies setup completed.
+    if (vpnEnrolled) {
+      return true;
+    }
+    final key = vpnAuthKey;
+    if (key != null && key.isNotEmpty) {
+      return true;
+    }
+    return installationApiToken.isNotEmpty;
+  }
+
   /// Get configured backend IP
   String get backendIP {
     return _prefs?.getString(_backendIPKey) ?? 'localhost';
@@ -71,10 +91,17 @@ class ConfigService {
     return 'http://$host:8080';
   }
 
-  /// Get authority (licensing/VPN) service URL. Defaults to the same backend host
-  /// (the authority currently shares the deployment host with discovery/media).
+  /// Get authority (licensing/VPN) service URL. Prefers the assigned platform's
+  /// mesh IP (reachable over the tailnet on Android), falling back to the
+  /// configured backend host. The authority currently shares the deployment host
+  /// with discovery/media.
   String get authorityServiceUrl {
-    return _prefs?.getString(_authorityBaseUrlKey) ?? 'http://$backendIP:8000';
+    final stored = _prefs?.getString(_authorityBaseUrlKey);
+    if (stored != null && stored.isNotEmpty) {
+      return stored;
+    }
+    final host = vpnPlatformTailscaleIp ?? backendIP;
+    return 'http://$host:8000';
   }
 
   /// Application key (licence) used for authority activation/enrollment.

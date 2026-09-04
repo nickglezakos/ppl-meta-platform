@@ -223,7 +223,9 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
     final configService = await ConfigService.getInstance();
     await configService.saveAuthorityCredentials(
       applicationKey: '',
-      installationUuid: (data['matrix_group_id'] as String?) ?? '',
+      // The HMAC api_token is derived from the installation's REAL UUID, not the
+      // matrix group id — persist it so discovery registration authenticates.
+      installationUuid: (data['installation_uuid'] as String?) ?? '',
     );
     await configService.saveVpnMetadata(
       primaryNodeIp: data['primary_node_ip'] as String?,

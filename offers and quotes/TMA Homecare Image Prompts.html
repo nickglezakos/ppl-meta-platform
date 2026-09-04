@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TMA Homecare Presentation — Image Prompts</title>
+  <style>
+    :root {
+      --navy: #1C3B6A;
+      --blue: #073F72;
+      --grey: #6b7280;
+      --dark: #222;
+      --red: #D72027;
+      --card: #f6f9fd;
+      --page: #eef2f7;
+      --line: rgba(28, 59, 106, 0.14);
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--page); color: #1f2937; font-family: "Open Sans", "Segoe UI", Arial, sans-serif; line-height: 1.55; }
+    body { margin: 0; }
+    .page { max-width: 980px; margin: 0 auto; padding: 36px 26px 80px; }
+    .topbar { height: 6px; background: linear-gradient(90deg, var(--navy) 0%, var(--navy) 55%, var(--red) 55%, var(--red) 100%); border-radius: 999px; margin-bottom: 26px; }
+    h1 { color: var(--navy); margin: 0 0 8px; font-size: 32px; letter-spacing: -0.02em; }
+    .sub { color: var(--grey); font-size: 16px; margin: 0 0 10px; max-width: 74ch; }
+    .style-note { background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--red); border-radius: 12px; padding: 16px 20px; margin: 22px 0; }
+    .style-note h3 { color: var(--navy); margin: 0 0 8px; }
+    .style-note ul { margin: 8px 0 0; padding-left: 20px; }
+    .style-note li { margin: 4px 0; }
+    .section-title { display: flex; align-items: center; gap: 12px; margin: 34px 0 10px; }
+    .section-number { width: 34px; height: 34px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--navy); color: #fff; font-weight: 700; flex: none; }
+    .section-title h2 { margin: 0; color: var(--navy); font-size: 22px; }
+    .intro { color: var(--grey); margin: 0 0 16px; max-width: 90ch; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 18px 22px; margin: 0 0 16px; box-shadow: 0 6px 18px rgba(28, 59, 106, 0.05); }
+    .use { color: var(--blue); font-weight: 700; font-size: 17px; margin: 0 0 4px; }
+    .slot { color: var(--grey); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; margin: 0 0 8px; }
+    .ratio { display: inline-block; background: rgba(215, 32, 39, 0.08); color: var(--red); font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; margin-bottom: 10px; }
+    .prompt { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 13.5px; color: #1f2937; white-space: pre-wrap; word-break: break-word; }
+    .alt { margin: 8px 0 0; font-size: 13px; color: var(--grey); }
+    .alt strong { color: var(--blue); }
+    .foot { margin-top: 34px; color: var(--grey); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+    @media print { html { background: #fff; } .page { max-width: none; padding: 20px; } .card, .style-note { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar"></div>
+    <h1>Homecare Presentation — Image Prompts</h1>
+    <p class="sub">Professional &amp; minimal photo prompts to illustrate the use cases on slides 11 &amp; 12 of the TMA Homecare Presentation, for use with AI image generators (Midjourney / DALL·E / Stable Diffusion / Firefly).</p>
+<div class="style-note">
+      <h3>Universal style block — append to every prompt</h3>
+      <pre class="prompt">minimalist professional healthcare photography, soft natural daylight, clean uncluttered composition, muted neutral palette with soft whites greys and a single subtle navy-blue accent, shallow depth of field, realistic photography, high resolution, editorial style, no text, no words, no logos, no watermarks</pre>
+      <p class="alt">Use a consistent <strong>aspect ratio</strong> per placement: <strong>16:9</strong> (wide hero / title band), <strong>4:5 or 1:1</strong> (feature cards &amp; grid), <strong>3:4</strong> (portrait accents).</p>
+    </div>
+
+    <div class="section-title"><span class="section-number">1</span><h2>Slide 11 · Extended Homecare Services — Overview Hero</h2></div>
+    <p class="intro">A single wide hero image conveying the entire "one complete homecare ecosystem" message.</p>
+
+    <div class="card">
+      <p class="use">Extended Homecare Services — ecosystem hero</p>
+      <p class="slot">hero image · slide 11 top</p>
+      <span class="ratio">16:9</span>
+      <pre class="prompt">wide minimal photo of a bright modern living room where a senior sits comfortably on a light-grey sofa; on a side table a smart health-monitoring wristband and a small telemedicine tablet stand neatly; a subtle compact white wall device blends into the wall; warm soft morning light through a window, inviting and calm, minimalist Scandinavian interior, navy-blue throw pillow as the only color accent</pre>
+      <p class="alt"><strong>Alt:</strong> minimalist top-down flat-lay of homecare essentials — health wristband, tablet showing vital-sign charts, portable monitoring device and a small white sensor, arranged neatly on a light surface with soft shadows.</p>
+    </div>
+<div class="section-title"><span class="section-number">2</span><h2>Slide 11 · Core Homecare Services (left column)</h2></div>
+    <p class="intro">Five photos, one per core service — clean and consistent, each card-sized (4:5 or 1:1).</p>
+
+    <div class="card">
+      <p class="use">24/7 remote patient monitoring</p>
+      <p class="ratio">4:5 · feature card</p>
+      <pre class="prompt">minimal photo of an elderly person's wrist with a sleek white health-monitoring band, close-up, blurred soft living-room background, a subtle screen glow in the distance suggesting continuous 24/7 tracking, natural daylight, gentle and reassuring mood</pre>
+    </div>
+
+    <div class="card">
+      <p class="use">Telemedicine consultations</p>
+      <p class="ratio">4:5 · feature card</p>
+      <pre class="prompt">minimal photo of a senior at a clean white kitchen table on a video consultation with a doctor shown on a tablet screen facing the camera, soft daylight, shallow depth of field on the tablet, warm and professional telemedicine moment at home</pre>
+    </div>
+
+    <div class="card">
+      <p class="use">GPS &amp; geofence tracking with SOS</p>
+      <p class="ratio">4:5 · feature card</p>
+      <pre class="prompt">minimal close-up of a hand holding a slim white GPS-tracking wearable with a subtle SOS emergency button, soft blurred neutral interior behind, gentle side light, hopeful and secure mood, no text</pre>
+    </div>
+
+    <div class="card">
+      <p class="use">Portable medical device suite</p>
+      <p class="ratio">1:1 · feature card</p>
+      <pre class="prompt">minimal flat-lay on a light-grey surface of a portable telemedicine suite — compact monitoring screen, pulse oximeter, digital thermometer and a slim white tablet arranged neatly in a clean travel case, soft diffused light, orderly and reassuring medical precision</pre>
+    </div>
+
+    <div class="card">
+      <p class="use">Secure personal health records</p>
+      <p class="ratio">4:5 · feature card</p>
+      <pre class="prompt">minimal photo of a person's hands holding a white tablet showing a clean healthcare dashboard with graphs, on a bright minimalist desk with a cup, soft natural light, sense of secure private access to health records, no visible text</pre>
+    </div>
+
+    <div class="section-title"><span class="section-number">3</span><h2>Slide 11 · Extended On-Site Services (right column)</h2></div>
+    <p class="intro">Five photos for the added on-site intelligence services — modern, calm, high-end.</p>
+
+    <div class="card">
+      <p class="use">Caregiver presence assurance</p>
+      <p class="ratio">4:5 · feature card</p>
+      <pre class="prompt">minimal photo of a friendly professional caregiver in a clean uniform arriving at a bright apartment doorway, holding a small medical bag, greeting an elderly person, soft hallway light, reassuring warm moment, depth of field on the caregiver</pre>
+    </div>
+
+    <div class="card">
+      <p class="use">Secure zones at the patient home</p>
+      <p class="ratio">4:5 · feature card</p>
+      <pre class="prompt">minimal photo of a modern bright hallway with a small discreet white wall-mounted sensing device near the entrance, clean composition, soft neutral tones, subtle sense of a protected secure perimeter, professional but warm</pre>
+    </div>
+
+    <div class="card">
+      <p class="use">Automatic fall detection</p>
+      <p class="ratio">4:5 · feature card</p>
+      <pre class="prompt">minimal photo of a living room floor where a compact monitoring device on a low table and a subtle ceiling sensor are visible, one soft empty cushion on the floor suggesting a recent event, calm lighting, respectful and non-dramatic, focus on the sensing technology</pre>
+    </div>
+
+    <div class="card">
+      <p class="use">Voice &amp; natural-language triggers</p>
+      <p class="ratio">4:5 · feature card</p>
+      <pre class="prompt">minimal photo of a senior speaking toward a small white hands-free voice assistant device on a side table in a bright living room, soft daylight, gentle expression, sense of a spoken request being heard and understood</pre>
+    </div>
+
+    <div class="card">
+      <p class="use">Edge-processed, private monitoring</p>
+      <p class="ratio">4:5 · feature card</p>
+      <pre class="prompt">minimal photo of a small white edge-processing device on a shelf in a softly blurred modern room, soft bokeh of a window, subtle idea of on-device privacy and local processing, clean and calm, no cables visible, no text</pre>
+    </div>
+<div class="section-title"><span class="section-number">4</span><h2>Slide 12 · On-Site Monitoring &amp; Safety Services (2×2 grid)</h2></div>
+    <p class="intro">Four consistent grid images (1:1). Use the exact same light, tone and furniture style so the grid reads as one set.</p>
+
+    <div class="card">
+      <p class="use">Presence &amp; Position Assurance</p>
+      <p class="ratio">1:1 · grid tile</p>
+      <pre class="prompt">minimal photo of a professional caregiver and an elderly person seated together at a bright table, matching the same Scandinavian style, gentle natural light, sense of the right person in the right place at the right time, warm and structured</pre>
+    </div>
+
+    <div class="card">
+      <p class="use">Secure Zones</p>
+      <p class="ratio">1:1 · grid tile</p>
+      <pre class="prompt">minimal photo of the entrance of a bright modernist home with a small discreet sensing device near the door, a soft navy-blue door as the single color accent, clean symmetrical composition, calm protective mood</pre>
+    </div>
+
+    <div class="card">
+      <p class="use">Automatic Fall Detection</p>
+      <p class="ratio">1:1 · grid tile</p>
+      <pre class="prompt">minimal photo of a bright living room floor from a slightly elevated angle showing a small white fall-detection sensor unit, empty wooden floor, one neatly folded light blanket nearby, soft daylight, respectful non-dramatic, focus on the smart sensor</pre>
+    </div>
+
+    <div class="card">
+      <p class="use">Voice &amp; Natural-Language Triggers</p>
+      <p class="ratio">1:1 · grid tile</p>
+      <pre class="prompt">minimal photo of an elderly person speaking toward a discreet white voice device placed on a low table, matching Scandinavian interior, soft window light, a subtle warm expression, sense of a call for help being heard instantly</pre>
+    </div>
+
+    <p class="foot">Craft each prompt with the universal style block above for a consistent, professional, minimal set across both slides. Adjust aspect ratios to match your final layout.</p>
+  </div>
+</body>
+</html>

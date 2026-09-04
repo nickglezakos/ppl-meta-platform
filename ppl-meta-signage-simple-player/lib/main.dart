@@ -102,7 +102,7 @@ class _StartupScreenState extends State<StartupScreen> {
   Future<void> _checkConfiguration() async {
     try {
       final configService = await ConfigService.getInstance();
-      final isConfigured = configService.isConfigured;
+      final isConfigured = configService.skipOnboarding;
       
       setState(() {
         _needsSetup = !isConfigured;

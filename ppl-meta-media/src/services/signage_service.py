@@ -1048,12 +1048,18 @@ class SignageSyncService:
                     discovery_device = response.json()
                 logger.info(f"Found device in discovery: {discovery_device.get('name')}")
                 
-                # Extract device info
+                # Extract device info. Persist the device's mesh (Tailscale VPN)
+                # IP when advertised so the DB fallback is also VPN-reachable —
+                # the LAN host is unreachable from the platform for NAT'd/offsite
+                # devices.
+                mesh_ip = discovery_device.get("tailscale_ip") or None
+                device_host = mesh_ip or discovery_device.get("host")
                 device_data = {
                     "device_name": discovery_device.get("name", f"Device-{str(device_id)[:8]}"),
                     "device_hostname": discovery_device.get("host"),
-                    "ip_address": discovery_device.get("host"),
-                    "port": discovery_device.get("port"),
+                    "ip_address": device_host,
+                    "port": discovery_device.get("tailscale_port")
+                    or discovery_device.get("port"),
                     "is_online": discovery_device.get("status") == "healthy",
                 }
                 

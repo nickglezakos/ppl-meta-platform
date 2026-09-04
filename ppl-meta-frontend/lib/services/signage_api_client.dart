@@ -294,8 +294,17 @@ class SignageApiClient {
               registeredAt: registeredAt,
             );
             
-            // Cache device endpoint to avoid repeated discovery lookups
-            final endpoint = 'http://${device.host}:${device.port}';
+            // Cache device endpoint to avoid repeated discovery lookups. Prefer
+            // the device's dynamic mesh (Tailscale VPN) IP when advertised — the
+            // LAN host is often unreachable from the platform for NAT'd/offsite
+            // devices. The mesh IP is refreshed on the player's heartbeat; host
+            // stays the stale LAN address.
+
+            final meshIpTrou = (s.metadata['tailscale_ip'] as String?);
+            final reachableHost = (meshIpTrou != null && meshIpTrou!.trim().isNotEmpty)
+                ? meshIpTrou!
+                : s.host;
+            final endpoint = 'http://$reachableHost:${s.port}';
             _deviceEndpointCache[device.id] = endpoint;
             print('  Cached endpoint for ${device.id}: $endpoint');
             
@@ -394,7 +403,16 @@ class SignageApiClient {
           },
         );
 
-        final endpoint = 'http://${device.host}:${device.port}';
+        // Prefer the device's dynamic mesh (Tailscale VPN) IP when advertised — the
+        // LAN host is often unreachable from the platform for NAT'd/offsite devices.
+        // The mesh IP is fresh (refreshed each player heartbeat); host is the stale
+        // LAN address.
+
+        final meshIpTrou2 = (device.metadata?['tailscale_ip'] as String?);
+        final reachableHost = (meshIpTrou2 != null && meshIpTrou2!.trim().isNotEmpty)
+            ? meshIpTrou2!
+            : device.host;
+        final endpoint = 'http://$reachableHost:${device.port}';
         _deviceEndpointCache[deviceId] = endpoint;
         print('✅ Discovered and cached endpoint for $deviceId: $endpoint');
         return endpoint;

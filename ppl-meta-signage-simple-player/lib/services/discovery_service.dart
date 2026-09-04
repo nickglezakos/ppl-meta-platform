@@ -88,9 +88,16 @@ class SignageDiscoveryService {
   void _setupAuthInterceptor() {
     _dio.interceptors.add(
       InterceptorsWrapper(
-        onRequest: (options, handler) {
+        onRequest: (options, handler) async {
           final token = _configService.installationApiToken;
-          final uuid = _configService.authorityInstallationUuid;
+          var uuid = _configService.authorityInstallationUuid;
+          // If we hold a token but not the real installation UUID (older authority
+          // that omitted it), try to resolve it from the matrix-group nodes so
+          // discovery's HMAC check passes. Cheapest after the first success.
+          if (token.isNotEmpty && uuid.isEmpty) {
+            await _resolveOwnInstallationUuidIfMissing();
+            uuid = _configService.authorityInstallationUuid;
+          }
           if (token.isNotEmpty && uuid.isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $token';
             options.headers['X-Installation-Uuid'] = uuid;
@@ -167,6 +174,11 @@ class SignageDiscoveryService {
       // player as an edge device so the device registry can track it by type,
       // capabilities and VPN reachability. Best-effort — failure does not block
       // service registration.
+      // Ensure the install-token auth header carries our REAL installation uuid
+      // (the token is HMAC(secret, real_uuid)). When the enrollment response
+      // omitted it, resolve it from the Authority's matrix-group nodes now so
+      // discovery accepts registration and heartbeats.
+      await _resolveOwnInstallationUuidIfMissing();
       await _registerAsEdgeDevice();
 
       // Register with discovery service
@@ -196,6 +208,71 @@ class SignageDiscoveryService {
   /// Falls back to asking the Authority for the matrix group's nodes and matching
   /// our own installation_uuid (populated from the tag:install-* ACL tag). On
   /// Android the VPN tun is otherwise invisible to NetworkInterface.list().
+/// Ensure the player has the REAL installation UUID it's bound to, resolving it
+  /// from the Authority's matrix-group nodes when the enrollment response omitted
+  /// it (older authority). Discovery validates the install token as
+  /// HMAC(secret, X-Installation-Uuid), so the header must carry the real UUID the
+  /// token was minted for — otherwise registration is rejected with 401. Idempotent.
+  Future<String?> _resolveOwnInstallationUuidIfMissing() async {
+    final existing = _configService.authorityInstallationUuid;
+    if (existing.isNotEmpty) {
+      return existing;
+    }
+
+    final matrixGroupId = _configService.vpnMatrixGroupId;
+    if (matrixGroupId == null || matrixGroupId.isEmpty) {
+      return null;
+    }
+
+    try {
+      final authority = AuthorityApiClient(
+        baseUrl: _configService.authorityServiceUrl,
+        logger: _logger,
+      );
+      final nodes = await authority.listMatrixGroupNodes(matrixGroupId);
+
+      AuthorityVpnNode? selfNode;
+      // 1. Best: match by our own mesh IP (persisted when our node came up).
+      final ownMeshIp = _configService.tailscaleIp ?? _tailscaleService?.tailscaleIp;
+      if (ownMeshIp != null && ownMeshIp.isNotEmpty) {
+        for (final node in nodes) {
+          if (node.tailscaleIp == ownMeshIp) {
+            selfNode = node;
+            break;
+          }
+        }
+      }
+      // 2. Fallback: a token-enrolled mesh has exactly one leaf (non-node)
+      // installation entry — that's us.
+      if (selfNode == null) {
+        for (final node in nodes) {
+          if (!node.isNode && node.installationUuid.isNotEmpty) {
+            selfNode = node;
+            break;
+          }
+        }
+      }
+
+      if (selfNode == null || selfNode.installationUuid.isEmpty) {
+        _logger.w(
+            'Could not self-identify in matrix group $matrixGroupId '
+            '(nodes=${nodes.length})');
+        return null;
+      }
+
+      await _configService.saveAuthorityCredentials(
+        applicationKey: _configService.authorityApplicationKey,
+        installationUuid: selfNode.installationUuid,
+      );
+      _logger.i('Resolved own installation UUID: ${selfNode.installationUuid}');
+      return selfNode.installationUuid;
+    } catch (e) {
+      _logger.w('Failed to resolve own installation UUID: $e');
+      return null;
+    }
+  }
+
+  /// Resolve this player's own Tailscale (VPN) IP.
   Future<String?> _resolveOwnTailscaleIp() async {
     if (_ownTailscaleIp != null && _ownTailscaleIp!.isNotEmpty) {
       return _ownTailscaleIp;
@@ -441,11 +518,22 @@ class SignageDiscoveryService {
       final heartbeatUrl = '${_configService.discoveryServiceUrl}/api/v1/services/heartbeat';
       _logger.d('Heartbeat URL: $heartbeatUrl');
       _logger.d('Service ID: $_serviceId');
+      // Re-resolve our own mesh (VPN) IP on every heartbeat so discovery's
+      // top-level `tailscale_ip` stays current. Else the platform signage
+      // resolver keeps dialing our (unreachable) LAN host over the mesh.
+
+      final meshIp = await _resolveOwnTailscaleIp();
+      final heartbeatMetadata = (meshIp == null || meshIp.isEmpty)
+          ? <String, dynamic>{}
+          : <String, dynamic>{
+              'tailscale_ip': meshIp,
+              'tailscale_port': AppConfig.httpServerPort,
+            };
       
       final heartbeatData = {
         'service_id': _serviceId,
         'status': 'healthy',
-        'metadata': {},
+        'metadata': heartbeatMetadata,
       };
       _logger.d('Heartbeat payload: $heartbeatData');
       
@@ -498,10 +586,21 @@ class SignageDiscoveryService {
     }
     try {
       final url = '${_configService.discoveryServiceUrl}/api/v1/devices/heartbeat';
+      // Re-resolve our own mesh IP on every device heartbeat so discovery's edge
+      // device registry also tracks the fresh VPN address after enrollment.
+      final deviceMeshIp = await _resolveOwnTailscaleIp();
+      final deviceHeartbeatMetadata =
+          (deviceMeshIp == null || deviceMeshIp.isEmpty)
+              ? <String, dynamic>{}
+              : <String, dynamic>{
+                  'tailscale_ip': deviceMeshIp,
+                  'tailscale_port': AppConfig.httpServerPort,
+                };
+
       final data = {
         'device_id': _deviceRegistrationId,
         'status': 'healthy',
-        'metadata': {},
+        'metadata': deviceHeartbeatMetadata,
       };
       final response = await _dio.post(
         url,

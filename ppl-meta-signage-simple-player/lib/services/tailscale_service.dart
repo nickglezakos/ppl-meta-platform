@@ -118,12 +118,46 @@ class TailscaleService {
         timeout: AppConfig.tailscaleUpTimeout,
       );
 
-      final state = status.state.toString();
-      _logger.i('Tailscale: node state=$state ip=${status.ipv4}');
+      // The tsnet engine can report `needsLogin` as its FIRST stable state even
+      // with a valid pre-auth key while auth is still completing, and the
+      // package's up() returns on the first stable state. Do NOT treat it as
+      // terminal — keep polling until the tunnel is actually up (the engine
+      // continues authenticating in the background) or we exhaust a bounded
+      // number of attempts.
+      TailscaleStatus current = status;
+      var attempt = 0;
+      const maxAttempts = 8;
+      while (!current.isRunning && attempt < maxAttempts) {
+        attempt++;
+        _logger.i('Tailscale: node state=${current.state.toString()} '
+            '(attempt $attempt/$maxAttempts) — re-applying auth key, waiting for tunnel');
+        await Future.delayed(const Duration(seconds: 3));
+        // Re-invoke up() to (re)apply the pre-auth key. Safe: the SAME node
+        // re-authing doesn't consume a second key once it has a NodeKey, and
+        // tsnet with a valid key continues authenticating in the background.
+        try {
+          current = await Tailscale.instance.up(
+            hostname: hostname,
+            authKey: authKey,
+            controlUrl: controlUrl,
+            timeout: const Duration(seconds: 15),
+          );
+        } catch (e) {
+          _logger.w('Tailscale: up() retry $attempt failed: $e');
+          try {
+            current = await Tailscale.instance.status();
+          } catch (_) {
+            break;
+          }
+        }
+      }
 
-      if (status.isRunning) {
+      final state = current.state.toString();
+      _logger.i('Tailscale: final node state=$state ip=${current.ipv4}');
+
+      if (current.isRunning) {
         _up = true;
-        _ipv4 = status.ipv4;
+        _ipv4 = current.ipv4;
         _httpClient = Tailscale.instance.http.client;
         // Persist our own mesh IP so discovery can register it even before the
         // Authority has ingested our new node.
@@ -133,9 +167,10 @@ class TailscaleService {
       } else {
         // needsLogin / needsMachineAuth etc. — not yet ready for traffic, but the
         // configured state is persisted so the login flow can finish later.
-        _logger.w('Tailscale: node not running (state=$state); tunnel not yet live');
-        if (status.ipv4 != null) {
-          _ipv4 = status.ipv4;
+        _logger.w('Tailscale: node still not running (state=$state) after '
+            '$attempt attempts; tunnel not yet live');
+        if (current.ipv4 != null) {
+          _ipv4 = current.ipv4;
           await _configService.saveTailscaleIp(_ipv4);
         }
       }

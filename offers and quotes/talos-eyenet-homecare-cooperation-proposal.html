@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TMAIX × EyeNet — Home Care Cooperation Proposal</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-talos: #d97706;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+    * { box-sizing: border-box; }
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    body { margin: 0; }
+    .page { max-width: var(--max-width); margin: 0 auto; padding: 32px 24px 72px; }
+    .print-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .print-note { font-size: 13px; color: #64748b; }
+    .print-button {
+      border: 0; border-radius: 999px; padding: 12px 18px;
+      background: var(--brand-primary); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                  linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14); border-radius: 32px;
+      box-shadow: var(--shadow); overflow: hidden; position: relative; color: var(--text);
+    }
+    .hero::after {
+      content: ""; position: absolute; inset: auto -80px -80px auto;
+      width: 220px; height: 220px; border-radius: 50%; background: rgba(25, 118, 210, 0.26);
+    }
+    .hero-inner { display: grid; grid-template-columns: 1.35fr 0.9fr; gap: 28px; padding: 34px; position: relative; z-index: 1; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14); color: var(--brand-secondary);
+      font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1 { margin: 18px 0 16px; font-size: 40px; line-height: 1.06; letter-spacing: -0.03em; }
+    .lead { font-size: 18px; color: #334155; max-width: 62ch; }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
+    .brand-stack { display: flex; align-items: center; gap: 14px; }
+    .brand-stack img { height: 36px; width: auto; }
+    .logo-pair { display: flex; align-items: center; gap: 14px; }
+    .logo-divider { width: 1px; height: 34px; background: rgba(255,255,255,0.22); flex: none; }
+    .logo-pair img { height: 30px; width: auto; display: block; }
+    .brand-chip {
+      padding: 8px 12px; border: 1px solid rgba(34, 211, 238, 0.24); border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9); color: #eef9ff; font-size: 13px; font-weight: 600;
+    }
+    .meta-card, .section {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04); border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px; align-self: start; color: var(--text);
+    }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+    .meta-item { padding-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+    .meta-label { display: block; margin-bottom: 6px; color: #9fb0c3; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .meta-value { font-size: 15px; font-weight: 600; color: #ffffff; }
+    .meta-value.talos { color: #fcd34d; }
+.section { margin-top: 24px; padding: 28px; border-color: var(--panel-line); background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%); }
+    .section-title { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .section-number {
+      width: 34px; height: 34px; border-radius: 50%; display: inline-grid; place-items: center;
+      background: rgba(25, 118, 210, 0.1); color: var(--brand-primary); font-weight: 700;
+      flex: none;
+    }
+    .section-number.talos { background: rgba(217, 119, 6, 0.12); color: var(--brand-talos); }
+    h2 { margin-bottom: 0; font-size: 24px; letter-spacing: -0.02em; }
+    h3 { margin-bottom: 10px; font-size: 18px; }
+    h4 { margin-bottom: 6px; font-size: 16px; color: #334155; }
+    ul, ol { margin: 0; padding-left: 20px; }
+    li + li { margin-top: 8px; }
+    .callout {
+      padding: 18px 20px; border-left: 4px solid var(--brand-secondary); border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent); color: #f5fbff; font-weight: 600;
+    }
+    .callout.amber { border-left-color: #f59e0b; }
+    .callout.green { border-left-color: #4caf50; }
+    .footer-note { margin-top: 18px; color: #64748b; font-size: 13px; }
+    .grid-two { display: grid; gap: 22px; margin-top: 24px; grid-template-columns: 1.15fr 0.85fr; }
+    .grid-three { display: grid; gap: 22px; margin-top: 24px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .summary-card {
+      padding: 22px; border-color: var(--panel-line); background: #ffffff;
+      border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .summary-card strong { color: #0f172a; }
+    .summary-card p:last-child { margin-bottom: 0; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .badge {
+      display: inline-flex; align-items: center; padding: 4px 12px;
+      border-radius: 999px; font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
+      background: rgba(25, 118, 210, 0.08); color: var(--brand-primary);
+      border: 1px solid rgba(25, 118, 210, 0.18);
+    }
+    .badge.mode { background: rgba(34, 211, 238, 0.08); color: #0891b2; border-color: rgba(34, 211, 238, 0.18); }
+    .badge.talos { background: rgba(217, 119, 6, 0.08); color: #b45309; border-color: rgba(217, 119, 6, 0.2); }
+    .badge.safety { background: rgba(239, 68, 68, 0.08); color: #b91c1c; border-color: rgba(239, 68, 68, 0.18); }
+    .badge.success { background: rgba(34, 197, 94, 0.08); color: #166534; border-color: rgba(34, 197, 94, 0.18); }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid rgba(15, 23, 42, 0.08); vertical-align: top; }
+    th { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+    td { font-size: 14px; }
+    .nested { margin-top: 8px; }
+/* ---- JS-rendered architecture diagram (real shapes) ---- */
+    .arch { display: block; width: 100%; }
+    .arch-head { text-align: center; margin-bottom: 16px; color: #475569; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+    .arch-platforms { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 6px; }
+    .arch-platform {
+      flex: 0 1 calc(50% - 10px); text-align: center; padding: 10px 14px; border-radius: var(--radius-sm);
+      border: 1.5px dashed rgba(34, 211, 238, 0.75); color: #0f172a; font-size: 13px; font-weight: 700;
+      background: rgba(34, 211, 238, 0.05);
+    }
+    .arch-platform small { display: block; font-weight: 500; color: #64748b; }
+    .arch-platform.talos { border-color: rgba(217, 119, 6, 0.7); background: rgba(217, 119, 6, 0.05); }
+    .arch-plumb { display: flex; justify-content: center; }
+    .arch-plumb .line { width: 2px; height: 16px; background: rgba(15, 23, 42, 0.35); position: relative; }
+    .arch-plumb .line::after {
+      content: ""; position: absolute; left: 50%; top: 100%; transform: translateX(-50%);
+      border: 6px solid transparent; border-top-color: rgba(15, 23, 42, 0.5);
+    }
+    .arch-mw {
+      border: 1px solid rgba(34, 211, 238, 0.35); border-radius: var(--radius-md);
+      background: linear-gradient(180deg, rgba(16, 32, 59, 0.92), rgba(11, 18, 32, 0.96));
+      padding: 16px;
+    }
+    .arch-mw .arch-mw-title { text-align: center; color: #8ee7ff; font-size: 13px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; margin: -4px 0 14px; }
+    .arch-connectors { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 10px; align-items: stretch; }
+    .arch-node {
+      background: rgba(25, 118, 210, 0.14); border: 1px solid rgba(34, 211, 238, 0.35);
+      border-radius: var(--radius-sm); padding: 12px; text-align: center; color: #eef9ff;
+    }
+    .arch-node.talos-node { background: rgba(217, 119, 6, 0.14); border-color: rgba(252, 211, 77, 0.4); }
+    .arch-node.orch { background: rgba(255,255,255,0.06); border-style: dashed; }
+    .arch-node .t { font-weight: 700; font-size: 13px; }
+    .arch-node small { display: block; margin-top: 3px; font-size: 11px; color: #b9c7d8; }
+    .arch-arrow { display: flex; align-items: center; justify-content: center; color: var(--brand-secondary); font-size: 18px; font-weight: 800; }
+    .arch-region { display: grid; gap: 10px; margin-top: 12px; grid-template-columns: 1fr 1fr; }
+    .arch-region .arch-node { text-align: left; }
+    .arch-region .arch-node .t { display: flex; align-items: center; gap: 8px; }
+    .arch-region .arch-node .ico { width: 9px; height: 9px; border-radius: 50%; background: #22d3ee; display: inline-block; flex: none; }
+    .arch-region .arch-node .t small { color: #b9c7d8; font-weight: 500; }
+
+    .term-alphabet { margin-bottom: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .term-pill {
+      padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      background: rgba(25, 118, 210, 0.08); color: var(--brand-primary);
+      border: 1px solid rgba(25, 118, 210, 0.18); cursor: pointer;
+    }
+    .term-pill:hover { background: rgba(25, 118, 210, 0.16); }
+    @page { size: A4; margin: 12mm; }
+    @media (max-width: 920px) {
+      .hero-inner, .grid-two, .grid-three, .arch-connectors, .arch-region { grid-template-columns: 1fr; }
+      .arch-platforms { flex-direction: column; }
+      .arch-arrow { transform: rotate(90deg); height: 22px; }
+      h1 { font-size: 32px; }
+      .page { padding: 18px 16px 54px; }
+    }
+    @media print {
+      html { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page { max-width: none; padding: 0; }
+      .print-bar { display: none; }
+      .hero, .meta-card, .section, .summary-card { box-shadow: none; break-inside: avoid; }
+      .hero {
+        margin-bottom: 12px;
+        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                    linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+        color: #ffffff; border-color: rgba(34, 211, 238, 0.14);
+      }
+      .meta-card { background: rgba(255, 255, 255, 0.04); color: #ffffff; border-color: rgba(34, 211, 238, 0.12); }
+      .brand-chip, .callout { color: #f5fbff; }
+      .brand-link, .meta-label { color: inherit; }
+      .section { margin-top: 12px; }
+      a { color: inherit; text-decoration: none; }
+      .arch-mw { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <span class="print-note">Cooperation Proposal · Operational Home Care Solution — non-binding</span>
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+<header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="logo-pair" style="background:rgba(255,255,255,0.07);border:1px solid rgba(34,211,238,0.18);padding:10px 14px;border-radius:14px;">
+              <img src="tma-logo.svg" alt="TMA logo" />
+              <span class="logo-divider"></span>
+              <img src="../ppl-meta-frontend/assets/images/eyenet-dark.svg" alt="EyeNet logo" />
+            </div>
+            <span class="brand-chip">Cooperation Framework</span>
+          </div>
+          <span class="eyebrow">Home Care Integration Partnership</span>
+          <h1>TMAIX × EyeNet — Cooperation Proposal</h1>
+          <p style="color: #d1d9e6; font-size: 15px; margin-top: 8px;">An operational home care solution jointly delivered by TMAIX and EyeNet — fusing TMAIX's certified eHealth / IoMT ecosystem and its ePpocrates eCloud application with EyeNet's edge computer-vision platform.</p>
+          <p style="color: #9fb0c3; font-size: 13px; margin-top: 12px;">
+            <span style="margin-right: 20px;">tmaix.eu</span>
+            <span>eyenet-vision.com</span>
+          </p>
+        </div>
+        <aside class="meta-card">
+          <h3>Document Info</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Type</span>
+              <span class="meta-value">Cooperation Proposal (Operational)</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Status</span>
+              <span class="meta-value">Operational</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Version</span>
+              <span class="meta-value">0.1</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Parties</span>
+              <span class="meta-value"><span class="talos">TMAIX</span>&nbsp;&amp;&nbsp;EyeNet</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Contact</span>
+              <span class="meta-value">info@tmaix.com</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Website</span>
+              <span class="meta-value">https://tmaix.eu/</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+<!-- 1. EXECUTIVE SUMMARY -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Executive Summary</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">A strategic technology cooperation where <strong>TMAIX's</strong> eHealth ecosystem and <strong>EyeNet's</strong> computer-vision platform jointly deliver an <strong>operational home care solution</strong> — keeping care staff on schedule, securing each patient's home, and detecting falls and calls for help in real time.</div>
+      <p class="lead">This integration is delivered through <strong>TMAIX's ePpocrates eCloud application solution</strong>, with EyeNet operating in headless mode as the intelligent <strong>bridge between the two platforms</strong>. It hosts connectors embedding home care business logic across both companies' systems, exposes fully tokenized (secured) endpoints, and publishes every capability as an MCP (Model Context Protocol) server — one per service — so AI agents, clinicians, and care teams can consume integrated vision + health workflows securely and uniformly.</p>
+      <div class="grid-two" style="margin-top:20px;">
+        <div class="summary-card">
+          <p><strong>TMAIX</strong> — on the one side, delivers the certified eHealth ecosystem and the <strong>ePpocrates eCloud</strong> application solution for home care.</p>
+          <div class="badge-row">
+            <span class="badge talos">ePpocrates eCloud</span>
+            <span class="badge talos">Telemedicine</span>
+            <span class="badge talos">EMR / HIS</span>
+            <span class="badge talos">IoMT / eHealth</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <p><strong>EyeNet</strong> — on the other side, operating in headless mode, exposes computer-vision capabilities as machine-consumable services.</p>
+          <div class="badge-row">
+            <span class="badge mode">Presence</span>
+            <span class="badge">Secure Zones</span>
+            <span class="badge">Fall Detection</span>
+            <span class="badge">Voice / Speech</span>
+            <span class="badge">Automation</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. BACKGROUND -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>Background</h2>
+      </div>
+
+      <h3 style="margin-top:4px;">2.1 &nbsp;TMAIX</h3>
+      <p>TMAIX is a premier provider of certified eHealth technologies (FDA-approved, CE-certified, ISO 9001/13485/27001), serving governments, hospitals, clinics, and home care providers. All capabilities in this cooperation are delivered through its <strong>ePpocrates eCloud</strong> application solution:</p>
+      <div class="grid-three">
+        <div class="summary-card">
+          <span class="badge talos" style="margin-left:0;">ePpocrates eCloud Application</span>
+          <p style="font-size:12px;color:#475569;margin-top:8px;">Secure home care platform for scheduling, personal health records, and 24/7 patient monitoring — the single gateway to all integrated capabilities.</p>
+        </div>
+        <div class="summary-card">
+          <span class="badge talos" style="margin-left:0;">Telemedicine</span>
+          <p style="font-size:12px;color:#475569;margin-top:8px;">Remote consultation and continuous clinical coordination for home care teams.</p>
+        </div>
+        <div class="summary-card">
+          <span class="badge talos" style="margin-left:0;">EMR / HIS</span>
+          <p style="font-size:12px;color:#475569;margin-top:8px;">Clinical records and visit workflows that keep home-visit scheduling and documentation in order.</p>
+        </div>
+        <div class="summary-card">
+          <span class="badge talos" style="margin-left:0;">IoMT / eHealth</span>
+          <p style="font-size:12px;color:#475569;margin-top:8px;">Medical sensors and wearables feeding real-time patient vitals and activity into the platform.</p>
+        </div>
+      </div>
+
+      <h3 style="margin-top:26px;">2.2 &nbsp;EyeNet</h3>
+      <p>EyeNet is an on-premises, edge-computing computer-vision platform for human activity monitoring and intelligent automation, deployed at the patient's home. Characteristics relevant to this partnership:</p>
+      <ul>
+        <li><span class="badge mode">Presence Module</span> — confirms caregivers are in their positions where and when they should be during home visits.</li>
+        <li><span class="badge mode">Secure Zones</span> — defines and monitors safe areas in and around the patient's home.</li>
+        <li><span class="badge success">Automation Module</span> — raises alarms for unspecified persons and triggers fall detection (already developed).</li>
+        <li><span class="badge success">Voice / Natural Language</span> — camera microphones parse phonetic commands and natural speech to trigger help requests (already developed).</li>
+        <li><span class="badge mode">Headless Mode</span> — all functionality exposed programmatically with zero cloud dependency for video or data.</li>
+      </ul>
+
+      <h3 style="margin-top:26px;">2.3 &nbsp;The Opportunity</h3>
+      <div class="callout amber" style="margin-top:8px; color:#f5fbff;">Home care staff work across many different homes every day, and each patient's home is an unmonitored, unsecured environment. Today the two systems operate in silos: TMAIX's ePpocrates eCloud <em>cares</em> for people at home; EyeNet <em>sees</em> what happens in each home. Integrating them ensures caregivers are where they should be, turns every patient's home into a monitored and secured zone, and turns falls and calls for help into immediate, actionable triggers — all served through a single application.</div>
+    </section>
+<!-- 3. PROPOSED SOLUTION -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Proposed Solution: The Integration Middleware</h2>
+      </div>
+
+      <h3>3.1 &nbsp;Concept</h3>
+      <p>A dedicated integration layer positioned between the two platforms, operated for home care:</p>
+      <!-- Real-shape architecture diagram, rendered by JS -->
+      <div id="arch" class="arch"><div class="arch-head" style="padding:24px;text-align:center;color:#64748b;">Rendering architecture diagram…</div></div>
+
+      <h3 style="margin-top:26px;">3.2 &nbsp;Core Components</h3>
+      <div class="grid-three">
+        <div class="summary-card">
+          <p><strong>TMAIX REST API Connectors</strong></p>
+          <p style="font-size:13px;color:#475569;">Wrap TMAIX services (ePpocrates eCloud schedule, EMR/HIS records, IoMT vitals feeds, telemedicine session management) behind uniform adapter interfaces, mapping TMAIX data models (patients, visits, devices) to integration-domain objects.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>EyeNet Headless Connectors</strong></p>
+          <p style="font-size:13px;color:#475569;">Consume EyeNet events and data streams — caregiver presence, secure-zone state, fall triggers, voice / help-request events — and abstract EyeNet's internal APIs behind stable contracts so version upgrades remain transparent to TMAIX.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Connector Logic &amp; Orchestration Engine</strong></p>
+          <p style="font-size:13px;color:#475569;">Configurable home care business rules spanning both systems, with an event-driven core (publish/subscribe) plus synchronous request/response paths.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Integration Dashboard &amp; Connectors Framework</strong></p>
+          <p style="font-size:13px;color:#475569;">An administration &amp; operations dashboard visualizes and manages every connector. Each connector embeds its own trigger-&amp;-action logic, modeled on the EyeNet platform, keeping system-to-system interoperability fully decoupled from the MCP servers.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Tokenization &amp; Security Layer</strong></p>
+          <p style="font-size:13px;color:#475569;">Every endpoint tokenized — no direct system-to-system calls; OAuth 2.0 / JWT scoped tokens with short TTLs, per-client/per-service issuance, full data-flow audit trail aligned with TMAIX's ISO 27001 posture, and fully offline/on-premises operation.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>MCP Server per Service</strong></p>
+          <p style="font-size:13px;color:#475569;">Each service is published as its own MCP server in a standardized, agent-ready interface. Examples: <code>mcp-care-presence</code>, <code>mcp-secure-zone</code>, <code>mcp-fall-detection</code>, <code>mcp-voice-trigger</code>, <code>mcp-care-visit</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. ILLUSTRATIVE USE CASES -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>Illustrative Use Case · Home Care</h2>
+      </div>
+      <p>The cooperation is scoped to a single, well-defined use case: <strong>safe and reliable home care delivery</strong>.</p>
+
+      <h3 style="margin-top:18px;">4.1 &nbsp;Staff Presence Assurance</h3>
+      <p><span class="badge mode" style="margin-left:0;">a)</span>&nbsp; The <strong>EyeNet presence module</strong> contributes to making sure that the medical, paramedical, and support staff that conduct the home care services are in their positions where and when they should be — confirming that every scheduled home visit is delivered by the right caregiver, on time and in place.</p>
+
+      <h3 style="margin-top:18px;">4.2 &nbsp;Secure Zones at the Patient's Home</h3>
+      <p><span class="badge mode" style="margin-left:0;">b)</span>&nbsp; EyeNet establishes <strong>secure zones</strong> in and around the patient's home, within which:</p>
+      <ul class="nested">
+        <li><strong>b1 · Unspecified-person alarm.</strong> There are alarms if any unspecified person is spotted, using the <strong>EyeNet automation module</strong>.</li>
+        <li><strong>b2 · Fall-detection trigger.</strong> Within these zones EyeNet produces a fall-detection trigger via automation — an <strong>already-developed EyeNet module</strong>.</li>
+        <li><strong>b3 · Voice &amp; natural-language trigger.</strong> The EyeNet cameras use their microphones for <strong>phonetic commands and natural voice parsing</strong>, creating another crucial trigger whenever someone in the house calls for help or calls for urgent communication — an <strong>already-developed EyeNet module</strong>.</li>
+      </ul>
+
+      <div class="callout" style="margin-top:14px;color:#f5fbff;">All of the above will be available via the <span style="color:#fcd34d;font-weight:800;">ePpocrates eCloud</span> application solution from <strong>TMAIX</strong>.</div>
+    </section>
+<!-- 5. JOINT ML -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>Joint ML Model Development &amp; R&amp;D</h2>
+      </div>
+      <div class="callout" style="margin-bottom:16px;color:#f5fbff;">Beyond integration, the cooperation includes the joint development of dedicated machine-learning models trained on the combined data acquired by the sensors of both systems.</div>
+      <h3>5.1 &nbsp;Vision</h3>
+      <p>The fusion of <strong>machine-vision output</strong> (presence, secure zones, movement, fall and voice triggers) with <strong>telemedicine &amp; home-care sensory output</strong> (vitals from IoMT devices, patient monitoring streams, EMR/HIS and ePpocrates eCloud events, TMAIX REST events) creates a unique, previously unavailable dataset. Insights emerge exactly at this intersection — correlations between physical behavior and physiological state, early-warning signals, and operational patterns neither system can detect alone.</p>
+
+      <h3 style="margin-top:22px;">5.2 &nbsp;Example Research Directions</h3>
+      <div class="grid-three">
+        <div class="summary-card"><p style="font-size:13px;color:#475569;"><strong>Deterioration prediction</strong> — combining vitals trends with mobility/activity observed by vision.</p></div>
+        <div class="summary-card"><p style="font-size:13px;color:#475569;"><strong>Fall-risk &amp; recovery scoring</strong> — fusing gait/movement analysis with biometric data.</p></div>
+        <div class="summary-card"><p style="font-size:13px;color:#475569;"><strong>Home &amp; care-operations health analytics</strong> — across the homes served by a care team.</p></div>
+        <div class="summary-card"><p style="font-size:13px;color:#475569;"><strong>Anomaly detection</strong> — across fused event streams (vision × API × device telemetry).</p></div>
+        <div class="summary-card"><p style="font-size:13px;color:#475569;"><strong>Behavioral baselining</strong> — patient activity, mobility &amp; daily routines in the home.</p></div>
+      </div>
+
+      <h3 style="margin-top:22px;">5.3 &nbsp;R&amp;D vs. Direct Development Split</h3>
+      <div class="grid-two">
+        <div class="summary-card">
+          <span class="badge success" style="margin-left:0;">Direct Development Track</span>
+          <p style="font-size:13px;color:#475569;margin-top:10px;">Models addressing immediately evident insights (occupancy-driven alerting, presence-correlated home care notifications, simple threshold/fusion rules) are developed and productized within the standard roadmap, delivering near-term value.</p>
+        </div>
+        <div class="summary-card">
+          <span class="badge safety" style="margin-left:0;">R&amp;D Track</span>
+          <p style="font-size:13px;color:#475569;margin-top:10px;">Novel hypotheses requiring experimentation, dataset curation, model training, and clinical/domain validation run as structured R&amp;D, with jointly agreed success criteria, milestones, and potential co-funded research programs (e.g., national/EU funding instruments).</p>
+        </div>
+      </div>
+      <p style="font-size:14px;">Both tracks share the same data pipeline and governance framework established by the middleware, ensuring a smooth transition of validated R&amp;D results into production connectors and MCP services.</p>
+
+      <h3 style="margin-top:22px;">5.4 &nbsp;Data Governance</h3>
+      <div class="callout amber" style="color:#f5fbff;">All ML work operates under strict data-governance rules consistent with GDPR, medical-device regulations, and both parties' certifications — anonymization/pseudonymization at the middleware boundary, on-premises processing aligned with EyeNet's zero-cloud principle, and explicit consent/role-based access for any patient-related data.</div>
+    </section>
+
+    <!-- APPENDIX · TERMINOLOGY -->
+    <section class="section" style="border-color:rgba(217,119,6,0.25);">
+      <div class="section-title">
+        <span class="section-number talos">A</span>
+        <h2>Appendix · Terminology</h2>
+      </div>
+      <p style="font-size:14px;color:#475569;">Key terms used throughout this proposal, for reference. Click a pill to filter, or "Show all".</p>
+      <div class="term-alphabet" id="termpills"></div>
+      <table id="termtable">
+        <tr><th>Term</th><th>Definition</th></tr>
+      </table>
+    </section>
+
+    <p class="footer-note">This document describes an operational home care cooperation between TMAIX and EyeNet. All commercial, legal, and IP terms remain subject to a definitive agreement between the parties.</p>
+  </div>
+<script>
+  /* -------------------------------------------------------------
+     REAL-SHAPE ARCHITECTURE DIAGRAM (rendered with JS)
+     Replaces the plain-text "box" diagram from the .md source with
+     actual geometric shapes: boxes, arrows, connectors and a region
+     container built as real DOM elements.
+     ------------------------------------------------------------- */
+  (function () {
+    function el(tag, cls) { var n = document.createElement(tag || "div"); if (cls) n.className = cls; return n; }
+    function txtEl(cls, txt) { var n = el(null, cls); n.textContent = txt; return n; }
+    var textEl = txtEl;
+    function node(cls, title, sub) {
+      var n = el(null, cls);
+      var t = txtEl("t", title);
+      n.appendChild(t);
+      if (sub) { n.appendChild(textEl("small", sub)); }
+      return n;
+    }
+    function arrow() { var a = el(null, "arch-arrow"); a.textContent = "↔"; return a; }
+
+    var host = document.getElementById("arch");
+    host.innerHTML = ""; /* clear the placeholder */
+    host.appendChild(textEl("arch-head", "Integration Middleware — High-Level Architecture"));
+
+    /* Row 0: the two platform roles */
+    var platforms = el(null, "arch-platforms");
+    var pe = el(null, "arch-platform talos");
+    pe.appendChild(textEl("span", "TMAIX Systems"));
+    pe.appendChild(textEl("small", "ePpocrates eCloud / eHealth / IoMT"));
+    platforms.appendChild(pe);
+    var pt = el(null, "arch-platform");
+    pt.appendChild(textEl("span", "EyeNet Platform"));
+    pt.appendChild(textEl("small", "headless · on-premises · home care"));
+    platforms.appendChild(pt);
+    host.appendChild(platforms);
+
+    /* plumb line down into the middleware */
+    var plumb1 = el(null, "arch-plumb"); plumb1.appendChild(el(null, "line")); host.appendChild(plumb1);
+
+    /* Middleware container (real bordered region) */
+    var mw = el(null, "arch-mw");
+    mw.appendChild(textEl("arch-mw-title", "Middleware"));
+
+    /* Row 1: three core connector boxes connected by arrows */
+    var row = el(null, "arch-connectors");
+    row.appendChild(node("arch-node talos-node", "TMAIX REST Connectors", "ePpocrates eCloud · vitals · schedule"));
+    row.appendChild(arrow());
+    row.appendChild(node("arch-node orch", "Connector / Orchestration Logic", "(home care rules)"));
+    row.appendChild(arrow());
+    row.appendChild(node("arch-node", "EyeNet Headless Adapters", "presence · zones · fall · voice"));
+    mw.appendChild(row);
+
+    /* Row 2: Tokenization & Security + MCP Server per Service */
+    var region = el(null, "arch-region");
+    var sec = el(null, "arch-node");
+    var st = el("span", "t"); st.appendChild(el("i", "ico")); st.appendChild(textEl("span", "Tokenization & Security Layer"));
+    sec.appendChild(st); sec.appendChild(textEl("small", "authN/authZ · OAuth2 / JWT · scoped tokens"));
+    var mcp = el(null, "arch-node");
+    var mt = el("span", "t"); mt.appendChild(el("i", "ico")); mt.appendChild(textEl("span", "MCP Server per Service"));
+    mcp.appendChild(mt); mcp.appendChild(textEl("small", "AI-agent-ready · one server per service"));
+    region.appendChild(sec); region.appendChild(mcp);
+    mw.appendChild(region);
+    host.appendChild(mw);
+
+    /* plumb2 continuing down */
+    var plumb2 = el(null, "arch-plumb"); plumb2.appendChild(el(null, "line")); host.appendChild(plumb2);
+  })();
+/* -------------------------------------------------------------
+     APPENDIX · TERMINOLOGY  — keyword pills + glossary table.
+     ------------------------------------------------------------- */
+  (function () {
+    var terms = [
+      ["Middleware", "An intermediary software layer that connects two or more systems, translating data and routing business rules between them."],
+      ["MCP (Model Context Protocol)", "An open protocol that exposes a service's tools and resources as a standardized, AI-agent-ready server — one server per service."],
+      ["Computer Vision", "AI techniques that interpret camera/video input to detect presence, people, movement, events, occupants, and demographics."],
+      ["Headless Mode", "An architecture exposing functionality only through programmatic interfaces/APIs, with no bundled user-facing application."],
+      ["On-Premises", "Software run within a customer's own infrastructure, with no dependency on external cloud services for its core function."],
+      ["VPN (Virtual Private Network)", "An encrypted tunnel connecting distributed nodes over the public internet without exposing any service publicly."],
+      ["REST API", "A stateless, HTTP-based API design exposing resources and operations for machine-to-machine integration."],
+      ["EMR / HIS", "Electronic Medical Record / Hospital Information System — software managing clinical records and hospital operations."],
+      ["IoMT", "Internet of Medical Things — networked medical devices, sensors, and wearables producing health telemetry."],
+      ["IoT Device / Pendant", "Connected sensor endpoints feeding vitals and activity data into the health platform."],
+      ["Telemedicine", "Delivery of clinical consultations and care remotely over communications technology."],
+      ["Tokenization", "Replacing direct credentials with scoped, short-lived access tokens (OAuth 2.0 / JWT) to secure every data exchange."],
+      ["OAuth 2.0", "An authorization framework that issues scoped, delegated access tokens to clients."],
+      ["JWT", "JSON Web Token — a compact, signed token carrying claims about the authenticated subject."],
+      ["AuthN / AuthZ", "Authentication (verifying identity) and authorization (verifying permitted access) of a client."],
+      ["Trigger &amp; Action Rules", "Event-based business rules that evaluate conditions and dispatch actions across connected systems."],
+      ["Fusion Model", "A machine-learning model trained on combined data from multiple sources (e.g., vision + clinical vitals)."],
+      ["GDPR", "EU General Data Protection Regulation governing the processing of personal data."],
+      ["ISO 27001", "International standard for information-security management systems (ISMS)."],
+      ["ISO 9001 / 13485", "Quality management (9001) and medical-device quality management (13485) standards."],
+      ["CE Mark / FDA Clearance", "EU conformity marking and US FDA clearance/certification for medical devices."],
+      ["MVP (Minimum Viable Product)", "The smallest usable release that validates a concept with real users before full build-out."],
+      ["MoU (Memorandum of Understanding)", "A non-binding agreement recording mutual intent, IP, confidentiality, and scope ahead of a definitive contract."],
+    ];
+
+    /* Pill navigation */
+    var pills = document.getElementById("termpills");
+    terms.forEach(function (t) {
+      var p = document.createElement("button");
+      p.className = "term-pill";
+      p.textContent = t[0];
+      p.onclick = function () {
+        var rows = document.querySelectorAll("#termtable tr");
+        for (var i = 1; i < rows.length; i++) {
+          rows[i].style.display = (rows[i].cells[0].textContent.trim() === t[0]) ? "" : "none";
+        }
+      };
+      pills.appendChild(p);
+    });
+    var resetBtn = document.createElement("button");
+    resetBtn.className = "term-pill";
+    resetBtn.textContent = "Show all";
+    resetBtn.style.background = "rgba(217,119,6,0.1)";
+    resetBtn.style.color = "#b45309";
+    resetBtn.style.borderColor = "rgba(217,119,6,0.2)";
+    resetBtn.onclick = function () {
+      var rows = document.querySelectorAll("#termtable tr");
+      for (var i = 1; i < rows.length; i++) rows[i].style.display = "";
+    };
+    pills.appendChild(resetBtn);
+
+    /* Glossary table rows */
+    var tbody = document.getElementById("termtable");
+    terms.forEach(function (t) {
+      var tr = document.createElement("tr");
+      var td1 = document.createElement("td");
+      td1.innerHTML = "<strong>" + t[0] + "</strong>";
+      var td2 = document.createElement("td");
+      td2.textContent = t[1];
+      tr.appendChild(td1); tr.appendChild(td2);
+      tbody.appendChild(tr);
+    });
+  })();
+</script>
+</body>
+</html>
