@@ -120,36 +120,24 @@ class TailscaleService {
 
       // The tsnet engine can report `needsLogin` as its FIRST stable state even
       // with a valid pre-auth key while auth is still completing, and the
-      // package's up() returns on the first stable state. Do NOT treat it as
-      // terminal — keep polling until the tunnel is actually up (the engine
-      // continues authenticating in the background) or we exhaust a bounded
-      // number of attempts.
+      // package's up() returns on the first stable state. The node keeps
+      // authenticating in the background — so we POLL status() (never re-call
+      // up(), which closes the node and registers a fresh one every time and
+      // churns the tailnet) until the tunnel is actually up or we time out.
       TailscaleStatus current = status;
       var attempt = 0;
-      const maxAttempts = 8;
+      const maxAttempts = 10;
       while (!current.isRunning && attempt < maxAttempts) {
         attempt++;
-        _logger.i('Tailscale: node state=${current.state.toString()} '
-            '(attempt $attempt/$maxAttempts) — re-applying auth key, waiting for tunnel');
         await Future.delayed(const Duration(seconds: 3));
-        // Re-invoke up() to (re)apply the pre-auth key. Safe: the SAME node
-        // re-authing doesn't consume a second key once it has a NodeKey, and
-        // tsnet with a valid key continues authenticating in the background.
         try {
-          current = await Tailscale.instance.up(
-            hostname: hostname,
-            authKey: authKey,
-            controlUrl: controlUrl,
-            timeout: const Duration(seconds: 15),
-          );
+          current = await Tailscale.instance.status();
         } catch (e) {
-          _logger.w('Tailscale: up() retry $attempt failed: $e');
-          try {
-            current = await Tailscale.instance.status();
-          } catch (_) {
-            break;
-          }
+          _logger.w('Tailscale: status() poll $attempt failed: $e');
+          break;
         }
+        _logger.d('Tailscale: state=${current.state.toString()} '
+            'ip=${current.ipv4} (poll $attempt/$maxAttempts)');
       }
 
       final state = current.state.toString();
