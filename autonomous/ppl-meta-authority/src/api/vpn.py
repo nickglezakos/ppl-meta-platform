@@ -64,6 +64,10 @@ class EnrollInstallationResponse(BaseModel):
     tailscale_ip_range: str = "100.64.0.0/10"
     headscale_server: str = ""
     matrix_group_id: str = ""
+    # The installation's real UUID. Distinct from matrix_group_id — the platform
+    # HMAC token below is derived from THIS value, so edge clients must persist it
+    # (not the matrix group) to authenticate against ppl-meta-discovery (Issue #8).
+    installation_uuid: str = ""
     primary_node_ip: str | None = None
     tags: list[str] = []
     expires_in_seconds: int = 86400  # 24 hours
@@ -280,6 +284,20 @@ def _generate_preauth_key(user: str, tags: list[str]) -> str:
     cmd = ["preauthkeys", "create", "--user", user_id]
     for tag in tags:
         cmd.extend(["--tags", tag])
+
+    # Reusable pre-auth key: multiple devices (and the same device across
+    # re-enrolls / re-boots) can join with this one key until it expires. This is
+    # essential for field device replacement — a freshly-minted key scoped to the
+    # installation's tags lets a replacement hardware join the same identity
+    # without minting another key. Security is preserved because each node still
+    # carries its own `tag:install-<hex>` (deduped per installation).
+    cmd.append("--reusable")
+
+    # Keys last ~24h (PREAUTH_KEY_EXPIRY_HOURS); keep them long-lived within the
+    # install's lifetime so an install that resets/reboots can re-join without a
+    # fresh token. Headscale rejects a 0 (never) expiry, so use a large fixed TTL.
+    cmd.append("--expiration")
+    cmd.append("8760h")  # 365 days — effectively "each device lives a year"
 
     output = _run_headscale(cmd)
     # Output format: "hskey-auth-xxxxxxxxxxxx" (headscale v0.28+)
@@ -620,6 +638,7 @@ def _issue_enrollment(
         auth_key=auth_key,
         tags=tags,
         matrix_group_id=matrix_group_id,
+        installation_uuid=installation_uuid,
         primary_node_ip=primary_node_ip,
         headscale_server="https://vpn.eyenet-vision.com",
         expires_in_seconds=PREAUTH_KEY_EXPIRY_HOURS * 3600,
@@ -806,14 +825,17 @@ async def create_enrollment_token_endpoint(
 
 @router.post("/enroll-token", response_model=EnrollInstallationResponse)
 async def enroll_by_token(payload: EnrollmentTokenRedeemRequest):
-    """Redeem a one-time enrollment token and enroll the device into its mesh.
+    """Redeem a reusable enrollment token and enroll the device into its mesh.
 
     The device presents a token minted by a platform admin (scenario b). The
-    Authority validates the token (exists, not used, not revoked, not expired),
-    then issues a real pre-auth key bound to the mesh the token was minted for.
+    Authority validates the token (exists, not revoked, not expired), then issues
+    a real pre-auth key bound to the mesh the token was minted for.
 
-    Redemption is single-use: the token is consumed before issuing so it cannot
-    be replayed.
+    The token is reusable: it is NOT consumed, so a replacement device can
+    re-redeem the same token. To keep a single-identity / data-tracing
+    guarantee, any existing nodes for the SAME installation (same
+    ``tag:install-<hex>``) are retired first, so the new hardware becomes the one
+    canonical node for that installation.
     """
     token = (payload.token or "").strip()
     if not token:
@@ -825,8 +847,6 @@ async def enroll_by_token(payload: EnrollmentTokenRedeemRequest):
 
     if record.get("revoked_at"):
         raise HTTPException(status_code=403, detail="Enrollment token is revoked")
-    if record.get("used_at"):
-        raise HTTPException(status_code=403, detail="Enrollment token already used")
 
     try:
         expires_at = datetime.fromisoformat(record["expires_at"])
@@ -848,25 +868,72 @@ async def enroll_by_token(payload: EnrollmentTokenRedeemRequest):
     if node_type not in SUPPORTED_NODE_TYPES:
         node_type = record.get("node_type") or "client"
 
-    # Bind to the minted installation + matrix — the exact mesh the device joins.
-    # Consume before issuing so a replay cannot generate a second key.
-    consume_enrollment_token(
-        record["token"],
-        used_by_installation_uuid=record["installation_uuid"],
-    )
+    installation_uuid = record["installation_uuid"]
+    matrix_group_id = record["matrix_group_id"]
 
     logger.info(
-        "Enrolling device via one-time token: installation=%s matrix=%s node_type=%s",
-        record["installation_uuid"],
-        record["matrix_group_id"],
+        "Enrolling device via (reusable) token: installation=%s matrix=%s node_type=%s",
+        installation_uuid,
+        matrix_group_id,
         node_type,
     )
 
+    # Retire any existing node(s) for this installation so the enrolling device
+    # becomes the single canonical node — preserves one-identity data tracing
+    # across a device replacement.
+    _retire_nodes_for_installation(installation_uuid, matrix_group_id, node_type)
+
     return _issue_enrollment(
-        installation_uuid=record["installation_uuid"],
-        matrix_group_id=record["matrix_group_id"],
+        installation_uuid=installation_uuid,
+        matrix_group_id=matrix_group_id,
         node_type=node_type,
     )
+
+
+def _retire_nodes_for_installation(
+    installation_uuid: str, matrix_group_id: str, node_type: str
+) -> None:
+    """Delete exiting headscale nodes for an installation (best-effort).
+
+    Used on token re-redeem so a replacement device takes over the single
+    identity (and mesh IP) for that installation instead of accumulating
+    duplicate ``tag:install-<hex>`` nodes. Non-fatal — if deletion fails we still
+    proceed (a best-effort cleanup to avoid breaking enrollment).
+    """
+    if not matrix_group_id:
+        return
+    target_tag = _installation_uuid_to_tag(installation_uuid)
+    try:
+        nodes_data = _list_nodes(f"matrix-{matrix_group_id}")
+    except RuntimeError as exc:
+        logger.warning("Could not list nodes for retirement: %s", exc)
+        return
+
+    for node in nodes_data:
+        node_id = str(node.get("id", ""))
+        if not node_id:
+            continue
+        tags = _node_tags(node)
+        # Only retire nodes belonging to this installation AND this node type
+        # (don't accidentally remove a platform node when a signage replaces).
+        has_install_tag = any(t == target_tag for t in tags)
+        type_tag = f"tag:{node_type}"
+        has_type_tag = type_tag in tags or (
+            node_type in ("platform", "node")
+            and ("tag:platform" in tags or "tag:node" in tags)
+        )
+        if not has_install_tag or not has_type_tag:
+            continue
+        try:
+            _run_headscale(["nodes", "delete", "--identifier", node_id, "--force"])
+            logger.info(
+                "Retired node %s for installation %s (%s replacement)",
+                node_id,
+                installation_uuid,
+                node_type,
+            )
+        except RuntimeError as exc:
+            logger.warning("Failed to retire node %s: %s", node_id, exc)
 
 
 @router.get("/enrollment-tokens", response_model=list[EnrollmentTokenInfo])
