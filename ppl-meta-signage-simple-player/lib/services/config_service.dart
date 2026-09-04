@@ -43,15 +43,15 @@ class ConfigService {
   }
 
   /// Whether the app should skip onboarding and proceed to initialization.
-  /// Treats an existing VPN enrollment (or configured backend) as "already set
-  /// up" so the player re-registers on next launch instead of re-demanding an
-  /// enrollment token. Guards against a partially-persisted config where
-  /// `isConfigured` was not set but enrollment metadata exists.
+  ///
+  /// The app should only skip setup when it has a *usable identity* to act on:
+  /// either a concrete backend host to reach, or an existing VPN enrollment /
+  /// installation token. A stale `isConfigured=true` with no backend IP and no
+  /// enrollment (e.g. a half-wiped install) must NOT skip — otherwise we'd boot
+  /// into initialization building `http://:8080` and fail back to the token
+  /// screen anyway.
   bool get skipOnboarding {
-    if (isConfigured) {
-      return true;
-    }
-    // Enrollment or an issued installation API token implies setup completed.
+    // A valid enrollment (or issued install token) is always sufficient.
     if (vpnEnrolled) {
       return true;
     }
@@ -59,7 +59,28 @@ class ConfigService {
     if (key != null && key.isNotEmpty) {
       return true;
     }
-    return installationApiToken.isNotEmpty;
+    if (installationApiToken.isNotEmpty) {
+      return true;
+    }
+
+    // Otherwise require a concretely configured backend host.
+    if (isConfigured && _hasUsableBackendHost) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /// True when we have a non-empty backend IP OR a resolved platform mesh IP.
+  bool get _hasUsableBackendHost {
+    if (vpnPlatformTailscaleIp != null && vpnPlatformTailscaleIp!.isNotEmpty) {
+      return true;
+    }
+    final ip = backendIP;
+    if (ip.isEmpty || ip == 'localhost' || ip == ':') {
+      return false;
+    }
+    return true;
   }
 
   /// Get configured backend IP
@@ -72,36 +93,34 @@ class ConfigService {
     return _prefs?.getInt(_discoveryPortKey) ?? 8006;
   }
 
-  /// Get full discovery service URL. Prefers the assigned platform's mesh IP
-  /// (VPN-first, after self-registration), falling back to the configured backend IP.
+  /// Get full discovery service URL. The discovery service lives on the LOCAL
+  /// platform (on-prem), reachable over the LAN — NOT on the Hetzner authority.
+  /// The authority/Hetzner is only used for onboarding and for remote devices
+  /// reaching back over the VPN. So use the configured backend (LAN) IP.
   String get discoveryServiceUrl {
-    final host = vpnPlatformTailscaleIp ?? backendIP;
-    return 'http://$host:$discoveryPort';
+    return 'http://$backendIP:$discoveryPort';
   }
 
-  /// Get media service URL (default port 8000).
+  /// Get media service URL (default port 8000). Local platform (LAN) host.
   String get mediaServiceUrl {
-    final host = vpnPlatformTailscaleIp ?? backendIP;
-    return 'http://$host:8000';
+    return 'http://$backendIP:8000';
   }
 
-  /// Get gateway URL (default port 8080).
+  /// Get gateway URL (default port 8080). Local platform (LAN) host.
   String get gatewayUrl {
-    final host = vpnPlatformTailscaleIp ?? backendIP;
-    return 'http://$host:8080';
+    return 'http://$backendIP:8080';
   }
 
-  /// Get authority (licensing/VPN) service URL. Prefers the assigned platform's
-  /// mesh IP (reachable over the tailnet on Android), falling back to the
-  /// configured backend host. The authority currently shares the deployment host
-  /// with discovery/media.
+  /// Get authority (licensing/VPN) service URL. The authority is the ONLINE
+  /// Hetzner deployment (reachable during onboarding); it does NOT share the
+  /// local platform host with discovery/media/gateway.
   String get authorityServiceUrl {
     final stored = _prefs?.getString(_authorityBaseUrlKey);
     if (stored != null && stored.isNotEmpty) {
       return stored;
     }
-    final host = vpnPlatformTailscaleIp ?? backendIP;
-    return 'http://$host:8000';
+    // Default to the public authority endpoint.
+    return 'https://authority.eyenet-vision.com';
   }
 
   /// Application key (licence) used for authority activation/enrollment.
