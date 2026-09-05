@@ -85,7 +85,7 @@ from src.api.v1.routes import router as v1_router
 from src.models.installation_info import InstallationInfo
 from src.schemas.user import UserCreate
 from src.services.multicast_discovery import MulticastServiceDiscoveryBroadcaster
-from src.services.vpn_service import enroll_once
+from src.services.vpn_service import enroll_once, report_platform_local_ip
 from src.services.role_service import ensure_default_capabilities, ensure_exact_system_roles
 
 # Try to import the shared service discovery module
@@ -275,6 +275,7 @@ async def lifespan(_app: FastAPI):
     """Application lifespan context manager for startup and shutdown tasks."""
     multicast_broadcaster = None
     authority_revalidation_task = None
+    vpn_local_ip_report_task = None
 
     logger.info("Starting PPL Meta Node service...")
 
@@ -550,6 +551,26 @@ async def lifespan(_app: FastAPI):
         except Exception:
             pass  # Non-fatal — VPN is optional
 
+        # Periodically re-report the platform's local LAN IP so the Authority can
+        # hand leaf devices an up-to-date address if the router/DHCP changes it.
+        if vpn_ok:
+            async def report_platform_local_ip_periodically() -> None:
+                interval_seconds = max(
+                    60,
+                    int(getattr(settings, "AUTHORITY_REVALIDATION_INTERVAL_SECONDS", 300) or 300),
+                )
+                while True:
+                    try:
+                        await asyncio.to_thread(report_platform_local_ip)
+                    except Exception:
+                        pass  # Non-fatal — VPN is optional
+                    await asyncio.sleep(interval_seconds)
+
+            vpn_local_ip_report_task = asyncio.create_task(
+                report_platform_local_ip_periodically()
+            )
+            logger.info("Platform local-IP reporter started")
+
         logger.info("Service startup completed successfully")
 
     except (OSError, RuntimeError) as e:
@@ -566,6 +587,13 @@ async def lifespan(_app: FastAPI):
             await authority_revalidation_task
         except asyncio.CancelledError:
             logger.info("Authority revalidation worker stopped")
+
+    if vpn_local_ip_report_task:
+        vpn_local_ip_report_task.cancel()
+        try:
+            await vpn_local_ip_report_task
+        except asyncio.CancelledError:
+            logger.info("Platform local-IP reporter stopped")
 
     # Stop multicast broadcaster
     if multicast_broadcaster:

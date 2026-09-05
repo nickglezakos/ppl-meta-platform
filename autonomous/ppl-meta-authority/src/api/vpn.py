@@ -35,6 +35,7 @@ from core.storage import (
     revoke_enrollment_token,
     set_installation_matrix_group,
     set_installation_platform,
+    set_installation_platform_local_ip,
 )
 from services.vpn_acl_service import vpn_acl_service
 
@@ -76,6 +77,7 @@ class EnrollInstallationResponse(BaseModel):
     # enrollment), or null when the installation has no platform assigned yet.
     platform_tailscale_ip: str | None = None
     platform_hostname: str | None = None
+    platform_local_ip: str | None = None
 
 
 class VpnNodeInfo(BaseModel):
@@ -108,6 +110,7 @@ class InstallationPlatformAssignRequest(BaseModel):
 
     platform_node_id: str | None = None
     platform_tailscale_ip: str | None = None
+    platform_local_ip: str | None = None
 
 
 class InstallationPlatformResponse(BaseModel):
@@ -117,7 +120,34 @@ class InstallationPlatformResponse(BaseModel):
     platform_node_id: str | None = None
     platform_tailscale_ip: str | None = None
     platform_hostname: str | None = None
+    platform_local_ip: str | None = None
     platform_assigned_at: str | None = None
+
+
+class PlatformLocalIpReportRequest(BaseModel):
+    """Body for a platform node to report its current local LAN IP.
+
+    Authenticated with the installation's ``application_key`` (the same credential
+    the platform uses to enroll). Optionally refreshes the mesh IP / hostname so a
+    platform re-enroll can self-link without an admin.
+    """
+
+    application_key: str
+    platform_local_ip: str
+    platform_tailscale_ip: str | None = None
+    platform_hostname: str | None = None
+
+
+class PlatformResolveRequest(BaseModel):
+    """Body for a leaf device to re-resolve its platform's current IPs.
+
+    Authenticated with the HMAC ``api_token`` issued at enrollment, so a device
+    can refresh the platform's local/mesh IP from the Authority over the internet
+    once — without a full re-enrollment.
+    """
+
+    installation_uuid: str
+    api_token: str
 
 
 class EnrollmentTokenCreateRequest(BaseModel):
@@ -633,6 +663,9 @@ def _issue_enrollment(
     platform_hostname = (
         assigned.get("platform_hostname") if is_leaf else None
     )
+    platform_local_ip = (
+        assigned.get("platform_local_ip") if is_leaf else None
+    )
 
     return EnrollInstallationResponse(
         auth_key=auth_key,
@@ -645,6 +678,7 @@ def _issue_enrollment(
         api_token=api_token,
         platform_tailscale_ip=platform_tailscale_ip,
         platform_hostname=platform_hostname,
+        platform_local_ip=platform_local_ip,
     )
 
 
@@ -1019,6 +1053,7 @@ async def get_installation_platform(installation_uuid: str, _request: Request):
         platform_node_id=installation.get("platform_node_id"),
         platform_tailscale_ip=installation.get("platform_tailscale_ip"),
         platform_hostname=installation.get("platform_hostname"),
+        platform_local_ip=installation.get("platform_local_ip"),
         platform_assigned_at=installation.get("platform_assigned_at"),
     )
 
@@ -1069,6 +1104,7 @@ async def assign_installation_platform(
         node_id,
         tailscale_ip,
         hostname,
+        platform_local_ip=payload.platform_local_ip,
     )
     logger.info(
         "Installation %s assigned to platform %s (%s)",
@@ -1081,6 +1117,9 @@ async def assign_installation_platform(
         platform_node_id=node_id,
         platform_tailscale_ip=tailscale_ip,
         platform_hostname=hostname,
+        platform_local_ip=payload.platform_local_ip or (
+            refreshed.get("platform_local_ip") if refreshed else None
+        ),
         platform_assigned_at=refreshed.get("platform_assigned_at") if refreshed else None,
     )
 
@@ -1099,6 +1138,99 @@ async def unlink_installation_platform(installation_uuid: str, _request: Request
     logger.info("Installation %s unlinked from its platform", installation_uuid)
 
     return InstallationPlatformResponse(installation_uuid=installation_uuid)
+
+
+@router.post(
+    "/installations/{installation_uuid}/platform/local-ip",
+    response_model=InstallationPlatformResponse,
+)
+async def report_platform_local_ip(
+    installation_uuid: str,
+    payload: PlatformLocalIpReportRequest,
+    _request: Request,
+):
+    """Report the platform's current local LAN IP (and optional mesh IP/hostname).
+
+    Called by the platform node after it enrolls (and periodically thereafter) so
+    the Authority can hand leaf devices the platform's up-to-date LAN address at
+    enrollment. Authenticated by ``application_key``.
+    """
+    installation = get_installation_by_application_key(
+        payload.application_key.strip().lower()
+    )
+    if not installation:
+        raise HTTPException(
+            status_code=404, detail="Installation not found for application key"
+        )
+
+    stored_uuid = installation.get("installation_uuid", "")
+    if stored_uuid != installation_uuid:
+        raise HTTPException(
+            status_code=403, detail="installation_uuid does not match application_key"
+        )
+
+    local_ip = (payload.platform_local_ip or "").strip()
+    if not local_ip:
+        raise HTTPException(status_code=422, detail="platform_local_ip is required")
+
+    # Refresh mesh IP / hostname when supplied (platform self-link on re-enroll),
+    # otherwise just update the local IP via the heartbeat writer.
+    if payload.platform_tailscale_ip or payload.platform_hostname:
+        set_installation_platform(
+            installation_uuid,
+            installation.get("platform_node_id") or "",
+            payload.platform_tailscale_ip
+            or installation.get("platform_tailscale_ip")
+            or "",
+            payload.platform_hostname
+            or installation.get("platform_hostname")
+            or "",
+            platform_local_ip=local_ip,
+        )
+    else:
+        set_installation_platform_local_ip(installation_uuid, local_ip)
+
+    logger.info(
+        "Platform local IP reported for installation %s: %s",
+        installation_uuid,
+        local_ip,
+    )
+
+    refreshed = get_installation_by_uuid(installation_uuid)
+    return InstallationPlatformResponse(
+        installation_uuid=installation_uuid,
+        platform_node_id=refreshed.get("platform_node_id") if refreshed else None,
+        platform_tailscale_ip=refreshed.get("platform_tailscale_ip") if refreshed else None,
+        platform_hostname=refreshed.get("platform_hostname") if refreshed else None,
+        platform_local_ip=refreshed.get("platform_local_ip") if refreshed else None,
+        platform_assigned_at=refreshed.get("platform_assigned_at") if refreshed else None,
+    )
+
+
+@router.post("/resolve-platform", response_model=InstallationPlatformResponse)
+async def resolve_platform_for_device(payload: PlatformResolveRequest):
+    """Re-resolve a leaf device's assigned platform (local + mesh IP).
+
+    A device whose platform LAN IP changed (e.g. after a router restart) calls
+    this with its ``api_token`` to refresh the current local/mesh IP from the
+    Authority — one internet round-trip, no re-enrollment.
+    """
+    installation = get_installation_by_uuid(payload.installation_uuid)
+    if not installation:
+        raise HTTPException(status_code=404, detail="Installation not found")
+
+    expected = _issue_installation_token(payload.installation_uuid)
+    if not hmac.compare_digest(payload.api_token or "", expected):
+        raise HTTPException(status_code=403, detail="Invalid installation token")
+
+    return InstallationPlatformResponse(
+        installation_uuid=payload.installation_uuid,
+        platform_node_id=installation.get("platform_node_id"),
+        platform_tailscale_ip=installation.get("platform_tailscale_ip"),
+        platform_hostname=installation.get("platform_hostname"),
+        platform_local_ip=installation.get("platform_local_ip"),
+        platform_assigned_at=installation.get("platform_assigned_at"),
+    )
 
 
 @router.get("/platforms", response_model=VpnNodeListResponse)

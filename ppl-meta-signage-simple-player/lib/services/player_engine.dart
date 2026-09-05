@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 import 'package:signage_simple_player/database/playlist_database.dart';
 import 'package:signage_simple_player/models/video_list.dart';
 import 'package:signage_simple_player/models/playback_models.dart';
+import 'package:signage_simple_player/services/config_service.dart';
 
 /// Video player engine for signage playback
 /// 
@@ -18,6 +19,7 @@ class SignagePlayerEngine extends ChangeNotifier {
   final PlaylistDatabase _database;
   final Logger _logger;
   final int preloadCount;
+  final ConfigService? _configService;
 
   // Current state
   VideoPlayerController? _currentController;
@@ -37,8 +39,17 @@ class SignagePlayerEngine extends ChangeNotifier {
     required PlaylistDatabase database,
     required Logger logger,
     this.preloadCount = 2,
+    ConfigService? configService,
   })  : _database = database,
-        _logger = logger;
+        _logger = logger,
+        _configService = configService;
+
+  /// Resolve a playable URL, rewriting LAN hosts to mesh when remote (issue #8).
+  String _resolvePlayUrl(String url) {
+    final config = _configService;
+    if (config == null) return url;
+    return config.rewriteMediaUrlForReachability(url);
+  }
 
   // Getters
   VideoPlayerController? get currentController => _currentController;
@@ -367,7 +378,8 @@ class SignagePlayerEngine extends ChangeNotifier {
       }
 
       final video = _currentPlaylist!.videos[index];
-      _logger.i('Playing video: ${video.title} (${video.url})');
+      final playUrl = _resolvePlayUrl(video.url);
+      _logger.i('Playing video: ${video.title} ($playUrl)');
 
       _setState(PlaybackState.loading);
 
@@ -376,7 +388,7 @@ class SignagePlayerEngine extends ChangeNotifier {
       _positionListener?.cancel();
 
       // Create new controller
-      _currentController = VideoPlayerController.networkUrl(Uri.parse(video.url));
+      _currentController = VideoPlayerController.networkUrl(Uri.parse(playUrl));
       
       // Initialize
       await _currentController!.initialize();
@@ -411,10 +423,11 @@ class SignagePlayerEngine extends ChangeNotifier {
       }
 
       final video = _currentPlaylist!.videos[nextIndex];
+      final playUrl = _resolvePlayUrl(video.url);
       _logger.d('Pre-loading next video: ${video.title}');
 
       await _nextController?.dispose();
-      _nextController = VideoPlayerController.networkUrl(Uri.parse(video.url));
+      _nextController = VideoPlayerController.networkUrl(Uri.parse(playUrl));
       await _nextController!.initialize();
       
       _logger.d('Next video pre-loaded successfully');

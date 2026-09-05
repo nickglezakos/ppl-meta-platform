@@ -5,19 +5,54 @@ import 'features/authentication/authentication.dart';
 import 'features/camera/camera.dart';
 import 'services/app_logger.dart';
 import 'services/discovery_config_service.dart';
+import 'services/platform_config_service.dart';
+import 'services/tailscale_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize logging system
   await AppLogger.instance.initialize();
   AppLogger.instance.info('🚀 Eyenet Vision starting...');
-  
+
   // Initialize discovery service - user configuration required
   await DiscoveryConfigService.instance.initialize();
   AppLogger.instance.info('🔧 Discovery service ready - user configuration required');
-  
+
+  // VPN mesh boot (WP5): once enrolled, bring up the camera's own embedded
+  // Tailscale node and resolve the platform endpoints (LAN first, VPN on
+  // demand). Best-effort — never blocks onboarding.
+  await _prepareVpnMesh();
+
   runApp(const PPLMetaCameraApp());
+}
+
+/// Best-effort VPN mesh startup: bring up the embedded node and ensure the
+/// platform is reachable over LAN (or fall back to the mesh). No-ops when the
+/// camera is not yet enrolled, and never throws on failure.
+Future<void> _prepareVpnMesh() async {
+  try {
+    final config = await PlatformConfigService.getInstance();
+    if (!config.vpnEnrolled && config.vpnAuthKey == null) {
+      AppLogger.instance.info('No VPN enrollment yet — skipping mesh bring-up');
+      return;
+    }
+
+    // Bring up the camera's own mesh node (routing discovery/register/heartbeat
+    // over the tailnet when remote).
+    final tailscale = TailscaleService(config: config);
+    await tailscale.initialize();
+
+    // Resolve the platform (LAN-first) and self-heal stale LAN IPs.
+    await config.ensurePlatformReachable();
+    AppLogger.instance.info(
+      'Platform host resolved: ${config.platformHost} '
+      '(preferVpn=${config.preferVpnHost})',
+    );
+  } catch (e, stack) {
+    AppLogger.instance.warning('VPN mesh prepare failed (non-fatal): $e');
+    AppLogger.instance.debug('VPN mesh prepare stack: $stack');
+  }
 }
 
 class PPLMetaCameraApp extends StatelessWidget {

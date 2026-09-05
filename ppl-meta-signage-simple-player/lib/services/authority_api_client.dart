@@ -20,6 +20,13 @@ class AuthorityVpnEnrollment {
   /// HMAC installation token used to authenticate to ppl-meta-discovery (Issue #8).
   final String apiToken;
 
+  /// The client's *assigned* platform (mesh IP, hostname, local LAN IP) so it
+  /// knows where to dial after enrollment — over the LAN (local) or the VPN
+  /// (mesh) for remote/off-LAN operation.
+  final String? platformTailscaleIp;
+  final String? platformHostname;
+  final String? platformLocalIp;
+
   AuthorityVpnEnrollment({
     required this.authKey,
     required this.tailscaleIpRange,
@@ -29,6 +36,9 @@ class AuthorityVpnEnrollment {
     required this.tags,
     required this.expiresInSeconds,
     required this.apiToken,
+    this.platformTailscaleIp,
+    this.platformHostname,
+    this.platformLocalIp,
   });
 
   factory AuthorityVpnEnrollment.fromJson(Map<String, dynamic> json) {
@@ -41,6 +51,9 @@ class AuthorityVpnEnrollment {
       tags: List<String>.from(json['tags'] ?? const []),
       expiresInSeconds: (json['expires_in_seconds'] as int?) ?? 0,
       apiToken: (json['api_token'] as String?) ?? '',
+      platformTailscaleIp: json['platform_tailscale_ip'] as String?,
+      platformHostname: json['platform_hostname'] as String?,
+      platformLocalIp: json['platform_local_ip'] as String?,
     );
   }
 }
@@ -188,6 +201,24 @@ class AuthorityApiClient {
       }
     }
     return null;
+  }
+
+  /// Re-resolve this device's assigned platform (local + mesh IP) from the
+  /// Authority using the HMAC installation token. One internet round-trip; use it
+  /// to refresh the platform's LAN IP when it may have changed (router/DHCP).
+  Future<Map<String, dynamic>> resolvePlatform({
+    required String installationUuid,
+    required String apiToken,
+  }) async {
+    final response = await _dio.post(
+      '/api/v1/vpn/resolve-platform',
+      data: {
+        'installation_uuid': installationUuid,
+        'api_token': apiToken,
+      },
+    );
+    _logger.d('Authority platform resolve response: ${response.data}');
+    return response.data as Map<String, dynamic>;
   }
 
   void dispose() {

@@ -12,10 +12,15 @@ from fastapi import APIRouter, HTTPException
 
 from src.config import settings
 from src.services.mesh_vpn_service import mesh_vpn_service
+from src.services.vpn_service import _get_local_ip, _get_tailscale_ip
 
 logger = logging.getLogger(__name__)
 
+# Existing control-plane routes live under /node/vpn (frontend / ops).
 router = APIRouter(prefix="/node/vpn", tags=["vpn"])
+
+# Leaf-facing Variant A endpoint: GET /api/v1/vpn/local-ip
+leaf_router = APIRouter(prefix="/api/v1/vpn", tags=["vpn"])
 
 
 @router.get("/status")
@@ -258,4 +263,27 @@ async def vpn_matrix_peers(matrix_group_id: str):
         ],
         "node_service_urls": node_service_urls,
         "count": len(peers),
+    }
+
+
+
+@leaf_router.get("/local-ip")
+async def platform_local_ip():
+    """Return this platform's current local LAN IP and mesh IP (Variant A).
+
+    Leaf devices call this over the VPN mesh when their cached
+    ``platform_local_ip`` is missing or unreachable, so they can refresh the
+    LAN address without re-enrolling. No auth required — the mesh ACL already
+    restricts who can reach the platform node.
+    """
+    local_ip = _get_local_ip()
+    tailscale_ip = _get_tailscale_ip()
+    if not local_ip and not tailscale_ip:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not detect platform local or mesh IP",
+        )
+    return {
+        "platform_local_ip": local_ip or None,
+        "platform_tailscale_ip": tailscale_ip or None,
     }

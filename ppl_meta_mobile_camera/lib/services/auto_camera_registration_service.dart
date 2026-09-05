@@ -6,6 +6,7 @@ import 'package:network_info_plus/network_info_plus.dart';
 import 'device_identifier_service.dart';
 import 'app_logger.dart';
 import 'discovery_config_service.dart';
+import 'platform_config_service.dart';
 import '../models/camera_registration_result.dart';
 import '../models/platform_services.dart';
 
@@ -19,6 +20,23 @@ class AutoCameraRegistrationService {
   /// connectivity on mobile hotspots where port 8005 may not be reachable.
   Future<String?> _getCamerasServiceUrl() async {
     try {
+      // VPN-mesh aware (WP4): when enrolled, the gateway lives on the resolved
+      // platform host (LAN by default, mesh when remote). Prefer it so the
+      // camera can register against the platform discovered from the token.
+      try {
+        final platform = await PlatformConfigService.getInstance();
+        final mesh = platform.vpnPlatformTailscaleIp;
+        final platformLocal = platform.platformLocalIp;
+        if ((mesh != null && mesh.isNotEmpty) ||
+            (platformLocal != null && platformLocal.isNotEmpty)) {
+          final gatewayUrl = platform.gatewayUrl;
+          AutoRegistrationLogger.debug('Using platform-host gateway for cameras: $gatewayUrl');
+          return gatewayUrl;
+        }
+      } catch (_) {
+        // Fall through to legacy resolution below.
+      }
+
       // Prefer gateway URL derived from the node server URL the user connected to.
       // The gateway proxies /api/v1/cameras/* routes to the cameras service.
       final prefs = await SharedPreferences.getInstance();

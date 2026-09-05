@@ -10,6 +10,8 @@ router = APIRouter()
 router.include_router(users.router)
 router.include_router(health.router)
 router.include_router(vpn.router)
+# Variant A: leaf-facing GET /api/v1/vpn/local-ip (no /node prefix).
+router.include_router(vpn.leaf_router)
 
 # Include roles router on versioned path only (legacy /roles is in main.py).
 router.include_router(roles.router, prefix="/api/v1")

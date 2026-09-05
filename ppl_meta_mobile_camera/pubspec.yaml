@@ -66,6 +66,12 @@ dependencies:
   battery_plus: ^6.0.3  # Battery monitoring
   url_launcher: ^6.2.0  # Deep link to Tailscale app for VPN enrollment
 
+  # Per-app embedded Tailscale node (WP3 - one node per app): the camera
+  # enrolls itself as its own 100.64.0.XX node and routes its in-app HTTP
+  # (discovery + registration + heartbeat) over the mesh (LAN-direct when
+  # co-located, DERPF-relayed when remote). Mirrors the signage player.
+  tailscale: ^0.5.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

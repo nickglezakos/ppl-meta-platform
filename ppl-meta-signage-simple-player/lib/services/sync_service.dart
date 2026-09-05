@@ -6,6 +6,7 @@ import 'package:signage_simple_player/api/api_exceptions.dart';
 import 'package:signage_simple_player/config/app_config.dart';
 import 'package:signage_simple_player/database/playlist_database.dart';
 import 'package:signage_simple_player/models/video_list.dart';
+import 'package:signage_simple_player/services/config_service.dart';
 
 /// Sync status for tracking synchronization state
 enum SyncStatus {
@@ -58,6 +59,7 @@ class SyncService extends ChangeNotifier {
   final SignageApiClient _apiClient;
   final PlaylistDatabase _database;
   final Logger _logger;
+  final ConfigService? _configService;
 
   SyncStatus _status = SyncStatus.idle;
   SyncResult? _lastResult;
@@ -69,9 +71,11 @@ class SyncService extends ChangeNotifier {
     required SignageApiClient apiClient,
     required PlaylistDatabase database,
     required Logger logger,
+    ConfigService? configService,
   })  : _apiClient = apiClient,
         _database = database,
-        _logger = logger;
+        _logger = logger,
+        _configService = configService;
 
   // Getters
   SyncStatus get status => _status;
@@ -99,6 +103,18 @@ class SyncService extends ChangeNotifier {
 
     try {
       _logger.i('Starting manual playlist sync');
+
+      // Issue #9: refresh platform endpoints before sync so DHCP/router
+      // changes self-heal without re-enrollment.
+      final config = _configService;
+      if (config != null) {
+        try {
+          await config.ensurePlatformReachable();
+          _apiClient.applyPlatformBaseUrl(config.gatewayUrl);
+        } catch (e) {
+          _logger.w('Pre-sync platform refresh failed (continuing): $e');
+        }
+      }
 
       // Fetch playlist from backend (API returns single playlist or null)
       final playlist = await _apiClient.syncPlaylist();

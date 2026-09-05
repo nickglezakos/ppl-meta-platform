@@ -84,6 +84,7 @@ def _schema_statements() -> list[str]:
             platform_tailscale_ip TEXT,
             platform_hostname TEXT,
             platform_assigned_at TIMESTAMPTZ,
+            platform_local_ip TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -226,6 +227,7 @@ def initialize_database() -> None:
         _ensure_column(connection, "installations", "platform_tailscale_ip", "TEXT")
         _ensure_column(connection, "installations", "platform_hostname", "TEXT")
         _ensure_column(connection, "installations", "platform_assigned_at", "TIMESTAMPTZ")
+        _ensure_column(connection, "installations", "platform_local_ip", "TEXT")
         # Backfill installations.matrix_group_id from legacy entitlements.
         connection.execute(
             """
@@ -1679,6 +1681,7 @@ def set_installation_platform(
     platform_node_id: str,
     platform_tailscale_ip: str,
     platform_hostname: str,
+    platform_local_ip: str | None = None,
 ) -> None:
     """Link an installation to a platform node (the only client↔platform link).
 
@@ -1690,6 +1693,9 @@ def set_installation_platform(
         platform_node_id: Headscale node id of the linked platform.
         platform_tailscale_ip: Mesh (``100.64.x.x``) IP of the linked platform.
         platform_hostname: Human name of the linked platform.
+        platform_local_ip: The platform's current local LAN IP (``192.168.x.x``),
+            used by leaf devices for fast on-LAN operation. Optional — the
+            platform reports/refreshes it via ``set_installation_platform_local_ip``.
     """
     with _connect() as connection:
         connection.execute(
@@ -1698,6 +1704,7 @@ def set_installation_platform(
                 platform_node_id = ?,
                 platform_tailscale_ip = ?,
                 platform_hostname = ?,
+                platform_local_ip = ?,
                 platform_assigned_at = CURRENT_TIMESTAMP,
                 updated_at = CURRENT_TIMESTAMP
             WHERE installation_uuid = ?
@@ -1706,6 +1713,7 @@ def set_installation_platform(
                 platform_node_id,
                 platform_tailscale_ip,
                 platform_hostname,
+                platform_local_ip,
                 installation_uuid,
             ),
         )
@@ -1721,11 +1729,40 @@ def clear_installation_platform(installation_uuid: str) -> None:
                 platform_node_id = NULL,
                 platform_tailscale_ip = NULL,
                 platform_hostname = NULL,
+                platform_local_ip = NULL,
                 platform_assigned_at = NULL,
                 updated_at = CURRENT_TIMESTAMP
             WHERE installation_uuid = ?
             """,
             (installation_uuid,),
+        )
+        connection.commit()
+
+
+def set_installation_platform_local_ip(
+    installation_uuid: str,
+    platform_local_ip: str | None,
+) -> None:
+    """Update just the platform's current local LAN IP (heartbeat/refresh).
+
+    The platform reports this so leaf devices can re-resolve its LAN address
+    from the Authority when a router/DHCP change moves it. Kept separate from
+    ``set_installation_platform`` so a heartbeat never clobbers the node id,
+    mesh IP, or hostname.
+
+    Args:
+        installation_uuid: UUID of the installation whose platform reports in.
+        platform_local_ip: The platform's current local LAN IP, or None to clear.
+    """
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE installations SET
+                platform_local_ip = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE installation_uuid = ?
+            """,
+            (platform_local_ip, installation_uuid),
         )
         connection.commit()
 
@@ -2388,6 +2425,7 @@ def _row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "platform_tailscale_ip": row["platform_tailscale_ip"] if "platform_tailscale_ip" in row.keys() else None,
         "platform_hostname": row["platform_hostname"] if "platform_hostname" in row.keys() else None,
         "platform_assigned_at": _timestamp_value(row["platform_assigned_at"]) if "platform_assigned_at" in row.keys() else None,
+        "platform_local_ip": row["platform_local_ip"] if "platform_local_ip" in row.keys() else None,
     }
 
 

@@ -160,10 +160,10 @@ class SignageDiscoveryService {
       _logger.d('Device ID: ${_deviceInfo!.deviceId}');
       _logger.d('Device Name: ${_deviceInfo!.deviceName}');
       
-      // VPN-direct discovery (Phase 5): when the Authority has supplied the primary
-      // node's Tailscale IP, query the platform topology directly over the mesh for
-      // zero-config backend lookup. Best-effort — failures do not block registration.
-      final vpnNodeIp = _configService.vpnPrimaryNodeIp;
+      // VPN-direct discovery (Phase 5): prefer the assigned platform mesh IP
+      // (issue #10) over the legacy primary-node IP, which may still point at
+      // headscale in older deployments.
+      final vpnNodeIp = _configService.vpnDiscoveryNodeIp;
       if (vpnNodeIp != null && vpnNodeIp.isNotEmpty) {
         setVpnNodeIp(vpnNodeIp);
         await discoverTopology();

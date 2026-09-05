@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert' show jsonDecode, jsonEncode;
 import 'package:http/http.dart' as http;
 import 'simplified_discovery_client.dart';
+import 'platform_config_service.dart';
 
 /// Shared installation auth secret (Option 1) used to ask the local discovery
 /// service to issue the HMAC token. Defaults to the dev secret so IDE/CLI
@@ -87,6 +88,26 @@ class DiscoveryConfigService {
   
   /// Get the configured discovery service URL
   Future<String?> getDiscoveryUrl() async {
+    // VPN-mesh aware: once enrolled, the discovery service lives on the local
+    // platform host resolved by PlatformConfigService (LAN by default, mesh when
+    // remote). This lets the camera discover the platform from the enrollment
+    // token instead of requiring a manually typed LAN IP.
+    try {
+      final platform = await PlatformConfigService.getInstance();
+      final mesh = platform.vpnPlatformTailscaleIp;
+      final platformLocal = platform.platformLocalIp;
+      if ((mesh != null && mesh.isNotEmpty) ||
+          (platformLocal != null && platformLocal.isNotEmpty)) {
+        final vpnUrl = platform.discoveryServiceUrl;
+        if (vpnUrl.isNotEmpty) {
+          _cachedDiscoveryUrl = vpnUrl;
+          return vpnUrl;
+        }
+      }
+    } catch (_) {
+      // Fall through to legacy stored configuration.
+    }
+
     if (_cachedDiscoveryUrl != null) {
       return _cachedDiscoveryUrl;
     }

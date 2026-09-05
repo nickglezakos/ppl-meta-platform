@@ -4,6 +4,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/simplified_discovery_client.dart';
 import '../../../services/discovery_based_authentication_service.dart';
 import '../../../services/discovery_config_service.dart';
+import '../../../services/platform_config_service.dart';
+import '../../../services/authority_api_client.dart';
+import '../../../services/tailscale_service.dart';
 import '../../../core/providers/authentication_provider.dart';
 import '../../../core/services/authentication_service.dart';
 
@@ -25,11 +28,14 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   final _portController = TextEditingController(text: '8006');
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+final _enrollmentTokenController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   
   bool _isLoading = false;
   bool _isAttemptingAutoLogin = true;
   String? _errorMessage;
+bool _isEnrolling = false;
+  String? _enrollmentMessage;
   bool _isHowTosExpanded = false;
   bool _hasStoredCredentials = false;
   bool _isPasswordVisible = false;
@@ -144,75 +150,65 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
     });
 
     try {
-      final backendIP = _backendIPController.text.trim();
-      final port = _portController.text.trim();
-      final username = _usernameController.text.trim();
-      final password = _passwordController.text.trim();
+      // === VPN-mesh aware path (preferred after token redemption) ===
+      final platformConfig = await PlatformConfigService.getInstance();
 
-      // Save user's backend configuration - no network detection needed
-      final configService = DiscoveryConfigService.instance;
-      await configService.configureFromUserInput(
-        ipLastPart: backendIP.split('.').last, // Just for compatibility 
-        port: port,
-        deviceIPPrefix: backendIP.split('.').take(3).join('.'), // Backend network prefix
-      );
-      
-      print('✅ Discovery configuration saved for backend IP: $backendIP');
+      String host;
+      String portStr;
 
-      // Option 1 — local onboarding: request an HMAC installation token from
-      // the local discovery service so subsequent discovery calls (e.g.
-      // /api/v1/discovery/topology) are authenticated. Best-effort.
-      await configService.enrollLocallyIfNeeded();
+      if (platformConfig.vpnEnrolled ||
+          (platformConfig.vpnPlatformTailscaleIp != null &&
+              platformConfig.vpnPlatformTailscaleIp!.isNotEmpty)) {
+        // Use the platform host resolved from the enrollment token
+        // (LAN first, mesh when remote). This prevents timeout on 100.64.x.x
+        host = platformConfig.platformHost;
+        portStr = '${PlatformConfigService.discoveryPort}';
+        print('🔐 Using VPN-mesh resolved host: $host');
+      } else {
+        // === Legacy manual LAN path ===
+        host = _backendIPController.text.trim();
+        portStr = _portController.text.trim();
 
-      // Create discovery client with user-specified IP
+        await DiscoveryConfigService.instance.configureFromUserInput(
+          ipLastPart: host.split('.').last,
+          port: portStr,
+          deviceIPPrefix: host.split('.').take(3).join('.'),
+        );
+      }
+
+      print('🔍 Attempting to connect to Discovery Service at $host:$portStr');
+
       final discoveryClient = SimplifiedDiscoveryClient();
-      
-      print('🔍 Attempting to connect to Discovery Service at $backendIP:$port');
-      
-      // Test connection to Discovery Service using complete backend IP
-      final services = await discoveryClient.discoverServicesAtAddress('$backendIP:$port');
-      
-      print('✅ Found ${services.length} services via Discovery Service');
-      
-      // Find node service for authentication (not gateway)
+      final services =
+          await discoveryClient.discoverServicesAtAddress('$host:$portStr');
+
       final nodeService = services.firstWhere(
         (s) => s.name == 'ppl-meta-node',
         orElse: () => throw Exception('Node service not found in Discovery Service'),
       );
-      
-      print('🚪 Node service found at ${nodeService.host}:${nodeService.port}');
-      
-      // Construct node service URL for authentication
+
       final nodeUrl = 'http://${nodeService.host}:${nodeService.port}';
-      
-      // Authenticate via AuthenticationProvider to properly set app state
-      final authProvider = Provider.of<AuthenticationProvider>(context, listen: false);
+
+      final authProvider =
+          Provider.of<AuthenticationProvider>(context, listen: false);
       final loginSuccess = await authProvider.login(
         serverUrl: nodeUrl,
-        username: username,
-        password: password,
+        username: _usernameController.text.trim(),
+        password: _passwordController.text.trim(),
       );
-      
+
       if (loginSuccess) {
         print('🎉 Authentication successful! App state updated.');
-        
-        // Save credentials for future auto-login
         await _saveCredentials();
-        
-        // Navigation will be handled automatically by MainNavigator
-        // since AuthenticationProvider.isAuthenticated is now true
-        
       } else {
-        throw Exception('Authentication failed: ${authProvider.error}');
+        throw Exception(authProvider.error ?? 'Authentication failed');
       }
-      
     } catch (e) {
       setState(() {
         _errorMessage = 'Connection failed: $e';
       });
       print('❌ Setup failed: $e');
-      
-      // If auto-login failed, clear stored credentials
+
       if (isAutoLogin) {
         await _clearStoredCredentials();
         print('🗑️ Cleared invalid stored credentials');
@@ -221,6 +217,62 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+/// Join the VPN mesh by redeeming a one-time enrollment token minted by a
+  /// platform admin. One internet round-trip returns the assigned platform
+  /// (mesh IP, LAN IP, hostname), which the camera then uses to discover and
+  /// connect to the platform — no LAN IP typing required.
+  Future<void> _redeemVpnEnrollmentToken() async {
+    final token = _enrollmentTokenController.text.trim();
+    if (token.isEmpty) {
+      setState(() => _enrollmentMessage = 'Enter the enrollment token from the platform.');
+      return;
+    }
+
+    setState(() {
+      _isEnrolling = true;
+      _enrollmentMessage = null;
+    });
+
+    try {
+      // 1. Redeem the token against the Authority.
+      final config = await PlatformConfigService.getInstance();
+      final client = AuthorityApiClient(baseUrl: config.authorityServiceUrl);
+      final enrollment = await client.redeemEnrollmentToken(token: token, nodeType: 'mobile');
+
+      // 2. Persist the full VPN metadata (platform LAN + mesh IPs, auth key,
+      //    headscale server, api_token, installation uuid).
+      await config.saveVpnMetadata(
+        authKey: enrollment.authKey,
+        headscaleServer: enrollment.headscaleServer,
+        matrixGroupId: enrollment.matrixGroupId,
+        primaryNodeIp: enrollment.primaryNodeIp,
+        apiToken: enrollment.apiToken,
+        platformTailscaleIp: enrollment.platformTailscaleIp,
+        platformHostname: enrollment.platformHostname,
+        platformLocalIp: enrollment.platformLocalIp,
+      );
+
+      // 3. Bring up the camera's own mesh node, then resolve the platform.
+      final tailscale = TailscaleService(config: config);
+      await tailscale.initialize();
+      await config.ensurePlatformReachable();
+
+      // 4. Discovery now resolves to the enrolled platform host (LAN or mesh).
+      final platformHost = config.platformHost;
+
+      setState(() {
+        _enrollmentMessage =
+            'Joined VPN mesh. Connected to platform at $platformHost. You can now '
+            'sign in below (or re-open the app to skip setup).';
+        _backendIPController.text = platformHost;
+        _portController.text = '${PlatformConfigService.discoveryPort}';
+      });
+    } catch (e) {
+      setState(() => _enrollmentMessage = 'Enrollment failed: $e');
+    } finally {
+      setState(() => _isEnrolling = false);
     }
   }
 
@@ -431,8 +483,112 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                 },
               ),
               
+const SizedBox(height: 24),
+
+              // Join VPN Mesh (enrollment token) — optional but recommended for
+              // remote access. Redeems a one-time token to discover the platform
+              // via the VPN mesh (no LAN IP typing required).
+              const Divider(),
+              const SizedBox(height: 12),
+              Row(
+                children: const [
+                  Icon(Icons.vpn_lock, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Join the VPN mesh (enrollment token)',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Paste the one-time token from the platform. The camera will '
+                'discover the platform over the mesh and enable remote access.',
+                style: TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _enrollmentTokenController,
+                decoration: const InputDecoration(
+                  labelText: 'One-time enrollment token (optional)',
+                  hintText: 'Paste token from the platform admin screen',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.key),
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (_enrollmentMessage != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Text(
+                    _enrollmentMessage!,
+                    style: TextStyle(color: Colors.green.shade800),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              ElevatedButton.icon(
+                onPressed: _isEnrolling ? null : _redeemVpnEnrollmentToken,
+                icon: _isEnrolling
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.link),
+                label: Text(_isEnrolling ? 'Joining…' : 'Join VPN Mesh'),
+              ),
+
               const SizedBox(height: 24),
-              
+
+              // Direct LAN connection (legacy) — collapsed by default
+              ExpansionTile(
+                title: const Text('Direct LAN connection (legacy)'),
+                subtitle: const Text('Only use if you cannot obtain an enrollment token'),
+                leading: const Icon(Icons.settings_ethernet),
+                initiallyExpanded: false,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Column(
+                      children: [
+                        TextFormField(
+                          controller: _backendIPController,
+                          decoration: const InputDecoration(
+                            labelText: 'Backend IP Address',
+                            hintText: 'e.g., 192.168.1.100',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.computer),
+                          ),
+                          keyboardType: TextInputType.text,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _portController,
+                          decoration: const InputDecoration(
+                            labelText: 'Discovery Service Port',
+                            hintText: '8006',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.settings_input_antenna),
+                          ),
+                          keyboardType: TextInputType.number,
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
               // Connect Button
               ElevatedButton(
                 onPressed: _isLoading ? null : _connectAndAuthenticate,
@@ -670,6 +826,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
     _portController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _enrollmentTokenController.dispose();
     super.dispose();
   }
 }

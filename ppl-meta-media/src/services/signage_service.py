@@ -84,23 +84,23 @@ def _endpoint_candidates(
 
 
 def _resolve_media_service_url() -> str:
-    """Return the base URL of this media service, VPN-first.
+    """Return the base URL of this media service, LAN-first.
 
     The playlist the player receives must point at stream URLs the player can
-    actually reach. On the local network that is the media service's LAN IP, but
-    once devices are dialing in over the Headscale/Tailscale mesh they can no
-    longer reach the LAN IP and need the media service's mesh (``100.64.x.x``)
-    address instead.
+    actually reach. Leaf devices (signage players, cameras) run on the local
+    network by default and only fall back to the mesh (VPN) when remote, so the
+    media service advertises its LAN address first and its mesh (``100.64.x.x``)
+    address only when the LAN address is unavailable.
 
     Resolution order:
-      1. Discovery's ``tailscale_ip``/``tailscale_port`` for the media service
-         (registered in ``main.py`` from the local Tailscale daemon).
-      2. The local Tailscale daemon directly (``shared.networking.tailscale_utils``)
+      1. Discovery's LAN ``host``/``port`` for the media service.
+      2. Discovery's ``tailscale_ip``/``tailscale_port`` (remote fallback).
+      3. The local Tailscale daemon directly (``shared.networking.tailscale_utils``)
          — covers the window before discovery has been re-registered.
-      3. Discovery's LAN ``host``/``port``.
       4. ``http://localhost:8000`` as a final fallback.
     """
     discovery_url = None
+    vpn_url = None
 
     try:
         with httpx.Client(timeout=2.0) as client:
@@ -113,19 +113,25 @@ def _resolve_media_service_url() -> str:
                 for service in services:
                     name = service.get("name", "")
                     if service.get("service_type") == "backend" and "media" in name.lower():
-                        tailscale_ip = service.get("tailscale_ip")
-                        tailscale_port = service.get("tailscale_port") or service.get("port")
-                        if tailscale_ip:
-                            url = f"http://{tailscale_ip}:{tailscale_port}"
-                            logger.info(f"🔍 Using media VPN URL from discovery: {url}")
-                            return url
                         host = service.get("host")
                         port = service.get("port")
                         if host and port:
                             discovery_url = f"http://{host}:{port}"
+                        tailscale_ip = service.get("tailscale_ip")
+                        tailscale_port = service.get("tailscale_port") or service.get("port")
+                        if tailscale_ip:
+                            vpn_url = f"http://{tailscale_ip}:{tailscale_port}"
                         break
     except Exception as e:
         logger.warning(f"Could not query discovery for media service, using default: {e}")
+
+    if discovery_url:
+        logger.info(f"🔍 Using media LAN URL from discovery: {discovery_url}")
+        return discovery_url
+
+    if vpn_url:
+        logger.info(f"🔍 Using media VPN URL from discovery: {vpn_url}")
+        return vpn_url
 
     # Fall back to the local Tailscale daemon directly (self-detection).
     try:

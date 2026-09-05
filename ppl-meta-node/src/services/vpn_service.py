@@ -23,11 +23,22 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-AUTHORITY_URL = os.environ.get(
-    "AUTHORITY_BASE_URL", "https://authority.eyenet-vision.com"
+AUTHORITY_URL = (
+    os.environ.get("AUTHORITY_BASE_URL")
+    or os.environ.get("AUTHORITY_SERVICE_URL")
+    or "https://authority.eyenet-vision.com"
 )
-INSTALLATION_UUID = os.environ.get("EYENET_INSTALLATION_UUID", "")
-APPLICATION_KEY = os.environ.get("EYENET_APPLICATION_KEY", "")
+# Prefer EYENET_* (VPN mesh); fall back to AUTHORITY_* so a single .env block works.
+INSTALLATION_UUID = (
+    os.environ.get("EYENET_INSTALLATION_UUID")
+    or os.environ.get("AUTHORITY_INSTALLATION_UUID")
+    or ""
+)
+APPLICATION_KEY = (
+    os.environ.get("EYENET_APPLICATION_KEY")
+    or os.environ.get("AUTHORITY_APPLICATION_KEY")
+    or ""
+)
 
 # Node role/tag this service enrolls as. The platform compute module (this service,
 # ppl-meta-node) owns its DB/registry/media and participates in the mesh as a
@@ -82,6 +93,87 @@ def _is_already_enrolled() -> bool:
         return False
 
 
+def _get_tailscale_ip() -> str:
+    """Return this node's mesh IP (``100.64.x.x``) if enrolled, else ''."""
+    try:
+        result = subprocess.run(
+            ["tailscale", "status", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return ""
+        import json
+        status = json.loads(result.stdout)
+        ips = status.get("Self", {}).get("TailscaleIPs") or []
+        return ips[0] if ips else ""
+    except Exception:
+        return ""
+
+
+def _get_local_ip() -> str:
+    """Detect this host's primary local LAN IP (the platform's LAN address).
+
+    Uses a UDP connect to a public address so the kernel picks the egress
+    interface (the LAN NIC), yielding the private IP leaf devices use to reach
+    the platform on the local network. Excludes loopback and CGNAT (Tailscale
+    ``100.64.x.x``) addresses.
+    """
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            if ip and not ip.startswith("127.") and not ip.startswith("100."):
+                return ip
+    except Exception:
+        pass
+    return ""
+
+
+def report_platform_local_ip() -> bool:
+    """Detect and report this platform's local LAN IP to the Authority.
+
+    Called after enrollment and periodically so the Authority can hand leaf
+    devices the platform's current LAN address at *their* enrollment. Non-fatal
+    on failure — VPN remains optional.
+    """
+    if not INSTALLATION_UUID or not APPLICATION_KEY:
+        return False
+    local_ip = _get_local_ip()
+    if not local_ip:
+        logger.warning("VPN: could not detect a local LAN IP to report")
+        return False
+    tailscale_ip = _get_tailscale_ip()
+    try:
+        resp = httpx.post(
+            f"{AUTHORITY_URL}/api/v1/vpn/installations/{INSTALLATION_UUID}/platform/local-ip",
+            json={
+                "application_key": APPLICATION_KEY,
+                "platform_local_ip": local_ip,
+                "platform_tailscale_ip": tailscale_ip or None,
+            },
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            logger.info(
+                "VPN: reported platform local IP %s to authority%s",
+                local_ip,
+                f" (mesh {tailscale_ip})" if tailscale_ip else "",
+            )
+            return True
+        logger.warning(
+            "VPN: platform local-IP report rejected (HTTP %s): %s",
+            resp.status_code,
+            resp.text,
+        )
+        return False
+    except Exception as exc:
+        logger.warning("VPN: platform local-IP report failed: %s", exc)
+        return False
+
+
 def enroll_once() -> bool:
     """One-time VPN enrollment. Safe to call on every boot — will skip if already enrolled.
 
@@ -104,6 +196,8 @@ def enroll_once() -> bool:
 
     if _is_already_enrolled():
         logger.info("VPN: already enrolled — skipping enrollment")
+        # Still re-report our current local LAN IP in case it changed (router/DHCP).
+        report_platform_local_ip()
         return True
 
     try:
@@ -144,6 +238,8 @@ def enroll_once() -> bool:
                 matrix_group_id,
                 headscale_server,
             )
+            # Publish our local LAN IP so leaf devices can discover it at enrollment.
+            report_platform_local_ip()
             return True
         else:
             logger.error(

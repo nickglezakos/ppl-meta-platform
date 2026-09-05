@@ -38,12 +38,74 @@ SERVICES=(
     "ppl-meta-discovery:8006:Discovery Service"
 )
 
+# Load KEY=VALUE lines from a .env file into the current shell (exports them).
+# Skips blank lines and comments. Values may be unquoted.
+load_env_file() {
+    local env_file="$1"
+    if [ ! -f "$env_file" ]; then
+        return 1
+    fi
+    set -a
+    # shellcheck disable=SC1090
+    # Prefer a safe parse over `source` so values with spaces still work.
+    while IFS= read -r line || [ -n "$line" ]; do
+        # trim CR
+        line="${line%$'\r'}"
+        # skip blanks and comments
+        case "$line" in
+            ''|\#*) continue ;;
+        esac
+        # only KEY=VALUE
+        if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+            export "$line"
+        fi
+    done < "$env_file"
+    set +a
+    return 0
+}
+
+# Ensure VPN mesh env vars are set for ppl-meta-node from AUTHORITY_* when
+# EYENET_* are missing. Mirrors docker-compose mapping so local uvicorn
+# enrolls as tag:platform and can report platform_local_ip.
+ensure_node_vpn_env() {
+    local node_dir="${1:-ppl-meta-node}"
+    load_env_file "$node_dir/.env" || true
+
+    if [ -z "${EYENET_INSTALLATION_UUID:-}" ] && [ -n "${AUTHORITY_INSTALLATION_UUID:-}" ]; then
+        export EYENET_INSTALLATION_UUID="$AUTHORITY_INSTALLATION_UUID"
+        print_status "EYENET_INSTALLATION_UUID ← AUTHORITY_INSTALLATION_UUID"
+    fi
+    if [ -z "${EYENET_APPLICATION_KEY:-}" ] && [ -n "${AUTHORITY_APPLICATION_KEY:-}" ]; then
+        export EYENET_APPLICATION_KEY="$AUTHORITY_APPLICATION_KEY"
+        print_status "EYENET_APPLICATION_KEY ← AUTHORITY_APPLICATION_KEY"
+    fi
+    if [ -z "${AUTHORITY_BASE_URL:-}" ]; then
+        if [ -n "${AUTHORITY_SERVICE_URL:-}" ]; then
+            export AUTHORITY_BASE_URL="$AUTHORITY_SERVICE_URL"
+        else
+            export AUTHORITY_BASE_URL="https://authority.eyenet-vision.com"
+        fi
+    fi
+    if [ -z "${EYENET_VPN_NODE_TYPE:-}" ]; then
+        export EYENET_VPN_NODE_TYPE="platform"
+    fi
+
+    if [ -n "${EYENET_INSTALLATION_UUID:-}" ] && [ -n "${EYENET_APPLICATION_KEY:-}" ]; then
+        print_status "Node VPN env ready (uuid=${EYENET_INSTALLATION_UUID}, node_type=${EYENET_VPN_NODE_TYPE}, authority=${AUTHORITY_BASE_URL})"
+    else
+        print_warning "Node VPN env incomplete — set AUTHORITY_INSTALLATION_UUID + AUTHORITY_APPLICATION_KEY (or EYENET_*) in ppl-meta-node/.env"
+    fi
+}
+
 # Function to start all services
 start_all_services() {
     print_status "🚀 Starting all PPL Meta Python services..."
-    
+
     # Ensure nginx is running first so services can reach each other through the proxy
     start_nginx
+
+    # Preload node VPN identity so child processes inherit EYENET_* / AUTHORITY_BASE_URL
+    ensure_node_vpn_env "ppl-meta-node"
 
     for service_config in "${SERVICES[@]}"; do
         IFS=':' read -r service_name port description <<< "$service_config"
@@ -61,8 +123,16 @@ start_all_services() {
                 # Special handling for different service types
                 case "$service_name" in
                     "ppl-meta-node")
-                        # Node service needs special Python path handling
-                        nohup bash -c "source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node uvicorn src.main:app --host 0.0.0.0 --port $port --reload" > "../logs/${service_name}.log" 2>&1 &
+                        # Node service needs special Python path handling + VPN mesh env
+                        ensure_node_vpn_env "."
+                        nohup bash -c "source venv/bin/activate && \
+export EYENET_INSTALLATION_UUID=\"${EYENET_INSTALLATION_UUID:-}\" \
+EYENET_APPLICATION_KEY=\"${EYENET_APPLICATION_KEY:-}\" \
+AUTHORITY_BASE_URL=\"${AUTHORITY_BASE_URL:-}\" \
+EYENET_VPN_NODE_TYPE=\"${EYENET_VPN_NODE_TYPE:-platform}\" \
+EYENET_VPN_HOSTNAME=\"${EYENET_VPN_HOSTNAME:-}\" \
+PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node && \
+uvicorn src.main:app --host 0.0.0.0 --port $port --reload" > "../logs/${service_name}.log" 2>&1 &
                         ;;
                     "ppl-meta-media")
                         # Media service uses uvicorn.run() in main.py
@@ -102,7 +172,14 @@ start_all_services() {
                 # Fallback without venv
                 case "$service_name" in
                     "ppl-meta-node")
-                        nohup bash -c "PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node uvicorn src.main:app --host 0.0.0.0 --port $port --reload" > "../logs/${service_name}.log" 2>&1 &
+                        ensure_node_vpn_env "."
+                        nohup bash -c "export EYENET_INSTALLATION_UUID=\"${EYENET_INSTALLATION_UUID:-}\" \
+EYENET_APPLICATION_KEY=\"${EYENET_APPLICATION_KEY:-}\" \
+AUTHORITY_BASE_URL=\"${AUTHORITY_BASE_URL:-}\" \
+EYENET_VPN_NODE_TYPE=\"${EYENET_VPN_NODE_TYPE:-platform}\" \
+EYENET_VPN_HOSTNAME=\"${EYENET_VPN_HOSTNAME:-}\" \
+PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node && \
+uvicorn src.main:app --host 0.0.0.0 --port $port --reload" > "../logs/${service_name}.log" 2>&1 &
                         ;;
                     *)
                         nohup python src/main.py > "../logs/${service_name}.log" 2>&1 &

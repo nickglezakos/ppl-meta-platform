@@ -1,9 +1,10 @@
- import 'package:dio/dio.dart';
+import 'package:dio/dio.dart';
 import 'package:logger/logger.dart';
 import '../config/app_config.dart';
 import '../models/video_list.dart';
 import '../models/playback_models.dart';
 import '../models/playback_history.dart';
+import '../services/config_service.dart';
 import '../services/tailscale_service.dart';
 import '../services/tailscale_http_adapter.dart';
 
@@ -11,9 +12,11 @@ import '../services/tailscale_http_adapter.dart';
 class SignageApiClient {
   final Dio _dio;
   final Logger _logger;
-  final String baseUrl;
+  String baseUrl;
   final String deviceId;
   final TailscaleService? _tailscaleService;
+  final ConfigService? _configService;
+  bool _switchedToVpn = false;
 
   SignageApiClient({
     required this.baseUrl,
@@ -21,8 +24,10 @@ class SignageApiClient {
     Logger? logger,
     Dio? dio,
     TailscaleService? tailscaleService,
+    ConfigService? configService,
   })  : _logger = logger ?? Logger(),
         _tailscaleService = tailscaleService,
+        _configService = configService,
         _dio = dio ??
             Dio(BaseOptions(
               baseUrl: baseUrl,
@@ -56,7 +61,7 @@ class SignageApiClient {
         'Signage API client routing through embedded Tailscale node (${tailscale.tailscaleIp})');
   }
 
-  /// Setup Dio interceptors for logging and error handling
+  /// Setup Dio interceptors for logging, LAN→VPN fallback, and error handling
   void _setupInterceptors() {
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
@@ -70,7 +75,27 @@ class SignageApiClient {
         _logger.d('Response [${response.statusCode}]: ${response.data}');
         return handler.next(response);
       },
-      onError: (error, handler) {
+      onError: (error, handler) async {
+        // Issue #7: on connection failure while using LAN, switch baseUrl to
+        // the platform mesh IP and retry once.
+        if (_isConnectionFailure(error) && await _trySwitchToVpnBaseUrl()) {
+          try {
+            final opts = error.requestOptions;
+            final meshBase = _dio.options.baseUrl;
+            // Rebuild absolute URI against the new base.
+            final path = opts.path.startsWith('http')
+                ? Uri.parse(opts.path).path
+                : opts.path;
+            opts
+              ..baseUrl = meshBase
+              ..path = path;
+            _logger.w('Retrying ${opts.method} $path over VPN base $meshBase');
+            final response = await _dio.fetch(opts);
+            return handler.resolve(response);
+          } catch (e) {
+            _logger.e('VPN fallback retry failed: $e');
+          }
+        }
         _logger.e(
           'API Error: ${error.message}',
           error: error,
@@ -97,6 +122,48 @@ class SignageApiClient {
         },
       ),
     );
+  }
+
+  bool _isConnectionFailure(DioException error) {
+    return error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.connectionError;
+  }
+
+  /// Switch Dio baseUrl to the platform mesh IP (issue #7).
+  Future<bool> _trySwitchToVpnBaseUrl() async {
+    if (_switchedToVpn) return false;
+    final config = _configService;
+    if (config == null) return false;
+    final mesh = config.vpnPlatformTailscaleIp;
+    if (mesh == null || mesh.isEmpty) return false;
+
+    // Already on mesh?
+    if (baseUrl.contains(mesh)) {
+      _switchedToVpn = true;
+      return false;
+    }
+
+    await config.markLanUnreachable();
+    // Best-effort Variant A pull before locking onto mesh.
+    await config.pullPlatformLocalIpFromMesh();
+
+    final newBase = 'http://$mesh:8080';
+    baseUrl = newBase;
+    _dio.options.baseUrl = newBase;
+    _switchedToVpn = true;
+    _logger.i('API client switched to VPN baseUrl: $newBase');
+    return true;
+  }
+
+  /// Update baseUrl after a platform endpoint refresh (boot / pre-sync).
+  void applyPlatformBaseUrl(String url) {
+    if (url.isEmpty || url == baseUrl) return;
+    baseUrl = url;
+    _dio.options.baseUrl = url;
+    _switchedToVpn = false;
+    _logger.i('API client baseUrl updated: $url');
   }
 
   /// Determine if a request should be retried

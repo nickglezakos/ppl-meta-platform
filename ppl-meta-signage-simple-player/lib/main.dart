@@ -192,6 +192,21 @@ class _InitializationScreenState extends State<InitializationScreen> {
       _configService = await ConfigService.getInstance();
       logger.i('Configuration loaded');
 
+      // Issue #9 / #7 / #12: refresh platform endpoints from Authority, probe
+      // LAN reachability, and pull local IP over mesh (Variant A) if needed.
+      setState(() {
+        _statusMessage = 'Resolving platform endpoints...';
+      });
+      try {
+        await _configService!.ensurePlatformReachable();
+        logger.i(
+          'Platform host resolved: ${_configService!.platformHost} '
+          '(preferVpn=${_configService!.preferVpnHost})',
+        );
+      } catch (e) {
+        logger.w('Platform reachability check failed (continuing): $e');
+      }
+
       // Phase 4: bring up this player's own per-app Tailscale node (best-effort).
       // When VPN/auth metadata is configured the embedded runtime enrolls once and
       // persists its node key; otherwise this returns false without error. The API
@@ -232,6 +247,7 @@ class _InitializationScreenState extends State<InitializationScreen> {
         deviceId: deviceId,
         logger: logger,
         tailscaleService: _tailscaleService,
+        configService: _configService,
       );
       
       await Future.delayed(const Duration(milliseconds: 300));
@@ -244,6 +260,7 @@ class _InitializationScreenState extends State<InitializationScreen> {
         database: _database!,
         logger: logger,
         preloadCount: AppConfig.preloadCount,
+        configService: _configService,
       );
       
       await Future.delayed(const Duration(milliseconds: 300));
@@ -288,6 +305,7 @@ class _InitializationScreenState extends State<InitializationScreen> {
         apiClient: _apiClient!,
         database: _database!,
         logger: logger,
+        configService: _configService,
       );
       _syncService!.startAutoPoll();
       

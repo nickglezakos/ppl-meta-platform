@@ -235,6 +235,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
       apiToken: data['api_token'] as String?,
       platformTailscaleIp: data['platform_tailscale_ip'] as String?,
       platformHostname: data['platform_hostname'] as String?,
+      platformLocalIp: data['platform_local_ip'] as String?,
     );
     print('🔐 Enrollment token redeemed — VPN credentials saved');
   }
