@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'core/config/app_config.dart';
+import 'core/config/platform_config_service.dart';
 import 'core/providers/bootstrap_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/navigation/app_router.dart';
@@ -60,6 +61,27 @@ class _PPLMetaBootstrapAppState extends State<PPLMetaBootstrapApp> {
     }
 
     final connectivityService = await PlatformConnectivityService.getInstance();
+
+    // NEW: Check for VPN-mesh enrollment first (preferred path)
+    try {
+      final platformConfig = await PlatformConfigService.getInstance();
+      if (platformConfig.vpnEnrolled ||
+          (platformConfig.vpnPlatformTailscaleIp != null &&
+              platformConfig.vpnPlatformTailscaleIp!.isNotEmpty)) {
+        await platformConfig.ensurePlatformReachable();
+        await AppConfig.initialize(); // Will pick up VPN-resolved host
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _needsSetup = false;
+          });
+        }
+        return;
+      }
+    } catch (_) {
+      // Continue with legacy path
+    }
+
     if (connectivityService.isConfigured) {
       final isStoredConnectionValid = await connectivityService.testDiscoveryConnection(
         backendInput: connectivityService.backendHost,

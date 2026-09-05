@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'platform_config_service.dart';
+
 class AppConfig {
   static AppConfig? _instance;
   static AppConfig get instance => _instance!;
@@ -81,6 +83,27 @@ class AppConfig {
     String? backendHostOverride,
   }) async {
     try {
+      // First try to load VPN-mesh resolved configuration
+      final platformConfig = await PlatformConfigService.getInstance();
+
+      if (platformConfig.vpnEnrolled ||
+          (platformConfig.vpnPlatformTailscaleIp != null &&
+              platformConfig.vpnPlatformTailscaleIp!.isNotEmpty)) {
+        // Use VPN-resolved platform host (LAN first, mesh fallback)
+        final host = platformConfig.platformHost;
+        _instance = AppConfig._(
+          apiBaseUrl: 'http://$host:8080',
+          cameraServiceUrl: 'http://$host:8005',
+          environment: 'production',
+          logLevel: 'info',
+          cacheEnabled: true,
+          analyticsEnabled: false,
+        );
+        print('✅ AppConfig initialized from VPN mesh: $host:8080');
+        return;
+      }
+
+      // Fall back to existing asset/config logic
       final configString = await rootBundle.loadString('assets/config/env.development.json');
       final config = json.decode(configString);
 
@@ -93,7 +116,7 @@ class AppConfig {
       final cameraServiceUrl = host != null && host.isNotEmpty
           ? 'http://$host:8005'
           : (webDefaults?.cameraServiceUrl ?? (config['CAMERA_SERVICE_URL'] ?? 'http://localhost:8005'));
-      
+
       _instance = AppConfig._(
         apiBaseUrl: apiBaseUrl,
         cameraServiceUrl: cameraServiceUrl,
@@ -103,14 +126,32 @@ class AppConfig {
         analyticsEnabled: config['ANALYTICS_ENABLED'] ?? false,
       );
     } catch (e) {
-      // Fallback configuration if asset loading fails
+      // Fallback configuration
       print('⚠️ Warning: Could not load config file, using defaults: $e');
       final webDefaults = kIsWeb ? _webRuntimeDefaults() : null;
       final host = backendHostOverride?.trim();
+
+      // Try VPN config even in fallback
+      try {
+        final platformConfig = await PlatformConfigService.getInstance();
+        if (platformConfig.vpnEnrolled || platformConfig.vpnPlatformTailscaleIp != null) {
+          final vpnHost = platformConfig.platformHost;
+          _instance = AppConfig._(
+            apiBaseUrl: 'http://$vpnHost:8080',
+            cameraServiceUrl: 'http://$vpnHost:8005',
+            environment: 'production',
+            logLevel: 'info',
+            cacheEnabled: true,
+            analyticsEnabled: false,
+          );
+          return;
+        }
+      } catch (_) {}
+
       _instance = AppConfig._(
         apiBaseUrl: host != null && host.isNotEmpty
             ? 'http://$host:8080'
-            : (webDefaults?.apiBaseUrl ?? 'http://localhost:8080'),  // Gateway service - routes to all backend services
+            : (webDefaults?.apiBaseUrl ?? 'http://localhost:8080'),
         cameraServiceUrl: host != null && host.isNotEmpty
             ? 'http://$host:8005'
             : (webDefaults?.cameraServiceUrl ?? 'http://localhost:8005'),
