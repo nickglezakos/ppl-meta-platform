@@ -21,7 +21,7 @@ import uuid
 import os
 from dataclasses import dataclass, field
 from typing import Any, List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 import cv2
@@ -37,6 +37,103 @@ def _is_legacy_media_trigger_webhook(url: Optional[str]) -> bool:
     if not url:
         return False
     return url.rstrip("/").endswith(LEGACY_MEDIA_TRIGGER_WEBHOOK_SUFFIX)
+
+
+def _to_xyxy_bbox(bbox: List) -> List[int]:
+    """Normalize bbox to [x1, y1, x2, y2] for Vision grouping and VMeta calls."""
+    if not bbox or len(bbox) < 4:
+        return [0, 0, 0, 0]
+
+    x1, y1, x2_or_w, y2_or_h = [int(v) for v in bbox[:4]]
+    if x2_or_w > x1 and y2_or_h > y1:
+        return [x1, y1, x2_or_w, y2_or_h]
+    return [x1, y1, x1 + x2_or_w, y1 + y2_or_h]
+
+
+def _normalize_faces_for_group_from_faces(
+    face_detections: List[Dict],
+    cycle_base_time: datetime,
+) -> List[Dict]:
+    """Convert instant-detection face records into Vision group-from-faces format."""
+    normalized: List[Dict] = []
+    for face in face_detections:
+        frame_number = int(face.get("frame_index", face.get("frame_number", 0)))
+        x1, y1, x2, y2 = _to_xyxy_bbox(face.get("bbox", [0, 0, 0, 0]))
+        offset_ms = int(float(face.get("timestamp", frame_number * 0.5)) * 1000)
+        created_at = (cycle_base_time + timedelta(milliseconds=offset_ms)).isoformat() + "Z"
+
+        normalized.append(
+            {
+                "id": str(face.get("face_id", face.get("id", uuid.uuid4()))),
+                "frame_number": frame_number,
+                "bbox_x1": x1,
+                "bbox_y1": y1,
+                "bbox_x2": x2,
+                "bbox_y2": y2,
+                "confidence": float(face.get("confidence", 0.0)),
+                "method": face.get("method", "two_stage_haar_dlib"),
+                "embedding": face.get("embedding"),
+                "created_at": created_at,
+            }
+        )
+    return normalized
+
+
+def _map_group_from_faces_response(vision_response: Dict) -> List[Dict]:
+    """Map Vision group-from-faces payload into instant person_objects."""
+    person_objects: List[Dict] = []
+
+    for group in vision_response.get("person_groups", []):
+        po_uuid = group.get("person_object_uuid") or str(uuid.uuid4())
+        best = group.get("best_face") or {}
+
+        instant_faces: List[Dict] = []
+        for face in group.get("faces", []):
+            instant_faces.append(
+                {
+                    "face_id": face.get("id"),
+                    "frame_index": face.get("frame_number", 0),
+                    "bbox": [
+                        face.get("bbox_x1", 0),
+                        face.get("bbox_y1", 0),
+                        face.get("bbox_x2", 0),
+                        face.get("bbox_y2", 0),
+                    ],
+                    "confidence": face.get("confidence", 0.0),
+                    "embedding": face.get("embedding"),
+                }
+            )
+
+        best_bbox = best.get("bbox") or [0, 0, 0, 0]
+        if not best_bbox and instant_faces:
+            best_bbox = max(instant_faces, key=lambda f: f.get("confidence", 0.0)).get(
+                "bbox", [0, 0, 0, 0]
+            )
+
+        person_objects.append(
+            {
+                "person_id": po_uuid,
+                "person_object_uuid": po_uuid,
+                "faces": instant_faces,
+                "face_count": group.get("face_count", len(instant_faces)),
+                "avg_confidence": group.get("avg_confidence", 0.0),
+                "best_face": {
+                    "bbox": best_bbox,
+                    "confidence": best.get("confidence", 0.0),
+                    "frame_index": best.get("frame_number", 0),
+                    "quality_score": best.get("quality_score", 0.0),
+                },
+                "best_bbox": best_bbox,
+                "grouping": {
+                    "algorithm": vision_response.get("summary", {}).get(
+                        "grouping_algorithm"
+                    ),
+                    "grouping_run_id": vision_response.get("grouping_run_id"),
+                },
+            }
+        )
+
+    return person_objects
 
 
 def _delete_instant_detection_redis_cache(camera_id: Optional[str] = None) -> None:
@@ -730,8 +827,7 @@ class InstantDetectionSampler:
         
         total_faces = len(all_face_detections)
         
-        # Step 2: Group faces into person objects using Vision Service
-        # This uses the existing spatial/IoU grouping from Vision Service
+        # Step 2: Group faces into person objects via Vision group-from-faces
         person_objects = await self._create_person_objects_via_vision_service(
             session_uuid,
             all_face_detections,
@@ -753,18 +849,34 @@ class InstantDetectionSampler:
                     person["age_gender"] = self._default_age_gender()
                     continue
                 
-                # Find highest confidence face for this person
-                best_face = max(
-                    person_faces,
-                    key=lambda f: f.get("confidence", 0.0)
-                )
+                # Find best face for this person (Vision quality analysis when available)
+                best_face = person.get("best_face")
+                if best_face and best_face.get("bbox"):
+                    selected_face = {
+                        "bbox": best_face.get("bbox", [0, 0, 0, 0]),
+                        "confidence": best_face.get("confidence", 0.0),
+                        "frame_index": best_face.get(
+                            "frame_index", best_face.get("frame_number", 0)
+                        ),
+                    }
+                else:
+                    selected_face = max(
+                        person_faces,
+                        key=lambda f: f.get("confidence", 0.0),
+                    )
+                    selected_face = {
+                        "bbox": selected_face.get("bbox", [0, 0, 0, 0]),
+                        "confidence": selected_face.get("confidence", 0.0),
+                        "frame_index": selected_face.get("frame_index", 0),
+                    }
+
                 person["best_face"] = {
-                    "bbox": best_face.get("bbox", [0, 0, 0, 0]),
-                    "confidence": best_face.get("confidence", 0.0),
+                    "bbox": selected_face["bbox"],
+                    "confidence": selected_face["confidence"],
                 }
                 
                 # Get the frame for this face
-                frame_index_from_vision = best_face.get("frame_index", 0)
+                frame_index_from_vision = selected_face.get("frame_index", 0)
                 array_position = frame_index_map.get(frame_index_from_vision, 0)
                 
                 logger.info(f"📊 DEBUG: Processing person with frame_index_from_vision={frame_index_from_vision}, mapped to array_position={array_position}, frames length={len(frames)}")
@@ -775,7 +887,7 @@ class InstantDetectionSampler:
                     age_gender = await self._get_age_gender_via_vmeta_service(
                         session,
                         frames[array_position]["frame"],
-                        best_face["bbox"]
+                        selected_face["bbox"]
                     )
                     person["age_gender"] = age_gender
 
@@ -783,12 +895,12 @@ class InstantDetectionSampler:
                     identity_match = await self._identify_face_via_vmeta_service(
                         session,
                         frames[array_position]["frame"],
-                        best_face["bbox"]
+                        selected_face["bbox"]
                     )
                     if identity_match.get("matched") and identity_match.get("mvr_people_uuid"):
                         mvr_uuid = identity_match["mvr_people_uuid"]
                         person["mvr_person_uuid"] = mvr_uuid
-                        best_face["mvr_person_uuid"] = mvr_uuid
+                        selected_face["mvr_person_uuid"] = mvr_uuid
                         logger.info(
                             f"✅ Instant identity resolved: camera={camera_id}, mvr={mvr_uuid}, "
                             f"similarity={identity_match.get('similarity_score', 0.0):.3f}"
@@ -816,7 +928,7 @@ class InstantDetectionSampler:
             "demographics": demographics,  # NEW: Gender/age breakdown
             "person_objects": person_objects,
             "processing_time_seconds": processing_time,
-            "detection_method": "vision_service_spatial_grouping",
+            "detection_method": "vision_service_three_tier_grouping",
             "storage": "none"
         }
     
@@ -1202,88 +1314,75 @@ class InstantDetectionSampler:
         camera_id: str = None
     ) -> List[Dict]:
         """
-        Group faces into person objects using Orchestrator's spatial/IoU grouping.
-        
-        This uses the same proven grouping algorithm as Enhanced Logic V2 (person-objects pipeline).
-        Groups faces across multiple frames based on spatial overlap and IoU.
+        Group faces into person objects using Vision memory-only group-from-faces.
+
+        Uses the same three-tier cascade as the bulk recording pipeline without
+        writing to the Vision database.
         """
         if not face_detections:
             return []
 
-        if not self._orchestrator_circuit.allow_request():
-            logger.debug("Orchestrator circuit OPEN – using local grouping fallback")
+        if not self._vision_circuit.allow_request():
+            logger.debug("Vision circuit OPEN – using local grouping fallback")
             return self._simple_spatial_grouping(face_detections)
-        
-        # Get camera-specific tolerance setting
-        tolerance_percent = await self._get_camera_tolerance(camera_id) if camera_id else 20.0
-        
-        try:
-            # Use Orchestrator Service (same as Enhanced Logic V2)
-            orchestrator_url = os.getenv("ORCHESTRATOR_SERVICE_URL", "http://localhost:8002")
-            
-            async with aiohttp.ClientSession() as session:
-                url = f"{orchestrator_url}/api/v1/person-objects/from-faces"
-                
-                payload = {
-                    "session_uuid": session_uuid,
-                    "face_detections": face_detections,
-                    "tolerance_percent": tolerance_percent,
-                    "enable_quality_analysis": True,
-                    "storage_mode": "memory_only"  # Don't persist instant detection results
-                }
 
-                self._orchestrator_semaphore.acquire()
-                try:
-                    async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=5)) as response:
+        tolerance_percent = await self._get_camera_tolerance(camera_id) if camera_id else 20.0
+        cycle_base_time = datetime.utcnow()
+
+        payload = {
+            "correlation_id": session_uuid,
+            "consumer": "instant_detection",
+            "face_detections": _normalize_faces_for_group_from_faces(
+                face_detections, cycle_base_time
+            ),
+            "tolerance_percent": tolerance_percent,
+            "enable_quality_analysis": True,
+            "enable_tier3_embedding": False,
+            "grouping_metadata": {
+                "camera_id": camera_id,
+                "temporal_window_seconds": self.temporal_window,
+            },
+        }
+
+        try:
+            url = f"{self.vision_service_url}/api/v1/person-objects/group-from-faces"
+
+            self._vision_semaphore.acquire()
+            try:
+                timeout = aiohttp.ClientTimeout(total=8)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, json=payload) as response:
                         if response.status == 200:
-                            self._orchestrator_circuit.record_success()
+                            self._vision_circuit.record_success()
                             result = await response.json()
-                            
-                            # Extract person objects from response
-                            person_groups = result.get("person_groups", [])
-                            
-                            # Convert to simpler format for instant detection
-                            person_objects = []
-                            for group in person_groups:
-                                person_faces = []
-                                for face_obj in group.get("representative_faces", []):
-                                    person_faces.append(face_obj.get("face_data", {}))
-                                
-                                if person_faces:
-                                    person_uuid = group.get("person_uuid", str(uuid.uuid4()))
-                                    person_objects.append({
-                                        "person_id": person_uuid,
-                                        "person_object_uuid": person_uuid,
-                                        "faces": person_faces,
-                                        "face_count": len(person_faces),
-                                        "avg_confidence": sum(f.get("confidence", 0) for f in person_faces) / len(person_faces),
-                                        "best_bbox": max(person_faces, key=lambda f: f.get("confidence", 0)).get("bbox", [0,0,0,0])
-                                    })
-                            
+                            person_objects = _map_group_from_faces_response(result)
                             logger.info(
-                                f"Orchestrator grouped {len(face_detections)} faces "
-                                f"into {len(person_objects)} person objects"
+                                "Vision grouped %d faces into %d person objects "
+                                "(run %s)",
+                                len(face_detections),
+                                len(person_objects),
+                                (result.get("grouping_run_id") or "")[:8],
                             )
-                            
                             return person_objects
-                        else:
-                            self._orchestrator_circuit.record_failure()
-                            response_text = await response.text()
-                            logger.warning(
-                                f"Orchestrator person grouping returned {response.status}: {response_text[:200]}"
-                            )
-                            # Fallback: simple spatial grouping locally
-                            return self._simple_spatial_grouping(face_detections)
-                finally:
-                    self._orchestrator_semaphore.release()
-        
+
+                        self._vision_circuit.record_failure()
+                        response_text = await response.text()
+                        logger.warning(
+                            "Vision group-from-faces returned %s: %s",
+                            response.status,
+                            response_text[:200],
+                        )
+                        return self._simple_spatial_grouping(face_detections)
+            finally:
+                self._vision_semaphore.release()
+
         except asyncio.TimeoutError:
-            self._orchestrator_circuit.record_failure()
-            logger.warning("Orchestrator timeout - using simple local grouping")
+            self._vision_circuit.record_failure()
+            logger.warning("Vision group-from-faces timeout - using simple local grouping")
             return self._simple_spatial_grouping(face_detections)
         except Exception as e:
-            self._orchestrator_circuit.record_failure()
-            logger.warning(f"Orchestrator error: {e} - using simple local grouping")
+            self._vision_circuit.record_failure()
+            logger.warning(f"Vision group-from-faces error: {e} - using simple local grouping")
             return self._simple_spatial_grouping(face_detections)
     
     def _simple_spatial_grouping(

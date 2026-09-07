@@ -23,7 +23,7 @@ import logging
 import os
 import sys
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field, validator
@@ -59,6 +59,7 @@ except Exception as e:
 
 
 # Workflow controller integration
+from .group_from_faces import group_faces_in_memory
 from .ppl_thread_workflow import PPLThreadWorkflowController
 
 logger = logging.getLogger(__name__)
@@ -189,6 +190,101 @@ class PersonObjectsFromFacesRequest(BaseModel):
                 },
             }
         }
+
+
+class GroupFromFacesRequest(BaseModel):
+    """Request model for memory-only person grouping (no Vision DB writes)."""
+
+    correlation_id: str = Field(
+        ...,
+        description="Caller correlation UUID (e.g. instant detection cycle id)",
+        min_length=36,
+        max_length=36,
+    )
+    consumer: Literal["instant_detection", "orchestrator", "other"] = Field(
+        default="instant_detection",
+        description="Calling service identifier",
+    )
+    face_detections: List[Dict[str, Any]] = Field(
+        ...,
+        description="In-memory face detections to group",
+        min_items=1,
+    )
+    tolerance_percent: Optional[float] = Field(
+        default=None,
+        description="Position matching tolerance percentage (5.0-50.0)",
+        ge=5.0,
+        le=50.0,
+    )
+    enable_quality_analysis: bool = Field(
+        default=True,
+        description="Enable best-face quality analysis",
+    )
+    enable_tier3_embedding: bool = Field(
+        default=False,
+        description="Enable lazy FaceNet512 extraction for Tier 3 (slower)",
+    )
+    grouping_metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional caller metadata (camera_id, etc.)",
+    )
+
+    @validator("correlation_id")
+    def validate_correlation_id(cls, v):
+        if not v or len(v) != 36:
+            raise ValueError("correlation_id must be a valid UUID string")
+        return v
+
+    @validator("face_detections")
+    def validate_face_detections(cls, v):
+        for index, face in enumerate(v):
+            has_bbox_corners = all(
+                key in face for key in ("bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2")
+            )
+            has_bbox_array = isinstance(face.get("bbox"), list) and len(face.get("bbox", [])) >= 4
+            has_id = face.get("id") is not None or face.get("face_id") is not None
+            has_frame = face.get("frame_number") is not None or face.get("frame_index") is not None
+            if not has_id:
+                raise ValueError(f"Face {index}: missing id or face_id")
+            if not has_frame:
+                raise ValueError(f"Face {index}: missing frame_number or frame_index")
+            if not (has_bbox_corners or has_bbox_array):
+                raise ValueError(f"Face {index}: missing bbox or bbox_x1/y1/x2/y2")
+            if "confidence" not in face:
+                raise ValueError(f"Face {index}: missing confidence")
+        return v
+
+
+class GroupFromFacesBestFace(BaseModel):
+    face_id: str
+    frame_number: int
+    bbox: List[int]
+    confidence: float
+    quality_score: float
+
+
+class GroupFromFacesPersonGroup(BaseModel):
+    person_id: str
+    person_object_uuid: str
+    face_count: int
+    avg_confidence: float
+    average_position: Dict[str, float]
+    faces: List[Dict[str, Any]]
+    best_face: Optional[GroupFromFacesBestFace] = None
+
+
+class GroupFromFacesResponse(BaseModel):
+    success: bool
+    grouping_run_id: str
+    correlation_id: str
+    consumer: str
+    persisted: bool = False
+    summary: Dict[str, Any]
+    person_groups: List[GroupFromFacesPersonGroup]
+    face_mappings: List[Dict[str, Any]]
+    grouping_metadata: Dict[str, Any] = Field(default_factory=dict)
+    processing_timestamp: str
+    processing_time_ms: int
 
 
 class GroupTrackingItem(BaseModel):
@@ -493,6 +589,41 @@ async def start_person_objects_workflow_from_faces(
             "API: Unexpected error for session %s: %s", request.session_uuid, str(e)
         )
         raise HTTPException(status_code=500, detail=f"Workflow failed: {str(e)}")
+
+
+@router.post("/group-from-faces", response_model=GroupFromFacesResponse)
+async def group_person_objects_from_faces(request: GroupFromFacesRequest):
+    """
+    Group in-memory face detections using the three-tier cascade without DB writes.
+
+    Intended for instant detection and other ephemeral consumers that need bulk-quality
+    grouping while keeping persistence in the caller's own pipeline.
+    """
+    logger.info(
+        "API: Memory-only grouping for %s (%s) with %d faces",
+        request.consumer,
+        request.correlation_id,
+        len(request.face_detections),
+    )
+
+    try:
+        tolerance = request.tolerance_percent if request.tolerance_percent is not None else 20.0
+        result = await group_faces_in_memory(
+            face_detections=request.face_detections,
+            correlation_id=request.correlation_id,
+            consumer=request.consumer,
+            tolerance_percent=tolerance,
+            enable_quality_analysis=request.enable_quality_analysis,
+            enable_tier3_embedding=request.enable_tier3_embedding,
+            grouping_metadata=request.grouping_metadata,
+        )
+        return GroupFromFacesResponse(**result)
+    except ValueError as e:
+        logger.warning("API: Bad group-from-faces request: %s", e)
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("API: group-from-faces failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Grouping failed: {str(e)}")
 
 
 @router.post("/workflow/trigger", response_model=PersonObjectsWorkflowResponse)
