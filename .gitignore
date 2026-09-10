@@ -127,6 +127,8 @@ jspm_packages/
 .env.*
 !.env.example
 !.env.production.example
+!.env.windows.template
+!deployment/windows-installer/.env.windows.template
 
 # =============================================
 # DATABASES
@@ -334,6 +336,12 @@ autonomous/ppl-meta-mini/docs/
 # Legacy directories that shouldn't be tracked
 ppl-meta-legacy/
 ppl_meta_new.bfg-report/
+archive/legacy-kivy-monolith-2024/
+ppl_meta/
+ppl_meta_dead_end_01/
+ppl_meta_kivy_stable_list/
+ppl_meta-fastAPI-Kivy_stable/
+ppl_meta-main/
 
 # Local Netlify folder
 .netlify

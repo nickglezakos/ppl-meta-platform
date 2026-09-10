@@ -4,19 +4,21 @@ setlocal enabledelayedexpansion
 :: ============================================================
 ::  EyeNet Platform Manager
 ::  Windows Batch Installer & Management Console
-::  Version: 2.25.48
+::  Version: 2.25.79
 ::
 ::  Download ONLY this file to any folder on your Windows PC.
 ::  Double-click to run.  No PowerShell, no setup required.
 :: ============================================================
 
-set "VERSION=2.25.48"
+set "VERSION=2.25.79"
 set "ENV_FILE=.env.windows"
 set "COMPOSE_FILE=docker-compose.windows-installer.yml"
 set "ENV_TEMPLATE=.env.windows.template"
 set "GITHUB_RAW=https://raw.githubusercontent.com/nickglezakos/ppl-meta-platform/main/deployment/windows-installer"
 set "REGISTRY=ghcr.io/nickglezakos/ppl-meta-platform"
 set "MIN_FREE_GB=12"
+set "MIN_HOST_RAM_GB=16"
+set "MIN_WSL_MEM_GB=12"
 set "INSTALL_DIR="
 set "FIRST_RUN=0"
 
@@ -103,7 +105,7 @@ echo   Progress will be shown as each step completes.
 echo.
 
 :: -- STEP 1: Install directory --
-echo   [Step 1/8] Install directory
+echo   [Step 1/9] Install directory
 echo   -----------------------------------
 echo   Where should EyeNet platform files be stored?
 echo.
@@ -114,71 +116,84 @@ if "%INSTALL_DIR%"=="" set "INSTALL_DIR=C:\ppl-meta-platform"
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 echo   [ OK ] Using: %INSTALL_DIR%
 
-:: -- STEP 2: Check free space --
+:: -- STEP 2: Check host RAM --
 echo.
-echo   [Step 2/8] Disk space check
+echo   [Step 2/9] Host RAM check (16 GB standard)
+echo   -----------------------------------
+call :check_host_ram
+if errorlevel 1 (
+    echo   [FAILED] Step 2/9 - Host RAM below %MIN_HOST_RAM_GB% GB
+    goto install_done
+)
+
+:: -- STEP 3: Check free space --
+echo.
+echo   [Step 3/9] Disk space check
 echo   -----------------------------------
 call :check_freespace "%INSTALL_DIR%"
 if errorlevel 1 (
-    echo   [FAILED] Step 2/8 - Not enough disk space
+    echo   [FAILED] Step 3/9 - Not enough disk space
     goto install_done
 )
 
-:: -- STEP 3: Check Docker --
+:: -- STEP 4: Check Docker --
 echo.
-echo   [Step 3/8] Docker Desktop check
+echo   [Step 4/9] Docker Desktop check
 echo   -----------------------------------
 call :check_docker
 if errorlevel 1 (
-    echo   [FAILED] Step 3/8 - Docker Desktop is not running
+    echo   [FAILED] Step 4/9 - Docker Desktop is not running
     goto install_done
 )
 
-:: -- STEP 4: Check WSL --
+:: -- STEP 5: Check WSL --
 echo.
-echo   [Step 4/8] WSL configuration
+echo   [Step 5/9] WSL configuration
 echo   -----------------------------------
 call :check_wsl
-:: WSL warnings are non-fatal
+if errorlevel 1 (
+    echo   [FAILED] Step 5/9 - WSL memory below %MIN_WSL_MEM_GB% GB
+    goto install_done
+)
 
-:: -- STEP 5: Download files --
+:: -- STEP 6: Download files --
 echo.
-echo   [Step 5/8] Download installer files
+echo   [Step 6/9] Download installer files
 echo   -----------------------------------
 call :download_files
 if errorlevel 1 (
-    echo   [FAILED] Step 5/8 - Could not download files from GitHub
+    echo   [FAILED] Step 6/9 - Could not download files from GitHub
     goto install_done
 )
 
-:: -- STEP 6: Configure credentials --
+:: -- STEP 7: Configure credentials --
 echo.
-echo   [Step 6/8] Platform credentials
+echo   [Step 7/9] Platform credentials
 echo   -----------------------------------
 call :create_env
 if errorlevel 1 (
-    echo   [FAILED] Step 6/8 - Configuration failed
+    echo   [FAILED] Step 7/9 - Configuration failed
     goto install_done
 )
 
-:: -- STEP 7: Pull Docker images --
+:: -- STEP 8: Pull Docker images --
 echo.
-echo   [Step 7/8] Downloading Docker images
+echo   [Step 8/9] Downloading Docker images
 echo   -----------------------------------
 echo   This may take 5-10 minutes depending on your internet speed.
 call :pull_images
 if errorlevel 1 (
-    echo   [FAILED] Step 7/8 - Image pull failed. Check internet connection.
+    echo   [FAILED] Step 8/9 - Image pull failed. Check internet connection.
     goto install_done
 )
 
-:: -- STEP 8: Start containers --
+:: -- STEP 9: Start containers --
 echo.
-echo   [Step 8/8] Starting the platform
+echo   [Step 9/9] Starting the platform
 echo   -----------------------------------
 call :start_containers
 if errorlevel 1 (
-    echo   [FAILED] Step 8/8 - Failed to start containers
+    echo   [FAILED] Step 9/9 - Failed to start containers
     goto install_done
 )
 
@@ -200,6 +215,33 @@ echo.
 echo   Press any key to return to menu...
 pause >nul
 goto main_menu
+
+:: ============================================================
+::  CHECK HOST RAM (16 GB standard)
+:: ============================================================
+:check_host_ram
+echo   [CHECK] Host physical RAM...
+set "total_mem_kb="
+for /f "skip=1" %%a in ('wmic computersystem get TotalPhysicalMemory 2^>nul') do (
+    if not "%%a"=="" (
+        set "total_mem_bytes=%%a"
+        goto :got_host_ram
+    )
+)
+:got_host_ram
+if "%total_mem_bytes%"=="" (
+    echo   [WARN] Could not determine host RAM. Continuing.
+    goto :eof
+)
+set /a total_mem_gb=%total_mem_bytes% / 1073741824 2>nul
+if "%total_mem_gb%"=="" goto :eof
+echo   [CHECK] Host RAM...                   [%total_mem_gb% GB]
+if %total_mem_gb% lss %MIN_HOST_RAM_GB% (
+    echo   [FAIL] Need at least %MIN_HOST_RAM_GB% GB physical RAM. Detected %total_mem_gb% GB.
+    exit /b 1
+)
+echo   [ OK ] Host RAM meets 16 GB platform standard
+goto :eof
 
 :: ============================================================
 ::  CHECK FREE SPACE
@@ -286,14 +328,14 @@ echo   [CHECK] WSL configuration...
 if not exist "%wslconfig%" (
     echo   [WARN] No .wslconfig found.
     echo.
-    echo   Docker Desktop needs at least 6 GB RAM and 4 CPUs for EyeNet.
-    echo   A .wslconfig file will be created with 8 GB RAM and 6 CPUs.
+    echo   Docker Desktop needs at least %MIN_WSL_MEM_GB% GB RAM and 4 CPUs for EyeNet.
+    echo   A .wslconfig file will be created with 12 GB RAM and 6 CPUs (16 GB host standard).
     echo.
     set /p "fix_wsl=  Create .wslconfig now? [Y/n]: "
     if /i not "%fix_wsl%"=="n" (
         (
             echo [wsl2]
-            echo memory=8GB
+            echo memory=12GB
             echo processors=6
             echo swap=2GB
         ) > "%wslconfig%"
@@ -302,6 +344,10 @@ if not exist "%wslconfig%" (
         echo   [WARN] WSL must restart.  Please quit and restart Docker Desktop.
         echo   Press any key to continue...
         pause >nul
+    ) else (
+        echo   [FAIL] WSL memory must be at least %MIN_WSL_MEM_GB% GB before continuing.
+        pause
+        exit /b 1
     )
     goto :eof
 )
@@ -315,7 +361,7 @@ for /f "usebackq tokens=1,2 delims==" %%a in ("%wslconfig%") do (
     if /i "!key!"=="memory" (
         set "val_numeric=!val:GB=!"
         set "val_numeric=!val_numeric:gb=!"
-        if !val_numeric! geq 6 set "mem_ok=1"
+        if !val_numeric! geq %MIN_WSL_MEM_GB% set "mem_ok=1"
         set "mem_val=!val!"
     )
     if /i "!key!"=="processors" (
@@ -328,14 +374,18 @@ if "%mem_ok%"=="1" if "%cpu_ok%"=="1" (
     goto :eof
 )
 
-echo   [WARN] WSL needs at least 6 GB / 4 CPUs. Current: %mem_val% RAM / %cpu_val% CPUs
+echo   [WARN] WSL needs at least %MIN_WSL_MEM_GB% GB / 4 CPUs. Current: %mem_val% RAM / %cpu_val% CPUs
 echo.
-echo   This will update your .wslconfig to 8 GB / 6 CPUs.
+echo   This will update your .wslconfig to 12 GB / 6 CPUs.
 set /p "fix_wsl=  Update .wslconfig now? [Y/n]: "
-if /i "%fix_wsl%"=="n" goto :eof
+if /i "%fix_wsl%"=="n" (
+    echo   [FAIL] WSL memory must be at least %MIN_WSL_MEM_GB% GB before continuing.
+    pause
+    exit /b 1
+)
 (
     echo [wsl2]
-    echo memory=8GB
+    echo memory=12GB
     echo processors=6
     echo swap=2GB
 ) > "%wslconfig%"
@@ -428,6 +478,8 @@ powershell -Command ^
     "  if($lines[$i] -match '^INSTALLATION_UUID=') { $lines[$i] = 'INSTALLATION_UUID=%install_uuid%' } " ^
     "  elseif($lines[$i] -match '^APPLICATION_KEY=') { $lines[$i] = 'APPLICATION_KEY=%app_key%' } " ^
     "  elseif($lines[$i] -match '^POSTGRES_PASSWORD=') { $lines[$i] = 'POSTGRES_PASSWORD=%pg_pass%' } " ^
+    "  elseif($lines[$i] -match '^RELEASE_TAG=') { $lines[$i] = 'RELEASE_TAG=%VERSION%' } " ^
+    "  elseif($lines[$i] -match '^REGISTRY=') { $lines[$i] = 'REGISTRY=%REGISTRY%' } " ^
     "}; Set-Content -Path '%ENV_FILE%' -Value $lines" 2>nul
 
 if errorlevel 1 (

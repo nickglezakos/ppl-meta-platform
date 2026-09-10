@@ -1,0 +1,45 @@
+name: Docs Owner Admin Wiki
+
+on:
+  push:
+    paths:
+      - 'docs/wiki/owners-admins/**'
+      - 'docs/wiki/SOFTWARE_REF.md'
+      - 'scripts/validate_wiki_software_ref.py'
+      - '.github/workflows/docs-owner-admin-wiki.yml'
+  pull_request:
+    paths:
+      - 'docs/wiki/owners-admins/**'
+      - 'docs/wiki/SOFTWARE_REF.md'
+      - 'scripts/validate_wiki_software_ref.py'
+      - '.github/workflows/docs-owner-admin-wiki.yml'
+  workflow_dispatch:
+
+jobs:
+  validate-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate software_ref frontmatter
+        run: python scripts/validate_wiki_software_ref.py docs/wiki/owners-admins
+
+      - name: Package owner-admin wiki artifact
+        run: |
+          mkdir -p artifacts/owner-admin-wiki
+          cp -R docs/wiki/owners-admins/. artifacts/owner-admin-wiki/
+          cp docs/wiki/SOFTWARE_REF.md artifacts/owner-admin-wiki/
+          printf '%s\n' "site=owners-admins" "validated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > artifacts/owner-admin-wiki/BUILD_INFO.txt
+
+      - name: Upload owner-admin wiki artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eyenet-owner-admin-wiki
+          path: artifacts/owner-admin-wiki
+          retention-days: 14

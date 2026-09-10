@@ -1,6 +1,6 @@
 # EyeNet Platform Manager
 # Autonomous Windows installer & management console
-# Version: 2.25.48
+# Version: 2.25.79
 # Repository: https://github.com/nickglezakos/ppl-meta-platform
 
 param(
@@ -12,9 +12,13 @@ $script:EnvFile = ".env.windows"
 $script:ComposeFile = "docker-compose.windows-installer.yml"
 $script:EnvTemplateFile = ".env.windows.template"
 $script:MinimumFreeSpaceGb = 12
+$script:MinimumHostRamGb = 16
+$script:MinimumWslMemoryGb = 12
+$script:TargetWslMemoryGb = 12
+$script:TargetWslProcessors = 6
 $script:GitHubRawBase = "https://raw.githubusercontent.com/nickglezakos/ppl-meta-platform/main/deployment/windows-installer"
 $script:InstallDir = $null
-$script:ReleaseTag = "2.25.48"
+$script:ReleaseTag = "2.25.79"
 $script:ComposeProjectName = "pplmeta"
 
 # ============================================================
@@ -231,18 +235,41 @@ function Wait-ForDocker {
     return $true
 }
 
+function Test-HostMemory {
+    Write-Step "Checking host RAM..." ""
+    try {
+        $cs = Get-CimInstance -ClassName Win32_ComputerSystem
+        $totalGb = [math]::Round(($cs.TotalPhysicalMemory / 1GB), 1)
+    } catch {
+        Write-Host "  WARN (could not read host RAM)" -ForegroundColor $script:Yellow
+        return $true
+    }
+
+    if ($totalGb -lt $script:MinimumHostRamGb) {
+        Write-Host "  FAIL (${totalGb} GB, need $($script:MinimumHostRamGb) GB)" -ForegroundColor $script:Red
+        Write-ErrorMsg "EyeNet requires at least $($script:MinimumHostRamGb) GB physical RAM on the Windows host."
+        Pause-ForUser
+        return $false
+    }
+
+    Write-Host "  OK (${totalGb} GB)" -ForegroundColor $script:Green
+    return $true
+}
+
 function Test-WslConfig {
     Write-Step "Checking WSL configuration..." ""
     $wslConfigPath = "$env:USERPROFILE\.wslconfig"
     $needsFix = $false
     $memoryOk = $false
     $cpuOk = $false
+    $mem = 0
+    $cpu = 0
 
     if (Test-Path $wslConfigPath) {
         $content = Get-Content $wslConfigPath -Raw
         if ($content -match 'memory\s*=\s*(\d+)\s*GB') {
             $mem = [int]$matches[1]
-            if ($mem -ge 6) { $memoryOk = $true }
+            if ($mem -ge $script:MinimumWslMemoryGb) { $memoryOk = $true }
         }
         if ($content -match 'processors\s*=\s*(\d+)') {
             $cpu = [int]$matches[1]
@@ -256,7 +283,7 @@ function Test-WslConfig {
     } elseif ($memoryOk -and $cpuOk) {
         Write-Host "  OK (${mem}GB / ${cpu} CPUs)" -ForegroundColor $script:Green
     } else {
-        $memInfo = if ($memoryOk) { "${mem}GB" } else { "BELOW 6GB" }
+        $memInfo = if ($memoryOk) { "${mem}GB" } else { "BELOW $($script:MinimumWslMemoryGb)GB" }
         $cpuInfo = if ($cpuOk) { "${cpu} CPUs" } else { "BELOW 4 CPUs" }
         Write-Host "  NEEDS FIX ($memInfo / $cpuInfo)" -ForegroundColor $script:Yellow
         $needsFix = $true
@@ -264,15 +291,15 @@ function Test-WslConfig {
 
     if ($needsFix) {
         Write-Host ""
-        Write-WarningMsg "Docker Desktop requires at least 6 GB RAM and 4 CPUs for EyeNet."
+        Write-WarningMsg "Docker Desktop requires at least $($script:MinimumWslMemoryGb) GB RAM and 4 CPUs for EyeNet (16 GB host standard)."
         Write-Host ""
         Write-InputPrompt "Auto-configure WSL now?" "Y"
         $response = Read-Host
         if ($response -eq "" -or $response -eq "Y" -or $response -eq "y") {
             $wslContent = @"
 [wsl2]
-memory=8GB
-processors=6
+memory=$($script:TargetWslMemoryGb)GB
+processors=$($script:TargetWslProcessors)
 swap=2GB
 "@
             Set-Content -Path $wslConfigPath -Value $wslContent -Force
@@ -289,6 +316,10 @@ swap=2GB
                 Pause-ForUser
                 return (Wait-ForDocker)
             }
+        } else {
+            Write-ErrorMsg "WSL memory must be at least $($script:MinimumWslMemoryGb) GB before continuing."
+            Pause-ForUser
+            return $false
         }
     }
     return $true
@@ -380,6 +411,8 @@ function New-EnvWindows {
     Set-EnvValue -Path $script:EnvFile -Key "INSTALLATION_UUID" -Value $installUuid
     Set-EnvValue -Path $script:EnvFile -Key "APPLICATION_KEY" -Value $appKey
     Set-EnvValue -Path $script:EnvFile -Key "POSTGRES_PASSWORD" -Value $pgPassword
+    Set-EnvValue -Path $script:EnvFile -Key "RELEASE_TAG" -Value $script:ReleaseTag
+    Set-EnvValue -Path $script:EnvFile -Key "REGISTRY" -Value "ghcr.io/nickglezakos/ppl-meta-platform"
 
     # Ensure COMPOSE_PROJECT_NAME is set in env for this session
     $env:COMPOSE_PROJECT_NAME = $script:ComposeProjectName
@@ -739,28 +772,31 @@ function Invoke-FullInstall {
     }
     Write-Host ""
 
-    # Step 2: Check free space
+    # Step 2: Check host RAM (16 GB platform standard)
+    if (-not (Test-HostMemory)) { return $false }
+
+    # Step 3: Check free space
     if (-not (Test-FreeSpace -Path $script:InstallDir)) { return $false }
 
-    # Step 3: Check Docker
+    # Step 4: Check Docker
     if (-not (Wait-ForDocker)) { return $false }
 
-    # Step 4: Check WSL config
+    # Step 5: Check WSL config
     if (-not (Test-WslConfig)) { return $false }
 
-    # Step 5: Download files
+    # Step 6: Download files
     if (-not (Download-InstallerFiles)) { return $false }
 
-    # Step 6: Create .env.windows
+    # Step 7: Create .env.windows
     if (-not (New-EnvWindows)) { return $false }
 
-    # Step 7: Pull images
+    # Step 8: Pull images
     if (-not (Invoke-PullImages)) { return $false }
 
-    # Step 8: Start stack
+    # Step 9: Start stack
     if (-not (Invoke-StartStack)) { return $false }
 
-    # Step 9: Show status
+    # Step 10: Show status
     Write-Host ""
     Show-Status
     Write-Host ""

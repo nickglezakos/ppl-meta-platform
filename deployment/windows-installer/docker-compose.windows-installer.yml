@@ -17,6 +17,8 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 512m
 
   redis:
     image: redis:7-alpine
@@ -32,6 +34,8 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 256m
 
   ppl-meta-node:
     image: ${REGISTRY}/ppl-meta-node:${RELEASE_TAG}
@@ -49,6 +53,8 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    mem_limit: 768m
+    mem_reservation: 384m
 
   ppl-meta-media:
     image: ${REGISTRY}/ppl-meta-media:${RELEASE_TAG}
@@ -65,6 +71,8 @@ services:
       ppl-meta-node:
         condition: service_started
     restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 512m
 
   ppl-meta-gateway:
     image: ${REGISTRY}/ppl-meta-gateway:${RELEASE_TAG}
@@ -83,6 +91,8 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 256m
 
   ppl-meta-orchestrator:
     image: ${REGISTRY}/ppl-meta-orchestrator:${RELEASE_TAG}
@@ -104,6 +114,8 @@ services:
       ppl-meta-media:
         condition: service_started
     restart: unless-stopped
+    mem_limit: 768m
+    mem_reservation: 384m
 
   ppl-meta-discovery:
     image: ${REGISTRY}/ppl-meta-discovery:${RELEASE_TAG}
@@ -111,6 +123,8 @@ services:
     ports:
       - "${DISCOVERY_PORT}:8004"
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 128m
 
   ppl-meta-communications:
     image: ${REGISTRY}/ppl-meta-communications:${RELEASE_TAG}
@@ -118,6 +132,8 @@ services:
     ports:
       - "${COMMUNICATIONS_PORT}:8009"
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 256m
 
   ppl-meta-vision:
     image: ${REGISTRY}/ppl-meta-vision-protected:${RELEASE_TAG}
@@ -133,6 +149,8 @@ services:
       ppl-meta-orchestrator:
         condition: service_started
     restart: unless-stopped
+    mem_limit: 2560m
+    mem_reservation: 1536m
 
   ppl-meta-vmeta:
     image: ${REGISTRY}/ppl-meta-vmeta-protected:${RELEASE_TAG}
@@ -153,6 +171,8 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    mem_limit: 2g
+    mem_reservation: 1g
 
   ppl-meta-frontend:
     image: ${REGISTRY}/ppl-meta-frontend:${RELEASE_TAG}
@@ -163,6 +183,8 @@ services:
       ppl-meta-gateway:
         condition: service_started
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 256m
 
 volumes:
   postgres_data:
