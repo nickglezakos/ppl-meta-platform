@@ -200,6 +200,136 @@ def push_body_posture_history(
     pipe.execute()
 
 
+LEFT_OBJECT_HISTORY_MAX = 24
+LEFT_OBJECT_HISTORY_TTL_SECONDS = 600
+
+
+def _left_object_history_key(camera_id: str) -> str:
+    return f"instant_left_objects:{camera_id}"
+
+
+def summarize_objects(objects: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """Compact object detections for pub/sub and left_object history."""
+    summary: List[Dict[str, Any]] = []
+    for det in objects or []:
+        if not isinstance(det, dict):
+            continue
+        bbox = det.get("bbox")
+        if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+            try:
+                bbox = [float(v) for v in bbox[:4]]
+            except (TypeError, ValueError):
+                bbox = None
+        else:
+            bbox = None
+        summary.append(
+            {
+                "class_label": det.get("class_label"),
+                "class_id": det.get("class_id"),
+                "bbox": bbox,
+                "confidence": det.get("confidence"),
+                "frame_number": det.get("frame_number"),
+            }
+        )
+    return summary
+
+
+def push_left_object_history(
+    camera_id: str,
+    *,
+    timestamp: str,
+    objects: Optional[List[Dict[str, Any]]],
+    redis_conn: Optional[Any] = None,
+) -> None:
+    """Append one object-detection cycle to Redis list instant_left_objects:{camera_id}."""
+    summary = summarize_objects(objects)
+    client = redis_conn or redis_client
+    key = _left_object_history_key(camera_id)
+    payload = json.dumps(
+        {
+            "timestamp": timestamp,
+            "camera_id": camera_id,
+            "objects": summary,
+        }
+    )
+    pipe = client.pipeline()
+    pipe.rpush(key, payload)
+    pipe.ltrim(key, -LEFT_OBJECT_HISTORY_MAX, -1)
+    pipe.expire(key, LEFT_OBJECT_HISTORY_TTL_SECONDS)
+    pipe.execute()
+
+
+VEHICLE_HISTORY_MAX = 24
+VEHICLE_HISTORY_TTL_SECONDS = 600
+
+
+def _vehicle_history_key(camera_id: str) -> str:
+    return f"instant_vehicles:{camera_id}"
+
+
+def summarize_vehicles(vehicles: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """Compact vehicle detections for pub/sub and vehicle_plate history."""
+    summary: List[Dict[str, Any]] = []
+    for det in vehicles or []:
+        if not isinstance(det, dict):
+            continue
+        bbox = det.get("bbox")
+        if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+            try:
+                bbox = [float(v) for v in bbox[:4]]
+            except (TypeError, ValueError):
+                bbox = None
+        else:
+            bbox = None
+        plate_bbox = det.get("plate_bbox")
+        if isinstance(plate_bbox, (list, tuple)) and len(plate_bbox) >= 4:
+            try:
+                plate_bbox = [float(v) for v in plate_bbox[:4]]
+            except (TypeError, ValueError):
+                plate_bbox = None
+        else:
+            plate_bbox = None
+        summary.append(
+            {
+                "class_label": det.get("class_label"),
+                "class_id": det.get("class_id"),
+                "bbox": bbox,
+                "confidence": det.get("confidence"),
+                "frame_number": det.get("frame_number"),
+                "plate_text": det.get("plate_text"),
+                "plate_confidence": det.get("plate_confidence"),
+                "plate_bbox": plate_bbox,
+                "plate_ocr_attempted": det.get("plate_ocr_attempted"),
+            }
+        )
+    return summary
+
+
+def push_vehicle_history(
+    camera_id: str,
+    *,
+    timestamp: str,
+    vehicles: Optional[List[Dict[str, Any]]],
+    redis_conn: Optional[Any] = None,
+) -> None:
+    """Append one vehicle-detection cycle to Redis list instant_vehicles:{camera_id}."""
+    summary = summarize_vehicles(vehicles)
+    client = redis_conn or redis_client
+    key = _vehicle_history_key(camera_id)
+    payload = json.dumps(
+        {
+            "timestamp": timestamp,
+            "camera_id": camera_id,
+            "vehicles": summary,
+        }
+    )
+    pipe = client.pipeline()
+    pipe.rpush(key, payload)
+    pipe.ltrim(key, -VEHICLE_HISTORY_MAX, -1)
+    pipe.expire(key, VEHICLE_HISTORY_TTL_SECONDS)
+    pipe.execute()
+
+
 class InstantDetectionTask(Task):
     """Base task for instant detection with error handling"""
     
@@ -300,8 +430,18 @@ def _publish_to_redis(camera_id: str, result: Dict):
         body_count = result.get("body_count")
         if body_count is None:
             body_count = len(body_persons)
+        objects = result.get("objects") or []
+        object_count = result.get("object_count")
+        if object_count is None:
+            object_count = len(objects)
         source_mvr_uuids = _extract_source_identity_uuids(result.get("person_objects") or [])
         body_summary = summarize_body_persons(body_persons)
+        object_summary = summarize_objects(objects)
+        vehicles = result.get("vehicles") or []
+        vehicle_count = result.get("vehicle_count")
+        if vehicle_count is None:
+            vehicle_count = len(vehicles)
+        vehicle_summary = summarize_vehicles(vehicles)
         ts = result.get("timestamp") or datetime.utcnow().isoformat()
 
         try:
@@ -316,6 +456,30 @@ def _publish_to_redis(camera_id: str, result: Dict):
                 camera_id,
                 hist_exc,
             )
+        try:
+            push_left_object_history(
+                camera_id,
+                timestamp=ts,
+                objects=objects,
+            )
+        except Exception as hist_exc:
+            logger.warning(
+                "⚠️ [CELERY] left object history push failed for %s: %s",
+                camera_id,
+                hist_exc,
+            )
+        try:
+            push_vehicle_history(
+                camera_id,
+                timestamp=ts,
+                vehicles=vehicles,
+            )
+        except Exception as hist_exc:
+            logger.warning(
+                "⚠️ [CELERY] vehicle history push failed for %s: %s",
+                camera_id,
+                hist_exc,
+            )
         
         payload = json.dumps({
             "camera_id": camera_id,
@@ -323,20 +487,32 @@ def _publish_to_redis(camera_id: str, result: Dict):
             "people_count": people_count,
             "body_count": body_count,
             "body_persons": body_summary,
+            "object_count": object_count,
+            "objects": object_summary,
+            "vehicle_count": vehicle_count,
+            "vehicles": vehicle_summary,
             "demographics": demographics,
             "source_mvr_uuids": source_mvr_uuids,
+            "velocity": result.get("velocity") or {
+                "crowd_mps": result.get("crowd_velocity_mps"),
+                "max_mps": result.get("max_person_speed_mps"),
+                "valid_count": result.get("crowd_person_count", 0),
+                "people": [],
+            },
             "metadata": {
                 "source_mvr_uuids": source_mvr_uuids,
                 "processing_time": result.get("processing_time_seconds", 0),
                 "total_faces": result.get("total_faces_detected", 0),
                 "body_count": body_count,
+                "object_count": object_count,
+                "vehicle_count": vehicle_count,
             }
         })
         
         subscriber_count = redis_client.publish("instant-detection", payload)
         logger.info(
             f"✅ [CELERY] Redis Pub/Sub: {camera_id} → {subscriber_count} subscribers "
-            f"(people={people_count}, bodies={body_count})"
+            f"(people={people_count}, bodies={body_count}, objects={object_count}, vehicles={vehicle_count})"
         )
         
     except Exception as e:

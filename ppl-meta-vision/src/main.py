@@ -669,7 +669,7 @@ async def model_version_references(model_id: str, version: str):
         return {"referenced": False, "sessions": 0, "detections": 0, "error": str(exc)}
 
 
-@app.post("/api/v1/object-detections/detect", summary="Run body YOLO / YOLO-pose on a frame")
+@app.post("/api/v1/object-detections/detect", summary="Run body YOLO / YOLO-pose / generic COCO on a frame")
 async def detect_objects_frame(
     file: UploadFile = File(...),
     model_id: str = "body-yolo-pose-os",
@@ -681,8 +681,17 @@ async def detect_objects_frame(
     timestamp: float | None = None,
     persist: bool = False,
     path: str = "instant",
+    capability: str = "body_detection",
+    class_ids: str | None = None,
 ):
-    """Body detection path — writes object_detections only (never face_detections)."""
+    """
+    Object detection path — writes object_detections only (never face_detections).
+
+    capability=body_detection → person / pose (existing behaviour).
+    capability=object_detection → generic COCO classes (left_object / luggage).
+    capability=vehicle_detection → COCO vehicle classes (car/bike/truck/bus).
+    class_ids: optional comma-separated COCO ids for object_detection / vehicle_detection.
+    """
     global face_detector_instance, vision_db
     if face_detector_instance is None:
         raise HTTPException(status_code=503, detail="detector_unavailable")
@@ -691,9 +700,35 @@ async def detect_objects_frame(
     frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if frame is None:
         raise HTTPException(status_code=400, detail="invalid_image")
-    result = face_detector_instance.detect_bodies_onnx(
-        frame, model_id=model_id, version=version, conf=conf
-    )
+
+    cap = (capability or "body_detection").strip().lower()
+    parsed_ids = None
+    if class_ids:
+        try:
+            parsed_ids = [int(x.strip()) for x in class_ids.split(",") if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="invalid_class_ids")
+
+    if cap in ("object_detection", "vehicle_detection"):
+        default_ids = parsed_ids
+        if default_ids is None and cap == "vehicle_detection":
+            default_ids = [1, 2, 3, 5, 7]  # bicycle, car, motorcycle, bus, truck
+        result = face_detector_instance.detect_objects_onnx(
+            frame,
+            model_id=model_id if model_id and "pose" not in model_id.lower() else "body-yolo-person-os",
+            version=version,
+            conf=conf,
+            class_ids=default_ids,
+        )
+        store_capability = cap
+        runtime = "onnx"
+    else:
+        result = face_detector_instance.detect_bodies_onnx(
+            frame, model_id=model_id, version=version, conf=conf
+        )
+        store_capability = "body_detection"
+        runtime = "onnx_pose" if "pose" in (model_id or "") else "onnx"
+
     stored = 0
     if persist and result.get("success") and vision_db is not None:
         from object_detections import ensure_object_detections_table, store_object_detection
@@ -708,17 +743,75 @@ async def detect_objects_frame(
                     "session_uuid": session_uuid,
                     "frame_number": frame_number,
                     "timestamp": timestamp,
-                    "capability": "body_detection",
+                    "capability": store_capability,
                     "model_id": model_id,
                     "model_version": version,
-                    "runtime": "onnx_pose" if "pose" in (model_id or "") else "onnx",
+                    "runtime": runtime,
                     "path": path,
                     "serving": True,
                 },
             )
             if ok:
                 stored += 1
-    return {**result, "stored": stored}
+    return {**result, "stored": stored, "capability": store_capability}
+
+
+@app.post("/api/v1/license-plates/ocr-crop", summary="OCR license plate on a vehicle crop")
+async def ocr_license_plate_crop(
+    file: UploadFile = File(...),
+    persist: bool = False,
+    media_id: str | None = None,
+    session_uuid: str | None = None,
+    frame_number: int | None = None,
+    timestamp: float | None = None,
+    vehicle_bbox: str | None = None,
+):
+    """
+    Run plate localization + OCR on a vehicle crop image.
+
+    Never writes to face_detections / mvr_people. Optional persist → plate_readings.
+    vehicle_bbox: optional comma-separated frame coords of the parent vehicle.
+    """
+    global vision_db
+    data = await file.read()
+    arr = np.frombuffer(data, dtype=np.uint8)
+    crop = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if crop is None:
+        raise HTTPException(status_code=400, detail="invalid_image")
+
+    from plate_ocr import ocr_plate_on_vehicle_crop
+
+    result = ocr_plate_on_vehicle_crop(crop)
+    parsed_vehicle_bbox = None
+    if vehicle_bbox:
+        try:
+            parsed_vehicle_bbox = [float(x.strip()) for x in vehicle_bbox.split(",") if x.strip()]
+            if len(parsed_vehicle_bbox) < 4:
+                parsed_vehicle_bbox = None
+        except ValueError:
+            parsed_vehicle_bbox = None
+
+    stored = False
+    if persist and vision_db is not None and result.get("plate_text"):
+        from plate_readings import store_plate_reading
+
+        stored = store_plate_reading(
+            getattr(vision_db, "connection", None),
+            {
+                "media_id": media_id,
+                "session_uuid": session_uuid,
+                "frame_number": frame_number,
+                "timestamp": timestamp,
+                "vehicle_bbox": parsed_vehicle_bbox,
+                "plate_bbox": result.get("plate_bbox"),
+                "plate_text": result.get("plate_text"),
+                "plate_confidence": result.get("plate_confidence"),
+                "method": result.get("method"),
+                "model_id": "plate-ocr-easyocr",
+                "model_version": "1.0.0",
+            },
+        )
+    return {**result, "stored": stored, "vehicle_bbox": parsed_vehicle_bbox}
 
 
 @app.get("/api/v1/object-detections/by-frame", summary="Body detections grouped by frame")

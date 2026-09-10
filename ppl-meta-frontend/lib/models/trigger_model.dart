@@ -104,6 +104,51 @@ class TriggerModel {
   @JsonKey(name: 'velocity_band')
   final String? velocityBand;
 
+  @JsonKey(name: 'left_object_class_allowlist')
+  final List<String>? leftObjectClassAllowlist;
+
+  @JsonKey(name: 'left_object_roi')
+  final List<List<double>>? leftObjectRoi;
+
+  @JsonKey(name: 'left_object_t_stable_seconds')
+  final int? leftObjectTStableSeconds;
+
+  @JsonKey(name: 'left_object_t_abandon_seconds')
+  final int? leftObjectTAbandonSeconds;
+
+  @JsonKey(name: 'left_object_min_box_area_px')
+  final int? leftObjectMinBoxAreaPx;
+
+  @JsonKey(name: 'left_object_require_person_left')
+  final bool? leftObjectRequirePersonLeft;
+
+  @JsonKey(name: 'left_object_proximity_px')
+  final double? leftObjectProximityPx;
+
+  @JsonKey(name: 'left_object_iou_threshold')
+  final double? leftObjectIouThreshold;
+
+  @JsonKey(name: 'vehicle_class_allowlist')
+  final List<String>? vehicleClassAllowlist;
+
+  @JsonKey(name: 'vehicle_roi')
+  final List<List<double>>? vehicleRoi;
+
+  @JsonKey(name: 'vehicle_t_stable_seconds')
+  final int? vehicleTStableSeconds;
+
+  @JsonKey(name: 'vehicle_min_box_area_px')
+  final int? vehicleMinBoxAreaPx;
+
+  @JsonKey(name: 'vehicle_plate_ocr_enabled')
+  final bool? vehiclePlateOcrEnabled;
+
+  @JsonKey(name: 'vehicle_plate_ocr_every_n_cycles')
+  final int? vehiclePlateOcrEveryNCycles;
+
+  @JsonKey(name: 'vehicle_iou_threshold')
+  final double? vehicleIouThreshold;
+
   @JsonKey(name: 'search_camera_device_ids')
   final List<String>? searchCameraDeviceIds;
 
@@ -154,6 +199,21 @@ class TriggerModel {
     this.bodyPostureIouThreshold,
     this.velocityScope,
     this.velocityBand,
+    this.leftObjectClassAllowlist,
+    this.leftObjectRoi,
+    this.leftObjectTStableSeconds,
+    this.leftObjectTAbandonSeconds,
+    this.leftObjectMinBoxAreaPx,
+    this.leftObjectRequirePersonLeft,
+    this.leftObjectProximityPx,
+    this.leftObjectIouThreshold,
+    this.vehicleClassAllowlist,
+    this.vehicleRoi,
+    this.vehicleTStableSeconds,
+    this.vehicleMinBoxAreaPx,
+    this.vehiclePlateOcrEnabled,
+    this.vehiclePlateOcrEveryNCycles,
+    this.vehicleIouThreshold,
     this.searchCameraDeviceIds,
     this.searchIntervalSeconds,
     this.lastMatchInfo,
@@ -172,6 +232,22 @@ class TriggerModel {
   
   /// Human-readable display for conditions
   String get conditionsDisplay {
+    if (triggerMode == 'vehicle_plate') {
+      final cameraCount = cameraDeviceIds?.length ?? 0;
+      final classes = (vehicleClassAllowlist ?? const ['car']).join(', ');
+      final stable = vehicleTStableSeconds ?? 15;
+      final plate = vehiclePlateOcrEnabled == false ? 'OCR off' : 'OCR on';
+      return 'Vehicle+plate: $classes, ${stable}s, $plate, $cameraCount camera(s)';
+    }
+    if (triggerMode == 'left_object') {
+      final cameraCount = cameraDeviceIds?.length ?? 0;
+      final classes = (leftObjectClassAllowlist ?? const ['backpack']).join(', ');
+      final stable = leftObjectTStableSeconds ?? 60;
+      final requireLeft = leftObjectRequirePersonLeft == true;
+      return requireLeft
+          ? 'Left object (person left): $classes, ${stable}s, $cameraCount camera(s)'
+          : 'Left object (stable): $classes, ${stable}s, $cameraCount camera(s)';
+    }
     if (triggerMode == 'velocity') {
       final cameraCount = cameraDeviceIds?.length ?? 0;
       final scope = velocityScope ?? 'crowd';
@@ -285,6 +361,51 @@ class TriggerCreateRequest {
   @JsonKey(name: 'velocity_band')
   final String? velocityBand;
 
+  @JsonKey(name: 'left_object_class_allowlist')
+  final List<String>? leftObjectClassAllowlist;
+
+  @JsonKey(name: 'left_object_roi')
+  final List<List<double>>? leftObjectRoi;
+
+  @JsonKey(name: 'left_object_t_stable_seconds')
+  final int? leftObjectTStableSeconds;
+
+  @JsonKey(name: 'left_object_t_abandon_seconds')
+  final int? leftObjectTAbandonSeconds;
+
+  @JsonKey(name: 'left_object_min_box_area_px')
+  final int? leftObjectMinBoxAreaPx;
+
+  @JsonKey(name: 'left_object_require_person_left')
+  final bool? leftObjectRequirePersonLeft;
+
+  @JsonKey(name: 'left_object_proximity_px')
+  final double? leftObjectProximityPx;
+
+  @JsonKey(name: 'left_object_iou_threshold')
+  final double? leftObjectIouThreshold;
+
+  @JsonKey(name: 'vehicle_class_allowlist')
+  final List<String>? vehicleClassAllowlist;
+
+  @JsonKey(name: 'vehicle_roi')
+  final List<List<double>>? vehicleRoi;
+
+  @JsonKey(name: 'vehicle_t_stable_seconds')
+  final int? vehicleTStableSeconds;
+
+  @JsonKey(name: 'vehicle_min_box_area_px')
+  final int? vehicleMinBoxAreaPx;
+
+  @JsonKey(name: 'vehicle_plate_ocr_enabled')
+  final bool? vehiclePlateOcrEnabled;
+
+  @JsonKey(name: 'vehicle_plate_ocr_every_n_cycles')
+  final int? vehiclePlateOcrEveryNCycles;
+
+  @JsonKey(name: 'vehicle_iou_threshold')
+  final double? vehicleIouThreshold;
+
   @JsonKey(name: 'search_camera_device_ids')
   final List<String>? searchCameraDeviceIds;
 
@@ -318,6 +439,21 @@ class TriggerCreateRequest {
     this.bodyPostureIouThreshold,
     this.velocityScope,
     this.velocityBand,
+    this.leftObjectClassAllowlist,
+    this.leftObjectRoi,
+    this.leftObjectTStableSeconds,
+    this.leftObjectTAbandonSeconds,
+    this.leftObjectMinBoxAreaPx,
+    this.leftObjectRequirePersonLeft,
+    this.leftObjectProximityPx,
+    this.leftObjectIouThreshold,
+    this.vehicleClassAllowlist,
+    this.vehicleRoi,
+    this.vehicleTStableSeconds,
+    this.vehicleMinBoxAreaPx,
+    this.vehiclePlateOcrEnabled,
+    this.vehiclePlateOcrEveryNCycles,
+    this.vehicleIouThreshold,
     this.searchCameraDeviceIds,
     this.searchIntervalSeconds,
     this.name,

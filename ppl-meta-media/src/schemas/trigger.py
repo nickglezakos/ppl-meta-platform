@@ -118,7 +118,7 @@ class TriggerBase(BaseModel):
     )
     trigger_mode: str = Field(
         default="demographic",
-        description="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match | body_posture | velocity"
+        description="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match | body_posture | velocity | left_object | vehicle_plate"
     )
     ppl_match_group_id: Optional[str] = Field(
         None,
@@ -131,7 +131,7 @@ class TriggerBase(BaseModel):
     )
     camera_device_ids: Optional[List[str]] = Field(
         None,
-        description="JSON array of camera device IDs for vprofile_match / body_posture / velocity multi-camera mode"
+        description="JSON array of camera device IDs for vprofile_match / body_posture / velocity / left_object / vehicle_plate multi-camera mode"
     )
     ppl_match_similarity_threshold: float = Field(
         default=0.75,
@@ -184,6 +184,81 @@ class TriggerBase(BaseModel):
         default="walking",
         description="Gait band floor: walking | light_running | running | fast_running",
     )
+    left_object_class_allowlist: Optional[List[str]] = Field(
+        default=None,
+        description='COCO class labels for left_object mode (e.g. ["backpack","handbag"])',
+    )
+    left_object_roi: Optional[List[List[float]]] = Field(
+        default=None,
+        description="Normalized ROI polygon [[x,y],...] in 0-1; null = full frame",
+    )
+    left_object_t_stable_seconds: Optional[int] = Field(
+        default=60,
+        ge=5,
+        le=3600,
+        description="Seconds of low motion before STABLE",
+    )
+    left_object_t_abandon_seconds: Optional[int] = Field(
+        default=30,
+        ge=5,
+        le=3600,
+        description="Seconds without nearby person before ABANDONED (V2)",
+    )
+    left_object_min_box_area_px: Optional[int] = Field(
+        default=400,
+        ge=1,
+        description="Minimum bbox area in pixels",
+    )
+    left_object_require_person_left: Optional[bool] = Field(
+        default=False,
+        description="When true, fire only after person leaves (V2)",
+    )
+    left_object_proximity_px: Optional[float] = Field(
+        default=120.0,
+        ge=1.0,
+        description="Max body-object center distance in pixels for ATTENDED (V2)",
+    )
+    left_object_iou_threshold: Optional[float] = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Minimum bbox IoU to continue an object track across cycles",
+    )
+    vehicle_class_allowlist: Optional[List[str]] = Field(
+        default=None,
+        description='COCO vehicle labels for vehicle_plate mode (e.g. ["car","motorcycle"])',
+    )
+    vehicle_roi: Optional[List[List[float]]] = Field(
+        default=None,
+        description="Normalized ROI polygon [[x,y],...] in 0-1; null = full frame",
+    )
+    vehicle_t_stable_seconds: Optional[int] = Field(
+        default=15,
+        ge=5,
+        le=3600,
+        description="Seconds of low motion before vehicle track is STABLE",
+    )
+    vehicle_min_box_area_px: Optional[int] = Field(
+        default=800,
+        ge=1,
+        description="Minimum vehicle bbox area in pixels",
+    )
+    vehicle_plate_ocr_enabled: Optional[bool] = Field(
+        default=True,
+        description="When true, attempt plate OCR on vehicle crops (V2)",
+    )
+    vehicle_plate_ocr_every_n_cycles: Optional[int] = Field(
+        default=2,
+        ge=1,
+        le=30,
+        description="Run plate OCR every N instant cycles",
+    )
+    vehicle_iou_threshold: Optional[float] = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Minimum bbox IoU to continue a vehicle track across cycles",
+    )
     search_camera_device_ids: Optional[List[str]] = Field(
         None,
         description="JSON array of camera device IDs to search (required for search mode)"
@@ -205,6 +280,8 @@ class TriggerBase(BaseModel):
             'vprofile_match',
             'body_posture',
             'velocity',
+            'left_object',
+            'vehicle_plate',
         ]
         if v not in valid:
             raise ValueError(f'trigger_mode must be one of {valid}')
@@ -264,6 +341,20 @@ class TriggerBase(BaseModel):
             if not self.velocity_band:
                 raise ValueError('velocity_band is required for velocity mode')
             return self
+        if self.trigger_mode == 'left_object':
+            if not self.camera_device_ids:
+                raise ValueError('camera_device_ids is required for left_object mode')
+            allowlist = self.left_object_class_allowlist or []
+            if not allowlist:
+                raise ValueError('left_object_class_allowlist must contain at least one class')
+            return self
+        if self.trigger_mode == 'vehicle_plate':
+            if not self.camera_device_ids:
+                raise ValueError('camera_device_ids is required for vehicle_plate mode')
+            allowlist = self.vehicle_class_allowlist or []
+            if not allowlist:
+                raise ValueError('vehicle_class_allowlist must contain at least one class')
+            return self
         if self.trigger_mode not in ('search', 'search_demographic') and not self.camera_device_id:
             raise ValueError('camera_device_id is required for demographic and ppl_match trigger modes')
         if self.trigger_mode == 'demographic' and len(self.demographic_conditions) == 0:
@@ -316,6 +407,21 @@ class TriggerUpdate(BaseModel):
     body_posture_iou_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     velocity_scope: Optional[str] = None
     velocity_band: Optional[str] = None
+    left_object_class_allowlist: Optional[List[str]] = None
+    left_object_roi: Optional[List[List[float]]] = None
+    left_object_t_stable_seconds: Optional[int] = Field(default=None, ge=5, le=3600)
+    left_object_t_abandon_seconds: Optional[int] = Field(default=None, ge=5, le=3600)
+    left_object_min_box_area_px: Optional[int] = Field(default=None, ge=1)
+    left_object_require_person_left: Optional[bool] = None
+    left_object_proximity_px: Optional[float] = Field(default=None, ge=1.0)
+    left_object_iou_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    vehicle_class_allowlist: Optional[List[str]] = None
+    vehicle_roi: Optional[List[List[float]]] = None
+    vehicle_t_stable_seconds: Optional[int] = Field(default=None, ge=5, le=3600)
+    vehicle_min_box_area_px: Optional[int] = Field(default=None, ge=1)
+    vehicle_plate_ocr_enabled: Optional[bool] = None
+    vehicle_plate_ocr_every_n_cycles: Optional[int] = Field(default=None, ge=1, le=30)
+    vehicle_iou_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     search_camera_device_ids: Optional[List[str]] = None
     search_interval_seconds: Optional[int] = Field(default=None, ge=30)
 
@@ -332,6 +438,8 @@ class TriggerUpdate(BaseModel):
             'vprofile_match',
             'body_posture',
             'velocity',
+            'left_object',
+            'vehicle_plate',
         ]
         if v not in valid:
             raise ValueError(f'trigger_mode must be one of {valid}')
@@ -373,6 +481,14 @@ class TriggerUpdate(BaseModel):
             raise ValueError('camera_device_ids is required for body_posture mode')
         if self.trigger_mode == 'velocity' and self.camera_device_ids is not None and not self.camera_device_ids:
             raise ValueError('camera_device_ids is required for velocity mode')
+        if self.trigger_mode == 'left_object' and self.camera_device_ids is not None and not self.camera_device_ids:
+            raise ValueError('camera_device_ids is required for left_object mode')
+        if self.trigger_mode == 'left_object' and self.left_object_class_allowlist is not None and not self.left_object_class_allowlist:
+            raise ValueError('left_object_class_allowlist must contain at least one class')
+        if self.trigger_mode == 'vehicle_plate' and self.camera_device_ids is not None and not self.camera_device_ids:
+            raise ValueError('camera_device_ids is required for vehicle_plate mode')
+        if self.trigger_mode == 'vehicle_plate' and self.vehicle_class_allowlist is not None and not self.vehicle_class_allowlist:
+            raise ValueError('vehicle_class_allowlist must contain at least one class')
         if self.trigger_mode == 'ppl_match' and not self.ppl_match_group_id:
             raise ValueError('ppl_match_group_id is required when trigger_mode is ppl_match')
         if self.trigger_mode == 'search':
@@ -419,6 +535,21 @@ class TriggerResponse(BaseModel):
     body_posture_iou_threshold: Optional[float] = None
     velocity_scope: Optional[str] = None
     velocity_band: Optional[str] = None
+    left_object_class_allowlist: Optional[List[str]] = None
+    left_object_roi: Optional[List[List[float]]] = None
+    left_object_t_stable_seconds: Optional[int] = None
+    left_object_t_abandon_seconds: Optional[int] = None
+    left_object_min_box_area_px: Optional[int] = None
+    left_object_require_person_left: Optional[bool] = None
+    left_object_proximity_px: Optional[float] = None
+    left_object_iou_threshold: Optional[float] = None
+    vehicle_class_allowlist: Optional[List[str]] = None
+    vehicle_roi: Optional[List[List[float]]] = None
+    vehicle_t_stable_seconds: Optional[int] = None
+    vehicle_min_box_area_px: Optional[int] = None
+    vehicle_plate_ocr_enabled: Optional[bool] = None
+    vehicle_plate_ocr_every_n_cycles: Optional[int] = None
+    vehicle_iou_threshold: Optional[float] = None
     search_camera_device_ids: Optional[List[str]] = None
     search_interval_seconds: Optional[int] = None
     name: Optional[str]
@@ -470,6 +601,50 @@ class TriggerResponse(BaseModel):
                 if v.startswith('{') and v.endswith('}'):
                     items = v[1:-1].split(',')
                     return [item.strip().strip('"') for item in items if item.strip()]
+        return v
+
+    @field_validator('left_object_class_allowlist', mode='before')
+    @classmethod
+    def parse_left_object_class_allowlist(cls, v):
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                return [x.strip() for x in v.split(",") if x.strip()]
+        return v
+
+    @field_validator('left_object_roi', mode='before')
+    @classmethod
+    def parse_left_object_roi(cls, v):
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                return None
+        return v
+
+    @field_validator('vehicle_class_allowlist', mode='before')
+    @classmethod
+    def parse_vehicle_class_allowlist(cls, v):
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                return [x.strip() for x in v.split(",") if x.strip()]
+        return v
+
+    @field_validator('vehicle_roi', mode='before')
+    @classmethod
+    def parse_vehicle_roi(cls, v):
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                return None
         return v
 
     @field_validator('search_camera_device_ids', mode='before')

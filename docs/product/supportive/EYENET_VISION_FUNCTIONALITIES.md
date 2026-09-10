@@ -23,7 +23,7 @@
 
 **Event-Driven Automation**
 - **Camera-Level Trigger Configuration**: Each camera can be independently configured with custom triggers based on machine vision events
-- **Real-Time Event Detection**: Automatic detection of configurable events (person count thresholds, demographics, dwell time, velocity, direction, etc.)
+- **Real-Time Event Detection**: Automatic detection of configurable events (person count thresholds, demographics, dwell time, velocity, direction, left/stationary objects in ROI, etc.)
 - **Complex Condition Logic**: Support for multiple conditions with AND/OR operators for sophisticated trigger rules
 
 **Automated Action Execution**
@@ -42,6 +42,7 @@
 - Smart Buildings: Adjust lighting/HVAC based on occupancy and movement patterns
 - Queue Management: Send alerts when queue length exceeds acceptable wait time
 - Access Control: Trigger door locks or alerts based on unauthorized presence detection
+- Security / Facilities: Alert when a backpack or suitcase remains stable in a camera ROI (left-object trigger); optionally only after a nearby person leaves
 
 ### 4. Video & Data Management
 

@@ -25,6 +25,8 @@ from src.services.communications_client import CommunicationsClient
 from src.services.vprofile_match_worker import get_vprofile_worker
 from src.services.body_posture_worker import get_body_posture_worker
 from src.services.velocity_trigger_worker import get_velocity_trigger_worker
+from src.services.left_object_worker import get_left_object_worker
+from src.services.vehicle_plate_worker import get_vehicle_plate_worker
 from src.config import get_config
 
 logger = logging.getLogger(__name__)
@@ -377,7 +379,7 @@ class InstantDetectionSubscriber:
                 # Also include multicam triggers (they use camera_device_ids array, not camera_device_id)
                 multicam_triggers = db.query(Trigger).filter(
                     Trigger.is_active == True,
-                    Trigger.trigger_mode.in_(['vprofile_match', 'body_posture', 'velocity'])
+                    Trigger.trigger_mode.in_(['vprofile_match', 'body_posture', 'velocity', 'left_object', 'vehicle_plate'])
                 ).all()
                 triggers = triggers + [t for t in multicam_triggers if t not in triggers]
             
@@ -582,6 +584,96 @@ class InstantDetectionSubscriber:
                         )
                         continue
                     logger.info(f"  ✅ velocity MET: {reason}")
+                elif trigger_mode == "left_object":
+                    logger.info("  🔎 Evaluating left_object mode (stationary / abandoned)")
+                    worker = get_left_object_worker()
+                    event_camera_id = data.get("camera_id")
+                    allowed_cameras = worker.get_camera_device_ids(trigger)
+                    if allowed_cameras and event_camera_id not in allowed_cameras:
+                        logger.debug(
+                            "  ⏭️ Camera %s not in left_object camera list, skipping",
+                            event_camera_id,
+                        )
+                        continue
+                    try:
+                        ready = await worker.ensure_trigger_loaded(trigger)
+                    except Exception as e:
+                        logger.warning(
+                            "  ⚠️ Error ensuring left_object trigger loaded %s: %s",
+                            trigger.uuid,
+                            e,
+                        )
+                        ready = False
+                    if not ready:
+                        self._log_execution(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason="left_object trigger not loaded (missing cameras)",
+                            match_info=None,
+                            detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+                    passed, reason, match_info = await worker.evaluate(trigger, data)
+                    if not passed:
+                        logger.info(f"  ❌ SKIP: {reason}")
+                        self._log_execution(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason=reason,
+                            match_info=match_info,
+                            detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+                    logger.info(f"  ✅ left_object MET: {reason}")
+                elif trigger_mode == "vehicle_plate":
+                    logger.info("  🔎 Evaluating vehicle_plate mode (vehicles + plate metadata)")
+                    worker = get_vehicle_plate_worker()
+                    event_camera_id = data.get("camera_id")
+                    allowed_cameras = worker.get_camera_device_ids(trigger)
+                    if allowed_cameras and event_camera_id not in allowed_cameras:
+                        logger.debug(
+                            "  ⏭️ Camera %s not in vehicle_plate camera list, skipping",
+                            event_camera_id,
+                        )
+                        continue
+                    try:
+                        ready = await worker.ensure_trigger_loaded(trigger)
+                    except Exception as e:
+                        logger.warning(
+                            "  ⚠️ Error ensuring vehicle_plate trigger loaded %s: %s",
+                            trigger.uuid,
+                            e,
+                        )
+                        ready = False
+                    if not ready:
+                        self._log_execution(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason="vehicle_plate trigger not loaded (missing cameras)",
+                            match_info=None,
+                            detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+                    passed, reason, match_info = await worker.evaluate(trigger, data)
+                    if not passed:
+                        logger.info(f"  ❌ SKIP: {reason}")
+                        self._log_execution(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason=reason,
+                            match_info=match_info,
+                            detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+                    logger.info(f"  ✅ vehicle_plate MET: {reason}")
                 else:
                     conditions = json.loads(trigger.demographic_conditions)
                     logger.info(f"  📋 Conditions to evaluate: {json.dumps(conditions, indent=4)}")
@@ -610,7 +702,7 @@ class InstantDetectionSubscriber:
                     trigger.last_match_info = json.dumps(match_info)
                     trigger.last_matched_at = datetime.now(timezone.utc)
 
-                if trigger_mode in ("ppl_match", "vprofile_match", "body_posture", "velocity") and reason:
+                if trigger_mode in ("ppl_match", "vprofile_match", "body_posture", "velocity", "left_object", "vehicle_plate") and reason:
                     success_reason = reason
                 else:
                     success_reason = "Demographic conditions met"

@@ -111,7 +111,7 @@ class Trigger(BaseModel):
         nullable=False,
         default="demographic",
         index=True,
-        comment="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match | body_posture | velocity"
+        comment="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match | body_posture | velocity | left_object | vehicle_plate"
     )
     ppl_match_group_id = Column(
         String(255),
@@ -194,6 +194,96 @@ class Trigger(BaseModel):
         nullable=True,
         default="walking",
         comment="Gait band floor: walking | light_running | running | fast_running",
+    )
+
+    # Left / stationary object trigger (COCO objects stable in ROI)
+    left_object_class_allowlist = Column(
+        Text,
+        nullable=True,
+        comment='JSON array of COCO class labels (e.g. ["backpack","handbag","suitcase","bottle"])',
+    )
+    left_object_roi = Column(
+        Text,
+        nullable=True,
+        comment="JSON polygon of normalized viewport coords [[x,y],...] in 0-1; null = full frame",
+    )
+    left_object_t_stable_seconds = Column(
+        Integer,
+        nullable=True,
+        default=60,
+        comment="Seconds of low motion before track is STABLE",
+    )
+    left_object_t_abandon_seconds = Column(
+        Integer,
+        nullable=True,
+        default=30,
+        comment="Seconds without nearby person before ABANDONED (V2)",
+    )
+    left_object_min_box_area_px = Column(
+        Integer,
+        nullable=True,
+        default=400,
+        comment="Minimum bbox area in pixels",
+    )
+    left_object_require_person_left = Column(
+        Boolean,
+        nullable=True,
+        default=False,
+        comment="When true, fire only after ATTENDED then ABANDONED (V2)",
+    )
+    left_object_proximity_px = Column(
+        Float,
+        nullable=True,
+        default=120.0,
+        comment="Max body-object center distance in pixels for ATTENDED (V2)",
+    )
+    left_object_iou_threshold = Column(
+        Float,
+        nullable=True,
+        default=0.3,
+        comment="Minimum bbox IoU to continue an object track across cycles",
+    )
+
+    # Vehicle + plate trigger (COCO vehicles; plate OCR metadata)
+    vehicle_class_allowlist = Column(
+        Text,
+        nullable=True,
+        comment='JSON array of COCO vehicle labels (e.g. ["car","motorcycle","bicycle"])',
+    )
+    vehicle_roi = Column(
+        Text,
+        nullable=True,
+        comment="JSON polygon of normalized viewport coords [[x,y],...] in 0-1; null = full frame",
+    )
+    vehicle_t_stable_seconds = Column(
+        Integer,
+        nullable=True,
+        default=15,
+        comment="Seconds of low motion before vehicle track is STABLE",
+    )
+    vehicle_min_box_area_px = Column(
+        Integer,
+        nullable=True,
+        default=800,
+        comment="Minimum vehicle bbox area in pixels",
+    )
+    vehicle_plate_ocr_enabled = Column(
+        Boolean,
+        nullable=True,
+        default=True,
+        comment="When true, attempt plate OCR on vehicle crops (V2)",
+    )
+    vehicle_plate_ocr_every_n_cycles = Column(
+        Integer,
+        nullable=True,
+        default=2,
+        comment="Run plate OCR every N instant cycles",
+    )
+    vehicle_iou_threshold = Column(
+        Float,
+        nullable=True,
+        default=0.3,
+        comment="Minimum bbox IoU to continue a vehicle track across cycles",
     )
     
     # Search trigger configuration

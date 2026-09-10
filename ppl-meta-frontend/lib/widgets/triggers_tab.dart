@@ -440,6 +440,28 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
       final cam = match['camera_id']?.toString() ?? '';
       return '$scope ≥ $band ${measured ?? ''} m/s • $cam';
     }
+    if (trigger.triggerMode == 'left_object') {
+      final match = trigger.lastMatchInfo;
+      if (match == null || match.isEmpty) return 'No match yet';
+      final label = match['class_label']?.toString() ?? 'object';
+      final state = match['state']?.toString() ?? '';
+      final dwell = match['dwell_seconds'];
+      final dwellText = dwell is num ? '${dwell.toStringAsFixed(1)}s' : '';
+      final bbox = match['bbox'];
+      final bboxText = bbox is List ? bbox.map((e) => e.toString()).join(',') : '';
+      final cam = match['source_camera_id']?.toString() ?? '';
+      return '$label • $state $dwellText${bboxText.isNotEmpty ? ' • [$bboxText]' : ''} • $cam';
+    }
+    if (trigger.triggerMode == 'vehicle_plate') {
+      final match = trigger.lastMatchInfo;
+      if (match == null || match.isEmpty) return 'No match yet';
+      final label = match['class_label']?.toString() ?? 'vehicle';
+      final plate = match['plate_text']?.toString() ?? 'no plate';
+      final dwell = match['dwell_seconds'];
+      final dwellText = dwell is num ? '${dwell.toStringAsFixed(1)}s' : '';
+      final cam = match['source_camera_id']?.toString() ?? '';
+      return '$label • $plate $dwellText • $cam';
+    }
     if (trigger.triggerMode == 'body_posture') {
       final match = trigger.lastMatchInfo;
       if (match == null || match.isEmpty) return 'No match yet';
@@ -605,7 +627,29 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     'vprofile_match': 'VProfile Multi-Group',
     'body_posture': 'Body Posture',
     'velocity': 'Velocity',
+    'left_object': 'Left / Stationary Object',
+    'vehicle_plate': 'Vehicle + Plate',
   };
+
+  static const _leftObjectClassOptions = [
+    'backpack',
+    'handbag',
+    'suitcase',
+    'bottle',
+    'cup',
+    'cell phone',
+    'laptop',
+    'book',
+    'umbrella',
+  ];
+
+  static const _vehicleClassOptions = [
+    'car',
+    'motorcycle',
+    'bicycle',
+    'truck',
+    'bus',
+  ];
 
   static const _modeIcons = {
     'demographic': Icons.tune,
@@ -615,6 +659,8 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     'vprofile_match': Icons.people_outline,
     'body_posture': Icons.accessibility_new,
     'velocity': Icons.speed,
+    'left_object': Icons.luggage,
+    'vehicle_plate': Icons.directions_car,
   };
 
   static const _modeColors = {
@@ -625,6 +671,8 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     'vprofile_match': AppColors.info,
     'body_posture': AppColors.warning,
     'velocity': AppColors.info,
+    'left_object': Colors.orange,
+    'vehicle_plate': Colors.teal,
   };
 
   /// Status filter toggles (All / Active / Inactive) for the action bar.
@@ -1090,6 +1138,26 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
         trigger?.triggerMode == 'velocity'
             ? (trigger?.cameraDeviceIds ?? [])
             : <String>[];
+    List<String> selectedLeftObjectCameraIds =
+        trigger?.triggerMode == 'left_object'
+            ? (trigger?.cameraDeviceIds ?? [])
+            : <String>[];
+    List<String> selectedVehiclePlateCameraIds =
+        trigger?.triggerMode == 'vehicle_plate'
+            ? (trigger?.cameraDeviceIds ?? [])
+            : <String>[];
+    Set<String> selectedLeftObjectClasses = Set<String>.from(
+      trigger?.leftObjectClassAllowlist ??
+          const ['backpack', 'handbag', 'suitcase', 'bottle'],
+    );
+    Set<String> selectedVehicleClasses = Set<String>.from(
+      trigger?.vehicleClassAllowlist ??
+          const ['car', 'motorcycle', 'bicycle', 'truck', 'bus'],
+    );
+    List<List<double>>? leftObjectRoi = trigger?.leftObjectRoi;
+    List<List<double>>? vehicleRoi = trigger?.vehicleRoi;
+    bool leftObjectRequirePersonLeft = trigger?.leftObjectRequirePersonLeft ?? false;
+    bool vehiclePlateOcrEnabled = trigger?.vehiclePlateOcrEnabled ?? true;
     String bodyPostureTarget = trigger?.bodyPostureTarget ?? 'horizontal';
     String velocityScope = trigger?.velocityScope ?? 'crowd';
     String velocityBand = trigger?.velocityBand ?? 'walking';
@@ -1104,6 +1172,27 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     );
     final searchIntervalController = TextEditingController(
       text: (trigger?.searchIntervalSeconds ?? 300).toString(),
+    );
+    final leftObjectTStableController = TextEditingController(
+      text: (trigger?.leftObjectTStableSeconds ?? 60).toString(),
+    );
+    final leftObjectTAbandonController = TextEditingController(
+      text: (trigger?.leftObjectTAbandonSeconds ?? 30).toString(),
+    );
+    final leftObjectMinAreaController = TextEditingController(
+      text: (trigger?.leftObjectMinBoxAreaPx ?? 400).toString(),
+    );
+    final leftObjectProximityController = TextEditingController(
+      text: (trigger?.leftObjectProximityPx ?? 120).toString(),
+    );
+    final vehicleTStableController = TextEditingController(
+      text: (trigger?.vehicleTStableSeconds ?? 15).toString(),
+    );
+    final vehicleMinAreaController = TextEditingController(
+      text: (trigger?.vehicleMinBoxAreaPx ?? 800).toString(),
+    );
+    final vehicleOcrEveryNController = TextEditingController(
+      text: (trigger?.vehiclePlateOcrEveryNCycles ?? 2).toString(),
     );
 
     if (selectedPplMatchGroupId != null &&
@@ -1153,7 +1242,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
       try {
         final apiClient = ref.read(apiClientProvider);
 
-        final cameraName = (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match' || triggerMode == 'body_posture' || triggerMode == 'velocity')
+        final cameraName = (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match' || triggerMode == 'body_posture' || triggerMode == 'velocity' || triggerMode == 'left_object' || triggerMode == 'vehicle_plate')
             ? null
             : availableCameras.firstWhere(
                 (c) => c.deviceId == selectedCameraDeviceId,
@@ -1173,7 +1262,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
           description: descriptionController.text.trim().isEmpty ? null : descriptionController.text.trim(),
           demographicConditions: (triggerMode == 'demographic' || triggerMode == 'search_demographic') ? demographicConditions : const [],
           timeSpan: timeSpanController.text.trim(),
-          cameraDeviceId: (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match' || triggerMode == 'body_posture' || triggerMode == 'velocity') ? null : selectedCameraDeviceId,
+          cameraDeviceId: (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match' || triggerMode == 'body_posture' || triggerMode == 'velocity' || triggerMode == 'left_object' || triggerMode == 'vehicle_plate') ? null : selectedCameraDeviceId,
           cameraName: cameraName,
           actionUuid: selectedActionUuids.isNotEmpty ? selectedActionUuids.first : null,
           actionUuids: selectedActionUuids.isNotEmpty ? selectedActionUuids : null,
@@ -1188,7 +1277,11 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
               ? selectedVProfileCameraIds
               : (triggerMode == 'body_posture'
                   ? selectedBodyPostureCameraIds
-                  : (triggerMode == 'velocity' ? selectedVelocityCameraIds : null)),
+                  : (triggerMode == 'velocity'
+                      ? selectedVelocityCameraIds
+                      : (triggerMode == 'left_object'
+                      ? selectedLeftObjectCameraIds
+                      : (triggerMode == 'vehicle_plate' ? selectedVehiclePlateCameraIds : null)))),
           pplMatchSimilarityThreshold: (triggerMode == 'ppl_match' || triggerMode == 'search' || triggerMode == 'vprofile_match')
             ? (double.tryParse(similarityThresholdController.text) ?? 0.75)
             : null,
@@ -1210,6 +1303,41 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
           bodyPostureIouThreshold: triggerMode == 'body_posture' ? 0.3 : null,
           velocityScope: triggerMode == 'velocity' ? velocityScope : null,
           velocityBand: triggerMode == 'velocity' ? velocityBand : null,
+          leftObjectClassAllowlist: triggerMode == 'left_object'
+              ? selectedLeftObjectClasses.toList()
+              : null,
+          leftObjectRoi: triggerMode == 'left_object' ? leftObjectRoi : null,
+          leftObjectTStableSeconds: triggerMode == 'left_object'
+              ? (int.tryParse(leftObjectTStableController.text) ?? 60)
+              : null,
+          leftObjectTAbandonSeconds: triggerMode == 'left_object'
+              ? (int.tryParse(leftObjectTAbandonController.text) ?? 30)
+              : null,
+          leftObjectMinBoxAreaPx: triggerMode == 'left_object'
+              ? (int.tryParse(leftObjectMinAreaController.text) ?? 400)
+              : null,
+          leftObjectRequirePersonLeft:
+              triggerMode == 'left_object' ? leftObjectRequirePersonLeft : null,
+          leftObjectProximityPx: triggerMode == 'left_object'
+              ? (double.tryParse(leftObjectProximityController.text) ?? 120)
+              : null,
+          leftObjectIouThreshold: triggerMode == 'left_object' ? 0.3 : null,
+          vehicleClassAllowlist: triggerMode == 'vehicle_plate'
+              ? selectedVehicleClasses.toList()
+              : null,
+          vehicleRoi: triggerMode == 'vehicle_plate' ? vehicleRoi : null,
+          vehicleTStableSeconds: triggerMode == 'vehicle_plate'
+              ? (int.tryParse(vehicleTStableController.text) ?? 15)
+              : null,
+          vehicleMinBoxAreaPx: triggerMode == 'vehicle_plate'
+              ? (int.tryParse(vehicleMinAreaController.text) ?? 800)
+              : null,
+          vehiclePlateOcrEnabled:
+              triggerMode == 'vehicle_plate' ? vehiclePlateOcrEnabled : null,
+          vehiclePlateOcrEveryNCycles: triggerMode == 'vehicle_plate'
+              ? (int.tryParse(vehicleOcrEveryNController.text) ?? 2)
+              : null,
+          vehicleIouThreshold: triggerMode == 'vehicle_plate' ? 0.3 : null,
           searchCameraDeviceIds: (triggerMode == 'search' || triggerMode == 'search_demographic') ? selectedSearchCameraIds : null,
           searchIntervalSeconds: (triggerMode == 'search' || triggerMode == 'search_demographic')
             ? (int.tryParse(searchIntervalController.text) ?? 300)
@@ -1305,6 +1433,14 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                           value: 'velocity',
                           child: Text('Velocity (Multi-Camera)'),
                         ),
+                        DropdownMenuItem(
+                          value: 'left_object',
+                          child: Text('Left / Stationary Object'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'vehicle_plate',
+                          child: Text('Vehicle + Plate'),
+                        ),
                       ],
                       selectedItemBuilder: (context) => const [
                         Text('Instant Demographic', overflow: TextOverflow.ellipsis),
@@ -1314,6 +1450,8 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                         Text('VProfile Match (Multi-Group, Multi-Camera)', overflow: TextOverflow.ellipsis),
                         Text('Body Posture (Multi-Camera)', overflow: TextOverflow.ellipsis),
                         Text('Velocity (Multi-Camera)', overflow: TextOverflow.ellipsis),
+                        Text('Left / Stationary Object', overflow: TextOverflow.ellipsis),
+                        Text('Vehicle + Plate', overflow: TextOverflow.ellipsis),
                       ],
                       onChanged: (value) {
                         if (value == null) return;
@@ -2354,10 +2492,382 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                           ),
                         ),
                       ),
+                    if (triggerMode == 'left_object')
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.luggage, color: Colors.orange, size: 20),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Left / Stationary Object Configuration',
+                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Enable auto_object_detection on each camera. For V2 (require person left), also enable auto_body_detection.',
+                                style: TextStyle(fontSize: 12, color: AppColors.gray600),
+                              ),
+                              const SizedBox(height: 12),
+                              const Text('Cameras *', style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 4),
+                              Container(
+                                constraints: const BoxConstraints(maxHeight: 140),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: AppColors.gray400),
+                                  borderRadius: BorderRadius.circular(AppRadius.chipBadge),
+                                ),
+                                child: availableCameras.isEmpty
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(12),
+                                        child: Text('No cameras available', style: TextStyle(color: AppColors.warning)),
+                                      )
+                                    : ListView.builder(
+                                        shrinkWrap: true,
+                                        itemCount: availableCameras.length,
+                                        itemBuilder: (context, index) {
+                                          final camera = availableCameras[index];
+                                          final isSelected = selectedLeftObjectCameraIds.contains(camera.deviceId);
+                                          return CheckboxListTile(
+                                            dense: true,
+                                            title: Text(camera.name, style: const TextStyle(fontSize: 13)),
+                                            subtitle: Text(camera.deviceId, style: const TextStyle(fontSize: 11, color: AppColors.gray500)),
+                                            value: isSelected,
+                                            onChanged: (checked) {
+                                              setDialogState(() {
+                                                if (checked == true) {
+                                                  selectedLeftObjectCameraIds.add(camera.deviceId);
+                                                } else {
+                                                  selectedLeftObjectCameraIds.remove(camera.deviceId);
+                                                }
+                                              });
+                                            },
+                                          );
+                                        },
+                                      ),
+                              ),
+                              if (selectedLeftObjectCameraIds.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text('${selectedLeftObjectCameraIds.length} camera(s) selected',
+                                      style: TextStyle(fontSize: 12, color: AppColors.gray600)),
+                                ),
+                              const SizedBox(height: 12),
+                              const Text('Object classes *', style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: _leftObjectClassOptions.map((cls) {
+                                  final isSelected = selectedLeftObjectClasses.contains(cls);
+                                  return FilterChip(
+                                    label: Text(cls, style: const TextStyle(fontSize: 12)),
+                                    selected: isSelected,
+                                    onSelected: (selected) {
+                                      setDialogState(() {
+                                        if (selected) {
+                                          selectedLeftObjectClasses.add(cls);
+                                        } else {
+                                          selectedLeftObjectClasses.remove(cls);
+                                        }
+                                      });
+                                    },
+                                  );
+                                }).toList(),
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: leftObjectTStableController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'T_stable (seconds)',
+                                        border: OutlineInputBorder(),
+                                        helperText: 'Low motion before STABLE',
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: leftObjectTAbandonController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'T_abandon (seconds)',
+                                        border: OutlineInputBorder(),
+                                        helperText: 'No body nearby (V2)',
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: leftObjectMinAreaController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Min box area (px)',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: leftObjectProximityController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Proximity (px)',
+                                        border: OutlineInputBorder(),
+                                        helperText: 'Body–object distance (V2)',
+                                      ),
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              SwitchListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('Require person left (V2)'),
+                                subtitle: const Text(
+                                  'Fire only after a person was near the object and left',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                value: leftObjectRequirePersonLeft,
+                                onChanged: (v) => setDialogState(() => leftObjectRequirePersonLeft = v),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text('ROI', style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 4),
+                              Text(
+                                leftObjectRoi == null
+                                    ? 'Full frame by default'
+                                    : 'Custom ROI (${leftObjectRoi!.length} points)',
+                                style: const TextStyle(fontSize: 12, color: AppColors.gray600),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                children: [
+                                  OutlinedButton(
+                                    onPressed: () {
+                                      setDialogState(() {
+                                        leftObjectRoi = const [
+                                          [0.25, 0.25],
+                                          [0.75, 0.25],
+                                          [0.75, 0.75],
+                                          [0.25, 0.75],
+                                        ];
+                                      });
+                                    },
+                                    child: const Text('Use center 50% ROI'),
+                                  ),
+                                  if (leftObjectRoi != null)
+                                    OutlinedButton(
+                                      onPressed: () {
+                                        setDialogState(() => leftObjectRoi = null);
+                                      },
+                                      child: const Text('Clear ROI (full frame)'),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    if (triggerMode == 'vehicle_plate')
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.directions_car, color: Colors.teal, size: 20),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Vehicle + Plate Configuration',
+                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Enable auto_vehicle_detection on each camera. Plate OCR attaches metadata when readable.',
+                                style: TextStyle(fontSize: 12, color: AppColors.gray600),
+                              ),
+                              const SizedBox(height: 12),
+                              const Text('Cameras *', style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 4),
+                              Container(
+                                constraints: const BoxConstraints(maxHeight: 140),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: AppColors.gray400),
+                                  borderRadius: BorderRadius.circular(AppRadius.chipBadge),
+                                ),
+                                child: availableCameras.isEmpty
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(12),
+                                        child: Text('No cameras available', style: TextStyle(color: AppColors.warning)),
+                                      )
+                                    : ListView.builder(
+                                        shrinkWrap: true,
+                                        itemCount: availableCameras.length,
+                                        itemBuilder: (context, index) {
+                                          final camera = availableCameras[index];
+                                          final isSelected = selectedVehiclePlateCameraIds.contains(camera.deviceId);
+                                          return CheckboxListTile(
+                                            dense: true,
+                                            title: Text(camera.name, style: const TextStyle(fontSize: 13)),
+                                            subtitle: Text(camera.deviceId, style: const TextStyle(fontSize: 11, color: AppColors.gray500)),
+                                            value: isSelected,
+                                            onChanged: (checked) {
+                                              setDialogState(() {
+                                                if (checked == true) {
+                                                  selectedVehiclePlateCameraIds.add(camera.deviceId);
+                                                } else {
+                                                  selectedVehiclePlateCameraIds.remove(camera.deviceId);
+                                                }
+                                              });
+                                            },
+                                          );
+                                        },
+                                      ),
+                              ),
+                              if (selectedVehiclePlateCameraIds.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text('${selectedVehiclePlateCameraIds.length} camera(s) selected',
+                                      style: TextStyle(fontSize: 12, color: AppColors.gray600)),
+                                ),
+                              const SizedBox(height: 12),
+                              const Text('Vehicle classes *', style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: _vehicleClassOptions.map((cls) {
+                                  final isSelected = selectedVehicleClasses.contains(cls);
+                                  return FilterChip(
+                                    label: Text(cls, style: const TextStyle(fontSize: 12)),
+                                    selected: isSelected,
+                                    onSelected: (selected) {
+                                      setDialogState(() {
+                                        if (selected) {
+                                          selectedVehicleClasses.add(cls);
+                                        } else {
+                                          selectedVehicleClasses.remove(cls);
+                                        }
+                                      });
+                                    },
+                                  );
+                                }).toList(),
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: vehicleTStableController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'T_stable (seconds)',
+                                        border: OutlineInputBorder(),
+                                        helperText: 'Low motion before STABLE',
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: vehicleMinAreaController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Min box area (px)',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              SwitchListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('Plate OCR enabled'),
+                                subtitle: const Text(
+                                  'Attach plate_text metadata when OCR succeeds (V2)',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                value: vehiclePlateOcrEnabled,
+                                onChanged: (v) => setDialogState(() => vehiclePlateOcrEnabled = v),
+                              ),
+                              TextField(
+                                controller: vehicleOcrEveryNController,
+                                decoration: const InputDecoration(
+                                  labelText: 'OCR every N cycles',
+                                  border: OutlineInputBorder(),
+                                ),
+                                keyboardType: TextInputType.number,
+                              ),
+                              const SizedBox(height: 12),
+                              const Text('ROI', style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 4),
+                              Text(
+                                vehicleRoi == null
+                                    ? 'Full frame by default'
+                                    : 'Custom ROI (${vehicleRoi!.length} points)',
+                                style: const TextStyle(fontSize: 12, color: AppColors.gray600),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                children: [
+                                  OutlinedButton(
+                                    onPressed: () {
+                                      setDialogState(() {
+                                        vehicleRoi = const [
+                                          [0.25, 0.25],
+                                          [0.75, 0.25],
+                                          [0.75, 0.75],
+                                          [0.25, 0.75],
+                                        ];
+                                      });
+                                    },
+                                    child: const Text('Use center 50% ROI'),
+                                  ),
+                                  if (vehicleRoi != null)
+                                    OutlinedButton(
+                                      onPressed: () {
+                                        setDialogState(() => vehicleRoi = null);
+                                      },
+                                      child: const Text('Clear ROI (full frame)'),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
                     const SizedBox(height: 16),
                     
                     // Camera selector (hidden for search & multicamera modes — cameras selected in their panels)
-                    if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match' && triggerMode != 'body_posture' && triggerMode != 'velocity') ...[
+                    if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match' && triggerMode != 'body_posture' && triggerMode != 'velocity' && triggerMode != 'left_object' && triggerMode != 'vehicle_plate') ...[
                     const Text('Camera *', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     availableCameras.isEmpty
@@ -2599,7 +3109,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                     return;
                   }
                   
-                  if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match' && triggerMode != 'body_posture' && triggerMode != 'velocity' && selectedCameraDeviceId == null) {
+                  if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match' && triggerMode != 'body_posture' && triggerMode != 'velocity' && triggerMode != 'left_object' && triggerMode != 'vehicle_plate' && selectedCameraDeviceId == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Camera is required')),
                     );
@@ -2755,6 +3265,36 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                       return;
                     }
                   }
+
+                  if (triggerMode == 'left_object') {
+                    if (selectedLeftObjectCameraIds.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Select at least one camera for Left Object mode')),
+                      );
+                      return;
+                    }
+                    if (selectedLeftObjectClasses.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Select at least one object class')),
+                      );
+                      return;
+                    }
+                  }
+
+                  if (triggerMode == 'vehicle_plate') {
+                    if (selectedVehiclePlateCameraIds.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Select at least one camera for Vehicle + Plate mode')),
+                      );
+                      return;
+                    }
+                    if (selectedVehicleClasses.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Select at least one vehicle class')),
+                      );
+                      return;
+                    }
+                  }
                   
                   if (embedded) {
                     await doSave();
@@ -2794,6 +3334,13 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     bodyWindowController.dispose();
     bodyMinMatchesController.dispose();
     bodyMinConfidenceController.dispose();
+    leftObjectTStableController.dispose();
+    leftObjectTAbandonController.dispose();
+    leftObjectMinAreaController.dispose();
+    leftObjectProximityController.dispose();
+    vehicleTStableController.dispose();
+    vehicleMinAreaController.dispose();
+    vehicleOcrEveryNController.dispose();
   }
 
   @override

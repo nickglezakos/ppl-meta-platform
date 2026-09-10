@@ -308,6 +308,7 @@ class InstantDetectionSampler:
         )
         self._resolved_runtime: Dict[str, str] = {}
         self._resolved_body: Dict[str, Dict[str, str]] = {}
+        self._resolved_object: Dict[str, Dict[str, str]] = {}
         self.sampling_interval = sampling_interval
         self.temporal_window = temporal_window
         
@@ -332,9 +333,13 @@ class InstantDetectionSampler:
         vision_concurrency = int(os.getenv("INSTANT_DETECTION_VISION_CONCURRENCY", "2"))
         vmeta_concurrency = int(os.getenv("INSTANT_DETECTION_VMETA_CONCURRENCY", "3"))
         orchestrator_concurrency = int(os.getenv("INSTANT_DETECTION_ORCHESTRATOR_CONCURRENCY", "2"))
+        object_concurrency = int(os.getenv("INSTANT_DETECTION_OBJECT_CONCURRENCY", "1"))
+        vehicle_concurrency = int(os.getenv("INSTANT_DETECTION_VEHICLE_CONCURRENCY", "1"))
         self._vision_semaphore = threading.Semaphore(vision_concurrency)
         self._vmeta_semaphore = threading.Semaphore(vmeta_concurrency)
         self._orchestrator_semaphore = threading.Semaphore(orchestrator_concurrency)
+        self._object_semaphore = threading.Semaphore(object_concurrency)
+        self._vehicle_semaphore = threading.Semaphore(vehicle_concurrency)
 
         # --- Circuit breakers (one per downstream service) ---
         cb_threshold = int(os.getenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "3"))
@@ -342,6 +347,13 @@ class InstantDetectionSampler:
         self._vision_circuit = CircuitBreaker("Vision", cb_threshold, cb_cooldown)
         self._vmeta_circuit = CircuitBreaker("VMeta", cb_threshold, cb_cooldown)
         self._orchestrator_circuit = CircuitBreaker("Orchestrator", cb_threshold, cb_cooldown)
+        # Isolated from face/body Vision breaker so object failures do not blind faces
+        self._object_circuit = CircuitBreaker("VisionObject", cb_threshold, cb_cooldown)
+        self._vehicle_circuit = CircuitBreaker("VisionVehicle", cb_threshold, cb_cooldown)
+        self._resolved_vehicle: Dict[str, Dict[str, str]] = {}
+        self._vehicle_cycle_count: Dict[str, int] = {}
+        self._plate_ocr_every_n = int(os.getenv("VEHICLE_PLATE_OCR_EVERY_N", "2"))
+        self._plate_ocr_enabled = os.getenv("VEHICLE_PLATE_OCR_ENABLED", "true").lower() == "true"
         
         logger.info(
             f"✅ Instant detection sampler initialized "
@@ -868,6 +880,16 @@ class InstantDetectionSampler:
             )
             body_detections = body_result.get("detections") or []
             body_persons = body_result.get("body_persons") or []
+
+            object_result = await self._maybe_detect_objects_via_vision(
+                session, frames, camera_id, session_uuid
+            )
+            object_detections = object_result.get("detections") or []
+
+            vehicle_result = await self._maybe_detect_vehicles_via_vision(
+                session, frames, camera_id, session_uuid
+            )
+            vehicle_detections = vehicle_result.get("detections") or []
         
         total_faces = len(all_face_detections)
         person_objects: List[Dict] = []
@@ -966,6 +988,7 @@ class InstantDetectionSampler:
         logger.info(
             f"✅ Instant detection complete: {len(person_objects)} people, "
             f"{total_faces} faces, {len(body_persons)} body persons, "
+            f"{len(object_detections)} objects, {len(vehicle_detections)} vehicles, "
             f"demographics: {demographics}, "
             f"crowd_mps={velocity_summary.get('crowd_velocity_mps')}, "
             f"max_mps={velocity_summary.get('max_person_speed_mps')}"
@@ -982,6 +1005,10 @@ class InstantDetectionSampler:
             "people_count": len(person_objects),  # face identities (triggers)
             "people_detected": len(person_objects),  # Keep for backward compatibility
             "body_count": len(body_persons),
+            "object_count": len(object_detections),
+            "objects": object_detections,
+            "vehicle_count": len(vehicle_detections),
+            "vehicles": vehicle_detections,
             "demographics": demographics,  # NEW: Gender/age breakdown
             "person_objects": person_objects,
             "body_detections": body_detections,
@@ -1094,6 +1121,486 @@ class InstantDetectionSampler:
                 exc,
             )
             return False
+
+    def _camera_auto_object_enabled(self, camera_id: str) -> bool:
+        """Per-camera object detection for left_object triggers; default False."""
+        if not camera_id:
+            return False
+        try:
+            from src.database import SessionLocal
+            from src.models.camera import Camera
+            from src.models.recording_session import RecordingSession  # noqa: F401
+
+            db = SessionLocal()
+            try:
+                camera = db.query(Camera).filter(Camera.device_id == camera_id).first()
+                if not camera:
+                    return False
+                opts = getattr(camera, "processing_options", None) or {}
+                if isinstance(opts, str):
+                    opts = json.loads(opts)
+                if not isinstance(opts, dict):
+                    return False
+                return bool(
+                    opts.get("auto_object_detection", False)
+                    or opts.get("enable_object_detection", False)
+                )
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning(
+                "auto_object_detection lookup failed for %s (treating as OFF): %s",
+                camera_id,
+                exc,
+            )
+            return False
+
+    def _resolve_object_model(self, camera_id: str) -> Dict[str, str]:
+        cached = self._resolved_object.get(camera_id)
+        if cached:
+            return cached
+        fallback = {
+            "model_id": "body-yolo-person-os",
+            "version": "1.0.0",
+            "runtime": "onnx",
+        }
+        try:
+            import urllib.parse
+            import urllib.request
+
+            params = urllib.parse.urlencode(
+                {
+                    "path": "instant",
+                    "capability": "object_detection",
+                    "camera_id": camera_id,
+                }
+            )
+            url = f"{self.models_service_url}/api/v1/mv-models/resolve?{params}"
+            with urllib.request.urlopen(url, timeout=2) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            resolved = {
+                "model_id": str(payload.get("model_id") or fallback["model_id"]),
+                "version": str(payload.get("version") or fallback["version"]),
+                "runtime": str(payload.get("runtime") or fallback["runtime"]),
+            }
+            if "pose" in resolved["model_id"].lower():
+                resolved = dict(fallback)
+            self._resolved_object[camera_id] = resolved
+            return resolved
+        except Exception as exc:
+            logger.debug("object model resolve failed for %s: %s", camera_id, exc)
+            return cached or fallback
+
+    async def _maybe_detect_objects_via_vision(
+        self,
+        session: aiohttp.ClientSession,
+        frames: List[Dict],
+        camera_id: str,
+        session_uuid: str,
+    ) -> Dict[str, List[Dict]]:
+        """
+        Generic COCO object detect in memory when auto_object_detection is ON.
+
+        Uses a dedicated circuit breaker so failures do not open the face Vision breaker.
+        """
+        empty: Dict[str, List[Dict]] = {"detections": []}
+        if not camera_id:
+            return empty
+        if not self._camera_auto_object_enabled(camera_id):
+            logger.info(
+                "📦 Instant object path skipped for camera %s (auto_object_detection OFF)",
+                camera_id,
+            )
+            return empty
+        if not frames:
+            return empty
+        if not self._object_circuit.allow_request():
+            logger.info(
+                "📦 Instant object path skipped for camera %s (object circuit open)",
+                camera_id,
+            )
+            return empty
+
+        resolved = self._resolve_object_model(camera_id)
+        model_id = resolved.get("model_id") or "body-yolo-person-os"
+        version = resolved.get("version") or "1.0.0"
+        if "pose" in model_id.lower():
+            model_id = "body-yolo-person-os"
+            version = "1.0.0"
+
+        all_detections: List[Dict] = []
+        frame_data = frames[0]
+        frame = frame_data.get("frame")
+        if frame is None or getattr(frame, "size", 0) == 0:
+            return empty
+        frame_index = int(frame_data.get("frame_index") or 0)
+        timestamp = float(frame_data.get("timestamp") or 0)
+        _, buffer = cv2.imencode(".jpg", frame)
+        jpeg_bytes = buffer.tobytes()
+
+        try:
+            import urllib.parse
+
+            form = aiohttp.FormData()
+            form.add_field(
+                "file",
+                jpeg_bytes,
+                filename="object_frame.jpg",
+                content_type="image/jpeg",
+            )
+            params = urllib.parse.urlencode(
+                {
+                    "model_id": model_id,
+                    "version": version,
+                    "persist": "false",
+                    "session_uuid": session_uuid,
+                    "media_id": camera_id,
+                    "frame_number": frame_index,
+                    "timestamp": timestamp,
+                    "path": "instant",
+                    "capability": "object_detection",
+                    "class_ids": "24,26,28,39",
+                }
+            )
+            detect_url = (
+                f"{self.vision_service_url}/api/v1/object-detections/detect?{params}"
+            )
+            acquired = self._object_semaphore.acquire(blocking=False)
+            if not acquired:
+                logger.info(
+                    "📦 Instant object path skipped for camera %s (object semaphore busy)",
+                    camera_id,
+                )
+                return empty
+            try:
+                async with session.post(detect_url, data=form) as response:
+                    try:
+                        payload = await response.json(content_type=None)
+                    except Exception:
+                        payload = {"error": await response.text()}
+                    if response.status != 200:
+                        self._object_circuit.record_failure()
+                        logger.debug(
+                            "object detect failed status=%s camera=%s",
+                            response.status,
+                            camera_id,
+                        )
+                        return empty
+                    self._object_circuit.record_success()
+                    for det in (payload or {}).get("detections") or []:
+                        if not isinstance(det, dict):
+                            continue
+                        det.setdefault("frame_number", frame_index)
+                        det.setdefault("timestamp", timestamp)
+                        all_detections.append(det)
+            finally:
+                self._object_semaphore.release()
+
+            logger.info(
+                "📦 Object YOLO model=%s detections=%s camera=%s",
+                model_id,
+                len(all_detections),
+                camera_id,
+            )
+            return {"detections": all_detections}
+        except Exception as exc:
+            self._object_circuit.record_failure()
+            logger.debug("object detect error for %s: %s", camera_id, exc)
+            return empty
+
+    def _camera_auto_vehicle_enabled(self, camera_id: str) -> bool:
+        try:
+            from src.database import SessionLocal
+            from src.models.camera import Camera
+            from src.models.recording_session import RecordingSession  # noqa: F401
+
+            db = SessionLocal()
+            try:
+                camera = db.query(Camera).filter(Camera.device_id == camera_id).first()
+                if not camera:
+                    return False
+                opts = getattr(camera, "processing_options", None) or {}
+                if isinstance(opts, str):
+                    opts = json.loads(opts)
+                if not isinstance(opts, dict):
+                    return False
+                return bool(
+                    opts.get("auto_vehicle_detection", False)
+                    or opts.get("enable_vehicle_detection", False)
+                )
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning(
+                "auto_vehicle_detection lookup failed for %s (treating as OFF): %s",
+                camera_id,
+                exc,
+            )
+            return False
+
+    def _resolve_vehicle_model(self, camera_id: str) -> Dict[str, str]:
+        cached = self._resolved_vehicle.get(camera_id)
+        if cached:
+            return cached
+        fallback = {
+            "model_id": "vehicle-yolo-coco-os",
+            "version": "1.0.0",
+            "runtime": "onnx",
+        }
+        try:
+            import urllib.parse
+            import urllib.request
+
+            params = urllib.parse.urlencode(
+                {
+                    "path": "instant",
+                    "capability": "vehicle_detection",
+                    "camera_id": camera_id,
+                }
+            )
+            url = f"{self.models_service_url}/api/v1/mv-models/resolve?{params}"
+            with urllib.request.urlopen(url, timeout=2) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            resolved = {
+                "model_id": str(payload.get("model_id") or fallback["model_id"]),
+                "version": str(payload.get("version") or fallback["version"]),
+                "runtime": str(payload.get("runtime") or fallback["runtime"]),
+            }
+            if "pose" in resolved["model_id"].lower():
+                resolved = {
+                    "model_id": "body-yolo-person-os",
+                    "version": "1.0.0",
+                    "runtime": "onnx",
+                }
+            self._resolved_vehicle[camera_id] = resolved
+            return resolved
+        except Exception as exc:
+            logger.debug("vehicle model resolve failed for %s: %s", camera_id, exc)
+            # Same COCO ONNX artifact as body-yolo-person-os
+            return cached or {
+                "model_id": "body-yolo-person-os",
+                "version": "1.0.0",
+                "runtime": "onnx",
+            }
+
+    async def _maybe_ocr_plates_on_vehicles(
+        self,
+        session: aiohttp.ClientSession,
+        frame,
+        vehicles: List[Dict],
+        camera_id: str,
+        session_uuid: str,
+        frame_index: int,
+        timestamp: float,
+    ) -> List[Dict]:
+        """Attach plate_text metadata via Vision license-plate OCR (best-effort)."""
+        if not self._plate_ocr_enabled or not vehicles:
+            return vehicles
+        cycle = self._vehicle_cycle_count.get(camera_id, 0) + 1
+        self._vehicle_cycle_count[camera_id] = cycle
+        if cycle % max(1, self._plate_ocr_every_n) != 0:
+            return vehicles
+
+        enriched: List[Dict] = []
+        for det in vehicles:
+            out = dict(det)
+            bbox = det.get("bbox")
+            if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+                enriched.append(out)
+                continue
+            try:
+                x1, y1, x2, y2 = [int(float(v)) for v in bbox[:4]]
+            except (TypeError, ValueError):
+                enriched.append(out)
+                continue
+            h, w = frame.shape[:2]
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(w, x2), min(h, y2)
+            if x2 <= x1 or y2 <= y1:
+                enriched.append(out)
+                continue
+            crop = frame[y1:y2, x1:x2]
+            if crop.size == 0:
+                enriched.append(out)
+                continue
+            try:
+                _, buffer = cv2.imencode(".jpg", crop)
+                jpeg_bytes = buffer.tobytes()
+                form = aiohttp.FormData()
+                form.add_field(
+                    "file",
+                    jpeg_bytes,
+                    filename="vehicle_crop.jpg",
+                    content_type="image/jpeg",
+                )
+                import urllib.parse
+
+                params = urllib.parse.urlencode(
+                    {
+                        "persist": "true",
+                        "session_uuid": session_uuid,
+                        "media_id": camera_id,
+                        "frame_number": frame_index,
+                        "timestamp": timestamp,
+                        "vehicle_bbox": f"{x1},{y1},{x2},{y2}",
+                    }
+                )
+                url = (
+                    f"{self.vision_service_url}/api/v1/license-plates/ocr-crop?{params}"
+                )
+                async with session.post(url, data=form) as response:
+                    if response.status != 200:
+                        out["plate_ocr_attempted"] = True
+                        enriched.append(out)
+                        continue
+                    payload = await response.json(content_type=None)
+                out["plate_ocr_attempted"] = True
+                if payload.get("plate_text"):
+                    out["plate_text"] = payload.get("plate_text")
+                    out["plate_confidence"] = payload.get("plate_confidence")
+                    pb = payload.get("plate_bbox")
+                    if isinstance(pb, (list, tuple)) and len(pb) >= 4:
+                        # Plate bbox is relative to crop; map to frame coords
+                        out["plate_bbox"] = [
+                            float(pb[0]) + x1,
+                            float(pb[1]) + y1,
+                            float(pb[2]) + x1,
+                            float(pb[3]) + y1,
+                        ]
+            except Exception as exc:
+                logger.debug("plate OCR failed for %s: %s", camera_id, exc)
+                out["plate_ocr_attempted"] = True
+            enriched.append(out)
+        return enriched
+
+    async def _maybe_detect_vehicles_via_vision(
+        self,
+        session: aiohttp.ClientSession,
+        frames: List[Dict],
+        camera_id: str,
+        session_uuid: str,
+    ) -> Dict[str, List[Dict]]:
+        """
+        COCO vehicle detect when auto_vehicle_detection is ON.
+
+        Uses an isolated circuit breaker so failures do not open the face Vision breaker.
+        """
+        empty: Dict[str, List[Dict]] = {"detections": []}
+        if not camera_id:
+            return empty
+        if not self._camera_auto_vehicle_enabled(camera_id):
+            logger.info(
+                "🚗 Instant vehicle path skipped for camera %s (auto_vehicle_detection OFF)",
+                camera_id,
+            )
+            return empty
+        if not frames:
+            return empty
+        if not self._vehicle_circuit.allow_request():
+            logger.info(
+                "🚗 Instant vehicle path skipped for camera %s (vehicle circuit open)",
+                camera_id,
+            )
+            return empty
+
+        resolved = self._resolve_vehicle_model(camera_id)
+        model_id = resolved.get("model_id") or "body-yolo-person-os"
+        version = resolved.get("version") or "1.0.0"
+        if model_id == "vehicle-yolo-coco-os" or "pose" in model_id.lower():
+            # Alias / avoid pose weights — same artifact as body-yolo-person-os
+            model_id = "body-yolo-person-os"
+            version = "1.0.0"
+
+        all_detections: List[Dict] = []
+        frame_data = frames[0]
+        frame = frame_data.get("frame")
+        if frame is None or getattr(frame, "size", 0) == 0:
+            return empty
+        frame_index = int(frame_data.get("frame_index") or 0)
+        timestamp = float(frame_data.get("timestamp") or 0)
+        _, buffer = cv2.imencode(".jpg", frame)
+        jpeg_bytes = buffer.tobytes()
+
+        try:
+            import urllib.parse
+
+            form = aiohttp.FormData()
+            form.add_field(
+                "file",
+                jpeg_bytes,
+                filename="vehicle_frame.jpg",
+                content_type="image/jpeg",
+            )
+            # bicycle=1, car=2, motorcycle=3, bus=5, truck=7
+            params = urllib.parse.urlencode(
+                {
+                    "model_id": model_id,
+                    "version": version,
+                    "persist": "false",
+                    "session_uuid": session_uuid,
+                    "media_id": camera_id,
+                    "frame_number": frame_index,
+                    "timestamp": timestamp,
+                    "path": "instant",
+                    "capability": "vehicle_detection",
+                    "class_ids": "1,2,3,5,7",
+                }
+            )
+            detect_url = (
+                f"{self.vision_service_url}/api/v1/object-detections/detect?{params}"
+            )
+            acquired = self._vehicle_semaphore.acquire(blocking=False)
+            if not acquired:
+                logger.info(
+                    "🚗 Instant vehicle path skipped for camera %s (vehicle semaphore busy)",
+                    camera_id,
+                )
+                return empty
+            try:
+                async with session.post(detect_url, data=form) as response:
+                    try:
+                        payload = await response.json(content_type=None)
+                    except Exception:
+                        payload = {"error": await response.text()}
+                    if response.status != 200:
+                        self._vehicle_circuit.record_failure()
+                        logger.debug(
+                            "vehicle detect failed status=%s camera=%s",
+                            response.status,
+                            camera_id,
+                        )
+                        return empty
+                    self._vehicle_circuit.record_success()
+                    for det in (payload or {}).get("detections") or []:
+                        if not isinstance(det, dict):
+                            continue
+                        det.setdefault("frame_number", frame_index)
+                        det.setdefault("timestamp", timestamp)
+                        all_detections.append(det)
+            finally:
+                self._vehicle_semaphore.release()
+
+            all_detections = await self._maybe_ocr_plates_on_vehicles(
+                session,
+                frame,
+                all_detections,
+                camera_id,
+                session_uuid,
+                frame_index,
+                timestamp,
+            )
+
+            logger.info(
+                "🚗 Vehicle YOLO model=%s detections=%s camera=%s",
+                model_id,
+                len(all_detections),
+                camera_id,
+            )
+            return {"detections": all_detections}
+        except Exception as exc:
+            self._vehicle_circuit.record_failure()
+            logger.debug("vehicle detect error for %s: %s", camera_id, exc)
+            return empty
 
     def _resolve_body_model(self, camera_id: str) -> Dict[str, str]:
         cached = self._resolved_body.get(camera_id)
@@ -2297,9 +2804,23 @@ class InstantDetectionSampler:
             source_mvr_uuids = self._extract_source_identity_uuids(person_objects)
             from src.tasks.instant_detection_tasks import (
                 push_body_posture_history,
+                push_left_object_history,
+                push_vehicle_history,
                 summarize_body_persons,
+                summarize_objects,
+                summarize_vehicles,
             )
             body_summary = summarize_body_persons(body_persons)
+            objects = result.get("objects") or []
+            object_count = result.get("object_count")
+            if object_count is None:
+                object_count = len(objects)
+            object_summary = summarize_objects(objects)
+            vehicles = result.get("vehicles") or []
+            vehicle_count = result.get("vehicle_count")
+            if vehicle_count is None:
+                vehicle_count = len(vehicles)
+            vehicle_summary = summarize_vehicles(vehicles)
             ts = result.get("timestamp") or datetime.utcnow().isoformat()
             try:
                 push_body_posture_history(
@@ -2314,6 +2835,32 @@ class InstantDetectionSampler:
                     camera_id,
                     hist_exc,
                 )
+            try:
+                push_left_object_history(
+                    camera_id,
+                    timestamp=ts,
+                    objects=objects,
+                    redis_conn=redis_client,
+                )
+            except Exception as hist_exc:
+                logger.warning(
+                    "⚠️ left object history push failed for %s: %s",
+                    camera_id,
+                    hist_exc,
+                )
+            try:
+                push_vehicle_history(
+                    camera_id,
+                    timestamp=ts,
+                    vehicles=vehicles,
+                    redis_conn=redis_client,
+                )
+            except Exception as hist_exc:
+                logger.warning(
+                    "⚠️ vehicle history push failed for %s: %s",
+                    camera_id,
+                    hist_exc,
+                )
             
             # Prepare payload
             payload = json.dumps({
@@ -2322,6 +2869,10 @@ class InstantDetectionSampler:
                 "people_count": people_count,
                 "body_count": body_count,
                 "body_persons": body_summary,
+                "object_count": object_count,
+                "objects": object_summary,
+                "vehicle_count": vehicle_count,
+                "vehicles": vehicle_summary,
                 "demographics": demographics,
                 "source_mvr_uuids": source_mvr_uuids,
                 "velocity": result.get("velocity") or {
@@ -2335,6 +2886,8 @@ class InstantDetectionSampler:
                     "processing_time": result.get("processing_time_seconds", 0),
                     "total_faces": result.get("total_faces_detected", 0),
                     "body_count": body_count,
+                    "object_count": object_count,
+                    "vehicle_count": vehicle_count,
                     "crowd_velocity_mps": result.get("crowd_velocity_mps"),
                     "max_person_speed_mps": result.get("max_person_speed_mps"),
                 }
@@ -2345,7 +2898,7 @@ class InstantDetectionSampler:
             
             logger.info(
                 f"✅ Redis Pub/Sub: {camera_id} → {subscriber_count} subscribers "
-                f"(people={people_count}, bodies={body_count})"
+                f"(people={people_count}, bodies={body_count}, objects={object_count}, vehicles={vehicle_count})"
             )
             
             redis_client.close()

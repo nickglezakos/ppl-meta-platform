@@ -24,6 +24,7 @@ class _InstantDetectionWidgetState
     extends ConsumerState<InstantDetectionWidget> {
   List<Map<String, dynamic>>? _personObjects;
   List<Map<String, dynamic>>? _bodyPersons;
+  List<Map<String, dynamic>>? _objects;
   Map<String, dynamic>? _demographics;
   bool _isLoading = false;
   bool _isInstantDetectionRunning = false;
@@ -35,7 +36,9 @@ class _InstantDetectionWidgetState
 
   int get _faceCount => _personObjects?.length ?? 0;
   int get _bodyCount => _bodyPersons?.length ?? 0;
-  bool get _hasDetections => _faceCount > 0 || _bodyCount > 0;
+  int get _objectCount => _objects?.length ?? 0;
+  bool get _hasDetections =>
+      _faceCount > 0 || _bodyCount > 0 || _objectCount > 0;
 
   @override
   void initState() {
@@ -57,6 +60,7 @@ class _InstantDetectionWidgetState
   void _clearResults() {
     _personObjects = null;
     _bodyPersons = null;
+    _objects = null;
     _demographics = null;
     _isInstantDetectionRunning = false;
     _cachedIteration = null;
@@ -145,6 +149,17 @@ class _InstantDetectionWidgetState
               (_) => <String, dynamic>{},
             );
           }
+          _objects = (response['objects'] as List?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+          if ((_objects == null || _objects!.isEmpty) &&
+              response['object_count'] is int &&
+              (response['object_count'] as int) > 0) {
+            _objects = List.generate(
+              response['object_count'] as int,
+              (_) => <String, dynamic>{},
+            );
+          }
           _demographics = response['demographics'] as Map<String, dynamic>?;
           _isInstantDetectionRunning = true;
 
@@ -185,6 +200,9 @@ class _InstantDetectionWidgetState
     if (_bodyCount > 0) {
       parts.add('$_bodyCount ${_bodyCount == 1 ? 'body' : 'bodies'}');
     }
+    if (_objectCount > 0) {
+      parts.add('$_objectCount ${_objectCount == 1 ? 'object' : 'objects'}');
+    }
     if (parts.isEmpty) {
       return '0 detections';
     }
@@ -192,6 +210,7 @@ class _InstantDetectionWidgetState
   }
 
   Color _accentColor() {
+    if (_objectCount > 0) return Colors.orange.shade800;
     if (_faceCount > 0 && _bodyCount > 0) return Colors.blue.shade700;
     if (_bodyCount > 0) return Colors.cyan.shade700;
     if (_faceCount > 0) return Colors.blue.shade700;
@@ -386,6 +405,7 @@ class _InstantDetectionWidgetState
                         if (_faceCount > 0 && _demographics != null)
                           _buildDemographicsRow(),
                         if (_bodyCount > 0) _buildBodySummaryRow(),
+                        if (_objectCount > 0) _buildObjectSummaryRow(),
                       ],
                     ),
                   ),
@@ -395,15 +415,53 @@ class _InstantDetectionWidgetState
           if (_cachedIteration != null)
             Tooltip(
               message:
-                  'Iteration #$_cachedIteration\nFaces: $_faceCount · Bodies: $_bodyCount',
+                  'Iteration #$_cachedIteration\nFaces: $_faceCount · Bodies: $_bodyCount · Objects: $_objectCount',
               child: Icon(
                 Icons.autorenew,
                 size: 14,
-                color: _bodyCount > 0 && _faceCount == 0
-                    ? Colors.cyan.shade400
-                    : Colors.blue.shade400,
+                color: _objectCount > 0
+                    ? Colors.orange.shade400
+                    : _bodyCount > 0 && _faceCount == 0
+                        ? Colors.cyan.shade400
+                        : Colors.blue.shade400,
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildObjectSummaryRow() {
+    final objects = _objects;
+    if (objects == null || objects.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final labels = <String>[];
+    for (final o in objects) {
+      final label = (o['class_label'] as String?)?.trim();
+      if (label != null && label.isNotEmpty) {
+        labels.add(label);
+      }
+    }
+    final summary = labels.isEmpty
+        ? '$_objectCount object pin(s)'
+        : labels.take(4).join(', ') + (labels.length > 4 ? '…' : '');
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          Icon(Icons.luggage, size: 12, color: Colors.orange.shade800),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              summary,
+              style: OfflineFonts.inter(
+                fontSize: 10,
+                color: Colors.orange.shade800,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );

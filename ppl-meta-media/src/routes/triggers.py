@@ -35,6 +35,8 @@ from ..services.trigger_evaluation import DemographicData, TriggerEvaluationServ
 from ..services.vprofile_match_worker import get_vprofile_worker
 from ..services.body_posture_worker import get_body_posture_worker
 from ..services.velocity_trigger_worker import get_velocity_trigger_worker
+from ..services.left_object_worker import get_left_object_worker
+from ..services.vehicle_plate_worker import get_vehicle_plate_worker
 from ..services.communications_client import CommunicationsClient
 from ..services.signage_service import SignagePlaybackService
 from ..schemas.signage import PlaybackControlRequest, PlaybackCommand, PlaybackParameters
@@ -253,6 +255,19 @@ async def create_trigger(
         # Convert camera_device_ids list to JSON string for storage
         if 'camera_device_ids' in trigger_data and trigger_data['camera_device_ids'] is not None:
             trigger_data['camera_device_ids'] = json.dumps(trigger_data['camera_device_ids'])
+
+        if 'left_object_class_allowlist' in trigger_data and trigger_data['left_object_class_allowlist'] is not None:
+            trigger_data['left_object_class_allowlist'] = json.dumps(
+                trigger_data['left_object_class_allowlist']
+            )
+        if 'left_object_roi' in trigger_data and trigger_data['left_object_roi'] is not None:
+            trigger_data['left_object_roi'] = json.dumps(trigger_data['left_object_roi'])
+        if 'vehicle_class_allowlist' in trigger_data and trigger_data['vehicle_class_allowlist'] is not None:
+            trigger_data['vehicle_class_allowlist'] = json.dumps(
+                trigger_data['vehicle_class_allowlist']
+            )
+        if 'vehicle_roi' in trigger_data and trigger_data['vehicle_roi'] is not None:
+            trigger_data['vehicle_roi'] = json.dumps(trigger_data['vehicle_roi'])
         
         # Convert action_uuids list to JSON string for storage
         action_uuids_list = trigger_data.get('action_uuids')
@@ -283,6 +298,14 @@ async def create_trigger(
         # For velocity triggers, set a synthetic camera_device_id since the column is NOT NULL
         if trigger_data.get('trigger_mode') == 'velocity' and not trigger_data.get('camera_device_id'):
             trigger_data['camera_device_id'] = 'velocity'
+
+        # For left_object triggers, set a synthetic camera_device_id since the column is NOT NULL
+        if trigger_data.get('trigger_mode') == 'left_object' and not trigger_data.get('camera_device_id'):
+            trigger_data['camera_device_id'] = 'left_object'
+
+        # For vehicle_plate triggers, set a synthetic camera_device_id since the column is NOT NULL
+        if trigger_data.get('trigger_mode') == 'vehicle_plate' and not trigger_data.get('camera_device_id'):
+            trigger_data['camera_device_id'] = 'vehicle_plate'
         
         db_trigger = Trigger(**trigger_data)
         db.add(db_trigger)
@@ -318,6 +341,28 @@ async def create_trigger(
                     db_trigger.uuid,
                     activate_err,
                 )
+
+        if db_trigger.trigger_mode == 'left_object' and db_trigger.is_active:
+            try:
+                worker = get_left_object_worker()
+                await worker.activate_trigger(db_trigger)
+            except Exception as activate_err:
+                logger.error(
+                    "Failed to activate left_object trigger %s on create: %s",
+                    db_trigger.uuid,
+                    activate_err,
+                )
+
+        if db_trigger.trigger_mode == 'vehicle_plate' and db_trigger.is_active:
+            try:
+                worker = get_vehicle_plate_worker()
+                await worker.activate_trigger(db_trigger)
+            except Exception as activate_err:
+                logger.error(
+                    "Failed to activate vehicle_plate trigger %s on create: %s",
+                    db_trigger.uuid,
+                    activate_err,
+                )
         
         trigger_dict = {
             **{c.name: getattr(db_trigger, c.name) for c in db_trigger.__table__.columns},
@@ -345,36 +390,53 @@ async def list_triggers(
     
     Returns paginated list of triggers with metadata and linked action names.
     """
-    query = db.query(Trigger).options(joinedload(Trigger.user_action))
-    
-    # Apply filters
-    if is_active is not None:
-        query = query.filter(Trigger.is_active == is_active)
-    if action:
-        query = query.filter(Trigger.action == action)
-    
-    # Get total count
-    total = query.count()
-    
-    # Calculate pagination
-    total_pages = math.ceil(total / page_size)
-    offset = (page - 1) * page_size
-    
-    # Get page results
-    triggers = query.order_by(Trigger.created_at.desc()).offset(offset).limit(page_size).all()
-    
-    # Populate action_name and action_names from relationships / JSON
-    trigger_responses = []
-    for trigger in triggers:
-        trigger_responses.append(TriggerResponse(**_build_trigger_response_dict(db, trigger)))
-    
-    return TriggerListResponse(
-        triggers=trigger_responses,
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=total_pages
-    )
+    from sqlalchemy.exc import ProgrammingError
+
+    try:
+        query = db.query(Trigger).options(joinedload(Trigger.user_action))
+        
+        # Apply filters
+        if is_active is not None:
+            query = query.filter(Trigger.is_active == is_active)
+        if action:
+            query = query.filter(Trigger.action == action)
+        
+        # Get total count
+        total = query.count()
+        
+        # Calculate pagination
+        total_pages = math.ceil(total / page_size) if page_size else 0
+        offset = (page - 1) * page_size
+        
+        # Get page results
+        triggers = query.order_by(Trigger.created_at.desc()).offset(offset).limit(page_size).all()
+        
+        # Populate action_name and action_names from relationships / JSON
+        trigger_responses = []
+        for trigger in triggers:
+            trigger_responses.append(TriggerResponse(**_build_trigger_response_dict(db, trigger)))
+        
+        return TriggerListResponse(
+            triggers=trigger_responses,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages
+        )
+    except ProgrammingError as exc:
+        db.rollback()
+        msg = str(getattr(exc, "orig", None) or exc)
+        if "left_object" in msg or "vehicle_" in msg or "UndefinedColumn" in msg or "does not exist" in msg:
+            logger.error("list_triggers schema mismatch: %s", msg)
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "triggers schema outdated; run "
+                    "`cd ppl-meta-media && alembic upgrade head` "
+                    "(missing left_object / vehicle_plate columns)"
+                ),
+            ) from exc
+        raise HTTPException(status_code=500, detail=f"Database error listing triggers: {msg}") from exc
 
 
 @router.get("/{trigger_uuid}", response_model=TriggerResponse)
@@ -434,6 +496,19 @@ async def update_trigger(
 
     if 'camera_device_ids' in update_data and update_data['camera_device_ids'] is not None:
         update_data['camera_device_ids'] = json.dumps(update_data['camera_device_ids'])
+
+    if 'left_object_class_allowlist' in update_data and update_data['left_object_class_allowlist'] is not None:
+        update_data['left_object_class_allowlist'] = json.dumps(
+            update_data['left_object_class_allowlist']
+        )
+    if 'left_object_roi' in update_data and update_data['left_object_roi'] is not None:
+        update_data['left_object_roi'] = json.dumps(update_data['left_object_roi'])
+    if 'vehicle_class_allowlist' in update_data and update_data['vehicle_class_allowlist'] is not None:
+        update_data['vehicle_class_allowlist'] = json.dumps(
+            update_data['vehicle_class_allowlist']
+        )
+    if 'vehicle_roi' in update_data and update_data['vehicle_roi'] is not None:
+        update_data['vehicle_roi'] = json.dumps(update_data['vehicle_roi'])
     
     # Convert action_uuids list to JSON string for storage and sync legacy field
     if 'action_uuids' in update_data:
@@ -474,6 +549,28 @@ async def update_trigger(
         except Exception as activate_err:
             logger.error(
                 "Failed to refresh velocity trigger %s on update: %s",
+                db_trigger.uuid,
+                activate_err,
+            )
+
+    if db_trigger.trigger_mode == 'left_object' and db_trigger.is_active:
+        try:
+            worker = get_left_object_worker()
+            await worker.activate_trigger(db_trigger)
+        except Exception as activate_err:
+            logger.error(
+                "Failed to refresh left_object trigger %s on update: %s",
+                db_trigger.uuid,
+                activate_err,
+            )
+
+    if db_trigger.trigger_mode == 'vehicle_plate' and db_trigger.is_active:
+        try:
+            worker = get_vehicle_plate_worker()
+            await worker.activate_trigger(db_trigger)
+        except Exception as activate_err:
+            logger.error(
+                "Failed to refresh vehicle_plate trigger %s on update: %s",
                 db_trigger.uuid,
                 activate_err,
             )
@@ -543,6 +640,34 @@ async def toggle_trigger(
                 db_trigger.uuid,
                 lifecycle_err,
             )
+
+    if db_trigger.trigger_mode == 'left_object':
+        try:
+            worker = get_left_object_worker()
+            if db_trigger.is_active and not was_active:
+                await worker.activate_trigger(db_trigger)
+            elif not db_trigger.is_active and was_active:
+                await worker.deactivate_trigger(str(db_trigger.uuid))
+        except Exception as lifecycle_err:
+            logger.error(
+                "Failed to handle left_object lifecycle on toggle %s: %s",
+                db_trigger.uuid,
+                lifecycle_err,
+            )
+
+    if db_trigger.trigger_mode == 'vehicle_plate':
+        try:
+            worker = get_vehicle_plate_worker()
+            if db_trigger.is_active and not was_active:
+                await worker.activate_trigger(db_trigger)
+            elif not db_trigger.is_active and was_active:
+                await worker.deactivate_trigger(str(db_trigger.uuid))
+        except Exception as lifecycle_err:
+            logger.error(
+                "Failed to handle vehicle_plate lifecycle on toggle %s: %s",
+                db_trigger.uuid,
+                lifecycle_err,
+            )
     
     return db_trigger
 
@@ -606,13 +731,36 @@ async def delete_trigger(
                 db_trigger.uuid,
                 lifecycle_err,
             )
-    elif db_trigger.trigger_mode == 'velocity':
+
+    if db_trigger.trigger_mode == 'velocity':
         try:
             worker = get_velocity_trigger_worker()
             await worker.deactivate_trigger(str(db_trigger.uuid))
         except Exception as lifecycle_err:
             logger.error(
                 "Failed to deactivate velocity trigger %s on delete: %s",
+                db_trigger.uuid,
+                lifecycle_err,
+            )
+
+    if db_trigger.trigger_mode == 'left_object':
+        try:
+            worker = get_left_object_worker()
+            await worker.deactivate_trigger(str(db_trigger.uuid))
+        except Exception as lifecycle_err:
+            logger.error(
+                "Failed to deactivate left_object trigger %s on delete: %s",
+                db_trigger.uuid,
+                lifecycle_err,
+            )
+
+    if db_trigger.trigger_mode == 'vehicle_plate':
+        try:
+            worker = get_vehicle_plate_worker()
+            await worker.deactivate_trigger(str(db_trigger.uuid))
+        except Exception as lifecycle_err:
+            logger.error(
+                "Failed to deactivate vehicle_plate trigger %s on delete: %s",
                 db_trigger.uuid,
                 lifecycle_err,
             )

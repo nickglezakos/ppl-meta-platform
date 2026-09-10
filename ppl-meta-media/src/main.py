@@ -249,6 +249,26 @@ async def lifespan(_app: FastAPI):
         logger.error(f"Failed to restore velocity triggers: {e}")
         logger.info("Velocity triggers will load lazily on first activation")
 
+    # Restore left_object triggers (in-memory object tracks)
+    try:
+        from src.services.left_object_worker import get_left_object_worker
+        left_object_worker = get_left_object_worker()
+        await left_object_worker.load_all_active_triggers()
+        logger.info("Left object triggers restored")
+    except Exception as e:
+        logger.error(f"Failed to restore left object triggers: {e}")
+        logger.info("Left object triggers will load lazily on first activation")
+
+    # Restore vehicle_plate triggers (in-memory vehicle tracks)
+    try:
+        from src.services.vehicle_plate_worker import get_vehicle_plate_worker
+        vehicle_plate_worker = get_vehicle_plate_worker()
+        await vehicle_plate_worker.load_all_active_triggers()
+        logger.info("Vehicle plate triggers restored")
+    except Exception as e:
+        logger.error(f"Failed to restore vehicle plate triggers: {e}")
+        logger.info("Vehicle plate triggers will load lazily on first activation")
+
     logger.info("Service startup completed successfully")
 
     yield

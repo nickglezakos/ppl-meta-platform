@@ -26,6 +26,8 @@ BODY_REFINE = "body-refine-placeholder"
 FACE_YOLO = "face-yolo-onnx-os"
 BODY_YOLO = "body-yolo-person-os"
 BODY_YOLO_POSE = "body-yolo-pose-os"
+VEHICLE_YOLO = "vehicle-yolo-coco-os"
+PLATE_OCR = "plate-ocr-easyocr"
 DEFAULT_VERSION = "1.0.0"
 
 RECIPE_HAAR_ONLY = "face-haar-only"
@@ -36,6 +38,8 @@ RECIPE_BODY_TWO_STAGE = "body-two-stage-placeholder"
 RECIPE_FACE_YOLO = "face-yolo-onnx-only"
 RECIPE_BODY_YOLO = "body-yolo-person-only"
 RECIPE_BODY_YOLO_POSE = "body-yolo-pose-only"
+RECIPE_VEHICLE_YOLO = "vehicle-yolo-coco-only"
+RECIPE_LICENSE_PLATE = "license-plate-ocr-cascade"
 
 # Opaque two_stage builtin expands to this recipe's stages.
 BUILTIN_TO_RECIPE = {
@@ -140,6 +144,33 @@ BUILTINS = [
         "output_schema_version": "body-pose-v1",
         "status": "ready",
     },
+    {
+        "model_id": VEHICLE_YOLO,
+        "display_name": "Vehicle YOLO COCO (alias → yolov8n)",
+        "capability": "vehicle_detection",
+        "runtime": "onnx",
+        "latency_class": "instant",
+        "compatible_paths": ["instant", "bulk"],
+        "hyperparameters": {
+            "confidence": 0.25,
+            "imgsz": 640,
+            "class_ids": [1, 2, 3, 5, 7],
+            "artifact_alias_of": BODY_YOLO,
+        },
+        "output_schema_version": "vehicle-box-v1",
+        "status": "ready",
+    },
+    {
+        "model_id": PLATE_OCR,
+        "display_name": "License plate OCR (EasyOCR / heuristic)",
+        "capability": "license_plate",
+        "runtime": "ocr",
+        "latency_class": "instant",
+        "compatible_paths": ["instant", "bulk"],
+        "hyperparameters": {"every_n_cycles": 2},
+        "output_schema_version": "plate-text-v1",
+        "status": "ready",
+    },
 ]
 
 FACE_RECIPES = [
@@ -210,6 +241,26 @@ BODY_RECIPES = [
     },
 ]
 
+VEHICLE_RECIPES = [
+    {
+        "recipe_id": RECIPE_VEHICLE_YOLO,
+        "display_name": "Vehicle YOLO COCO (single)",
+        "capability": "vehicle_detection",
+        "kind": "single",
+        "steps": [("single", VEHICLE_YOLO, DEFAULT_VERSION)],
+    },
+    {
+        "recipe_id": RECIPE_LICENSE_PLATE,
+        "display_name": "License plate detect + OCR cascade",
+        "capability": "license_plate",
+        "kind": "two_stage",
+        "steps": [
+            ("proposal", VEHICLE_YOLO, DEFAULT_VERSION),
+            ("refine", PLATE_OCR, DEFAULT_VERSION),
+        ],
+    },
+]
+
 
 def seed_builtins(db: Session) -> None:
     for spec in BUILTINS:
@@ -241,7 +292,7 @@ def seed_builtins(db: Session) -> None:
                 )
             )
 
-    for recipe_spec in FACE_RECIPES + BODY_RECIPES:
+    for recipe_spec in FACE_RECIPES + BODY_RECIPES + VEHICLE_RECIPES:
         _ensure_recipe(db, recipe_spec)
 
     golden = db.query(MvGoldenSet).filter_by(set_id="face-platform-default").one_or_none()
@@ -349,6 +400,38 @@ def _attach_yolo_artifacts_if_present(db: Session) -> None:
         )
         if version_row is not None:
             version_row.status = "ready"
+
+    # vehicle-yolo-coco-os reuses the same yolov8n ONNX URI as body-yolo-person-os
+    vehicle_existing = (
+        db.query(MvArtifact)
+        .filter_by(model_id=VEHICLE_YOLO, version=DEFAULT_VERSION)
+        .first()
+    )
+    if vehicle_existing is None:
+        body_art = (
+            db.query(MvArtifact)
+            .filter_by(model_id=BODY_YOLO, version=DEFAULT_VERSION)
+            .first()
+        )
+        if body_art is not None:
+            db.add(
+                MvArtifact(
+                    model_id=VEHICLE_YOLO,
+                    version=DEFAULT_VERSION,
+                    filename=body_art.filename,
+                    sha256=body_art.sha256,
+                    size_bytes=body_art.size_bytes,
+                    uri=body_art.uri,
+                    content_type=body_art.content_type,
+                )
+            )
+            version_row = (
+                db.query(MvModelVersion)
+                .filter_by(model_id=VEHICLE_YOLO, version=DEFAULT_VERSION)
+                .one_or_none()
+            )
+            if version_row is not None:
+                version_row.status = "ready"
 
 
 def _ensure_recipe(db: Session, spec: dict) -> None:

@@ -524,6 +524,56 @@ class ExtractedFaceDetector:
             result["method"] = "onnx_yolo_person"
         return result
 
+    def detect_objects_onnx(
+        self,
+        image,
+        *,
+        model_id: str = "body-yolo-person-os",
+        version: str = "1.0.0",
+        artifact_uri: str | None = None,
+        conf: float = 0.25,
+        class_ids: list | None = None,
+        class_labels: dict | None = None,
+    ):
+        """
+        Generic COCO object detection (not person-only).
+
+        Uses the same YOLOv8n detect weights as body-yolo-person-os but allows
+        arbitrary class_ids. Defaults to common left-luggage classes.
+        """
+        from onnx_yolo import (
+            COCO80_LABELS,
+            DEFAULT_LEFT_OBJECT_CLASS_IDS,
+            detect_yolo_onnx,
+        )
+
+        path = self.resolve_onnx_artifact_path(model_id, version, artifact_uri)
+        if not path:
+            # Fall back to person detect weights (full COCO head)
+            path = self.resolve_onnx_artifact_path("body-yolo-person-os", version, None)
+            model_id = "body-yolo-person-os"
+        if not path:
+            return {"success": False, "error": "onnx_artifact_missing", "detections": []}
+
+        ids = class_ids if class_ids is not None else list(DEFAULT_LEFT_OBJECT_CLASS_IDS)
+        labels = class_labels if class_labels is not None else dict(COCO80_LABELS)
+        result = detect_yolo_onnx(
+            image,
+            model_path=path,
+            conf=conf,
+            class_ids=ids,
+            class_labels=labels,
+        )
+        if result.get("success"):
+            for det in result.get("detections") or []:
+                det["method"] = "onnx_yolo_object"
+                cid = det.get("class_id")
+                if cid is not None and not det.get("class_label"):
+                    det["class_label"] = labels.get(int(cid), str(cid))
+            result["method"] = "onnx_yolo_object"
+            result["capability"] = "object_detection"
+        return result
+
     def acquire_model(self, model_id: str, version: str = "1.0.0") -> None:
         """Refcount a loaded catalog version (builtins stay resident)."""
         if not hasattr(self, "_loader_refcount"):

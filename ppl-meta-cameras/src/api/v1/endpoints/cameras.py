@@ -46,6 +46,10 @@ _ASSIGNED_MODEL_KEYS = (
 
 _PIPELINE_OPTION_KEYS = (
     "auto_body_detection",
+    "auto_object_detection",
+    "enable_object_detection",
+    "auto_vehicle_detection",
+    "enable_vehicle_detection",
     "assigned_recipe_id_face_instant",
     "assigned_recipe_id_face_bulk",
     "assigned_recipe_id_body_instant",
@@ -75,6 +79,14 @@ def _assigned_model_fields(camera: Camera) -> Dict[str, Any]:
     for key in _PIPELINE_OPTION_KEYS:
         fields[key] = opts.get(key)
     fields["auto_body_detection"] = bool(opts.get("auto_body_detection", False))
+    fields["auto_object_detection"] = bool(
+        opts.get("auto_object_detection", False)
+        or opts.get("enable_object_detection", False)
+    )
+    fields["auto_vehicle_detection"] = bool(
+        opts.get("auto_vehicle_detection", False)
+        or opts.get("enable_vehicle_detection", False)
+    )
     return fields
 
 
@@ -259,6 +271,18 @@ def _sync_detection_pipelines(camera: Camera, body: Dict[str, Any]) -> Dict[str,
 
     if "auto_body_detection" in body:
         opts["auto_body_detection"] = bool(body.get("auto_body_detection"))
+    if "auto_object_detection" in body:
+        opts["auto_object_detection"] = bool(body.get("auto_object_detection"))
+    if "enable_object_detection" in body:
+        opts["enable_object_detection"] = bool(body.get("enable_object_detection"))
+        if body.get("enable_object_detection") and "auto_object_detection" not in body:
+            opts["auto_object_detection"] = True
+    if "auto_vehicle_detection" in body:
+        opts["auto_vehicle_detection"] = bool(body.get("auto_vehicle_detection"))
+    if "enable_vehicle_detection" in body:
+        opts["enable_vehicle_detection"] = bool(body.get("enable_vehicle_detection"))
+        if body.get("enable_vehicle_detection") and "auto_vehicle_detection" not in body:
+            opts["auto_vehicle_detection"] = True
 
     pipelines = body.get("detection_pipelines")
     if not isinstance(pipelines, dict):
@@ -270,10 +294,20 @@ def _sync_detection_pipelines(camera: Camera, body: Dict[str, Any]) -> Dict[str,
         else bool(getattr(camera, "auto_face_detection", False))
     )
     body_enabled = bool(opts.get("auto_body_detection", False))
+    object_enabled = bool(
+        opts.get("auto_object_detection", False)
+        or opts.get("enable_object_detection", False)
+    )
+    vehicle_enabled = bool(
+        opts.get("auto_vehicle_detection", False)
+        or opts.get("enable_vehicle_detection", False)
+    )
 
     enabled_by_capability = {
         "face_detection": bool(face_enabled),
         "body_detection": body_enabled,
+        "object_detection": object_enabled,
+        "vehicle_detection": vehicle_enabled,
     }
 
     for capability, path, recipe_key, composition_key in _CAPABILITY_PATHS:
