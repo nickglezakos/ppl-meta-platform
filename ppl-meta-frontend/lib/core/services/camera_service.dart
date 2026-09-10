@@ -890,6 +890,7 @@ class CameraService {
   Future<Map<String, dynamic>> updateWorkflowSettings(
     String deviceId, {
     bool? autoFaceDetection,
+    bool? autoBodyDetection,
     List<String>? detectionMethods,
     Map<String, dynamic>? processingOptions,
     double? confidenceThreshold,
@@ -901,12 +902,19 @@ class CameraService {
     bool? mvrPeriodicSchedulerEnabled,
     double? mvrPeriodicSchedulerThreshold,
     int? mvrPeriodicSchedulerFrequencySeconds,
+    String? assignedModelId,
+    String? assignedModelIdInstant,
+    String? assignedModelIdBulk,
+    Map<String, dynamic>? detectionPipelines,
   }) async {
     try {
       final body = <String, dynamic>{};
       
       if (autoFaceDetection != null) {
         body['auto_face_detection'] = autoFaceDetection;
+      }
+      if (autoBodyDetection != null) {
+        body['auto_body_detection'] = autoBodyDetection;
       }
       if (detectionMethods != null) {
         body['detection_methods'] = detectionMethods;
@@ -941,6 +949,18 @@ class CameraService {
       if (mvrPeriodicSchedulerFrequencySeconds != null) {
         body['mvr_periodic_scheduler_frequency_seconds'] =
             mvrPeriodicSchedulerFrequencySeconds;
+      }
+      if (assignedModelId != null) {
+        body['assigned_model_id'] = assignedModelId;
+      }
+      if (assignedModelIdInstant != null) {
+        body['assigned_model_id_instant'] = assignedModelIdInstant;
+      }
+      if (assignedModelIdBulk != null) {
+        body['assigned_model_id_bulk'] = assignedModelIdBulk;
+      }
+      if (detectionPipelines != null) {
+        body['detection_pipelines'] = detectionPipelines;
       }
 
       final response = await _cameraApiClient.patch(

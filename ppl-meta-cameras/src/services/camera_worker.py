@@ -1179,10 +1179,19 @@ class CameraWorker:
                     
                     # Assign to camera collection (so vmeta can find it via database polling)
                     self._assign_to_collection_sync(media_uuid, user_guid, headers)
-                    
-                    # ✅ TRIGGER CONTINUOUS PIPELINE: Trigger face detection for this segment
-                    # This enables the continuous pipeline (face detection → individuals → MVR)
-                    self._trigger_face_detection_sync(media_uuid, headers)
+
+                    # Wait until Media DB/file is readable before Vision/Orchestrator
+                    # fetch /file (avoids process-media media_fetch_404 race).
+                    if not self._wait_for_media_committed_sync(media_uuid, headers):
+                        logger.error(
+                            "❌ [UPLOAD] Media %s not ready after wait — "
+                            "skipping face/body triggers",
+                            media_uuid,
+                        )
+                    else:
+                        # Face and body are independent; body must run even if face fails.
+                        self._trigger_face_detection_sync(media_uuid, headers)
+                        self._trigger_body_detection_sync(media_uuid, headers)
                     
                 else:
                     logger.error(f"❌ [UPLOAD] Failed: HTTP {response.status_code} - {response.text[:200]}")
@@ -1310,48 +1319,146 @@ class CameraWorker:
             logger.error(f"❌ [COLLECTION] Exception: {e}")
             return None
     
+    def _wait_for_media_committed_sync(self, media_uuid: str, headers: Dict) -> bool:
+        """
+        Poll Media until the asset is readable (GET media + /download/).
+
+        Synchronous equivalent of camera_detection._wait_for_media_committed,
+        used from the upload thread before face/body triggers.
+        """
+        import requests
+        import time as _time
+
+        delays = [0.5, 1.0, 2.0, 4.0, 8.0]
+        total_waited = 0.0
+        download_url = f"http://localhost:8000/api/v1/media/download/{media_uuid}"
+        logger.info(
+            "⏳ [MEDIA-VERIFY] Waiting for media %s (max %.1fs)",
+            media_uuid,
+            sum(delays),
+        )
+        for attempt, delay in enumerate(delays, 1):
+            _time.sleep(delay)
+            total_waited += delay
+            try:
+                meta_resp = requests.get(
+                    f"http://localhost:8000/api/v1/media/{media_uuid}",
+                    headers=headers,
+                    timeout=5,
+                )
+                if meta_resp.status_code != 200:
+                    logger.debug(
+                        "🔍 [MEDIA-VERIFY] attempt %s/%s: media GET %s",
+                        attempt,
+                        len(delays),
+                        meta_resp.status_code,
+                    )
+                    continue
+                file_resp = requests.head(
+                    download_url,
+                    headers=headers,
+                    timeout=5,
+                    allow_redirects=True,
+                )
+                # Some media deployments only support GET for /download
+                if file_resp.status_code == 405:
+                    file_resp = requests.get(
+                        download_url,
+                        headers=headers,
+                        timeout=10,
+                        stream=True,
+                    )
+                    file_resp.close()
+                content_type = (file_resp.headers.get("content-type") or "").lower()
+                # Missing files may 200 with a JPEG placeholder thumbnail — not ready.
+                if file_resp.status_code == 200 and not content_type.startswith(
+                    "image/"
+                ):
+                    logger.info(
+                        "✅ [MEDIA-VERIFY] Media %s ready "
+                        "(attempt %s/%s, waited %.1fs)",
+                        media_uuid,
+                        attempt,
+                        len(delays),
+                        total_waited,
+                    )
+                    return True
+                logger.debug(
+                    "🔍 [MEDIA-VERIFY] attempt %s/%s: /download status %s ct=%s",
+                    attempt,
+                    len(delays),
+                    file_resp.status_code,
+                    content_type or "?",
+                )
+            except Exception as exc:
+                logger.warning(
+                    "⚠️ [MEDIA-VERIFY] attempt %s/%s error: %s",
+                    attempt,
+                    len(delays),
+                    exc,
+                )
+        logger.error(
+            "❌ [MEDIA-VERIFY] Media %s not ready after %.1fs",
+            media_uuid,
+            total_waited,
+        )
+        return False
+
+    def _camera_auto_face_enabled(self) -> bool:
+        """Per-camera Face detection setting; default False if unknown."""
+        try:
+            from src.database import SessionLocal
+            from src.models.camera import Camera
+            from src.models.recording_session import RecordingSession  # noqa: F401
+
+            db = SessionLocal()
+            try:
+                camera = (
+                    db.query(Camera)
+                    .filter(Camera.device_id == self.device_id)
+                    .first()
+                )
+                if not camera:
+                    return False
+                return bool(getattr(camera, "auto_face_detection", False))
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning(
+                "🎯 [FACE-DETECTION] auto_face_detection lookup failed for %s "
+                "(treating as OFF): %s",
+                self.device_id,
+                exc,
+            )
+            return False
+
     def _trigger_face_detection_sync(self, media_uuid: str, headers: Dict):
         """
         Trigger face detection workflow for uploaded segment.
         Synchronous version for use in upload thread.
         
-        This triggers the continuous pipeline: face detection → individuals → MVR
+        Gated by this camera's auto_face_detection (not global Features on-save).
         """
         import requests
         
         try:
-            # Check if face detection on save is enabled
-            NODE_SERVICE_URL = "http://localhost:8001"
             VISION_SERVICE_URL = "http://localhost:8003"  # Legacy fallback path
             ORCHESTRATOR_SERVICE_URL = os.getenv(
                 "ORCHESTRATOR_SERVICE_URL",
                 "http://localhost:8002",
             )
-            
-            setting_url = f"{NODE_SERVICE_URL}/api/v1/settings/face_detection_on_save"
-            logger.info(f"🎯 [FACE-DETECTION] Checking setting for media {media_uuid}")
-            
-            try:
-                response = requests.get(setting_url, headers=headers, timeout=5)
-                
-                if response.status_code == 200:
-                    setting_data = response.json()
-                    is_enabled = setting_data.get("value") == "true"
-                    
-                    if not is_enabled:
-                        logger.info(f"🎯 [FACE-DETECTION] Face detection on save is DISABLED, skipping for media {media_uuid}")
-                        return
-                    
-                elif response.status_code != 404:
-                    # If not 404, log the unexpected status but continue (default to enabled)
-                    logger.warning(f"🎯 [FACE-DETECTION] Setting check returned {response.status_code}, defaulting to ENABLED")
-                
-                # If 404 or enabled, proceed with face detection
-                logger.info(f"🎯 [FACE-DETECTION] Triggering Enhanced Logic V2 for media {media_uuid}")
-                
-            except Exception as setting_error:
-                # Log but continue - default to enabled if setting check fails
-                logger.warning(f"🎯 [FACE-DETECTION] Setting check failed: {setting_error}, defaulting to ENABLED")
+
+            if not self._camera_auto_face_enabled():
+                logger.info(
+                    f"🎯 [FACE-DETECTION] Camera {self.device_id} has auto_face_detection OFF, "
+                    f"skipping for media {media_uuid}"
+                )
+                return
+
+            logger.info(
+                f"🎯 [FACE-DETECTION] Camera {self.device_id} has auto_face_detection ON, "
+                f"triggering Enhanced Logic V2 for media {media_uuid}"
+            )
             
             # Preferred path: Orchestrator Enhanced Logic V2 (uses Vision bulk-process).
             # This keeps continuous pipeline behavior aligned with the latest frame-sampling fixes.
@@ -1395,7 +1502,7 @@ class CameraWorker:
             detection_url = f"{VISION_SERVICE_URL}/process/media/enhanced"
 
             MEDIA_SERVICE_URL = "http://localhost:8000"
-            media_url = f"{MEDIA_SERVICE_URL}/api/v1/media/{media_uuid}/file"
+            media_url = f"{MEDIA_SERVICE_URL}/api/v1/media/download/{media_uuid}"
 
             detection_payload = {
                 "media_id": media_uuid,
@@ -1437,6 +1544,123 @@ class CameraWorker:
                 
         except Exception as e:
             logger.error(f"❌ [FACE-DETECTION] Exception triggering face detection: {e}")
+
+    def _camera_auto_body_enabled(self) -> bool:
+        try:
+            from src.database import SessionLocal
+            from src.models.camera import Camera
+            from src.models.recording_session import RecordingSession  # noqa: F401
+            import json as _json
+
+            db = SessionLocal()
+            try:
+                camera = (
+                    db.query(Camera)
+                    .filter(Camera.device_id == self.device_id)
+                    .first()
+                )
+                if not camera:
+                    return False
+                opts = getattr(camera, "processing_options", None) or {}
+                if isinstance(opts, str):
+                    opts = _json.loads(opts)
+                if not isinstance(opts, dict):
+                    return False
+                return bool(opts.get("auto_body_detection", False))
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning(
+                "🧍 [BODY-DETECTION] auto_body_detection lookup failed for %s "
+                "(treating as OFF): %s",
+                self.device_id,
+                exc,
+            )
+            return False
+
+    def _trigger_body_detection_sync(self, media_uuid: str, headers: Dict):
+        """Trigger body/pose process-media when auto_body_detection is ON."""
+        import requests
+        import time as _time
+        from urllib.parse import urlencode
+
+        try:
+            if not self._camera_auto_body_enabled():
+                logger.info(
+                    f"🧍 [BODY-DETECTION] Camera {self.device_id} has auto_body_detection OFF, "
+                    f"skipping for media {media_uuid}"
+                )
+                return
+            vision_url = os.getenv("VISION_SERVICE_URL", "http://localhost:8003")
+            params = urlencode(
+                {
+                    "media_id": media_uuid,
+                    # Prefer pose for keypoint posture; Vision falls back to person-os if missing.
+                    "model_id": os.getenv(
+                        "BODY_BULK_MODEL_ID", "body-yolo-pose-os"
+                    ),
+                    "frame_interval": "10",
+                    "materialize": "true",
+                    "camera_id": self.device_id,
+                }
+            )
+            url = f"{vision_url}/api/v1/object-detections/process-media?{params}"
+            max_attempts = 3
+            backoff = [2.0, 5.0, 10.0]
+            last_error = None
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    logger.info(
+                        "🧍 [BODY-DETECTION] Calling process-media for %s "
+                        "(attempt %s/%s)",
+                        media_uuid,
+                        attempt,
+                        max_attempts,
+                    )
+                    response = requests.post(url, headers=headers, timeout=300)
+                    body_preview = (response.text or "")[:300]
+                    if response.status_code < 300:
+                        logger.info(
+                            "🧍 [BODY-DETECTION] status=%s body=%s",
+                            response.status_code,
+                            body_preview,
+                        )
+                        return
+                    # Retry media-not-ready / fetch failures
+                    retryable = response.status_code in (404, 502, 503, 504) or (
+                        "media_fetch" in body_preview
+                    )
+                    last_error = f"HTTP {response.status_code}: {body_preview}"
+                    logger.warning(
+                        "⚠️ [BODY-DETECTION] attempt %s/%s failed for %s: %s",
+                        attempt,
+                        max_attempts,
+                        media_uuid,
+                        last_error,
+                    )
+                    if not retryable or attempt >= max_attempts:
+                        break
+                    _time.sleep(backoff[min(attempt - 1, len(backoff) - 1)])
+                except Exception as attempt_exc:
+                    last_error = str(attempt_exc)
+                    logger.warning(
+                        "⚠️ [BODY-DETECTION] attempt %s/%s exception for %s: %s",
+                        attempt,
+                        max_attempts,
+                        media_uuid,
+                        attempt_exc,
+                    )
+                    if attempt >= max_attempts:
+                        break
+                    _time.sleep(backoff[min(attempt - 1, len(backoff) - 1)])
+            logger.error(
+                "❌ [BODY-DETECTION] Giving up on media %s after %s attempts: %s",
+                media_uuid,
+                max_attempts,
+                last_error,
+            )
+        except Exception as e:
+            logger.error(f"❌ [BODY-DETECTION] Exception: {e}")
     
     def _handle_start_recording(self, cmd: Dict[str, Any]):
         """

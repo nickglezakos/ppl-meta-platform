@@ -119,6 +119,7 @@ SERVICES = {
     "vmeta": "http://localhost:8008",
     "communications": "http://localhost:8009",
     "presence": "http://localhost:8011",
+    "models": "http://localhost:8013",
     # Authority (licence/matrix/VPN). The admin token stays server-side.
     "authority": settings.authority_base_url.rstrip("/"),
 }
@@ -679,6 +680,65 @@ async def _proxy_to_presence_service(request: Request) -> Response:
 async def proxy_presence_service(request: Request):
     """Proxy presence routes to the Presence service."""
     return await _proxy_to_presence_service(request)
+
+
+async def _proxy_to_models_service(request: Request) -> Response:
+    """Proxy catalog requests to ppl-meta-models."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    try:
+        path = str(request.url.path)
+        if path.startswith("/api/v1/models"):
+            path = "/api/v1/mv-models" + path[len("/api/v1/models") :]
+        target_url = f"{SERVICES['models']}{path}"
+        body = None
+        if request.method in ["POST", "PUT", "PATCH"]:
+            body = await request.body()
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        logger.info("models-proxy %s %s", request.method, path)
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            response = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                content=body,
+                params=dict(request.query_params),
+            )
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.headers.get(
+                    "content-type", "application/octet-stream"
+                ),
+            )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503, detail=f"Models service unavailable: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Internal models proxy error: {str(e)}"
+        )
+
+
+@api_router.api_route(
+    "/mv-models/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+@api_router.api_route(
+    "/mv-models",
+    methods=["GET", "POST"],
+)
+@api_router.api_route(
+    "/models/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def proxy_models_service(request: Request):
+    """Proxy model-catalog routes to ppl-meta-models."""
+    return await _proxy_to_models_service(request)
 
 
 @api_router.get("/capabilities/my-capabilities")
@@ -1317,7 +1377,9 @@ async def debug_user_profile():
     return {"message": "Debug user profile route working", "endpoint": "/user/profile"}
 
 
-async def _proxy_to_vision_service(request: Request) -> Response:
+async def _proxy_to_vision_service(
+    request: Request, timeout: float = 30.0
+) -> Response:
     """Helper function to proxy requests to the Vision service."""
     try:
         # Build target URL
@@ -1341,7 +1403,7 @@ async def _proxy_to_vision_service(request: Request) -> Response:
                 url=target_url,
                 headers=headers,
                 content=await request.body(),
-                timeout=30.0,
+                timeout=timeout,
             )
 
             # Return the raw response for vision content
@@ -1471,6 +1533,31 @@ async def get_active_sessions_overview(request: Request):
 async def query_sessions(request: Request):
     """Proxy session queries to Vision service."""
     return await _proxy_to_vision_service(request)
+
+
+# Object detections / body pipeline (Vision)
+@api_router.post("/object-detections/detect")
+async def proxy_object_detections_detect(request: Request):
+    """Proxy single-frame body detect to Vision."""
+    return await _proxy_to_vision_service(request, timeout=60.0)
+
+
+@api_router.post("/object-detections/process-media")
+async def proxy_object_detections_process_media(request: Request):
+    """Proxy bulk/recording body process-media to Vision (long-running)."""
+    return await _proxy_to_vision_service(request, timeout=300.0)
+
+
+@api_router.get("/object-detections/by-frame")
+async def proxy_object_detections_by_frame(request: Request):
+    """Proxy bodies_by_frame overlay data to Vision."""
+    return await _proxy_to_vision_service(request, timeout=60.0)
+
+
+@api_router.get("/object-detections")
+async def proxy_object_detections_list(request: Request):
+    """Proxy object detections list to Vision."""
+    return await _proxy_to_vision_service(request, timeout=60.0)
 
 
 async def _proxy_to_cameras_service(request: Request) -> Response:
@@ -2897,6 +2984,37 @@ async def count_mvr_people_by_videos(request: Request):
 @api_router.post("/mvr-people/materialize/persisted-person-objects")
 async def materialize_persisted_person_objects(request: Request):
     """Proxy materialize persisted person objects request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+# MVR People Body (parallel body tracks)
+@api_router.get("/mvr-people-body/health")
+async def mvr_people_body_health(request: Request):
+    """Proxy MVR people body health to vmeta."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.post("/mvr-people-body/materialize/persisted-body-person-objects")
+async def materialize_persisted_body_person_objects(request: Request):
+    """Proxy body person materialize to vmeta."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/mvr-people-body/media/{media_id}")
+async def list_mvr_people_body_for_media(request: Request):
+    """Proxy list MVR people body for media to vmeta."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.post("/mvr-people-body/stitch")
+async def stitch_mvr_people_body(request: Request):
+    """Proxy same-camera body stitch to vmeta."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/mvr-people-body/{mvr_uuid}")
+async def get_mvr_people_body(request: Request):
+    """Proxy get single MVR people body to vmeta."""
     return await _proxy_to_vmeta_service(request)
 
 

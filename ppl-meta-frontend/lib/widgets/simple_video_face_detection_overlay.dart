@@ -8,6 +8,7 @@ import '../core/providers/features_provider.dart';
 import '../core/api/api_client.dart';
 import '../providers/face_data_providers.dart'; // Import face data providers
 import '../providers/face_memory_manager.dart'; // Import global cache
+import '../providers/body_data_providers.dart';
 
 /// Simplified face detection overlay with pre-processing approach
 /// 
@@ -64,6 +65,8 @@ class TimedFaceDetection {
 class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetectionOverlay> {
   // Current state
   List<FaceDetection> _currentFaceDetections = [];
+  List<BodyDetection> _currentBodyDetections = [];
+  Map<int, List<BodyDetection>> _bodyCache = {};
   String? _mediaId;
   
   // [FIX] DEBUG: Instance tracking
@@ -296,7 +299,62 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
       
       // Check for stored faces first
       await _checkForStoredFaces();
+      await _loadBodyDetections();
     } catch (e) {
+    }
+  }
+
+  Future<void> _loadBodyDetections() async {
+    final mediaId = _mediaId;
+    if (mediaId == null) return;
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final response = await apiClient.get(
+        '/api/v1/object-detections/by-frame',
+        queryParameters: {'media_id': mediaId},
+      );
+      final data = response.data;
+      final raw = (data is Map && data['bodies_by_frame'] is Map)
+          ? data['bodies_by_frame'] as Map
+          : <dynamic, dynamic>{};
+      final mapped = <int, List<BodyDetection>>{};
+      raw.forEach((key, value) {
+        final frame = int.tryParse(key.toString()) ?? 0;
+        final list = <BodyDetection>[];
+        if (value is List) {
+          for (final item in value) {
+            if (item is! Map) continue;
+            final bbox = item['bbox'];
+            if (bbox is! List || bbox.length < 4) continue;
+            final x1 = (bbox[0] as num).toDouble();
+            final y1 = (bbox[1] as num).toDouble();
+            final x2 = (bbox[2] as num).toDouble();
+            final y2 = (bbox[3] as num).toDouble();
+            list.add(
+              BodyDetection(
+                id: item['id']?.toString() ?? '${frame}_${list.length}',
+                frameNumber: frame,
+                boundingBox: FaceBoundingBox(
+                  left: x1,
+                  top: y1,
+                  width: (x2 - x1).abs(),
+                  height: (y2 - y1).abs(),
+                ),
+                confidence: (item['confidence'] as num?)?.toDouble() ?? 0,
+                posture: item['posture']?.toString(),
+              ),
+            );
+          }
+        }
+        if (list.isNotEmpty) mapped[frame] = list;
+      });
+      if (!mounted) return;
+      setState(() {
+        _bodyCache = mapped;
+      });
+      debugPrint('🧍 Loaded body boxes for ${mapped.length} frames');
+    } catch (e) {
+      debugPrint('🧍 Failed to load body detections: $e');
     }
   }
 
@@ -953,8 +1011,39 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
     return true;
   }
 
+  void _updateBodiesForFrame(int currentFrameNumber) {
+    if (_bodyCache.isEmpty) {
+      if (_currentBodyDetections.isNotEmpty && mounted) {
+        setState(() => _currentBodyDetections = []);
+      }
+      return;
+    }
+    int? closestFrame;
+    int minDistance = 9999;
+    for (final cachedFrame in _bodyCache.keys) {
+      final distance = (cachedFrame - currentFrameNumber).abs();
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestFrame = cachedFrame;
+      }
+    }
+    const int frameToleranceThreshold = 5;
+    final next = (closestFrame != null && minDistance <= frameToleranceThreshold)
+        ? (_bodyCache[closestFrame] ?? const <BodyDetection>[])
+        : const <BodyDetection>[];
+    if (!mounted) return;
+    if (next.length != _currentBodyDetections.length) {
+      setState(() => _currentBodyDetections = List.from(next));
+    }
+  }
+
   /// Update faces display from memory cache
   void _updateFacesFromMemoryCache(Duration position) {
+    final videoInfo = widget.videoController?.value;
+    if (videoInfo == null || !videoInfo.isInitialized) return;
+    final currentFrameNumber = (position.inMilliseconds / 1000.0 * _fps).round();
+    _updateBodiesForFrame(currentFrameNumber);
+
     if (_memoryCache.isEmpty) {
       if (_currentFaceDetections.isNotEmpty) {
         debugPrint('🧹 CLEARING FACES: Memory cache is empty');
@@ -964,12 +1053,6 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
       }
       return;
     }
-    
-    // Calculate approximate frame number from video position
-    final videoInfo = widget.videoController?.value;
-    if (videoInfo == null || !videoInfo.isInitialized) return;
-    
-    final currentFrameNumber = (position.inMilliseconds / 1000.0 * _fps).round();
     
     // Find closest cached frame
     int? closestFrame;
@@ -1181,6 +1264,7 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
               child: CustomPaint(
                 painter: FaceDetectionPainter(
                   faceDetections: _currentFaceDetections,
+                  bodyDetections: _currentBodyDetections,
                   videoController: widget.videoController,
                 ),
               ),
@@ -1246,13 +1330,15 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
   }
 }
 
-/// Custom painter for drawing face detection rectangles
+/// Custom painter for drawing face and body detection rectangles
 class FaceDetectionPainter extends CustomPainter {
   final List<FaceDetection> faceDetections;
+  final List<BodyDetection> bodyDetections;
   final VideoPlayerController? videoController;
 
   FaceDetectionPainter({
     required this.faceDetections,
+    this.bodyDetections = const [],
     this.videoController,
   });
 
@@ -1262,94 +1348,86 @@ class FaceDetectionPainter extends CustomPainter {
       return;
     }
 
-    if (faceDetections.isEmpty) {
+    if (faceDetections.isEmpty && bodyDetections.isEmpty) {
       return;
     }
 
-    debugPrint('🎨 Painting ${faceDetections.length} face rectangles on canvas (${size.width}x${size.height})');
-    
-    final paint = Paint()
+    final facePaint = Paint()
       ..color = Colors.green
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0; // Make thicker for better visibility
+      ..strokeWidth = 3.0;
+
+    final bodyPaint = Paint()
+      ..color = Colors.cyanAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
 
     final textPainter = TextPainter(
       textDirection: TextDirection.ltr,
     );
 
-    // Get video dimensions for scaling
     final videoSize = videoController!.value.size;
-    debugPrint('🎥 Video size: ${videoSize.width}x${videoSize.height}');
-    
-    // Calculate actual video display area within the container
-    // This accounts for aspect ratio preservation (BoxFit.contain behavior)
     final containerAspectRatio = size.width / size.height;
     final videoAspectRatio = videoSize.width / videoSize.height;
-    
+
     double videoDisplayWidth;
     double videoDisplayHeight;
     double offsetX = 0;
     double offsetY = 0;
-    
+
     if (containerAspectRatio > videoAspectRatio) {
-      // Container is wider than video - video will be letterboxed horizontally
       videoDisplayHeight = size.height;
       videoDisplayWidth = videoDisplayHeight * videoAspectRatio;
       offsetX = (size.width - videoDisplayWidth) / 2;
     } else {
-      // Container is taller than video - video will be letterboxed vertically
       videoDisplayWidth = size.width;
       videoDisplayHeight = videoDisplayWidth / videoAspectRatio;
       offsetY = (size.height - videoDisplayHeight) / 2;
     }
-    
-    debugPrint('📐 Display area: ${videoDisplayWidth}x${videoDisplayHeight}, offset: ($offsetX, $offsetY)');
-    
-    // Calculate scaling factors based on actual video display area
+
     final scaleX = videoDisplayWidth / videoSize.width;
     final scaleY = videoDisplayHeight / videoSize.height;
-    
-    debugPrint('⚖️ Scale factors: scaleX=$scaleX, scaleY=$scaleY');
 
-    for (int i = 0; i < faceDetections.length; i++) {
-      final face = faceDetections[i];
-      final bbox = face.boundingBox;
-      
-      debugPrint('👤 Face $i: boundingBox=(${bbox.left}, ${bbox.top}, ${bbox.width}, ${bbox.height}), confidence=${face.confidence}, method=${face.method}');
-      
-      // Scale face coordinates to match actual video display area
-      // Convert from left,top,width,height to left,top,right,bottom for Rect.fromLTRB
+    void paintBox(FaceBoundingBox bbox, Paint paint, {String? label, Color? labelColor}) {
       final rect = Rect.fromLTRB(
         bbox.left * scaleX + offsetX,
         bbox.top * scaleY + offsetY,
         (bbox.left + bbox.width) * scaleX + offsetX,
         (bbox.top + bbox.height) * scaleY + offsetY,
       );
-
-      debugPrint('📦 Scaled rect: ${rect.left}, ${rect.top}, ${rect.right}, ${rect.bottom}');
-
-      // Draw rectangle
       canvas.drawRect(rect, paint);
+      if (label != null && label.isNotEmpty) {
+        textPainter.text = TextSpan(
+          text: label,
+          style: TextStyle(
+            color: labelColor ?? Colors.cyanAccent,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            shadows: const [
+              Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.black),
+            ],
+          ),
+        );
+        textPainter.layout();
+        textPainter.paint(canvas, Offset(rect.left, rect.top - 18));
+      }
+    }
 
-      // Draw confidence text
-      final confidence = face.confidence;
-      textPainter.text = TextSpan(
-        text: '${(confidence * 100).toInt()}%',
-        style: const TextStyle(
-          color: Colors.green,
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          shadows: [
-            Shadow(
-              offset: Offset(1.0, 1.0),
-              blurRadius: 2.0,
-              color: Colors.black,
-            ),
-          ],
-        ),
+    for (final face in faceDetections) {
+      paintBox(
+        face.boundingBox,
+        facePaint,
+        label: '${(face.confidence * 100).toInt()}%',
+        labelColor: Colors.green,
       );
-      textPainter.layout();
-      textPainter.paint(canvas, Offset(rect.left, rect.top - 25));
+    }
+    for (final body in bodyDetections) {
+      paintBox(
+        body.boundingBox,
+        bodyPaint,
+        label: body.posture ?? 'body',
+        labelColor: Colors.cyanAccent,
+      );
     }
   }
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/camera.dart';
 import '../../../core/models/camera_pipeline_settings.dart';
 import '../../../core/services/camera_service.dart';
+import '../../../core/services/models_catalog_client.dart';
 import '../../../core/providers/camera_providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../utils/offline_fonts.dart';
@@ -46,6 +47,7 @@ class _CameraPipelineSettingsScreenState
 
   // Workflow settings state
   late bool _autoFaceDetection;
+  late bool _autoBodyDetection;
   late List<String> _detectionMethods;
   late double _confidenceThreshold;
   late int _tolerancePercent;
@@ -56,6 +58,14 @@ class _CameraPipelineSettingsScreenState
   late bool _mvrPeriodicSchedulerEnabled;
   late double _mvrPeriodicSchedulerThreshold;
   late int _mvrPeriodicSchedulerFrequencySeconds;
+  _PathPipelineDraft _faceInstant = _PathPipelineDraft.faceDefaults();
+  _PathPipelineDraft _faceBulk = _PathPipelineDraft.faceDefaults(twoStage: true);
+  _PathPipelineDraft _bodyInstant = _PathPipelineDraft.bodyDefaults();
+  _PathPipelineDraft _bodyBulk = _PathPipelineDraft.bodyDefaults(twoStage: true);
+  List<Map<String, dynamic>> _faceModels = const [];
+  List<Map<String, dynamic>> _bodyModels = const [];
+  List<Map<String, dynamic>> _faceRecipes = const [];
+  List<Map<String, dynamic>> _bodyRecipes = const [];
 
   // Show advanced settings
   bool _showAdvanced = false;
@@ -74,6 +84,7 @@ class _CameraPipelineSettingsScreenState
     
     // Initialize workflow settings
     _autoFaceDetection = widget.camera.autoFaceDetection;
+    _autoBodyDetection = false;
     _detectionMethods = List<String>.from(widget.camera.detectionMethods);
     _confidenceThreshold = widget.camera.confidenceThreshold;
     _tolerancePercent = 20; // Default value
@@ -103,6 +114,29 @@ class _CameraPipelineSettingsScreenState
       
       // Load workflow settings
       final workflowSettings = await cameraService.getWorkflowSettings(widget.camera.deviceId);
+      List<Map<String, dynamic>> faceModels = const [];
+      List<Map<String, dynamic>> bodyModels = const [];
+      List<Map<String, dynamic>> faceRecipes = const [];
+      List<Map<String, dynamic>> bodyRecipes = const [];
+      try {
+        final client = ref.read(modelsCatalogClientProvider);
+        final catalog = await client.listModels();
+        final allModels = catalog
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+        faceModels = allModels
+            .where((model) => model['capability'] == 'face_detection')
+            .toList();
+        bodyModels = allModels
+            .where((model) => model['capability'] == 'body_detection')
+            .toList();
+        faceRecipes = (await client.listRecipes(capability: 'face_detection'))
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+        bodyRecipes = (await client.listRecipes(capability: 'body_detection'))
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+      } catch (_) {}
 
       if (mounted) {
         setState(() {
@@ -116,6 +150,7 @@ class _CameraPipelineSettingsScreenState
           
           // Workflow settings
           _autoFaceDetection = workflowSettings['auto_face_detection'] as bool? ?? false;
+          _autoBodyDetection = workflowSettings['auto_body_detection'] as bool? ?? false;
           _detectionMethods = (workflowSettings['detection_methods'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? ['opencv', 'dlib'];
           _confidenceThreshold = (workflowSettings['confidence_threshold'] as num?)?.toDouble() ?? 0.7;
           _tolerancePercent = workflowSettings['tolerance_percent'] as int? ?? 20;
@@ -126,6 +161,42 @@ class _CameraPipelineSettingsScreenState
           _mvrPeriodicSchedulerEnabled = workflowSettings['mvr_periodic_scheduler_enabled'] as bool? ?? false;
           _mvrPeriodicSchedulerThreshold = (workflowSettings['mvr_periodic_scheduler_threshold'] as num?)?.toDouble() ?? 0.70;
           _mvrPeriodicSchedulerFrequencySeconds = workflowSettings['mvr_periodic_scheduler_frequency_seconds'] as int? ?? 300;
+          _faceModels = faceModels;
+          _bodyModels = bodyModels;
+          _faceRecipes = faceRecipes;
+          _bodyRecipes = bodyRecipes;
+          _faceInstant = _PathPipelineDraft.fromSaved(
+            workflowSettings['pipeline_face_instant'],
+            fallbackRecipeId: workflowSettings['assigned_recipe_id_face_instant']?.toString(),
+            legacyModelId: _nullableModelId(
+              workflowSettings['assigned_model_id_instant'] ??
+                  workflowSettings['assigned_model_id'],
+            ),
+            defaults: _PathPipelineDraft.faceDefaults(),
+            recipes: faceRecipes,
+          );
+          _faceBulk = _PathPipelineDraft.fromSaved(
+            workflowSettings['pipeline_face_bulk'],
+            fallbackRecipeId: workflowSettings['assigned_recipe_id_face_bulk']?.toString(),
+            legacyModelId: _nullableModelId(
+              workflowSettings['assigned_model_id_bulk'] ??
+                  workflowSettings['assigned_model_id'],
+            ),
+            defaults: _PathPipelineDraft.faceDefaults(twoStage: true),
+            recipes: faceRecipes,
+          );
+          _bodyInstant = _PathPipelineDraft.fromSaved(
+            workflowSettings['pipeline_body_instant'],
+            fallbackRecipeId: workflowSettings['assigned_recipe_id_body_instant']?.toString(),
+            defaults: _PathPipelineDraft.bodyDefaults(),
+            recipes: bodyRecipes,
+          );
+          _bodyBulk = _PathPipelineDraft.fromSaved(
+            workflowSettings['pipeline_body_bulk'],
+            fallbackRecipeId: workflowSettings['assigned_recipe_id_body_bulk']?.toString(),
+            defaults: _PathPipelineDraft.bodyDefaults(twoStage: true),
+            recipes: bodyRecipes,
+          );
           
           _isLoading = false;
         });
@@ -186,6 +257,7 @@ class _CameraPipelineSettingsScreenState
       await cameraService.updateWorkflowSettings(
         widget.camera.deviceId,
         autoFaceDetection: _autoFaceDetection,
+        autoBodyDetection: _autoBodyDetection,
         detectionMethods: _detectionMethods,
         confidenceThreshold: _confidenceThreshold,
         tolerancePercent: _tolerancePercent,
@@ -196,6 +268,16 @@ class _CameraPipelineSettingsScreenState
         mvrPeriodicSchedulerEnabled: _mvrPeriodicSchedulerEnabled,
         mvrPeriodicSchedulerThreshold: _mvrPeriodicSchedulerThreshold,
         mvrPeriodicSchedulerFrequencySeconds: _mvrPeriodicSchedulerFrequencySeconds,
+        detectionPipelines: {
+          'face_detection': {
+            'instant': _faceInstant.toJson(),
+            'bulk': _faceBulk.toJson(),
+          },
+          'body_detection': {
+            'instant': _bodyInstant.toJson(),
+            'bulk': _bodyBulk.toJson(),
+          },
+        },
       );
 
       // Refresh camera list to get updated settings
@@ -208,7 +290,9 @@ class _CameraPipelineSettingsScreenState
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.of(context).pop(true);
+        if (widget.showAppBar && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop(true);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -231,6 +315,220 @@ class _CameraPipelineSettingsScreenState
       SnackBar(
         content: Text(message),
         backgroundColor: Colors.red,
+      ),
+    );
+  }
+
+  String? _nullableModelId(dynamic value) {
+    final text = value?.toString();
+    if (text == null || text.isEmpty) return null;
+    return text;
+  }
+
+  String _readyVersionFor(List<Map<String, dynamic>> models, String? modelId) {
+    if (modelId == null) return '1.0.0';
+    final match = models.where((model) => model['model_id'] == modelId);
+    if (match.isEmpty) return '1.0.0';
+    final versions = List<dynamic>.from(match.first['versions'] as List? ?? const []);
+    for (final raw in versions) {
+      final version = Map<String, dynamic>.from(raw as Map);
+      if (version['status']?.toString() == 'ready') {
+        return version['version']?.toString() ?? '1.0.0';
+      }
+    }
+    if (versions.isEmpty) return '1.0.0';
+    return Map<String, dynamic>.from(versions.first as Map)['version']?.toString() ??
+        '1.0.0';
+  }
+
+  Widget _buildPathPipelineEditor({
+    required String title,
+    required _PathPipelineDraft draft,
+    required List<Map<String, dynamic>> models,
+    required List<Map<String, dynamic>> recipes,
+    required ValueChanged<_PathPipelineDraft> onChanged,
+  }) {
+    final readyModels = models.where((model) {
+      final versions = List<dynamic>.from(model['versions'] as List? ?? const []);
+      return versions.any((raw) {
+        final version = Map<String, dynamic>.from(raw as Map);
+        return version['status']?.toString() == 'ready' ||
+            version['status']?.toString() == 'builtin' ||
+            model['origin']?.toString() == 'builtin';
+      });
+    }).toList();
+    final modelIds = readyModels
+        .map((model) => model['model_id']?.toString())
+        .whereType<String>()
+        .toList();
+    final recipeIds = recipes
+        .map((recipe) => recipe['recipe_id']?.toString())
+        .whereType<String>()
+        .toList();
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: OfflineFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: draft.seedRecipeId != null && recipeIds.contains(draft.seedRecipeId)
+                  ? draft.seedRecipeId
+                  : '',
+              decoration: const InputDecoration(
+                labelText: 'Use seeded recipe (optional)',
+                isDense: true,
+              ),
+              items: [
+                const DropdownMenuItem(value: '', child: Text('Custom composition')),
+                ...recipes.map(
+                  (recipe) => DropdownMenuItem(
+                    value: recipe['recipe_id']?.toString(),
+                    child: Text(
+                      '${recipe['display_name']} (${recipe['kind']})',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (value) {
+                if (value == null || value.isEmpty) {
+                  onChanged(draft.copyWith(clearSeed: true));
+                  return;
+                }
+                final match = recipes.firstWhere(
+                  (recipe) => recipe['recipe_id'] == value,
+                  orElse: () => <String, dynamic>{},
+                );
+                onChanged(draft.applyRecipe(match));
+              },
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: draft.kind,
+              decoration: const InputDecoration(labelText: 'Kind', isDense: true),
+              items: const [
+                DropdownMenuItem(value: 'single', child: Text('Single stage')),
+                DropdownMenuItem(value: 'two_stage', child: Text('Two-stage')),
+              ],
+              onChanged: draft.seedRecipeId != null
+                  ? null
+                  : (value) {
+                      if (value == null) return;
+                      onChanged(draft.copyWith(kind: value, clearSeed: true));
+                    },
+            ),
+            const SizedBox(height: 8),
+            if (draft.kind == 'single')
+              DropdownButtonFormField<String>(
+                value: draft.modelId != null && modelIds.contains(draft.modelId)
+                    ? draft.modelId
+                    : (modelIds.isEmpty ? null : modelIds.first),
+                decoration: const InputDecoration(labelText: 'Model', isDense: true),
+                items: readyModels
+                    .map(
+                      (model) => DropdownMenuItem(
+                        value: model['model_id']?.toString(),
+                        child: Text(
+                          model['display_name']?.toString() ??
+                              model['model_id'].toString(),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: draft.seedRecipeId != null
+                    ? null
+                    : (value) {
+                        onChanged(
+                          draft.copyWith(
+                            modelId: value,
+                            version: _readyVersionFor(readyModels, value),
+                            clearSeed: true,
+                          ),
+                        );
+                      },
+              )
+            else ...[
+              DropdownButtonFormField<String>(
+                value: draft.proposalModelId != null &&
+                        modelIds.contains(draft.proposalModelId)
+                    ? draft.proposalModelId
+                    : (modelIds.isEmpty ? null : modelIds.first),
+                decoration: const InputDecoration(
+                  labelText: 'Proposal (light)',
+                  isDense: true,
+                ),
+                items: readyModels
+                    .map(
+                      (model) => DropdownMenuItem(
+                        value: model['model_id']?.toString(),
+                        child: Text(
+                          model['display_name']?.toString() ??
+                              model['model_id'].toString(),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: draft.seedRecipeId != null
+                    ? null
+                    : (value) {
+                        onChanged(
+                          draft.copyWith(
+                            proposalModelId: value,
+                            proposalVersion: _readyVersionFor(readyModels, value),
+                            clearSeed: true,
+                          ),
+                        );
+                      },
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: draft.refineModelId != null &&
+                        modelIds.contains(draft.refineModelId)
+                    ? draft.refineModelId
+                    : (modelIds.length > 1
+                        ? modelIds[1]
+                        : (modelIds.isEmpty ? null : modelIds.first)),
+                decoration: const InputDecoration(
+                  labelText: 'Refine (quality)',
+                  isDense: true,
+                ),
+                items: readyModels
+                    .map(
+                      (model) => DropdownMenuItem(
+                        value: model['model_id']?.toString(),
+                        child: Text(
+                          model['display_name']?.toString() ??
+                              model['model_id'].toString(),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: draft.seedRecipeId != null
+                    ? null
+                    : (value) {
+                        onChanged(
+                          draft.copyWith(
+                            refineModelId: value,
+                            refineVersion: _readyVersionFor(readyModels, value),
+                            clearSeed: true,
+                          ),
+                        );
+                      },
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -833,18 +1131,32 @@ class _CameraPipelineSettingsScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Auto Face Detection Toggle
+                  Text(
+                    'Detection pipelines',
+                    style: OfflineFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    'Choose Face and Body pipelines for Instant and Bulk. '
+                    'Full catalog lives under Models.',
+                    style: OfflineFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text(
-                      'Auto Face Detection',
+                      'Enable Face detection',
                       style: OfflineFonts.inter(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                     subtitle: Text(
-                      'Automatically detect and track faces in recordings',
+                      'Assign face recipes for this camera',
                       style: OfflineFonts.inter(
                         fontSize: 12,
                         color: AppColors.textSecondary,
@@ -858,7 +1170,75 @@ class _CameraPipelineSettingsScreenState
                       });
                     },
                   ),
-                  const SizedBox(height: 16),
+                  if (_autoFaceDetection) ...[
+                    _buildPathPipelineEditor(
+                      title: 'Face · Instant',
+                      draft: _faceInstant,
+                      models: _faceModels,
+                      recipes: _faceRecipes,
+                      onChanged: (next) => setState(() => _faceInstant = next),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildPathPipelineEditor(
+                      title: 'Face · Bulk / recording',
+                      draft: _faceBulk,
+                      models: _faceModels,
+                      recipes: _faceRecipes,
+                      onChanged: (next) => setState(() => _faceBulk = next),
+                    ),
+                  ],
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      'Enable Body detection',
+                      style: OfflineFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Runs YOLO-pose body detection for instant and recordings; creates MVR People Body with posture/height',
+                      style: OfflineFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    value: _autoBodyDetection,
+                    activeColor: AppColors.primary,
+                    onChanged: (value) {
+                      setState(() {
+                        _autoBodyDetection = value;
+                      });
+                    },
+                  ),
+                  if (_autoBodyDetection) ...[
+                    _buildPathPipelineEditor(
+                      title: 'Body · Instant',
+                      draft: _bodyInstant,
+                      models: _bodyModels,
+                      recipes: _bodyRecipes,
+                      onChanged: (next) => setState(() => _bodyInstant = next),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildPathPipelineEditor(
+                      title: 'Body · Bulk / recording',
+                      draft: _bodyBulk,
+                      models: _bodyModels,
+                      recipes: _bodyRecipes,
+                      onChanged: (next) => setState(() => _bodyBulk = next),
+                    ),
+                  ],
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 8),
+                    child: Text(
+                      'More detections coming soon (e.g. plate)',
+                      style: OfflineFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ).copyWith(fontStyle: FontStyle.italic),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
 
                   // Confidence Threshold
                   Text(
@@ -1050,18 +1430,6 @@ class _CameraPipelineSettingsScreenState
                   ),
                   const SizedBox(height: 24),
 
-                  // Detection Methods
-                  Text(
-                    'Detection Methods',
-                    style: OfflineFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ..._buildDetectionMethodCheckboxes(),
-                  const SizedBox(height: 24),
-
                   // Performance Settings
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -1119,44 +1487,6 @@ class _CameraPipelineSettingsScreenState
         ],
       ),
     );
-  }
-
-  List<Widget> _buildDetectionMethodCheckboxes() {
-    const availableMethods = [
-      {'value': 'opencv', 'label': 'OpenCV', 'description': 'Fast, good for real-time'},
-      {'value': 'dlib', 'label': 'Dlib', 'description': 'High accuracy, slower'},
-      {'value': 'mtcnn', 'label': 'MTCNN', 'description': 'Best accuracy, slowest'},
-      {'value': 'yolo', 'label': 'YOLO', 'description': 'Balanced speed/accuracy'},
-    ];
-
-    return availableMethods.map((method) {
-      final isSelected = _detectionMethods.contains(method['value']);
-      return CheckboxListTile(
-        contentPadding: EdgeInsets.zero,
-        title: Text(
-          method['label'] as String,
-          style: OfflineFonts.inter(fontSize: 14),
-        ),
-        subtitle: Text(
-          method['description'] as String,
-          style: OfflineFonts.inter(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-          ),
-        ),
-        value: isSelected,
-        activeColor: AppColors.primary,
-        onChanged: (selected) {
-          setState(() {
-            if (selected == true) {
-              _detectionMethods.add(method['value'] as String);
-            } else {
-              _detectionMethods.remove(method['value']);
-            }
-          });
-        },
-      );
-    }).toList();
   }
 
   Widget _buildModeDescriptionCard() {
@@ -1374,5 +1704,180 @@ class _CameraPipelineSettingsScreenState
     } else {
       return Colors.red;
     }
+  }
+}
+
+class _PathPipelineDraft {
+  _PathPipelineDraft({
+    required this.kind,
+    this.seedRecipeId,
+    this.modelId,
+    this.version = '1.0.0',
+    this.proposalModelId,
+    this.proposalVersion = '1.0.0',
+    this.refineModelId,
+    this.refineVersion = '1.0.0',
+  });
+
+  final String kind;
+  final String? seedRecipeId;
+  final String? modelId;
+  final String version;
+  final String? proposalModelId;
+  final String proposalVersion;
+  final String? refineModelId;
+  final String refineVersion;
+
+  factory _PathPipelineDraft.faceDefaults({bool twoStage = false}) {
+    if (twoStage) {
+      return _PathPipelineDraft(
+        kind: 'two_stage',
+        seedRecipeId: 'face-two-stage-haar-dlib',
+        proposalModelId: 'face-haar-builtin',
+        refineModelId: 'face-dlib-builtin',
+      );
+    }
+    return _PathPipelineDraft(
+      kind: 'single',
+      seedRecipeId: 'face-haar-only',
+      modelId: 'face-haar-builtin',
+    );
+  }
+
+  factory _PathPipelineDraft.bodyDefaults({bool twoStage = false}) {
+    if (twoStage) {
+      return _PathPipelineDraft(
+        kind: 'two_stage',
+        seedRecipeId: 'body-two-stage-placeholder',
+        proposalModelId: 'body-proposal-placeholder',
+        refineModelId: 'body-refine-placeholder',
+      );
+    }
+    return _PathPipelineDraft(
+      kind: 'single',
+      seedRecipeId: 'body-yolo-pose-only',
+      modelId: 'body-yolo-pose-os',
+    );
+  }
+
+  factory _PathPipelineDraft.fromSaved(
+    dynamic raw, {
+    String? fallbackRecipeId,
+    String? legacyModelId,
+    required _PathPipelineDraft defaults,
+    List<Map<String, dynamic>> recipes = const [],
+  }) {
+    if (raw is Map) {
+      final map = Map<String, dynamic>.from(raw);
+      return _PathPipelineDraft(
+        kind: map['kind']?.toString() ?? defaults.kind,
+        seedRecipeId: map['recipe_id']?.toString(),
+        modelId: map['model_id']?.toString() ?? defaults.modelId,
+        version: map['version']?.toString() ?? '1.0.0',
+        proposalModelId:
+            map['proposal_model_id']?.toString() ?? defaults.proposalModelId,
+        proposalVersion: map['proposal_version']?.toString() ?? '1.0.0',
+        refineModelId:
+            map['refine_model_id']?.toString() ?? defaults.refineModelId,
+        refineVersion: map['refine_version']?.toString() ?? '1.0.0',
+      );
+    }
+    if (fallbackRecipeId != null && fallbackRecipeId.isNotEmpty) {
+      final match = recipes.where((recipe) => recipe['recipe_id'] == fallbackRecipeId);
+      if (match.isNotEmpty) {
+        return defaults.applyRecipe(match.first);
+      }
+      return defaults.copyWith(seedRecipeId: fallbackRecipeId);
+    }
+    if (legacyModelId != null && legacyModelId.isNotEmpty) {
+      return _PathPipelineDraft(
+        kind: 'single',
+        modelId: legacyModelId,
+        version: '1.0.0',
+      );
+    }
+    return defaults;
+  }
+
+  _PathPipelineDraft copyWith({
+    String? kind,
+    String? seedRecipeId,
+    String? modelId,
+    String? version,
+    String? proposalModelId,
+    String? proposalVersion,
+    String? refineModelId,
+    String? refineVersion,
+    bool clearSeed = false,
+  }) {
+    return _PathPipelineDraft(
+      kind: kind ?? this.kind,
+      seedRecipeId: clearSeed ? null : (seedRecipeId ?? this.seedRecipeId),
+      modelId: modelId ?? this.modelId,
+      version: version ?? this.version,
+      proposalModelId: proposalModelId ?? this.proposalModelId,
+      proposalVersion: proposalVersion ?? this.proposalVersion,
+      refineModelId: refineModelId ?? this.refineModelId,
+      refineVersion: refineVersion ?? this.refineVersion,
+    );
+  }
+
+  _PathPipelineDraft applyRecipe(Map<String, dynamic> recipe) {
+    final kind = recipe['kind']?.toString() ?? 'single';
+    final stages = List<dynamic>.from(recipe['stages'] as List? ?? const []);
+    String? modelId;
+    String? proposal;
+    String? refine;
+    String version = '1.0.0';
+    String proposalVersion = '1.0.0';
+    String refineVersion = '1.0.0';
+    for (final raw in stages) {
+      final stage = Map<String, dynamic>.from(raw as Map);
+      final role = stage['role']?.toString();
+      if (role == 'single') {
+        modelId = stage['model_id']?.toString();
+        version = stage['version']?.toString() ?? '1.0.0';
+      } else if (role == 'proposal') {
+        proposal = stage['model_id']?.toString();
+        proposalVersion = stage['version']?.toString() ?? '1.0.0';
+      } else if (role == 'refine') {
+        refine = stage['model_id']?.toString();
+        refineVersion = stage['version']?.toString() ?? '1.0.0';
+      }
+    }
+    return _PathPipelineDraft(
+      kind: kind,
+      seedRecipeId: recipe['recipe_id']?.toString(),
+      modelId: modelId ?? proposal,
+      version: version,
+      proposalModelId: proposal ?? modelId,
+      proposalVersion: proposalVersion,
+      refineModelId: refine,
+      refineVersion: refineVersion,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    if (seedRecipeId != null && seedRecipeId!.isNotEmpty) {
+      return {
+        'kind': kind,
+        'recipe_id': seedRecipeId,
+        'model_id': modelId,
+        'version': version,
+        'proposal_model_id': proposalModelId,
+        'proposal_version': proposalVersion,
+        'refine_model_id': refineModelId,
+        'refine_version': refineVersion,
+      };
+    }
+    return {
+      'kind': kind,
+      'model_id': modelId,
+      'version': version,
+      'proposal_model_id': proposalModelId,
+      'proposal_version': proposalVersion,
+      'refine_model_id': refineModelId,
+      'refine_version': refineVersion,
+    };
   }
 }

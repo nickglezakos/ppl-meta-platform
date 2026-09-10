@@ -33,6 +33,7 @@ class AuthorityStatus {
   final bool vpnEnrolled;
   final String? matrixGroupId;
   final String? headscaleServer;
+  final List<String> licenceFeatures;
 
   const AuthorityStatus({
     required this.success,
@@ -64,6 +65,7 @@ class AuthorityStatus {
     this.vpnEnrolled = false,
     this.matrixGroupId,
     this.headscaleServer,
+    this.licenceFeatures = const [],
   });
 
   factory AuthorityStatus.fromJson(Map<String, dynamic> json) {
@@ -100,13 +102,17 @@ class AuthorityStatus {
       vpnEnrolled: authority['vpn_enrolled'] == true,
       matrixGroupId: authority['matrix_group_id']?.toString(),
       headscaleServer: authority['headscale_server']?.toString(),
+      licenceFeatures: (authority['licence_features'] as List<dynamic>? ?? const [])
+          .map((item) => item.toString())
+          .toList(),
     );
   }
 
   bool get isOfflineCached => lastResultReason == 'offline_grace_cache';
   bool get isWarningActive => runtimeState == 'warning';
   bool get isSafeguardActive => runtimeState == 'safeguard';
-  bool get isHealthy => enabled && configured && cachedOwnerEnabled == true;
+  bool get hasMvModelsLicence => licenceFeatures.contains('eyenet_mv_models');
+  bool get hasMvModelsUpload => licenceFeatures.contains('mv_models_upload');
 }
 
 class AuthorityStatusClient {

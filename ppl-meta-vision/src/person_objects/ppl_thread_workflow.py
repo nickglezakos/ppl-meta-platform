@@ -295,11 +295,19 @@ class PPLThreadWorkflowController:
         try:
             cursor = self.db.connection.cursor()
 
+            # Prefer sessions that already have person objects so concurrent
+            # empty Enhanced Logic sessions do not hide completed work.
             query = """
-            SELECT session_uuid 
-            FROM face_detection_sessions 
-            WHERE media_uuid = %s 
-            ORDER BY created_at DESC 
+            SELECT fds.session_uuid
+            FROM face_detection_sessions fds
+            LEFT JOIN (
+                SELECT session_uuid, COUNT(*) AS person_count
+                FROM person_objects
+                GROUP BY session_uuid
+            ) po ON po.session_uuid = fds.session_uuid
+            WHERE fds.media_uuid = %s
+            ORDER BY COALESCE(po.person_count, 0) DESC,
+                     COALESCE(fds.created_at, fds.started_at) DESC NULLS LAST
             LIMIT 1
             """
 

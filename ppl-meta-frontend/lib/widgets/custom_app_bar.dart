@@ -86,10 +86,29 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     context.go('/');
   }
 
+  /// Extra height for TabBars that stack icon + label (default preferredSize is too short).
+  static const double _iconTextTabBarHeight = 72.0;
+
+  bool get _bottomHasIconTabs {
+    final b = bottom;
+    if (b is! TabBar) return false;
+    for (final tab in b.tabs) {
+      if (tab is Tab && tab.icon != null) return true;
+    }
+    return false;
+  }
+
+  double get _bottomHeight {
+    if (bottom == null) return 0.0;
+    final reported = bottom!.preferredSize.height;
+    if (_bottomHasIconTabs) {
+      return reported > _iconTextTabBarHeight ? reported : _iconTextTabBarHeight;
+    }
+    return reported;
+  }
+
   @override
-  Size get preferredSize => Size.fromHeight(
-        kToolbarHeight + (bottom?.preferredSize.height ?? 0.0),
-      );
+  Size get preferredSize => Size.fromHeight(kToolbarHeight + _bottomHeight);
 }
 
 /// Specialized AppBar for full-screen media preview with dark theme

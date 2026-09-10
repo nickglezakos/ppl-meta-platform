@@ -155,7 +155,7 @@ class MediaFaceDetectionService:
             if frame is None:
                 return []
 
-            # Detect faces using available method
+            # Preview path: always Haar (preview latency class). Never load bulk ONNX.
             faces = self.detector.detect_faces_frame(
                 frame=frame, method="haar", confidence_threshold=confidence_threshold
             )

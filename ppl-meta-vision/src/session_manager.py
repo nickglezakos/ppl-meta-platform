@@ -100,19 +100,44 @@ class SessionManager:
                 "started_at": current_time,
                 "processing_status": "initializing",
                 "total_faces_detected": 0,
-                "metadata": request.metadata or {},
+                "metadata": {
+                    **(request.metadata or {}),
+                    **(
+                        {
+                            k: v
+                            for k, v in {
+                                "model_id": request.model_id,
+                                "model_version": request.model_version,
+                                "runtime": request.runtime,
+                                "path": request.path,
+                                "confidence_threshold": request.confidence_threshold,
+                                "serving": request.serving,
+                            }.items()
+                            if v
+                        }
+                    ),
+                },
             }
 
             # Store session in database
             if self.db and self.db.connection:
                 try:
+                    from provenance import ensure_provenance_columns_sql
+
                     with self.db.connection.cursor() as cursor:
+                        cursor.execute(
+                            "ALTER TABLE face_detection_sessions "
+                            "ADD COLUMN IF NOT EXISTS session_metadata JSONB"
+                        )
+                        for statement in ensure_provenance_columns_sql():
+                            cursor.execute(statement)
                         cursor.execute(
                             """
                             INSERT INTO face_detection_sessions 
                             (session_uuid, media_uuid, camera_device_uuid, session_type, 
-                             started_at, processing_status, total_faces_detected, session_metadata)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                             started_at, processing_status, total_faces_detected, session_metadata,
+                             model_id, model_version, runtime, confidence_threshold, path, serving)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                             (
                                 session_uuid,
@@ -122,7 +147,13 @@ class SessionManager:
                                 current_time,
                                 "active",
                                 0,
-                                json.dumps(request.metadata or {}),
+                                json.dumps(session_data["metadata"]),
+                                request.model_id,
+                                request.model_version,
+                                request.runtime,
+                                request.confidence_threshold,
+                                request.path,
+                                True if request.serving is None else request.serving,
                             ),
                         )
 

@@ -126,6 +126,9 @@ class Settings(BaseSettings):
     CAMERA_SERVICE_URL: str = Field(
         default="http://localhost:8005", env="CAMERA_SERVICE_URL"
     )
+    MODELS_SERVICE_URL: str = Field(
+        default="http://localhost:8013", env="MODELS_SERVICE_URL"
+    )
 
     # Redis Configuration
     REDIS_URL: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")

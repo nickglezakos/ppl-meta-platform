@@ -281,6 +281,11 @@ async def get_authority_status(
                 "cached_licence_status": (
                     installation_info.authority_licence_status if installation_info else None
                 ),
+                "licence_features": (
+                    installation_info.authority_licence_features
+                    if installation_info and installation_info.authority_licence_features
+                    else []
+                ),
                 "cached_owner_enabled": (
                     installation_info.authority_owner_enabled if installation_info else None
                 ),

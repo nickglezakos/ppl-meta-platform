@@ -872,11 +872,26 @@ class VisionServiceClient:
             )
 
             if not session_response.success:
-                session_response.data = {
-                    **(session_response.data or {}),
-                    "session_uuid": session_uuid,
-                }
-                return session_response
+                # Session exists but person objects are not ready yet. Treat this as
+                # a successful lookup with pending status so callers do not re-run
+                # Enhanced Logic V2 against empty concurrent sessions.
+                return ServiceResponse(
+                    success=True,
+                    status_code=200,
+                    service_name="vision",
+                    endpoint=f"/api/v1/person-objects/sessions/{session_uuid}",
+                    timestamp=datetime.now(),
+                    data={
+                        "success": False,
+                        "media_id": media_id,
+                        "total_persons": 0,
+                        "total_faces": 0,
+                        "status": "pending",
+                        "message": session_response.error_message
+                        or "Face detection session found, person objects pending",
+                        "session_uuid": session_uuid,
+                    },
+                )
 
             # Step 3: Transform response to expected format
             session_result = session_response.data

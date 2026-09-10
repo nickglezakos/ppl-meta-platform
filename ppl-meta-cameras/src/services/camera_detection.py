@@ -1886,6 +1886,7 @@ class CameraDetectionService:
                 # Upload remaining segments in background thread
                 import threading
                 import requests
+                detection_service = self
                 
                 def upload_remaining():
                     """Upload remaining segments with all necessary auth info."""
@@ -1946,6 +1947,42 @@ class CameraDetectionService:
                                         logger.info(f"✅ [COLLECTION] Assigned {media_uuid} to {collection_uuid}")
                                     else:
                                         logger.error(f"❌ [COLLECTION] Failed: HTTP {response.status_code}")
+
+                                    # Face/body triggers for final segments (same as incremental upload)
+                                    async def _trigger_final_detection():
+                                        ready = await detection_service._wait_for_media_committed(
+                                            media_uuid, headers
+                                        )
+                                        if not ready:
+                                            logger.error(
+                                                "❌ [UPLOAD] Media %s not ready after wait — "
+                                                "skipping face/body triggers",
+                                                media_uuid,
+                                            )
+                                            return
+                                        async with aiohttp.ClientSession() as session:
+                                            await detection_service._check_and_trigger_face_detection(
+                                                media_uuid,
+                                                session,
+                                                headers,
+                                                device_id=device_id,
+                                            )
+                                            await detection_service._check_and_trigger_body_detection(
+                                                media_uuid,
+                                                session,
+                                                headers,
+                                                device_id=device_id,
+                                            )
+
+                                    try:
+                                        asyncio.run(_trigger_final_detection())
+                                    except Exception as trigger_exc:
+                                        logger.error(
+                                            "❌ [UPLOAD] Face/body trigger failed for %s: %s",
+                                            media_uuid,
+                                            trigger_exc,
+                                            exc_info=True,
+                                        )
                                 else:
                                     logger.error(f"❌ [UPLOAD] Failed: HTTP {response.status_code}")
                                     
@@ -3361,7 +3398,10 @@ class CameraDetectionService:
                                     f"triggering face detection after collection assignment"
                                 )
                                 await self._check_and_trigger_face_detection(
-                                    media_uuid, session, headers
+                                    media_uuid, session, headers, device_id=device_id
+                                )
+                                await self._check_and_trigger_body_detection(
+                                    media_uuid, session, headers, device_id=device_id
                                 )
                             else:
                                 logger.error(
@@ -3569,20 +3609,21 @@ class CameraDetectionService:
             return False
 
     async def _wait_for_media_committed(self, media_uuid: str, headers: Dict) -> bool:
-        """Poll media service to verify media exists in database.
+        """Poll media service until metadata and /download/ bytes are readable.
         
         Uses exponential backoff: 0.5s, 1s, 2s, 4s, 8s (total ~15.5s max)
-        This is more reliable than Redis events as it verifies actual DB state.
+        This is more reliable than Redis events as it verifies actual DB + file state.
         
         Args:
             media_uuid: UUID of the uploaded media
             headers: Auth headers for media service requests
             
         Returns:
-            True if media found in database, False after all attempts
+            True if media metadata and download are ready, False after all attempts
         """
         delays = [0.5, 1.0, 2.0, 4.0, 8.0]  # Exponential backoff
         total_waited = 0.0
+        download_url = f"http://localhost:8000/api/v1/media/download/{media_uuid}"
         
         logger.info(
             f"⏳ [MEDIA-VERIFY] Starting verification for media {media_uuid} "
@@ -3595,29 +3636,59 @@ class CameraDetectionService:
             total_waited += delay
             
             try:
-                # Query media service directly to verify DB state
+                # Query media service directly to verify DB state + downloadable bytes
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
                         f"http://localhost:8000/api/v1/media/{media_uuid}",
                         headers=headers,
                         timeout=aiohttp.ClientTimeout(total=5)
                     ) as response:
-                        if response.status == 200:
-                            logger.info(
-                                f"✅ [MEDIA-VERIFY] Media {media_uuid} confirmed in database "
-                                f"(attempt {attempt}/{len(delays)}, waited {total_waited:.1f}s)"
-                            )
-                            return True
-                        elif response.status == 404:
+                        if response.status == 404:
                             logger.debug(
                                 f"🔍 [MEDIA-VERIFY] Attempt {attempt}/{len(delays)}: "
                                 f"Media {media_uuid} not yet in database, retrying..."
                             )
-                        else:
+                            continue
+                        if response.status != 200:
                             logger.warning(
                                 f"⚠️ [MEDIA-VERIFY] Attempt {attempt}/{len(delays)}: "
                                 f"Unexpected status {response.status}"
                             )
+                            continue
+
+                    # Metadata exists — confirm download returns real media (not JPEG stub)
+                    async with session.head(
+                        download_url,
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=5),
+                        allow_redirects=True,
+                    ) as head_resp:
+                        file_status = head_resp.status
+                        content_type = (
+                            head_resp.headers.get("Content-Type") or ""
+                        ).lower()
+                        if file_status == 405:
+                            async with session.get(
+                                download_url,
+                                headers=headers,
+                                timeout=aiohttp.ClientTimeout(total=10),
+                            ) as get_resp:
+                                file_status = get_resp.status
+                                content_type = (
+                                    get_resp.headers.get("Content-Type") or ""
+                                ).lower()
+
+                    if file_status == 200 and not content_type.startswith("image/"):
+                        logger.info(
+                            f"✅ [MEDIA-VERIFY] Media {media_uuid} ready "
+                            f"(attempt {attempt}/{len(delays)}, waited {total_waited:.1f}s)"
+                        )
+                        return True
+
+                    logger.debug(
+                        f"🔍 [MEDIA-VERIFY] Attempt {attempt}/{len(delays)}: "
+                        f"/download status {file_status} ct={content_type or '?'}"
+                    )
                             
             except asyncio.TimeoutError:
                 logger.warning(
@@ -3631,94 +3702,135 @@ class CameraDetectionService:
                 )
         
         logger.error(
-            f"❌ [MEDIA-VERIFY] Media {media_uuid} not found in database after "
+            f"❌ [MEDIA-VERIFY] Media {media_uuid} not ready after "
             f"{len(delays)} attempts (total {total_waited:.1f}s) - giving up"
         )
         return False
     
+    def _camera_auto_face_enabled(self, device_id: Optional[str]) -> bool:
+        """Per-camera Face detection setting; default False if unknown."""
+        if not device_id:
+            return False
+        try:
+            from src.database import SessionLocal
+            from src.models.camera import Camera
+            from src.models.recording_session import RecordingSession  # noqa: F401
+
+            db = SessionLocal()
+            try:
+                camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                if not camera:
+                    return False
+                return bool(getattr(camera, "auto_face_detection", False))
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning(
+                "🎯 [FACE-DETECTION] auto_face_detection lookup failed for %s "
+                "(treating as OFF): %s",
+                device_id,
+                exc,
+            )
+            return False
+
     async def _check_and_trigger_face_detection(
-        self, media_uuid: str, session, headers: Dict
+        self, media_uuid: str, session, headers: Dict, device_id: Optional[str] = None
     ):
-        """Check global setting and trigger face detection if enabled."""
+        """Trigger face detection only when this camera has Face detection enabled."""
         logger.info(
-            f"🎯 [FACE-DETECTION] Starting face detection check for media {media_uuid}"
+            f"🎯 [FACE-DETECTION] Starting face detection check for media {media_uuid} "
+            f"(camera={device_id})"
         )
         try:
-            # Service URLs
-            NODE_SERVICE_URL = "http://localhost:8001"
-
-            # Check the global face detection on save setting
-            setting_url = f"{NODE_SERVICE_URL}/api/v1/settings/face_detection_on_save"
-            
-            logger.info(
-                f"🎯 [FACE-DETECTION] Checking setting at: {setting_url}"
-            )
-
-            async with session.get(setting_url, headers=headers) as response:
+            if not self._camera_auto_face_enabled(device_id):
                 logger.info(
-                    f"🎯 [FACE-DETECTION] Setting response status: {response.status}"
+                    f"🎯 [FACE-DETECTION] Camera {device_id} has auto_face_detection OFF, "
+                    f"skipping workflow for media {media_uuid}"
                 )
-                
-                if response.status == 200:
-                    setting_data = await response.json()
-                    is_enabled = setting_data.get("value") == "true"
-                    
-                    logger.info(
-                        f"🎯 [FACE-DETECTION] Setting value: {setting_data.get('value')}, "
-                        f"is_enabled: {is_enabled}"
-                    )
+                return
 
-                    if is_enabled:
-                        logger.info(
-                            f"🎯 [FACE-DETECTION] Face detection on save is ENABLED, "
-                            f"triggering workflow for media {media_uuid}"
-                        )
-                        await self._trigger_face_detection_workflow(
-                            media_uuid, session, headers
-                        )
-                    else:
-                        logger.info(
-                            f"🎯 [FACE-DETECTION] Face detection on save is DISABLED, "
-                            f"skipping workflow for media {media_uuid}"
-                        )
-                elif response.status == 404:
-                    # Setting doesn't exist, default to ENABLED for continuous pipeline
-                    logger.warning(
-                        f"🎯 [FACE-DETECTION] Setting not found (404), "
-                        f"DEFAULTING TO ENABLED for continuous pipeline"
-                    )
-                    # Trigger anyway since we want continuous pipeline
-                    await self._trigger_face_detection_workflow(
-                        media_uuid, session, headers
-                    )
-                else:
-                    logger.warning(
-                        f"🎯 [FACE-DETECTION] Failed to check setting: "
-                        f"{response.status}, defaulting to ENABLED"
-                    )
-                    # Trigger anyway
-                    await self._trigger_face_detection_workflow(
-                        media_uuid, session, headers
-                    )
-
+            logger.info(
+                f"🎯 [FACE-DETECTION] Camera {device_id} has auto_face_detection ON, "
+                f"triggering workflow for media {media_uuid}"
+            )
+            await self._trigger_face_detection_workflow(
+                media_uuid, session, headers
+            )
         except Exception as e:
             logger.error(
-                f"🎯 [FACE-DETECTION] ❌ Exception checking setting: {e}",
+                f"🎯 [FACE-DETECTION] ❌ Exception checking camera face setting: {e}",
                 exc_info=True
             )
-            # Still try to trigger face detection even if setting check fails
+
+    def _camera_auto_body_enabled(self, device_id: Optional[str]) -> bool:
+        if not device_id:
+            return False
+        try:
+            from src.database import SessionLocal
+            from src.models.camera import Camera
+            from src.models.recording_session import RecordingSession  # noqa: F401
+            import json as _json
+
+            db = SessionLocal()
             try:
+                camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                if not camera:
+                    return False
+                opts = getattr(camera, "processing_options", None) or {}
+                if isinstance(opts, str):
+                    opts = _json.loads(opts)
+                if not isinstance(opts, dict):
+                    return False
+                return bool(opts.get("auto_body_detection", False))
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning(
+                "🧍 [BODY-DETECTION] auto_body_detection lookup failed for %s "
+                "(treating as OFF): %s",
+                device_id,
+                exc,
+            )
+            return False
+
+    async def _check_and_trigger_body_detection(
+        self, media_uuid: str, session, headers: Dict, device_id: Optional[str] = None
+    ):
+        """Trigger body/pose pipeline when this camera has Body detection enabled."""
+        try:
+            if not self._camera_auto_body_enabled(device_id):
                 logger.info(
-                    f"🎯 [FACE-DETECTION] Attempting face detection anyway after error..."
+                    f"🧍 [BODY-DETECTION] Camera {device_id} has auto_body_detection OFF, "
+                    f"skipping for media {media_uuid}"
                 )
-                await self._trigger_face_detection_workflow(
-                    media_uuid, session, headers
+                return
+            logger.info(
+                f"🧍 [BODY-DETECTION] Camera {device_id} has auto_body_detection ON, "
+                f"triggering process-media for {media_uuid}"
+            )
+            vision_url = os.getenv("VISION_SERVICE_URL", "http://localhost:8003")
+            params = {
+                "media_id": media_uuid,
+                "model_id": os.getenv("BODY_BULK_MODEL_ID", "body-yolo-pose-os"),
+                "frame_interval": "10",
+                "materialize": "true",
+                "camera_id": device_id or "",
+            }
+            from urllib.parse import urlencode
+
+            url = f"{vision_url}/api/v1/object-detections/process-media?{urlencode(params)}"
+            async with session.post(url, headers=headers) as response:
+                text = await response.text()
+                logger.info(
+                    "🧍 [BODY-DETECTION] process-media status=%s body=%s",
+                    response.status,
+                    text[:300],
                 )
-            except Exception as fallback_error:
-                logger.error(
-                    f"🎯 [FACE-DETECTION] ❌ Fallback trigger also failed: {fallback_error}",
-                    exc_info=True
-                )
+        except Exception as e:
+            logger.error(
+                f"🧍 [BODY-DETECTION] ❌ Exception: {e}",
+                exc_info=True,
+            )
 
     async def _trigger_face_detection_workflow(
         self, media_uuid: str, session, headers: Dict

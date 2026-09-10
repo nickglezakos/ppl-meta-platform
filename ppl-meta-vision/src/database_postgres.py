@@ -270,6 +270,11 @@ class VisionDatabase:
         """
         )
 
+        from provenance import ensure_provenance_columns_sql
+
+        for statement in ensure_provenance_columns_sql():
+            await conn.execute(statement)
+
     def store_media_record(self, media_record: MediaRecord) -> bool:
         """Store media record synchronously."""
         try:

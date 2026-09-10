@@ -79,6 +79,17 @@ api_token	d85cf5919fa99cae206a15737639d1bd963940eff4fca9f8ce23fedbbccffbb5
 
 *************************************************
 
+☁️ Deploy Authority to Hetzner
+Full 3-step deploy
+☁️ Sync Authority Source to Hetzner
+Step 1 only
+☁️ Build Authority Image on Hetzner
+Step 2 only
+☁️ Recreate Authority Container on Hetzner
+Step 3 only
+
+
+
 # 1) Sync source (vpn.py + storage.py changed)
 rsync -avz --delete \
   --exclude '.venv' --exclude '.git' --exclude '.env' --exclude 'data' --exclude 'headscale' \

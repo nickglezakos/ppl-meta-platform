@@ -6,14 +6,7 @@ import '../../utils/offline_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/providers/camera_providers.dart';
 
-/// Autonomous instant detection widget that displays real-time face detection results
-/// from the camera's instant detection memory cache.
-/// 
-/// Features:
-/// - Auto-refresh interval configurable from settings (default 5 seconds)
-/// - Displays person count with age/gender demographics
-/// - Real-time status indicator
-/// - Lightweight and independent
+/// Live instant detection strip: face people + body tracks (either/both may be on).
 class InstantDetectionWidget extends ConsumerStatefulWidget {
   final String cameraId;
 
@@ -30,66 +23,64 @@ class InstantDetectionWidget extends ConsumerStatefulWidget {
 class _InstantDetectionWidgetState
     extends ConsumerState<InstantDetectionWidget> {
   List<Map<String, dynamic>>? _personObjects;
-  Map<String, dynamic>? _demographics;  // Demographics from backend
+  List<Map<String, dynamic>>? _bodyPersons;
+  Map<String, dynamic>? _demographics;
   bool _isLoading = false;
   bool _isInstantDetectionRunning = false;
   int? _cachedIteration;
   double? _ageSeconds;
-  Timer? _fastPollTimer;  // Fast polling when detection is active
-  Timer? _lazyCheckTimer; // Lazy checking when inactive (10s)
-  Duration _refreshInterval = const Duration(seconds: 5); // Loaded from settings
+  Timer? _fastPollTimer;
+  Timer? _lazyCheckTimer;
+  Duration _refreshInterval = const Duration(seconds: 5);
+
+  int get _faceCount => _personObjects?.length ?? 0;
+  int get _bodyCount => _bodyPersons?.length ?? 0;
+  bool get _hasDetections => _faceCount > 0 || _bodyCount > 0;
 
   @override
   void initState() {
     super.initState();
-    print('🔍 [INSTANT_DETECTION_WIDGET] initState called for device: ${widget.cameraId}');
     _loadRefreshInterval();
-    
-    // Initial detection state check will happen in build method via ref.listen
   }
 
   Future<void> _loadRefreshInterval() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final intervalSeconds = prefs.getInt('instant_detection_interval') ?? 5;
+      if (!mounted) return;
       setState(() {
         _refreshInterval = Duration(seconds: intervalSeconds);
       });
-      print('🔍 [INSTANT_DETECTION_WIDGET] Loaded refresh interval: $intervalSeconds seconds');
-    } catch (e) {
-      print('⚠️ [INSTANT_DETECTION_WIDGET] Failed to load refresh interval: $e');
-    }
+    } catch (_) {}
+  }
+
+  void _clearResults() {
+    _personObjects = null;
+    _bodyPersons = null;
+    _demographics = null;
+    _isInstantDetectionRunning = false;
+    _cachedIteration = null;
+    _ageSeconds = null;
+    _isLoading = false;
   }
 
   void _startLazyChecking() {
-    // Check periodically (every 10s) if instant detection has started
     _lazyCheckTimer?.cancel();
     _lazyCheckTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (mounted && !_isInstantDetectionRunning) {
-        _fetchInstantResults(); // This will auto-start fast polling if detection is active
+        _fetchInstantResults();
       }
     });
-    
-    // Immediate check
     _fetchInstantResults();
   }
-  
+
   void _stopAllPolling() {
-    // Stop both lazy check and fast poll timers
     _lazyCheckTimer?.cancel();
     _lazyCheckTimer = null;
     _fastPollTimer?.cancel();
     _fastPollTimer = null;
-    
     if (mounted) {
-      setState(() {
-        _personObjects = null;
-        _demographics = null;
-        _isInstantDetectionRunning = false;
-        _cachedIteration = null;
-        _ageSeconds = null;
-        _isLoading = false;
-      });
+      setState(_clearResults);
     }
   }
 
@@ -101,42 +92,26 @@ class _InstantDetectionWidgetState
   }
 
   void _startAutoRefresh() {
-    print('🔍 [INSTANT_DETECTION_WIDGET] _startAutoRefresh called');
-    print('🔍 [INSTANT_DETECTION_WIDGET] Using refresh interval: ${_refreshInterval.inSeconds} seconds');
-    // Stop lazy checking, start fast polling
     _lazyCheckTimer?.cancel();
     _fastPollTimer?.cancel();
-    _fetchInstantResults(); // Fetch immediately when starting
+    _fetchInstantResults();
     _fastPollTimer = Timer.periodic(_refreshInterval, (_) {
       if (mounted) {
-        print('🔍 [INSTANT_DETECTION_WIDGET] Periodic fetch tick (${_refreshInterval.inSeconds}s interval)');
         _fetchInstantResults();
       }
     });
   }
 
   void _stopAutoRefresh() {
-    // Stop fast polling, resume lazy checking only if detection is active
     _fastPollTimer?.cancel();
     _fastPollTimer = null;
-    
+
     if (mounted) {
-      setState(() {
-        _personObjects = null;
-        _demographics = null;
-        _isInstantDetectionRunning = false;
-        _cachedIteration = null;
-        _ageSeconds = null;
-        _isLoading = false;
-      });
-      
-      // Resume lazy checking only if detection is still active
-      final detectionState = ref.read(cameraInstantDetectionProvider(widget.cameraId));
+      setState(_clearResults);
+      final detectionState =
+          ref.read(cameraInstantDetectionProvider(widget.cameraId));
       if (detectionState.isDetecting) {
-        print('🔍 [INSTANT_DETECTION_WIDGET] Resuming lazy checking (detection still active)');
         _startLazyChecking();
-      } else {
-        print('🔍 [INSTANT_DETECTION_WIDGET] Not resuming lazy checking (detection not active)');
       }
     }
   }
@@ -148,73 +123,53 @@ class _InstantDetectionWidgetState
 
     try {
       final cameraService = ref.read(cameraServiceProvider);
-      final response = await cameraService.getInstantDetectionResults(widget.cameraId);
+      final response =
+          await cameraService.getInstantDetectionResults(widget.cameraId);
 
       if (!mounted) return;
 
       if (response != null && response['success'] == true) {
-        // DEBUG: Log full response structure
-        print('🔍 [INSTANT_DETECTION_WIDGET] Full response keys: ${response.keys.toList()}');
-        print('🔍 [INSTANT_DETECTION_WIDGET] Demographics raw: ${response['demographics']}');
-        print('🔍 [INSTANT_DETECTION_WIDGET] Demographics type: ${response['demographics']?.runtimeType}');
-        
         setState(() {
           _personObjects = (response['person_objects'] as List?)
-              ?.cast<Map<String, dynamic>>();
-          _demographics = response['demographics'] as Map<String, dynamic>?;  // NEW: Extract demographics
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+          _bodyPersons = (response['body_persons'] as List?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+          // Fallback: body_count alone if body_persons omitted
+          if ((_bodyPersons == null || _bodyPersons!.isEmpty) &&
+              response['body_count'] is int &&
+              (response['body_count'] as int) > 0) {
+            _bodyPersons = List.generate(
+              response['body_count'] as int,
+              (_) => <String, dynamic>{},
+            );
+          }
+          _demographics = response['demographics'] as Map<String, dynamic>?;
           _isInstantDetectionRunning = true;
-          
-          // DEBUG: Log what we stored
-          print('🔍 [INSTANT_DETECTION_WIDGET] Stored people count: ${_personObjects?.length}');
-          print('🔍 [INSTANT_DETECTION_WIDGET] Stored demographics: $_demographics');
-          print('🔍 [INSTANT_DETECTION_WIDGET] Demographics is null? ${_demographics == null}');
-          print('🔍 [INSTANT_DETECTION_WIDGET] Demographics keys: ${_demographics?.keys}');
-          print('🔍 [INSTANT_DETECTION_WIDGET] hasDetections: ${_personObjects?.isNotEmpty ?? false}');
-          print('🔍 [INSTANT_DETECTION_WIDGET] Will show demographics row? ${(_personObjects?.isNotEmpty ?? false) && _demographics != null}');
-          
-          // Extract metadata if available
+
           final metadata = response['_metadata'] as Map<String, dynamic>?;
           if (metadata != null) {
             _cachedIteration = metadata['iteration'] as int?;
-            _ageSeconds = metadata['age_seconds'] as double?;
+            final age = metadata['age_seconds'];
+            _ageSeconds = age is num ? age.toDouble() : null;
           }
-          
+
           _isLoading = false;
         });
-        
-        // If we weren't polling before, start now
+
         if (_fastPollTimer == null && mounted) {
           _startAutoRefresh();
         }
       } else {
-        // Silently handle 404/no results - instant detection may not be started yet
-        setState(() {
-          _personObjects = null;
-          _demographics = null;
-          _isInstantDetectionRunning = false;
-          _cachedIteration = null;
-          _ageSeconds = null;
-          _isLoading = false;
-        });
-        
-        // Stop polling if instant detection stopped
+        setState(_clearResults);
         if (_fastPollTimer != null) {
           _stopAutoRefresh();
         }
       }
-    } catch (e) {
-      // Silent fail - instant detection is optional and may not be running
+    } catch (_) {
       if (mounted) {
-        setState(() {
-          _personObjects = null;
-          _demographics = null;
-          _isInstantDetectionRunning = false;
-          _cachedIteration = null;
-          _ageSeconds = null;
-          _isLoading = false;
-        });
-        
-        // Stop polling on error
+        setState(_clearResults);
         if (_fastPollTimer != null) {
           _stopAutoRefresh();
         }
@@ -222,31 +177,41 @@ class _InstantDetectionWidgetState
     }
   }
 
+  String _liveCountLabel() {
+    final parts = <String>[];
+    if (_faceCount > 0) {
+      parts.add('$_faceCount ${_faceCount == 1 ? 'person' : 'people'}');
+    }
+    if (_bodyCount > 0) {
+      parts.add('$_bodyCount ${_bodyCount == 1 ? 'body' : 'bodies'}');
+    }
+    if (parts.isEmpty) {
+      return '0 detections';
+    }
+    return parts.join(' · ');
+  }
+
+  Color _accentColor() {
+    if (_faceCount > 0 && _bodyCount > 0) return Colors.blue.shade700;
+    if (_bodyCount > 0) return Colors.cyan.shade700;
+    if (_faceCount > 0) return Colors.blue.shade700;
+    return Colors.grey.shade600;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final personCount = _personObjects?.length ?? 0;
-    final hasDetections = personCount > 0;
-    final detectionState = ref.watch(cameraInstantDetectionProvider(widget.cameraId));
-    
-    // Debug: Log state on every build
-    print('🎨 [BUILD] hasDetections=$hasDetections, _demographics=${_demographics != null ? "EXISTS" : "NULL"}, personCount=$personCount');
-    
-    // Set up detection state listener - MUST be in build method for Riverpod
-    ref.listen(cameraInstantDetectionProvider(widget.cameraId), (previous, next) {
-      print('🔍 [INSTANT_DETECTION_WIDGET] Detection state changed: prev=${previous?.isDetecting}, next=${next.isDetecting}');
-      
+    final detectionState =
+        ref.watch(cameraInstantDetectionProvider(widget.cameraId));
+
+    ref.listen(cameraInstantDetectionProvider(widget.cameraId),
+        (previous, next) {
       if (next.isDetecting && previous?.isDetecting != true) {
-        // Detection JUST started - begin checking for results
-        print('🔍 [INSTANT_DETECTION_WIDGET] Detection JUST started, starting lazy checks');
         _startLazyChecking();
       } else if (!next.isDetecting && previous?.isDetecting == true) {
-        // Detection JUST stopped - stop all polling
-        print('🔍 [INSTANT_DETECTION_WIDGET] Detection JUST stopped, stopping all polling');
         _stopAllPolling();
       }
     });
 
-    // If detection not active, show message to start detection
     if (!detectionState.isDetecting) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -279,7 +244,6 @@ class _InstantDetectionWidgetState
       );
     }
 
-    // If detection is active but backend hasn't returned results yet, show waiting state
     if (!_isInstantDetectionRunning && !_isLoading) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -333,19 +297,25 @@ class _InstantDetectionWidgetState
       );
     }
 
+    final accent = _accentColor();
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: _isInstantDetectionRunning
-            ? (hasDetections
-                ? Colors.blue.withOpacity(0.05)
+            ? (_hasDetections
+                ? (_bodyCount > 0 && _faceCount == 0
+                    ? Colors.cyan.withOpacity(0.05)
+                    : Colors.blue.withOpacity(0.05))
                 : Colors.grey.withOpacity(0.03))
             : Colors.grey.withOpacity(0.02),
         border: Border(
           top: BorderSide(
             color: _isInstantDetectionRunning
-                ? (hasDetections
-                    ? Colors.blue.withOpacity(0.2)
+                ? (_hasDetections
+                    ? (_bodyCount > 0 && _faceCount == 0
+                        ? Colors.cyan.withOpacity(0.2)
+                        : Colors.blue.withOpacity(0.2))
                     : Colors.grey.withOpacity(0.2))
                 : Colors.grey.withOpacity(0.1),
             width: 1,
@@ -355,18 +325,16 @@ class _InstantDetectionWidgetState
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Left side: Status and count
           Expanded(
             child: Row(
               children: [
-                // Real-time indicator
                 Icon(
                   _isInstantDetectionRunning
                       ? Icons.fiber_manual_record
                       : Icons.radio_button_unchecked,
                   size: 12,
                   color: _isInstantDetectionRunning
-                      ? (hasDetections ? Colors.blue : Colors.grey)
+                      ? (_hasDetections ? accent : Colors.grey)
                       : Colors.grey.shade400,
                 ),
                 const SizedBox(width: 8),
@@ -384,7 +352,6 @@ class _InstantDetectionWidgetState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Main count row
                         Row(
                           children: [
                             Text(
@@ -394,14 +361,15 @@ class _InstantDetectionWidgetState
                                 color: AppColors.textSecondary,
                               ),
                             ),
-                            Text(
-                              '$personCount ${personCount == 1 ? 'person' : 'people'}',
-                              style: OfflineFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: hasDetections
-                                    ? Colors.blue.shade700
-                                    : Colors.grey.shade600,
+                            Flexible(
+                              child: Text(
+                                _liveCountLabel(),
+                                style: OfflineFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: accent,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             if (_ageSeconds != null) ...[
@@ -415,23 +383,25 @@ class _InstantDetectionWidgetState
                             ],
                           ],
                         ),
-                        // Demographics row (using backend aggregation)
-                        if (hasDetections && _demographics != null)
+                        if (_faceCount > 0 && _demographics != null)
                           _buildDemographicsRow(),
+                        if (_bodyCount > 0) _buildBodySummaryRow(),
                       ],
                     ),
                   ),
               ],
             ),
           ),
-          // Right side: Refresh indicator
           if (_cachedIteration != null)
             Tooltip(
-              message: 'Iteration #$_cachedIteration\nRefreshes every 5s',
+              message:
+                  'Iteration #$_cachedIteration\nFaces: $_faceCount · Bodies: $_bodyCount',
               child: Icon(
                 Icons.autorenew,
                 size: 14,
-                color: Colors.blue.shade400,
+                color: _bodyCount > 0 && _faceCount == 0
+                    ? Colors.cyan.shade400
+                    : Colors.blue.shade400,
               ),
             ),
         ],
@@ -439,45 +409,93 @@ class _InstantDetectionWidgetState
     );
   }
 
-  Widget _buildDemographicsRow() {
-    print('📊 [_buildDemographicsRow] Called - _demographics: $_demographics');
-    
-    if (_demographics == null) {
-      print('⚠️ [_buildDemographicsRow] Demographics is null, returning empty');
+  Widget _buildBodySummaryRow() {
+    final persons = _bodyPersons;
+    if (persons == null || persons.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    // Get counts and percentages from backend demographics aggregation
+    var upright = 0;
+    var horizontal = 0;
+    var uncertain = 0;
+    for (final p in persons) {
+      final posture = (p['posture'] as String?)?.toLowerCase() ?? 'uncertain';
+      if (posture == 'upright') {
+        upright++;
+      } else if (posture == 'horizontal') {
+        horizontal++;
+      } else {
+        uncertain++;
+      }
+    }
+
+    final chips = <Widget>[];
+    void addChip(IconData icon, String label, Color color) {
+      if (chips.isNotEmpty) {
+        chips.add(const SizedBox(width: 8));
+      }
+      chips.addAll([
+        Icon(icon, size: 12, color: color),
+        const SizedBox(width: 2),
+        Text(
+          label,
+          style: OfflineFonts.inter(fontSize: 11, color: color),
+        ),
+      ]);
+    }
+
+    if (upright > 0) {
+      addChip(Icons.accessibility_new, 'Upright: $upright', Colors.cyan.shade700);
+    }
+    if (horizontal > 0) {
+      addChip(Icons.airline_seat_flat, 'Horizontal: $horizontal',
+          Colors.orange.shade700);
+    }
+    if (uncertain > 0 && (upright > 0 || horizontal > 0)) {
+      addChip(Icons.help_outline, 'Uncertain: $uncertain', Colors.grey.shade700);
+    } else if (uncertain > 0 && upright == 0 && horizontal == 0) {
+      addChip(Icons.accessibility, '$_bodyCount tracked', Colors.cyan.shade700);
+    }
+
+    if (chips.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(children: chips),
+    );
+  }
+
+  Widget _buildDemographicsRow() {
+    if (_demographics == null) {
+      return const SizedBox.shrink();
+    }
+
     final maleCount = _demographics!['total_male'] as int? ?? 0;
     final femaleCount = _demographics!['total_female'] as int? ?? 0;
-    final unknownGenderCount = _demographics!['total_unknown_gender'] as int? ?? 0;
+    final unknownGenderCount =
+        _demographics!['total_unknown_gender'] as int? ?? 0;
     final youngCount = _demographics!['total_young'] as int? ?? 0;
     final adultCount = _demographics!['total_adult'] as int? ?? 0;
     final unknownAgeCount = _demographics!['total_unknown_age'] as int? ?? 0;
-    
+
     final malePercent = _demographics!['percent_male'] as num? ?? 0;
     final femalePercent = _demographics!['percent_female'] as num? ?? 0;
-    final unknownGenderPercent = _demographics!['percent_unknown_gender'] as num? ?? 0;
+    final unknownGenderPercent =
+        _demographics!['percent_unknown_gender'] as num? ?? 0;
     final youngPercent = _demographics!['percent_young'] as num? ?? 0;
     final adultPercent = _demographics!['percent_adult'] as num? ?? 0;
     final unknownAgePercent = _demographics!['percent_unknown_age'] as num? ?? 0;
-    
-    print('📊 [_buildDemographicsRow] Counts - M:$maleCount F:$femaleCount U:$unknownGenderCount | Y:$youngCount A:$adultCount U:$unknownAgeCount');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Gender row
         if (maleCount > 0 || femaleCount > 0 || unknownGenderCount > 0)
           Row(
             children: [
-              // Male
               if (maleCount > 0) ...[
-                Icon(
-                  Icons.male,
-                  size: 12,
-                  color: Colors.blue.shade600,
-                ),
+                Icon(Icons.male, size: 12, color: Colors.blue.shade600),
                 const SizedBox(width: 2),
                 Text(
                   'Male: $maleCount (${malePercent.toStringAsFixed(0)}%)',
@@ -486,15 +504,11 @@ class _InstantDetectionWidgetState
                     color: Colors.blue.shade700,
                   ),
                 ),
-                if (femaleCount > 0 || unknownGenderCount > 0) const SizedBox(width: 8),
+                if (femaleCount > 0 || unknownGenderCount > 0)
+                  const SizedBox(width: 8),
               ],
-              // Female
               if (femaleCount > 0) ...[
-                Icon(
-                  Icons.female,
-                  size: 12,
-                  color: Colors.pink.shade600,
-                ),
+                Icon(Icons.female, size: 12, color: Colors.pink.shade600),
                 const SizedBox(width: 2),
                 Text(
                   'Female: $femaleCount (${femalePercent.toStringAsFixed(0)}%)',
@@ -505,13 +519,8 @@ class _InstantDetectionWidgetState
                 ),
                 if (unknownGenderCount > 0) const SizedBox(width: 8),
               ],
-              // Unknown Gender
               if (unknownGenderCount > 0) ...[
-                Icon(
-                  Icons.help_outline,
-                  size: 12,
-                  color: Colors.grey.shade600,
-                ),
+                Icon(Icons.help_outline, size: 12, color: Colors.grey.shade600),
                 const SizedBox(width: 2),
                 Text(
                   'Unknown: $unknownGenderCount (${unknownGenderPercent.toStringAsFixed(0)}%)',
@@ -523,18 +532,13 @@ class _InstantDetectionWidgetState
               ],
             ],
           ),
-        // Age row
         if (youngCount > 0 || adultCount > 0 || unknownAgeCount > 0) ...[
-          if (maleCount > 0 || femaleCount > 0 || unknownGenderCount > 0) const SizedBox(height: 2),
+          if (maleCount > 0 || femaleCount > 0 || unknownGenderCount > 0)
+            const SizedBox(height: 2),
           Row(
             children: [
-              // Young
               if (youngCount > 0) ...[
-                Icon(
-                  Icons.child_care,
-                  size: 12,
-                  color: Colors.orange.shade600,
-                ),
+                Icon(Icons.child_care, size: 12, color: Colors.orange.shade600),
                 const SizedBox(width: 2),
                 Text(
                   'Young: $youngCount (${youngPercent.toStringAsFixed(0)}%)',
@@ -543,15 +547,11 @@ class _InstantDetectionWidgetState
                     color: Colors.orange.shade700,
                   ),
                 ),
-                if (adultCount > 0 || unknownAgeCount > 0) const SizedBox(width: 8),
+                if (adultCount > 0 || unknownAgeCount > 0)
+                  const SizedBox(width: 8),
               ],
-              // Adult
               if (adultCount > 0) ...[
-                Icon(
-                  Icons.person,
-                  size: 12,
-                  color: Colors.green.shade600,
-                ),
+                Icon(Icons.person, size: 12, color: Colors.green.shade600),
                 const SizedBox(width: 2),
                 Text(
                   'Adult (≥21): $adultCount (${adultPercent.toStringAsFixed(0)}%)',
@@ -562,13 +562,8 @@ class _InstantDetectionWidgetState
                 ),
                 if (unknownAgeCount > 0) const SizedBox(width: 8),
               ],
-              // Unknown Age
               if (unknownAgeCount > 0) ...[
-                Icon(
-                  Icons.help_outline,
-                  size: 12,
-                  color: Colors.grey.shade600,
-                ),
+                Icon(Icons.help_outline, size: 12, color: Colors.grey.shade600),
                 const SizedBox(width: 2),
                 Text(
                   'Unknown: $unknownAgeCount (${unknownAgePercent.toStringAsFixed(0)}%)',

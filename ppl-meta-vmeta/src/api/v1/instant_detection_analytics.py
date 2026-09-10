@@ -57,6 +57,7 @@ async def get_instant_detection_approx_people(
         iva.confidence,
         iva.quality_score,
         iva.representative_faces,
+        iva.movement_pattern,
         i.age_estimate,
         i.gender_estimate,
         imm.mvr_people_uuid

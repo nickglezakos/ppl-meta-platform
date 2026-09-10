@@ -118,7 +118,7 @@ class TriggerBase(BaseModel):
     )
     trigger_mode: str = Field(
         default="demographic",
-        description="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match"
+        description="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match | body_posture | velocity"
     )
     ppl_match_group_id: Optional[str] = Field(
         None,
@@ -131,7 +131,7 @@ class TriggerBase(BaseModel):
     )
     camera_device_ids: Optional[List[str]] = Field(
         None,
-        description="JSON array of camera device IDs for vprofile_match multi-camera mode"
+        description="JSON array of camera device IDs for vprofile_match / body_posture / velocity multi-camera mode"
     )
     ppl_match_similarity_threshold: float = Field(
         default=0.75,
@@ -148,6 +148,42 @@ class TriggerBase(BaseModel):
         default=False,
         description="When True, trigger fires when NO group members are matched (NOT mode). Applies to ppl_match and search modes."
     )
+    body_posture_target: Optional[str] = Field(
+        default="horizontal",
+        description="Target posture for body_posture mode: horizontal | upright | either",
+    )
+    body_posture_window_size: Optional[int] = Field(
+        default=4,
+        ge=3,
+        le=4,
+        description="Consecutive instant-body scans used for voting (3-4)",
+    )
+    body_posture_min_matches: Optional[int] = Field(
+        default=3,
+        ge=1,
+        le=4,
+        description="Minimum matching scans in the window required to fire",
+    )
+    body_posture_min_confidence: Optional[float] = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Minimum posture_confidence for a scan label to count",
+    )
+    body_posture_iou_threshold: Optional[float] = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Minimum bbox IoU to continue a body track across cycles",
+    )
+    velocity_scope: Optional[str] = Field(
+        default="crowd",
+        description="Velocity trigger scope: crowd | single",
+    )
+    velocity_band: Optional[str] = Field(
+        default="walking",
+        description="Gait band floor: walking | light_running | running | fast_running",
+    )
     search_camera_device_ids: Optional[List[str]] = Field(
         None,
         description="JSON array of camera device IDs to search (required for search mode)"
@@ -161,9 +197,47 @@ class TriggerBase(BaseModel):
     @field_validator('trigger_mode')
     @classmethod
     def validate_trigger_mode(cls, v: str) -> str:
-        valid = ['demographic', 'ppl_match', 'search', 'search_demographic', 'vprofile_match']
+        valid = [
+            'demographic',
+            'ppl_match',
+            'search',
+            'search_demographic',
+            'vprofile_match',
+            'body_posture',
+            'velocity',
+        ]
         if v not in valid:
             raise ValueError(f'trigger_mode must be one of {valid}')
+        return v
+
+    @field_validator('body_posture_target')
+    @classmethod
+    def validate_body_posture_target(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        valid = ['horizontal', 'upright', 'either']
+        if v not in valid:
+            raise ValueError(f'body_posture_target must be one of {valid}')
+        return v
+
+    @field_validator('velocity_scope')
+    @classmethod
+    def validate_velocity_scope(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        valid = ['crowd', 'single']
+        if v not in valid:
+            raise ValueError(f'velocity_scope must be one of {valid}')
+        return v
+
+    @field_validator('velocity_band')
+    @classmethod
+    def validate_velocity_band(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        valid = ['walking', 'light_running', 'running', 'fast_running']
+        if v not in valid:
+            raise ValueError(f'velocity_band must be one of {valid}')
         return v
 
     @model_validator(mode='after')
@@ -173,6 +247,22 @@ class TriggerBase(BaseModel):
                 raise ValueError('ppl_match_group_ids is required for vprofile_match mode')
             if not self.camera_device_ids:
                 raise ValueError('camera_device_ids is required for vprofile_match mode')
+            return self
+        if self.trigger_mode == 'body_posture':
+            if not self.camera_device_ids:
+                raise ValueError('camera_device_ids is required for body_posture mode')
+            window = int(self.body_posture_window_size or 4)
+            min_matches = int(self.body_posture_min_matches or 3)
+            if min_matches > window:
+                raise ValueError('body_posture_min_matches cannot exceed body_posture_window_size')
+            return self
+        if self.trigger_mode == 'velocity':
+            if not self.camera_device_ids:
+                raise ValueError('camera_device_ids is required for velocity mode')
+            if not self.velocity_scope:
+                raise ValueError('velocity_scope is required for velocity mode')
+            if not self.velocity_band:
+                raise ValueError('velocity_band is required for velocity mode')
             return self
         if self.trigger_mode not in ('search', 'search_demographic') and not self.camera_device_id:
             raise ValueError('camera_device_id is required for demographic and ppl_match trigger modes')
@@ -219,6 +309,13 @@ class TriggerUpdate(BaseModel):
     ppl_match_similarity_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     ppl_match_top_k: Optional[int] = Field(default=None, ge=1)
     ppl_match_negate: Optional[bool] = None
+    body_posture_target: Optional[str] = None
+    body_posture_window_size: Optional[int] = Field(default=None, ge=3, le=4)
+    body_posture_min_matches: Optional[int] = Field(default=None, ge=1, le=4)
+    body_posture_min_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    body_posture_iou_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    velocity_scope: Optional[str] = None
+    velocity_band: Optional[str] = None
     search_camera_device_ids: Optional[List[str]] = None
     search_interval_seconds: Optional[int] = Field(default=None, ge=30)
 
@@ -227,13 +324,55 @@ class TriggerUpdate(BaseModel):
     def validate_trigger_mode(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
-        valid = ['demographic', 'ppl_match', 'search', 'search_demographic', 'vprofile_match']
+        valid = [
+            'demographic',
+            'ppl_match',
+            'search',
+            'search_demographic',
+            'vprofile_match',
+            'body_posture',
+            'velocity',
+        ]
         if v not in valid:
             raise ValueError(f'trigger_mode must be one of {valid}')
         return v
 
+    @field_validator('body_posture_target')
+    @classmethod
+    def validate_body_posture_target(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        valid = ['horizontal', 'upright', 'either']
+        if v not in valid:
+            raise ValueError(f'body_posture_target must be one of {valid}')
+        return v
+
+    @field_validator('velocity_scope')
+    @classmethod
+    def validate_velocity_scope(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        valid = ['crowd', 'single']
+        if v not in valid:
+            raise ValueError(f'velocity_scope must be one of {valid}')
+        return v
+
+    @field_validator('velocity_band')
+    @classmethod
+    def validate_velocity_band(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        valid = ['walking', 'light_running', 'running', 'fast_running']
+        if v not in valid:
+            raise ValueError(f'velocity_band must be one of {valid}')
+        return v
+
     @model_validator(mode='after')
     def validate_mode_config(self):
+        if self.trigger_mode == 'body_posture' and self.camera_device_ids is not None and not self.camera_device_ids:
+            raise ValueError('camera_device_ids is required for body_posture mode')
+        if self.trigger_mode == 'velocity' and self.camera_device_ids is not None and not self.camera_device_ids:
+            raise ValueError('camera_device_ids is required for velocity mode')
         if self.trigger_mode == 'ppl_match' and not self.ppl_match_group_id:
             raise ValueError('ppl_match_group_id is required when trigger_mode is ppl_match')
         if self.trigger_mode == 'search':
@@ -273,6 +412,13 @@ class TriggerResponse(BaseModel):
     ppl_match_negate: bool = False
     last_match_info: Optional[Dict[str, Any]] = None
     last_matched_at: Optional[datetime] = None
+    body_posture_target: Optional[str] = None
+    body_posture_window_size: Optional[int] = None
+    body_posture_min_matches: Optional[int] = None
+    body_posture_min_confidence: Optional[float] = None
+    body_posture_iou_threshold: Optional[float] = None
+    velocity_scope: Optional[str] = None
+    velocity_band: Optional[str] = None
     search_camera_device_ids: Optional[List[str]] = None
     search_interval_seconds: Optional[int] = None
     name: Optional[str]

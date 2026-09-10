@@ -71,6 +71,16 @@ class FaceDetectionSessionRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(
         default=None, description="Additional session metadata"
     )
+    model_id: Optional[str] = Field(default=None, description="Catalog model id")
+    model_version: Optional[str] = Field(default=None, description="Catalog model version")
+    runtime: Optional[str] = Field(default=None, description="Detector runtime adapter")
+    path: Optional[str] = Field(default="bulk", description="instant | bulk | preview")
+    confidence_threshold: Optional[float] = Field(
+        default=None, description="Detector confidence threshold used for this session"
+    )
+    serving: Optional[bool] = Field(
+        default=True, description="False when assignment is shadow-only"
+    )
 
     @validator("session_uuid", pre=True, always=True)
     def validate_session_uuid(cls, v):

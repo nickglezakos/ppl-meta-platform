@@ -437,6 +437,11 @@ class AuthorityService:
         info.authority_last_checked_at = now
         info.authority_last_successful_check_at = now
         info.authority_last_result_reason = reason
+        features = installation_payload.get("licence_features")
+        if isinstance(features, list):
+            info.authority_licence_features = features
+        elif features:
+            info.authority_licence_features = [str(features)]
         db.commit()
 
     def _record_failed_check(self, db, reason: str) -> None:

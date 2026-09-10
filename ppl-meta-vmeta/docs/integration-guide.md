@@ -373,5 +373,5 @@ for sig in (signal.SIGTERM, signal.SIGINT):
 ## See Also
 
 - [Event Subscription Integration Example](../examples/event_subscription_integration.py)
-- [Batch Processing Pipeline Documentation](continuous-individuals-and-mvr-pipeline.md)
+- [Frame to Analytics Pipeline Documentation](../../docs/modules/AI-vision-pipeline/frame-to-analytics-pipeline.md)
 - [API Documentation](../api/)

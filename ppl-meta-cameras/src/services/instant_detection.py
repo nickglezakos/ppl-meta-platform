@@ -16,6 +16,7 @@ Key Features:
 
 import threading
 import asyncio
+import json
 import time
 import uuid
 import os
@@ -27,6 +28,8 @@ import logging
 import cv2
 import numpy as np
 import aiohttp
+
+from src.services.instant_velocity import attach_cycle_velocity
 
 logger = logging.getLogger(__name__)
 
@@ -89,26 +92,39 @@ def _map_group_from_faces_response(vision_response: Dict) -> List[Dict]:
 
         instant_faces: List[Dict] = []
         for face in group.get("faces", []):
-            instant_faces.append(
-                {
-                    "face_id": face.get("id"),
-                    "frame_index": face.get("frame_number", 0),
-                    "bbox": [
-                        face.get("bbox_x1", 0),
-                        face.get("bbox_y1", 0),
-                        face.get("bbox_x2", 0),
-                        face.get("bbox_y2", 0),
-                    ],
-                    "confidence": face.get("confidence", 0.0),
-                    "embedding": face.get("embedding"),
-                }
-            )
+            face_payload = {
+                "face_id": face.get("id"),
+                "frame_index": face.get("frame_number", 0),
+                "bbox": [
+                    face.get("bbox_x1", 0),
+                    face.get("bbox_y1", 0),
+                    face.get("bbox_x2", 0),
+                    face.get("bbox_y2", 0),
+                ],
+                "confidence": face.get("confidence", 0.0),
+                "embedding": face.get("embedding"),
+            }
+            # Preserve timestamps for velocity fallback / flush trajectories.
+            if face.get("created_at") is not None:
+                face_payload["created_at"] = face.get("created_at")
+            if face.get("timestamp") is not None:
+                face_payload["timestamp"] = face.get("timestamp")
+            instant_faces.append(face_payload)
 
         best_bbox = best.get("bbox") or [0, 0, 0, 0]
         if not best_bbox and instant_faces:
             best_bbox = max(instant_faces, key=lambda f: f.get("confidence", 0.0)).get(
                 "bbox", [0, 0, 0, 0]
             )
+
+        velocity = group.get("velocity") or {"x": 0.0, "y": 0.0}
+        samples = int(
+            group.get("samples")
+            or group.get("frame_history")
+            or group.get("face_count")
+            or len(instant_faces)
+            or 0
+        )
 
         person_objects.append(
             {
@@ -124,6 +140,12 @@ def _map_group_from_faces_response(vision_response: Dict) -> List[Dict]:
                     "quality_score": best.get("quality_score", 0.0),
                 },
                 "best_bbox": best_bbox,
+                "velocity": {
+                    "x": float(velocity.get("x", 0.0)),
+                    "y": float(velocity.get("y", 0.0)),
+                },
+                "frame_history": samples,
+                "samples": samples,
                 "grouping": {
                     "algorithm": vision_response.get("summary", {}).get(
                         "grouping_algorithm"
@@ -273,6 +295,7 @@ class InstantDetectionSampler:
         vmeta_service_url: str = "http://localhost:8008",
         orchestrator_service_url: str = "http://localhost:8002",
         media_service_url: str = "http://localhost:8000",
+        models_service_url: str = "http://localhost:8013",
         sampling_interval: int = 5,
         temporal_window: float = 1.0
     ):
@@ -280,6 +303,11 @@ class InstantDetectionSampler:
         self.vmeta_service_url = vmeta_service_url
         self.orchestrator_service_url = orchestrator_service_url
         self.media_service_url = media_service_url
+        self.models_service_url = models_service_url or os.getenv(
+            "MODELS_SERVICE_URL", "http://localhost:8013"
+        )
+        self._resolved_runtime: Dict[str, str] = {}
+        self._resolved_body: Dict[str, Dict[str, str]] = {}
         self.sampling_interval = sampling_interval
         self.temporal_window = temporal_window
         
@@ -787,13 +815,11 @@ class InstantDetectionSampler:
     ) -> Dict:
         """
         Process 3 frames using Vision Service APIs.
-        
-        This reuses existing Vision Service capabilities:
-        1. Send 3 frames to Vision Service for face detection (Haar + Dlib)
-        2. Send face detections to Vision Service for person grouping (spatial/IoU)
-        3. Send best face per person to VMeta Service for age/gender
-        
-        NO local models needed - NO database storage - results kept in memory only
+
+        Face path (detect → group → age/gender) runs only when this camera has
+        auto_face_detection enabled. Body YOLO remains independent.
+        Both face and body stay in memory for the live cycle; DB flush is batched
+        later (same Redis queue / VMeta persist-batch path as faces).
         """
         start_time = time.time()
         
@@ -801,143 +827,528 @@ class InstantDetectionSampler:
         
         # Generate session UUID for this instant detection iteration
         session_uuid = str(uuid.uuid4())
+        face_enabled = self._camera_auto_face_enabled(camera_id)
         
-        # Step 1: Send frames to Vision Service for face detection
+        # Step 1: Send frames to Vision Service for face detection (if enabled)
         all_face_detections = []
+        body_detections: List[Dict] = []
+        body_persons: List[Dict] = []
         frame_index_map = {}  # Map Vision Service frame_index to our frames array position
         
         async with aiohttp.ClientSession() as session:
-            for array_position, frame_data in enumerate(frames):
-                frame = frame_data["frame"]
-                frame_index = frame_data["frame_index"]
-                timestamp = frame_data["timestamp"]
-                
-                # Store mapping from Vision's frame_index to our array position
-                frame_index_map[frame_index] = array_position
-                
-                # Call Vision Service API for detection
-                detections = await self._detect_faces_via_vision_service(
-                    session,
-                    frame,
-                    frame_index,
-                    timestamp
+            if face_enabled:
+                for array_position, frame_data in enumerate(frames):
+                    frame = frame_data["frame"]
+                    frame_index = frame_data["frame_index"]
+                    timestamp = frame_data["timestamp"]
+                    
+                    # Store mapping from Vision's frame_index to our array position
+                    frame_index_map[frame_index] = array_position
+                    
+                    # Call Vision Service API for detection
+                    detections = await self._detect_faces_via_vision_service(
+                        session,
+                        frame,
+                        frame_index,
+                        timestamp,
+                        camera_id=camera_id,
+                    )
+                    
+                    all_face_detections.extend(detections)
+            else:
+                logger.info(
+                    "🎯 Instant face path skipped for camera %s (auto_face_detection OFF)",
+                    camera_id,
                 )
-                
-                all_face_detections.extend(detections)
+
+            # Body YOLO: memory-only detect+group (same pattern as faces).
+            # Persistence happens later via Redis batch flush → VMeta.
+            body_result = await self._maybe_detect_bodies_via_vision(
+                session, frames, camera_id, session_uuid
+            )
+            body_detections = body_result.get("detections") or []
+            body_persons = body_result.get("body_persons") or []
         
         total_faces = len(all_face_detections)
-        
-        # Step 2: Group faces into person objects via Vision group-from-faces
-        person_objects = await self._create_person_objects_via_vision_service(
-            session_uuid,
-            all_face_detections,
-            camera_id
-        )
-        
-        # Step 3: Age/gender detection via VMeta Service
-        # Only process ONE face per person (the best quality one)
-        logger.info(f"🧬 Step 3: Starting age/gender detection for {len(person_objects)} people")
-        logger.info(f"📊 DEBUG: frames array length = {len(frames)}")
-        
-        async with aiohttp.ClientSession() as session:
-            for person in person_objects:
-                # Get faces for this person
-                person_faces = person.get("faces", [])
-                
-                if not person_faces:
-                    logger.warning(f"⚠️ Person has no faces, using default age/gender")
-                    person["age_gender"] = self._default_age_gender()
-                    continue
-                
-                # Find best face for this person (Vision quality analysis when available)
-                best_face = person.get("best_face")
-                if best_face and best_face.get("bbox"):
-                    selected_face = {
-                        "bbox": best_face.get("bbox", [0, 0, 0, 0]),
-                        "confidence": best_face.get("confidence", 0.0),
-                        "frame_index": best_face.get(
-                            "frame_index", best_face.get("frame_number", 0)
-                        ),
-                    }
-                else:
-                    selected_face = max(
-                        person_faces,
-                        key=lambda f: f.get("confidence", 0.0),
-                    )
-                    selected_face = {
-                        "bbox": selected_face.get("bbox", [0, 0, 0, 0]),
-                        "confidence": selected_face.get("confidence", 0.0),
-                        "frame_index": selected_face.get("frame_index", 0),
-                    }
+        person_objects: List[Dict] = []
 
-                person["best_face"] = {
-                    "bbox": selected_face["bbox"],
-                    "confidence": selected_face["confidence"],
-                }
-                
-                # Get the frame for this face
-                frame_index_from_vision = selected_face.get("frame_index", 0)
-                array_position = frame_index_map.get(frame_index_from_vision, 0)
-                
-                logger.info(f"📊 DEBUG: Processing person with frame_index_from_vision={frame_index_from_vision}, mapped to array_position={array_position}, frames length={len(frames)}")
-                
-                if array_position < len(frames):
-                    # Get age/gender from VMeta Service (DeepFace models)
-                    logger.info(f"🎯 Calling VMeta for person with face at array position {array_position} (original frame {frame_index_from_vision})")
-                    age_gender = await self._get_age_gender_via_vmeta_service(
-                        session,
-                        frames[array_position]["frame"],
-                        selected_face["bbox"]
-                    )
-                    person["age_gender"] = age_gender
-
-                    # Resolve person identity against vmeta MVR store
-                    identity_match = await self._identify_face_via_vmeta_service(
-                        session,
-                        frames[array_position]["frame"],
-                        selected_face["bbox"]
-                    )
-                    if identity_match.get("matched") and identity_match.get("mvr_people_uuid"):
-                        mvr_uuid = identity_match["mvr_people_uuid"]
-                        person["mvr_person_uuid"] = mvr_uuid
-                        selected_face["mvr_person_uuid"] = mvr_uuid
-                        logger.info(
-                            f"✅ Instant identity resolved: camera={camera_id}, mvr={mvr_uuid}, "
-                            f"similarity={identity_match.get('similarity_score', 0.0):.3f}"
+        if face_enabled and all_face_detections:
+            # Step 2: Group faces into person objects via Vision group-from-faces
+            person_objects = await self._create_person_objects_via_vision_service(
+                session_uuid,
+                all_face_detections,
+                camera_id
+            )
+            
+            # Step 3: Age/gender detection via VMeta Service
+            # Only process ONE face per person (the best quality one)
+            logger.info(f"🧬 Step 3: Starting age/gender detection for {len(person_objects)} people")
+            logger.info(f"📊 DEBUG: frames array length = {len(frames)}")
+            
+            async with aiohttp.ClientSession() as session:
+                for person in person_objects:
+                    # Get faces for this person
+                    person_faces = person.get("faces", [])
+                    
+                    if not person_faces:
+                        logger.warning(f"⚠️ Person has no faces, using default age/gender")
+                        person["age_gender"] = self._default_age_gender()
+                        continue
+                    
+                    # Find best face for this person (Vision quality analysis when available)
+                    best_face = person.get("best_face")
+                    if best_face and best_face.get("bbox"):
+                        selected_face = {
+                            "bbox": best_face.get("bbox", [0, 0, 0, 0]),
+                            "confidence": best_face.get("confidence", 0.0),
+                            "frame_index": best_face.get(
+                                "frame_index", best_face.get("frame_number", 0)
+                            ),
+                        }
+                    else:
+                        selected_face = max(
+                            person_faces,
+                            key=lambda f: f.get("confidence", 0.0),
                         )
-                else:
-                    logger.error(f"❌ SKIP VMeta: array_position {array_position} >= len(frames) {len(frames)}")
-                    person["age_gender"] = self._default_age_gender()
+                        selected_face = {
+                            "bbox": selected_face.get("bbox", [0, 0, 0, 0]),
+                            "confidence": selected_face.get("confidence", 0.0),
+                            "frame_index": selected_face.get("frame_index", 0),
+                        }
+
+                    person["best_face"] = {
+                        "bbox": selected_face["bbox"],
+                        "confidence": selected_face["confidence"],
+                    }
+                    
+                    # Get the frame for this face
+                    frame_index_from_vision = selected_face.get("frame_index", 0)
+                    array_position = frame_index_map.get(frame_index_from_vision, 0)
+                    
+                    logger.info(f"📊 DEBUG: Processing person with frame_index_from_vision={frame_index_from_vision}, mapped to array_position={array_position}, frames length={len(frames)}")
+                    
+                    if array_position < len(frames):
+                        # Get age/gender from VMeta Service (DeepFace models)
+                        logger.info(f"🎯 Calling VMeta for person with face at array position {array_position} (original frame {frame_index_from_vision})")
+                        age_gender = await self._get_age_gender_via_vmeta_service(
+                            session,
+                            frames[array_position]["frame"],
+                            selected_face["bbox"]
+                        )
+                        person["age_gender"] = age_gender
+
+                        # Resolve person identity against vmeta MVR store
+                        identity_match = await self._identify_face_via_vmeta_service(
+                            session,
+                            frames[array_position]["frame"],
+                            selected_face["bbox"]
+                        )
+                        if identity_match.get("matched") and identity_match.get("mvr_people_uuid"):
+                            mvr_uuid = identity_match["mvr_people_uuid"]
+                            person["mvr_person_uuid"] = mvr_uuid
+                            selected_face["mvr_person_uuid"] = mvr_uuid
+                            logger.info(
+                                f"✅ Instant identity resolved: camera={camera_id}, mvr={mvr_uuid}, "
+                                f"similarity={identity_match.get('similarity_score', 0.0):.3f}"
+                            )
+                    else:
+                        logger.error(f"❌ SKIP VMeta: array_position {array_position} >= len(frames) {len(frames)}")
+                        person["age_gender"] = self._default_age_gender()
         
         processing_time = time.time() - start_time
         
         # Step 4: Calculate demographics aggregation (same format as MVR counter)
         demographics = self._calculate_demographics(person_objects)
+
+        # Step 5: Per-person + crowd velocity (Vision px/ms → m/s via face height)
+        velocity_summary = attach_cycle_velocity(person_objects, body_persons)
         
-        logger.info(f"✅ Instant detection complete: {len(person_objects)} people, {total_faces} faces, demographics: {demographics}")
+        logger.info(
+            f"✅ Instant detection complete: {len(person_objects)} people, "
+            f"{total_faces} faces, {len(body_persons)} body persons, "
+            f"demographics: {demographics}, "
+            f"crowd_mps={velocity_summary.get('crowd_velocity_mps')}, "
+            f"max_mps={velocity_summary.get('max_person_speed_mps')}"
+        )
         
         return {
             "success": True,
             "camera_id": camera_id,
             "timestamp": datetime.now().isoformat(),
+            "face_detection_enabled": face_enabled,
             "temporal_window_seconds": self.temporal_window,
             "frames_processed": len(frames),
             "total_faces_detected": total_faces,
-            "people_count": len(person_objects),  # FIXED: Use people_count for trigger evaluation
+            "people_count": len(person_objects),  # face identities (triggers)
             "people_detected": len(person_objects),  # Keep for backward compatibility
+            "body_count": len(body_persons),
             "demographics": demographics,  # NEW: Gender/age breakdown
             "person_objects": person_objects,
+            "body_detections": body_detections,
+            "body_persons": body_persons,
+            "crowd_velocity_mps": velocity_summary.get("crowd_velocity_mps"),
+            "crowd_person_count": velocity_summary.get("crowd_person_count", 0),
+            "max_person_speed_mps": velocity_summary.get("max_person_speed_mps"),
+            "velocity": velocity_summary.get("velocity") or {
+                "crowd_mps": None,
+                "max_mps": None,
+                "valid_count": 0,
+                "people": [],
+            },
             "processing_time_seconds": processing_time,
             "detection_method": "vision_service_three_tier_grouping",
-            "storage": "none"
+            "storage": "none",
         }
     
+    def _resolve_instant_runtime(self, camera_id: str) -> str:
+        fallback = "two_stage"
+        try:
+            import urllib.parse
+            import urllib.request
+
+            params = urllib.parse.urlencode(
+                {
+                    "path": "instant",
+                    "capability": "face_detection",
+                    "camera_id": camera_id,
+                }
+            )
+            url = f"{self.models_service_url}/api/v1/mv-models/resolve?{params}"
+            with urllib.request.urlopen(url, timeout=2) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            runtime = payload.get("runtime") or fallback
+            self._resolved_runtime[camera_id] = runtime
+            return runtime
+        except Exception as exc:
+            logger.debug("instant model resolve failed for %s: %s", camera_id, exc)
+            return self._resolved_runtime.get(camera_id, fallback)
+
+    def _camera_auto_face_enabled(self, camera_id: str) -> bool:
+        """Per-camera Face detection setting; default False if unknown."""
+        if not camera_id:
+            return False
+        try:
+            # Ensure relationship target is registered before querying Camera.
+            from src.database import SessionLocal
+            from src.models.camera import Camera
+            from src.models.recording_session import RecordingSession  # noqa: F401
+
+            db = SessionLocal()
+            try:
+                camera = db.query(Camera).filter(Camera.device_id == camera_id).first()
+                if not camera:
+                    logger.info(
+                        "🎯 Instant face path skipped for camera %s (camera row not found)",
+                        camera_id,
+                    )
+                    return False
+                enabled = bool(getattr(camera, "auto_face_detection", False))
+                return enabled
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning(
+                "🎯 auto_face_detection lookup failed for %s (treating as OFF): %s",
+                camera_id,
+                exc,
+            )
+            return False
+
+    def _camera_auto_body_enabled(self, camera_id: str) -> bool:
+        """Per-camera Body detection setting from processing_options; default False."""
+        if not camera_id:
+            return False
+        try:
+            # Ensure relationship target is registered before querying Camera.
+            from src.database import SessionLocal
+            from src.models.camera import Camera
+            from src.models.recording_session import RecordingSession  # noqa: F401
+
+            db = SessionLocal()
+            try:
+                camera = db.query(Camera).filter(Camera.device_id == camera_id).first()
+                if not camera:
+                    logger.info(
+                        "🧍 Instant body path skipped for camera %s (camera row not found)",
+                        camera_id,
+                    )
+                    return False
+                opts = getattr(camera, "processing_options", None) or {}
+                if isinstance(opts, str):
+                    opts = json.loads(opts)
+                if not isinstance(opts, dict):
+                    logger.info(
+                        "🧍 Instant body path skipped for camera %s "
+                        "(processing_options not a dict: %s)",
+                        camera_id,
+                        type(opts).__name__,
+                    )
+                    return False
+                return bool(opts.get("auto_body_detection", False))
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning(
+                "🧍 auto_body_detection lookup failed for %s (treating as OFF): %s",
+                camera_id,
+                exc,
+            )
+            return False
+
+    def _resolve_body_model(self, camera_id: str) -> Dict[str, str]:
+        cached = self._resolved_body.get(camera_id)
+        if cached:
+            return cached
+        fallback = {"model_id": "body-yolo-pose-os", "version": "1.0.0", "runtime": "onnx_pose"}
+        try:
+            import urllib.parse
+            import urllib.request
+
+            params = urllib.parse.urlencode(
+                {
+                    "path": "instant",
+                    "capability": "body_detection",
+                    "camera_id": camera_id,
+                }
+            )
+            url = f"{self.models_service_url}/api/v1/mv-models/resolve?{params}"
+            with urllib.request.urlopen(url, timeout=2) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            resolved = {
+                "model_id": str(payload.get("model_id") or fallback["model_id"]),
+                "version": str(payload.get("version") or fallback["version"]),
+                "runtime": str(payload.get("runtime") or fallback["runtime"]),
+            }
+            self._resolved_body[camera_id] = resolved
+            return resolved
+        except Exception as exc:
+            logger.debug("body model resolve failed for %s: %s", camera_id, exc)
+            return cached or fallback
+
+    async def _maybe_detect_bodies_via_vision(
+        self,
+        session: aiohttp.ClientSession,
+        frames: List[Dict],
+        camera_id: str,
+        session_uuid: str,
+    ) -> Dict[str, List[Dict]]:
+        """
+        Body/pose detect + group in memory when auto_body_detection is ON.
+
+        Mirrors instant faces: no Vision/VMeta writes here. Caller caches
+        body_persons on the cycle result; batch flush materializes later.
+        """
+        empty: Dict[str, List[Dict]] = {"detections": [], "body_persons": []}
+        if not camera_id:
+            logger.info("🧍 Instant body path skipped (no camera_id)")
+            return empty
+        if not self._camera_auto_body_enabled(camera_id):
+            logger.info(
+                "🧍 Instant body path skipped for camera %s (auto_body_detection OFF)",
+                camera_id,
+            )
+            return empty
+        logger.info(
+            "🧍 Instant body path ON for camera %s — resolving body model "
+            "(memory-only; flush later)",
+            camera_id,
+        )
+        resolved = self._resolve_body_model(camera_id)
+        runtime = str(resolved.get("runtime", "")).lower()
+        if runtime not in ("onnx", "onnx_yolo", "yolo", "onnx_pose"):
+            logger.info(
+                "🧍 Instant body path skipped for camera %s "
+                "(runtime=%s not ONNX; model=%s)",
+                camera_id,
+                resolved.get("runtime"),
+                resolved.get("model_id"),
+            )
+            return empty
+        if not frames:
+            logger.info(
+                "🧍 Instant body path skipped for camera %s (no frames)",
+                camera_id,
+            )
+            return empty
+        if not self._vision_circuit.allow_request():
+            logger.info(
+                "🧍 Instant body path skipped for camera %s (vision circuit open)",
+                camera_id,
+            )
+            return empty
+
+        # Prefer pose model for MVR body path when catalog still resolves detect-only.
+        model_id = resolved.get("model_id") or "body-yolo-pose-os"
+        version = resolved.get("version") or "1.0.0"
+        if "pose" not in (model_id or "").lower():
+            logger.info(
+                "🧍 Instant body upgrading model %s -> body-yolo-pose-os for posture",
+                model_id,
+            )
+            model_id = "body-yolo-pose-os"
+            version = "1.0.0"
+        used_person_fallback = False
+
+        all_detections: List[Dict] = []
+        body_persons: List[Dict] = []
+        try:
+            import urllib.parse
+
+            for frame_data in frames:
+                frame = frame_data.get("frame")
+                if frame is None or getattr(frame, "size", 0) == 0:
+                    continue
+                frame_index = int(frame_data.get("frame_index") or 0)
+                timestamp = float(frame_data.get("timestamp") or 0)
+                _, buffer = cv2.imencode(".jpg", frame)
+                jpeg_bytes = buffer.tobytes()
+
+                async def _post_detect(mid: str, ver: str):
+                    form = aiohttp.FormData()
+                    form.add_field(
+                        "file",
+                        jpeg_bytes,
+                        filename="body_frame.jpg",
+                        content_type="image/jpeg",
+                    )
+                    params = urllib.parse.urlencode(
+                        {
+                            "model_id": mid,
+                            "version": ver,
+                            "persist": "false",
+                            "session_uuid": session_uuid,
+                            "media_id": camera_id,
+                            "frame_number": frame_index,
+                            "timestamp": timestamp,
+                            "path": "instant",
+                        }
+                    )
+                    detect_url = (
+                        f"{self.vision_service_url}/api/v1/object-detections/detect?{params}"
+                    )
+                    async with session.post(detect_url, data=form) as response:
+                        try:
+                            payload = await response.json(content_type=None)
+                        except Exception:
+                            payload = {"error": await response.text()}
+                        return response.status, payload
+
+                self._vision_semaphore.acquire()
+                try:
+                    status, payload = await _post_detect(model_id, version)
+                    if status != 200:
+                        self._vision_circuit.record_failure()
+                        err_txt = str(payload)
+                        if (
+                            not used_person_fallback
+                            and "pose" in (model_id or "").lower()
+                        ):
+                            logger.warning(
+                                "🧍 Instant pose model unavailable "
+                                "(status=%s); falling back to body-yolo-person-os",
+                                status,
+                            )
+                            model_id = "body-yolo-person-os"
+                            version = "1.0.0"
+                            used_person_fallback = True
+                            status, payload = await _post_detect(model_id, version)
+                            if status != 200:
+                                logger.debug(
+                                    "body detect fallback failed "
+                                    "status=%s camera=%s frame=%s",
+                                    status,
+                                    camera_id,
+                                    frame_index,
+                                )
+                                continue
+                        else:
+                            logger.debug(
+                                "body detect failed status=%s camera=%s frame=%s err=%s",
+                                status,
+                                camera_id,
+                                frame_index,
+                                err_txt[:200],
+                            )
+                            continue
+                    self._vision_circuit.record_success()
+                    err = (payload or {}).get("error")
+                    if (
+                        not used_person_fallback
+                        and "pose" in (model_id or "").lower()
+                        and err
+                        in ("onnx_artifact_missing", "onnx_session_unavailable")
+                    ):
+                        logger.warning(
+                            "🧍 Instant pose unavailable (%s); "
+                            "falling back to body-yolo-person-os",
+                            err,
+                        )
+                        model_id = "body-yolo-person-os"
+                        version = "1.0.0"
+                        used_person_fallback = True
+                        status, payload = await _post_detect(model_id, version)
+                        if status != 200:
+                            continue
+                        self._vision_circuit.record_success()
+                    for det in (payload or {}).get("detections") or []:
+                        det.setdefault("frame_number", frame_index)
+                        det.setdefault("timestamp", timestamp)
+                        all_detections.append(det)
+                finally:
+                    self._vision_semaphore.release()
+
+            logger.info(
+                "🧍 Body YOLO model=%s detections=%s camera=%s frames=%s (in-memory)",
+                model_id,
+                len(all_detections),
+                camera_id,
+                len(frames),
+            )
+
+            # Group in memory only — flush path materializes to VMeta
+            if all_detections:
+                try:
+                    async with session.post(
+                        f"{self.vision_service_url}/api/v1/body-person-objects/group-from-detections",
+                        json={
+                            "session_uuid": session_uuid,
+                            "media_id": camera_id,
+                            "detections": all_detections,
+                            "persist": False,
+                        },
+                    ) as group_resp:
+                        if group_resp.status == 200:
+                            group_payload = await group_resp.json()
+                            body_persons = group_payload.get("body_persons") or []
+                            logger.info(
+                                "🧍 Body grouped %s detections → %s persons "
+                                "(memory-only) camera=%s",
+                                len(all_detections),
+                                len(body_persons),
+                                camera_id,
+                            )
+                        else:
+                            logger.debug(
+                                "body group-from-detections status=%s camera=%s",
+                                group_resp.status,
+                                camera_id,
+                            )
+                except Exception as group_exc:
+                    logger.debug("body group-from-detections failed: %s", group_exc)
+
+            return {"detections": all_detections, "body_persons": body_persons}
+        except Exception as exc:
+            self._vision_circuit.record_failure()
+            logger.debug("body detect error for %s: %s", camera_id, exc)
+            return empty
+
     async def _detect_faces_via_vision_service(
         self,
         session: aiohttp.ClientSession,
         frame: np.ndarray,
         frame_index: int,
-        timestamp: float
+        timestamp: float,
+        camera_id: str = "",
     ) -> List[Dict]:
         """
         Detect faces by calling Vision Service API (reuses existing models).
@@ -974,7 +1385,22 @@ class InstantDetectionSampler:
                 content_type='image/jpeg'
             )
             
-            url = f"{self.vision_service_url}/faces/detect-single-frame"
+            runtime = self._resolve_instant_runtime(camera_id) if camera_id else "two_stage"
+            # Map catalog runtimes to Vision method query values.
+            method = {
+                "haar": "haar",
+                "dlib_hog": "dlib",
+                "dlib": "dlib",
+                "two_stage": "two_stage",
+                "two_stage_haar_dlib": "two_stage",
+                "onnx": "onnx",
+                "onnx_yolo": "onnx",
+                "yolo": "onnx",
+            }.get(str(runtime).lower(), "two_stage")
+            url = (
+                f"{self.vision_service_url}/faces/detect-single-frame"
+                f"?method={method}"
+            )
             
             self._vision_semaphore.acquire()
             try:
@@ -1672,7 +2098,11 @@ class InstantDetectionSampler:
     # ------------------------------------------------------------------
 
     def _maybe_persist_cycle(self, state: 'CameraSamplerState'):
-        """Submit a persist task for the latest cached detection result."""
+        """Submit a persist task for the latest cached detection result.
+
+        Face person_objects and body_persons share the same Redis batch →
+        VMeta persist-batch flush path.
+        """
         camera_id = state.camera_id
         try:
             # Check if session needs rotation first
@@ -1690,7 +2120,8 @@ class InstantDetectionSampler:
 
             result = _json.loads(cached.decode("utf-8"))
             person_objects = result.get("person_objects") or []
-            if not person_objects:
+            body_persons = result.get("body_persons") or []
+            if not person_objects and not body_persons:
                 return
 
             from src.tasks.instant_detection_tasks import persist_instant_detection_results
@@ -1702,10 +2133,15 @@ class InstantDetectionSampler:
                 person_objects=person_objects,
                 demographics=result.get("demographics", {}),
                 auth_token=state.auth_token or "",
+                body_persons=body_persons,
+                crowd_velocity_mps=result.get("crowd_velocity_mps"),
+                max_person_speed_mps=result.get("max_person_speed_mps"),
+                crowd_person_count=result.get("crowd_person_count"),
             )
             logger.info(
                 f"📦 [PERSIST] Queued storage for {camera_id} "
-                f"(cycle {state.cycle_counter}, session {state.session_uuid[:8]}...)"
+                f"(faces={len(person_objects)}, bodies={len(body_persons)}, "
+                f"cycle {state.cycle_counter}, session {state.session_uuid[:8]}...)"
             )
         except Exception as e:
             logger.warning(f"⚠️ [PERSIST] Failed to submit persist task: {e}")
@@ -1833,6 +2269,7 @@ class InstantDetectionSampler:
         try:
             import redis
             import os
+            import json
             
             # Get Redis connection from environment or use default
             redis_host = os.getenv("REDIS_HOST", "localhost")
@@ -1852,21 +2289,54 @@ class InstantDetectionSampler:
             # Extract demographic summary
             demographics = result.get("demographics", {})
             people_count = result.get("people_count", 0)
+            body_persons = result.get("body_persons") or []
+            body_count = result.get("body_count")
+            if body_count is None:
+                body_count = len(body_persons)
             person_objects = result.get("person_objects", [])
             source_mvr_uuids = self._extract_source_identity_uuids(person_objects)
+            from src.tasks.instant_detection_tasks import (
+                push_body_posture_history,
+                summarize_body_persons,
+            )
+            body_summary = summarize_body_persons(body_persons)
+            ts = result.get("timestamp") or datetime.utcnow().isoformat()
+            try:
+                push_body_posture_history(
+                    camera_id,
+                    timestamp=ts,
+                    body_persons=body_persons,
+                    redis_conn=redis_client,
+                )
+            except Exception as hist_exc:
+                logger.warning(
+                    "⚠️ body posture history push failed for %s: %s",
+                    camera_id,
+                    hist_exc,
+                )
             
             # Prepare payload
-            import json
             payload = json.dumps({
                 "camera_id": camera_id,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": ts,
                 "people_count": people_count,
+                "body_count": body_count,
+                "body_persons": body_summary,
                 "demographics": demographics,
                 "source_mvr_uuids": source_mvr_uuids,
+                "velocity": result.get("velocity") or {
+                    "crowd_mps": result.get("crowd_velocity_mps"),
+                    "max_mps": result.get("max_person_speed_mps"),
+                    "valid_count": result.get("crowd_person_count", 0),
+                    "people": [],
+                },
                 "metadata": {
                     "source_mvr_uuids": source_mvr_uuids,
                     "processing_time": result.get("processing_time_seconds", 0),
-                    "total_faces": result.get("total_faces_detected", 0)
+                    "total_faces": result.get("total_faces_detected", 0),
+                    "body_count": body_count,
+                    "crowd_velocity_mps": result.get("crowd_velocity_mps"),
+                    "max_person_speed_mps": result.get("max_person_speed_mps"),
                 }
             })
             
@@ -1875,7 +2345,7 @@ class InstantDetectionSampler:
             
             logger.info(
                 f"✅ Redis Pub/Sub: {camera_id} → {subscriber_count} subscribers "
-                f"(people={people_count})"
+                f"(people={people_count}, bodies={body_count})"
             )
             
             redis_client.close()

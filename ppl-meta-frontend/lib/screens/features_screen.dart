@@ -761,7 +761,7 @@ class _FaceDetectionOnSaveSettings extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Automatically detect faces in camera recordings when videos are saved to the media service',
+                        'Automatically detect faces when you manually upload a video. Does not override per-camera Face detection for recordings or instant detection.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.grey[600],
                         ),
@@ -802,7 +802,7 @@ class _FaceDetectionOnSaveSettings extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Automatic face detection is enabled. All camera recordings will be processed for face detection when saved.',
+                        'Automatic face detection is enabled for manual video uploads. Camera recordings and instant detection follow each camera\'s Face detection setting. Reprocess an existing video with Compute on the preview.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.green[700],
                           fontSize: 11,
@@ -826,7 +826,7 @@ class _FaceDetectionOnSaveSettings extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  'Enable to automatically process camera recordings with face detection when they are saved to the media service.',
+                  'Enable to run face detection automatically on manual video uploads. Camera Face detection settings still control recordings and instant detection. Use Compute on a video preview to reprocess.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.grey[600],
                     fontSize: 11,

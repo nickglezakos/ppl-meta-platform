@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/theme/theme_kit.dart';
+import '../../../providers/authority_status_providers.dart';
 import '../../../widgets/app_logo.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -12,6 +13,13 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authNotifier = ref.read(authNotifierProvider.notifier);
     final currentUser = ref.watch(currentUserProvider);
+    final authorityStatus = ref.watch(authorityStatusProvider);
+    final hasModelsLicence = authorityStatus.maybeWhen(
+      data: (status) => status.hasMvModelsLicence,
+      orElse: () => false,
+    );
+    final showModelsTile =
+        currentUser != null && currentUser.canManageModels && hasModelsLicence;
 
     return Scaffold(
       appBar: AppBar(
@@ -279,6 +287,17 @@ class HomeScreen extends ConsumerWidget {
                           context.go('/workflows');
                         },
                       ),
+                      if (showModelsTile)
+                        _ActionCard(
+                          icon: AppIcons.models,
+                          iconColor: AppColors.secondary,
+                          title: 'Models',
+                          subtitle: 'Detection model catalog and assignments',
+                          isHighlighted: false,
+                          onTap: () {
+                            context.go('/models');
+                          },
+                        ),
                       _ActionCard(
                         icon: AppIcons.network,
                         iconColor: AppColors.secondary,

@@ -346,6 +346,7 @@ class PersonObjectsSummary(BaseModel):
     total_faces: int
     status: str
     message: str = ""
+    session_uuid: str = ""
 
 
 class PersonObjectsWorkflowResponse(BaseModel):
@@ -763,6 +764,7 @@ async def get_person_objects_for_media(
                 total_faces=0,
                 status="no_faces",
                 message="No face detection data found",
+                session_uuid="",
             )
 
         # Try to get existing person objects
@@ -779,6 +781,7 @@ async def get_person_objects_for_media(
                 total_faces=existing_result["total_faces"],
                 status="completed",
                 message=f"Found {existing_result['total_persons']} persons",
+                session_uuid=session_uuid,
             )
         else:
             # Face data exists but no person objects yet
@@ -789,6 +792,7 @@ async def get_person_objects_for_media(
                 total_faces=0,
                 status="pending",
                 message="Face detection complete, person processing pending",
+                session_uuid=session_uuid,
             )
 
     except Exception as e:

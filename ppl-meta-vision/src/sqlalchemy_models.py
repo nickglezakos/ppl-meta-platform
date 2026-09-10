@@ -72,6 +72,13 @@ class FaceDetectionSession(Base):
     # Additional metadata
     session_metadata = Column(JSON, nullable=True)
 
+    model_id = Column(String(128), nullable=True, index=True)
+    model_version = Column(String(64), nullable=True)
+    runtime = Column(String(64), nullable=True)
+    confidence_threshold = Column(Float, nullable=True)
+    path = Column(String(32), nullable=True)
+    serving = Column(Boolean, nullable=True, default=True)
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -121,6 +128,12 @@ class FaceDetectionSession(Base):
             "total_faces_detected": self.total_faces_detected,
             "processing_status": self.processing_status,
             "metadata": self.metadata,
+            "model_id": self.model_id,
+            "model_version": self.model_version,
+            "runtime": self.runtime,
+            "confidence_threshold": self.confidence_threshold,
+            "path": self.path,
+            "serving": self.serving,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -245,6 +258,13 @@ class FaceDetection(Base):
     confidence = Column(Float, nullable=False)
     method = Column(String(50), nullable=False)
 
+    model_id = Column(String(128), nullable=True, index=True)
+    model_version = Column(String(64), nullable=True)
+    runtime = Column(String(64), nullable=True)
+    confidence_threshold = Column(Float, nullable=True)
+    path = Column(String(32), nullable=True)
+    serving = Column(Boolean, nullable=True, default=True)
+
     # Session reference (NEW)
     session_uuid = Column(
         String(36),
@@ -279,6 +299,12 @@ class FaceDetection(Base):
             "bbox": [self.bbox_x1, self.bbox_y1, self.bbox_x2, self.bbox_y2],
             "confidence": self.confidence,
             "method": self.method,
+            "model_id": self.model_id,
+            "model_version": self.model_version,
+            "runtime": self.runtime,
+            "confidence_threshold": self.confidence_threshold,
+            "path": self.path,
+            "serving": self.serving,
             "session_uuid": self.session_uuid,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
@@ -297,6 +323,75 @@ class FaceDetection(Base):
     def get_bbox_list(self):
         """Get bounding box as list [x1, y1, x2, y2]."""
         return [self.bbox_x1, self.bbox_y1, self.bbox_x2, self.bbox_y2]
+
+
+class ObjectDetection(Base):
+    """Body / generic object detections (Phase C). Not face_detections."""
+
+    __tablename__ = "object_detections"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    media_id = Column(String(36), nullable=True, index=True)
+    session_uuid = Column(String(36), nullable=True, index=True)
+    frame_number = Column(Integer, nullable=True)
+    timestamp = Column(Float, nullable=True)
+    bbox_x1 = Column(Integer, nullable=False)
+    bbox_y1 = Column(Integer, nullable=False)
+    bbox_x2 = Column(Integer, nullable=False)
+    bbox_y2 = Column(Integer, nullable=False)
+    confidence = Column(Float, nullable=False)
+    class_id = Column(Integer, nullable=True)
+    class_label = Column(String(64), nullable=True)
+    capability = Column(String(64), nullable=False, default="body_detection", index=True)
+    method = Column(String(50), nullable=True)
+    model_id = Column(String(128), nullable=True, index=True)
+    model_version = Column(String(64), nullable=True)
+    recipe_id = Column(String(128), nullable=True)
+    runtime = Column(String(64), nullable=True)
+    confidence_threshold = Column(Float, nullable=True)
+    path = Column(String(32), nullable=True)
+    serving = Column(Boolean, nullable=True, default=True)
+    keypoints_json = Column(Text, nullable=True)
+    keypoint_score = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_object_detections_session_frame", "session_uuid", "frame_number"),
+        Index("idx_object_detections_model", "model_id", "model_version"),
+    )
+
+    def to_dict(self):
+        import json as _json
+
+        kpts = None
+        if self.keypoints_json:
+            try:
+                kpts = _json.loads(self.keypoints_json)
+            except Exception:
+                kpts = None
+        return {
+            "id": self.id,
+            "media_id": self.media_id,
+            "session_uuid": self.session_uuid,
+            "frame_number": self.frame_number,
+            "timestamp": self.timestamp,
+            "bbox": [self.bbox_x1, self.bbox_y1, self.bbox_x2, self.bbox_y2],
+            "confidence": self.confidence,
+            "class_id": self.class_id,
+            "class_label": self.class_label,
+            "capability": self.capability,
+            "method": self.method,
+            "model_id": self.model_id,
+            "model_version": self.model_version,
+            "recipe_id": self.recipe_id,
+            "runtime": self.runtime,
+            "confidence_threshold": self.confidence_threshold,
+            "path": self.path,
+            "serving": self.serving,
+            "keypoints": kpts,
+            "keypoint_score": self.keypoint_score,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class DatabaseManager:

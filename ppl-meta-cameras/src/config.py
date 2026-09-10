@@ -62,6 +62,7 @@ class Config:
     FACE_DETECTION_MAX_SKIP_FRAMES: int = int(
         os.getenv("FACE_DETECTION_MAX_SKIP_FRAMES", "30")
     )
+    MODELS_SERVICE_URL: str = os.getenv("MODELS_SERVICE_URL", "http://localhost:8013")
 
     # Video streaming configuration
     STREAM_BUFFER_SIZE: int = int(os.getenv("STREAM_BUFFER_SIZE", "1024"))

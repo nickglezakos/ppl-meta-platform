@@ -7,7 +7,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 import redis
@@ -143,6 +143,63 @@ def _extract_source_identity_uuids(person_objects: List[Dict[str, Any]]) -> List
     return source_ids
 
 
+BODY_POSTURE_HISTORY_MAX = 4
+BODY_POSTURE_HISTORY_TTL_SECONDS = 300
+
+
+def _body_posture_history_key(camera_id: str) -> str:
+    return f"instant_body_posture:{camera_id}"
+
+
+def summarize_body_persons(body_persons: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """Compact body-person rows for pub/sub and posture history."""
+    summary: List[Dict[str, Any]] = []
+    for person in body_persons or []:
+        if not isinstance(person, dict):
+            continue
+        summary.append(
+            {
+                "body_person_id": person.get("body_person_id"),
+                "average_bbox": person.get("average_bbox"),
+                "posture": person.get("posture"),
+                "posture_confidence": person.get("posture_confidence"),
+                "detection_count": person.get("detection_count"),
+            }
+        )
+    return summary
+
+
+def push_body_posture_history(
+    camera_id: str,
+    *,
+    timestamp: str,
+    body_persons: Optional[List[Dict[str, Any]]],
+    redis_conn: Optional[Any] = None,
+) -> None:
+    """
+    Append one instant-body cycle to Redis list instant_body_posture:{camera_id}.
+
+    Keeps the last BODY_POSTURE_HISTORY_MAX entries and refreshes TTL.
+    """
+    summary = summarize_body_persons(body_persons)
+    if not summary:
+        return
+    client = redis_conn or redis_client
+    key = _body_posture_history_key(camera_id)
+    payload = json.dumps(
+        {
+            "timestamp": timestamp,
+            "camera_id": camera_id,
+            "body_persons": summary,
+        }
+    )
+    pipe = client.pipeline()
+    pipe.rpush(key, payload)
+    pipe.ltrim(key, -BODY_POSTURE_HISTORY_MAX, -1)
+    pipe.expire(key, BODY_POSTURE_HISTORY_TTL_SECONDS)
+    pipe.execute()
+
+
 class InstantDetectionTask(Task):
     """Base task for instant detection with error handling"""
     
@@ -239,24 +296,47 @@ def _publish_to_redis(camera_id: str, result: Dict):
     try:
         demographics = result.get("demographics", {})
         people_count = result.get("people_count", 0)
+        body_persons = result.get("body_persons") or []
+        body_count = result.get("body_count")
+        if body_count is None:
+            body_count = len(body_persons)
         source_mvr_uuids = _extract_source_identity_uuids(result.get("person_objects") or [])
+        body_summary = summarize_body_persons(body_persons)
+        ts = result.get("timestamp") or datetime.utcnow().isoformat()
+
+        try:
+            push_body_posture_history(
+                camera_id,
+                timestamp=ts,
+                body_persons=body_persons,
+            )
+        except Exception as hist_exc:
+            logger.warning(
+                "⚠️ [CELERY] body posture history push failed for %s: %s",
+                camera_id,
+                hist_exc,
+            )
         
         payload = json.dumps({
             "camera_id": camera_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": ts,
             "people_count": people_count,
+            "body_count": body_count,
+            "body_persons": body_summary,
             "demographics": demographics,
             "source_mvr_uuids": source_mvr_uuids,
             "metadata": {
                 "source_mvr_uuids": source_mvr_uuids,
                 "processing_time": result.get("processing_time_seconds", 0),
-                "total_faces": result.get("total_faces_detected", 0)
+                "total_faces": result.get("total_faces_detected", 0),
+                "body_count": body_count,
             }
         })
         
         subscriber_count = redis_client.publish("instant-detection", payload)
         logger.info(
-            f"✅ [CELERY] Redis Pub/Sub: {camera_id} → {subscriber_count} subscribers"
+            f"✅ [CELERY] Redis Pub/Sub: {camera_id} → {subscriber_count} subscribers "
+            f"(people={people_count}, bodies={body_count})"
         )
         
     except Exception as e:
@@ -282,18 +362,23 @@ def _push_to_webhook(camera_id: str, result: Dict):
         
         demographics = result.get("demographics", {})
         people_count = result.get("people_count", 0)
+        body_count = result.get("body_count")
+        if body_count is None:
+            body_count = len(result.get("body_persons") or [])
         source_mvr_uuids = _extract_source_identity_uuids(result.get("person_objects") or [])
         
         payload = {
             "camera_id": camera_id,
             "timestamp": datetime.utcnow().isoformat(),
             "people_count": people_count,
+            "body_count": body_count,
             "demographics": demographics,
             "source_mvr_uuids": source_mvr_uuids,
             "metadata": {
                 "source_mvr_uuids": source_mvr_uuids,
                 "processing_time": result.get("processing_time_seconds", 0),
-                "total_faces": result.get("total_faces_detected", 0)
+                "total_faces": result.get("total_faces_detected", 0),
+                "body_count": body_count,
             }
         }
         
@@ -341,20 +426,29 @@ def persist_instant_detection_results(
     person_objects: List[Dict[str, Any]],
     demographics: Dict[str, Any],
     auth_token: str,
+    body_persons: Optional[List[Dict[str, Any]]] = None,
+    crowd_velocity_mps: Optional[float] = None,
+    max_person_speed_mps: Optional[float] = None,
+    crowd_person_count: Optional[int] = None,
 ) -> Dict:
     """
-    Persist instant detection results to VMeta database.
+    Buffer instant detection results for batched VMeta flush.
 
+    Face person_objects and body_persons share the same Redis queue.
     Called asynchronously after the main detection result has been
-    cached and broadcast.  Never blocks the detection loop.
+    cached and broadcast. Never blocks the detection loop.
     """
     payload = {
         "session_uuid": session_uuid,
         "camera_id": camera_id,
         "cycle_timestamp": cycle_timestamp,
-        "person_objects": person_objects,
+        "person_objects": person_objects or [],
+        "body_persons": body_persons or [],
         "demographics": demographics,
         "auth_token": auth_token,
+        "crowd_velocity_mps": crowd_velocity_mps,
+        "max_person_speed_mps": max_person_speed_mps,
+        "crowd_person_count": crowd_person_count,
     }
 
     queue_length = _queue_batch_item(camera_id, payload)
@@ -428,7 +522,11 @@ def flush_instant_detection_batch(camera_id: str) -> Dict:
                     "camera_id": item["camera_id"],
                     "cycle_timestamp": item["cycle_timestamp"],
                     "person_objects": item.get("person_objects", []),
+                    "body_persons": item.get("body_persons", []),
                     "demographics": item.get("demographics", {}),
+                    "crowd_velocity_mps": item.get("crowd_velocity_mps"),
+                    "max_person_speed_mps": item.get("max_person_speed_mps"),
+                    "crowd_person_count": item.get("crowd_person_count"),
                 }
                 for item in items
             ]

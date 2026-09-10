@@ -153,6 +153,13 @@ class _WorkflowSettingsSectionState extends ConsumerState<WorkflowSettingsSectio
                   _buildConfidenceSlider(settings),
                   const SizedBox(height: 16),
                   _buildDetectionMethodsToggle(settings),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Catalog assignments (instant vs bulk) are managed on the Models tile, not here.',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
                   
                   const SizedBox(height: 24),
                   

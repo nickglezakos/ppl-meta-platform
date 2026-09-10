@@ -33,6 +33,32 @@ class Sighting:
     center_x: float
     center_y: float
     area: float
+    speed_mps: Optional[float] = None
+    gait_band: Optional[str] = None
+
+
+def _parse_movement_pattern(raw: Any) -> tuple[Optional[float], Optional[str]]:
+    if raw is None:
+        return (None, None)
+    parsed = raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except JSONDecodeError:
+            return (None, None)
+    if not isinstance(parsed, dict):
+        return (None, None)
+    stats = parsed.get("movement_statistics") or parsed
+    if not isinstance(stats, dict):
+        return (None, None)
+    speed = stats.get("average_speed_mps")
+    try:
+        speed_mps = float(speed) if speed is not None else None
+    except (TypeError, ValueError):
+        speed_mps = None
+    gait = stats.get("gait_band")
+    gait_band = str(gait) if gait else None
+    return (speed_mps, gait_band)
 
 
 @dataclass
@@ -102,6 +128,8 @@ def _build_sighting(row: Dict[str, Any]) -> Optional[Sighting]:
     if area <= 0:
         return None
 
+    speed_mps, gait_band = _parse_movement_pattern(row.get("movement_pattern"))
+
     return Sighting(
         individual_uuid=str(row["individual_uuid"]),
         person_object_uuid=str(row["person_object_uuid"]),
@@ -114,6 +142,8 @@ def _build_sighting(row: Dict[str, Any]) -> Optional[Sighting]:
         center_x=(x1 + x2) / 2.0,
         center_y=(y1 + y2) / 2.0,
         area=area,
+        speed_mps=speed_mps,
+        gait_band=gait_band,
     )
 
 
@@ -224,6 +254,17 @@ def summarize_cluster(cluster: Cluster, index: int, include_members: bool) -> Di
     mvr_values = {member.mvr_people_uuid for member in members if member.mvr_people_uuid}
     group_mvr = next(iter(mvr_values)) if len(mvr_values) == 1 and len(members) == len([m for m in members if m.mvr_people_uuid]) else None
 
+    speeds = [member.speed_mps for member in members if member.speed_mps is not None]
+    speed_mps = round(sum(speeds) / len(speeds), 4) if speeds else None
+    # Prefer gait band from the fastest sighting when available.
+    gait_band = None
+    if speeds:
+        fastest = max(
+            (m for m in members if m.speed_mps is not None),
+            key=lambda m: float(m.speed_mps or 0.0),
+        )
+        gait_band = fastest.gait_band
+
     result: Dict[str, Any] = {
         "approx_person_id": f"approx_{index:03d}",
         "first_seen": min(member.timestamp for member in members).isoformat(),
@@ -234,6 +275,8 @@ def summarize_cluster(cluster: Cluster, index: int, include_members: bool) -> Di
         "representative_bbox": [round(value, 2) for value in best_member.bbox],
         "avg_face_area": round(sum(member.area for member in members) / len(members), 2),
         "mvr_people_uuid": group_mvr,
+        "speed_mps": speed_mps,
+        "gait_band": gait_band,
     }
 
     if include_members:
@@ -247,6 +290,8 @@ def summarize_cluster(cluster: Cluster, index: int, include_members: bool) -> Di
                 "gender_estimate": member.gender_estimate,
                 "mvr_people_uuid": member.mvr_people_uuid,
                 "bbox": [round(value, 2) for value in member.bbox],
+                "speed_mps": member.speed_mps,
+                "gait_band": member.gait_band,
             }
             for member in members
         ]

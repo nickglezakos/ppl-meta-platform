@@ -62,6 +62,7 @@ def _schema_statements() -> list[str]:
             notes TEXT,
             matrix_group_id TEXT,
             max_platform_nodes INTEGER NOT NULL DEFAULT 0,
+            licence_features TEXT NOT NULL DEFAULT '["eyenet_mv_models","mv_models_upload","mv_models_custom_capability"]',
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -218,6 +219,12 @@ def initialize_database() -> None:
         _ensure_column(connection, "entitlements", "warning_period_days", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(connection, "entitlements", "warning_started_at", "TIMESTAMPTZ")
         _ensure_column(connection, "entitlements", "max_platform_nodes", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(
+            connection,
+            "entitlements",
+            "licence_features",
+            "TEXT NOT NULL DEFAULT '[\"eyenet_mv_models\",\"mv_models_upload\",\"mv_models_custom_capability\"]'",
+        )
         _ensure_column(connection, "installations", "licence_name", "TEXT")
         _ensure_column(connection, "installations", "warning_period_days", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(connection, "installations", "warning_started_at", "TIMESTAMPTZ")
@@ -1480,6 +1487,19 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
         requested_warning_started_at=record.get("warning_started_at"),
     )
 
+    default_licence_features = [
+        "eyenet_mv_models",
+        "mv_models_upload",
+        "mv_models_custom_capability",
+    ]
+    if "licence_features" in record and record.get("licence_features") is not None:
+        licence_features = list(record.get("licence_features") or [])
+    elif existing_entitlement and existing_entitlement.get("licence_features"):
+        # Preserve on upsert when caller omits the field (avoid catalog-only reset).
+        licence_features = list(existing_entitlement.get("licence_features") or [])
+    else:
+        licence_features = list(default_licence_features)
+
     with _connect() as connection:
         connection.execute(
             """
@@ -1497,8 +1517,9 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                 installation_uuid,
                 activation_status,
                 notes,
-                max_platform_nodes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                max_platform_nodes,
+                licence_features
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(entitlement_uuid) DO UPDATE SET
                 application_key = excluded.application_key,
                 licence_name = excluded.licence_name,
@@ -1513,6 +1534,7 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                 activation_status = excluded.activation_status,
                 notes = excluded.notes,
                 max_platform_nodes = excluded.max_platform_nodes,
+                licence_features = excluded.licence_features,
                 updated_at = CURRENT_TIMESTAMP
             """,
             (
@@ -1530,6 +1552,7 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
                 activation_status,
                 record.get("notes"),
                 max_platform_nodes,
+                json.dumps(licence_features or default_licence_features),
             ),
         )
 
@@ -1636,6 +1659,21 @@ def activate_entitlement(application_key: str, installation_uuid: str, owner_ema
     }
 
 
+def _attach_licence_features(record: dict[str, Any] | None) -> dict[str, Any] | None:
+    if record is None:
+        return None
+    entitlement = get_entitlement_by_application_key(record.get("application_key") or "")
+    if entitlement and entitlement.get("licence_features"):
+        record["licence_features"] = entitlement["licence_features"]
+    else:
+        record["licence_features"] = [
+            "eyenet_mv_models",
+            "mv_models_upload",
+            "mv_models_custom_capability",
+        ]
+    return record
+
+
 def get_installation_by_uuid(installation_uuid: str) -> dict[str, Any] | None:
     with _connect() as connection:
         row = connection.execute(
@@ -1643,7 +1681,7 @@ def get_installation_by_uuid(installation_uuid: str) -> dict[str, Any] | None:
             (installation_uuid,),
         ).fetchone()
 
-    return _row_to_dict(row)
+    return _attach_licence_features(_row_to_dict(row))
 
 
 def get_installation_by_application_key(application_key: str) -> dict[str, Any] | None:
@@ -1653,7 +1691,7 @@ def get_installation_by_application_key(application_key: str) -> dict[str, Any] 
             (application_key,),
         ).fetchone()
 
-    return _row_to_dict(row)
+    return _attach_licence_features(_row_to_dict(row))
 
 
 def set_installation_matrix_group(installation_uuid: str, matrix_group_id: str) -> None:
@@ -2397,6 +2435,29 @@ def _migrate_installations_to_entitlements() -> None:
         connection.commit()
 
 
+def _parse_licence_features(row: Any) -> list[str]:
+    default = [
+        "eyenet_mv_models",
+        "mv_models_upload",
+        "mv_models_custom_capability",
+    ]
+    if row is None or "licence_features" not in row.keys():
+        return list(default)
+    raw = row["licence_features"]
+    if raw is None:
+        return list(default)
+    if isinstance(raw, list):
+        return [str(item) for item in raw]
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [str(item) for item in parsed]
+        except json.JSONDecodeError:
+            return list(default)
+    return list(default)
+
+
 def _timestamp_value(value: Any) -> Any:
     if value is None:
         return None
@@ -2449,6 +2510,7 @@ def _entitlement_row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "notes": row["notes"],
         "matrix_group_id": row["matrix_group_id"] if "matrix_group_id" in row.keys() else None,
         "max_platform_nodes": row["max_platform_nodes"] if "max_platform_nodes" in row.keys() else 0,
+        "licence_features": _parse_licence_features(row),
     }
 
 

@@ -35,6 +35,7 @@ import '../../screens/triggers_screen.dart';
 import '../../screens/individual_groups_screen.dart';
 import '../../screens/individual_group_detail_screen.dart';
 import '../../screens/presence_screen.dart';
+import '../../screens/models_screen.dart';
 import '../../screens/storage_screen.dart';
 import '../../screens/network_screen.dart';
 import '../../screens/camera_operations_screen.dart';
@@ -353,6 +354,44 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ProviderScreenWrapper(
           child: PresenceScreen(),
         ),
+      ),
+      GoRoute(
+        path: '/models',
+        name: 'models',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: ModelsScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/models/assignments',
+        name: 'models-assignments',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: ModelsScreen(initialTab: 2),
+        ),
+      ),
+      GoRoute(
+        path: '/models/golden-sets',
+        name: 'models-golden-sets',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: ModelsScreen(initialTab: 3),
+        ),
+      ),
+      GoRoute(
+        path: '/models/pipelines',
+        name: 'models-pipelines',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: ModelsScreen(initialTab: 1),
+        ),
+      ),
+      GoRoute(
+        path: '/models/:id',
+        name: 'models-detail',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return ProviderScreenWrapper(
+            child: ModelDetailScreen(modelId: id),
+          );
+        },
       ),
       GoRoute(
         path: '/presence-station',

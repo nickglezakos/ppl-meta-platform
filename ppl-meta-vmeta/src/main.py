@@ -455,6 +455,15 @@ except ImportError as e:
 except Exception as e:
     logger.error(f"❌ Error adding MVR-People API router: {e}")
 
+try:
+    from api.routes.mvr_people_body import router as mvr_people_body_router
+    app.include_router(mvr_people_body_router, tags=["mvr-people-body"])
+    logger.info("✅ MVR-People-Body API router added successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ MVR-People-Body API router not available: {e}")
+except Exception as e:
+    logger.error(f"❌ Error adding MVR-People-Body API router: {e}")
+
 # Add Batch Processing API router with error handling
 try:
     from api.v1.batch_processing import router as batch_processing_router

@@ -33,6 +33,8 @@ from ..schemas.trigger import (
 )
 from ..services.trigger_evaluation import DemographicData, TriggerEvaluationService
 from ..services.vprofile_match_worker import get_vprofile_worker
+from ..services.body_posture_worker import get_body_posture_worker
+from ..services.velocity_trigger_worker import get_velocity_trigger_worker
 from ..services.communications_client import CommunicationsClient
 from ..services.signage_service import SignagePlaybackService
 from ..schemas.signage import PlaybackControlRequest, PlaybackCommand, PlaybackParameters
@@ -273,6 +275,14 @@ async def create_trigger(
         # For vprofile_match triggers, set a synthetic camera_device_id since the column is NOT NULL
         if trigger_data.get('trigger_mode') == 'vprofile_match' and not trigger_data.get('camera_device_id'):
             trigger_data['camera_device_id'] = 'vprofile_match'
+
+        # For body_posture triggers, set a synthetic camera_device_id since the column is NOT NULL
+        if trigger_data.get('trigger_mode') == 'body_posture' and not trigger_data.get('camera_device_id'):
+            trigger_data['camera_device_id'] = 'body_posture'
+
+        # For velocity triggers, set a synthetic camera_device_id since the column is NOT NULL
+        if trigger_data.get('trigger_mode') == 'velocity' and not trigger_data.get('camera_device_id'):
+            trigger_data['camera_device_id'] = 'velocity'
         
         db_trigger = Trigger(**trigger_data)
         db.add(db_trigger)
@@ -286,6 +296,28 @@ async def create_trigger(
                 await worker.activate_trigger(db_trigger)
             except Exception as activate_err:
                 logger.error("Failed to activate vprofile trigger %s on create: %s", db_trigger.uuid, activate_err)
+
+        if db_trigger.trigger_mode == 'body_posture' and db_trigger.is_active:
+            try:
+                worker = get_body_posture_worker()
+                await worker.activate_trigger(db_trigger)
+            except Exception as activate_err:
+                logger.error(
+                    "Failed to activate body_posture trigger %s on create: %s",
+                    db_trigger.uuid,
+                    activate_err,
+                )
+
+        if db_trigger.trigger_mode == 'velocity' and db_trigger.is_active:
+            try:
+                worker = get_velocity_trigger_worker()
+                await worker.activate_trigger(db_trigger)
+            except Exception as activate_err:
+                logger.error(
+                    "Failed to activate velocity trigger %s on create: %s",
+                    db_trigger.uuid,
+                    activate_err,
+                )
         
         trigger_dict = {
             **{c.name: getattr(db_trigger, c.name) for c in db_trigger.__table__.columns},
@@ -396,6 +428,12 @@ async def update_trigger(
     # Convert search_camera_device_ids list to JSON string for storage
     if 'search_camera_device_ids' in update_data and update_data['search_camera_device_ids'] is not None:
         update_data['search_camera_device_ids'] = json.dumps(update_data['search_camera_device_ids'])
+
+    if 'ppl_match_group_ids' in update_data and update_data['ppl_match_group_ids'] is not None:
+        update_data['ppl_match_group_ids'] = json.dumps(update_data['ppl_match_group_ids'])
+
+    if 'camera_device_ids' in update_data and update_data['camera_device_ids'] is not None:
+        update_data['camera_device_ids'] = json.dumps(update_data['camera_device_ids'])
     
     # Convert action_uuids list to JSON string for storage and sync legacy field
     if 'action_uuids' in update_data:
@@ -417,6 +455,28 @@ async def update_trigger(
     
     db.commit()
     db.refresh(db_trigger)
+
+    if db_trigger.trigger_mode == 'body_posture' and db_trigger.is_active:
+        try:
+            worker = get_body_posture_worker()
+            await worker.activate_trigger(db_trigger)
+        except Exception as activate_err:
+            logger.error(
+                "Failed to refresh body_posture trigger %s on update: %s",
+                db_trigger.uuid,
+                activate_err,
+            )
+
+    if db_trigger.trigger_mode == 'velocity' and db_trigger.is_active:
+        try:
+            worker = get_velocity_trigger_worker()
+            await worker.activate_trigger(db_trigger)
+        except Exception as activate_err:
+            logger.error(
+                "Failed to refresh velocity trigger %s on update: %s",
+                db_trigger.uuid,
+                activate_err,
+            )
     
     # Reload to ensure relationship is fresh
     db_trigger = db.query(Trigger).options(joinedload(Trigger.user_action)).filter(Trigger.uuid == trigger_uuid).first()
@@ -455,6 +515,34 @@ async def toggle_trigger(
                 await worker.deactivate_trigger(str(db_trigger.uuid), group_ids=group_ids)
         except Exception as lifecycle_err:
             logger.error("Failed to handle vprofile lifecycle on toggle %s: %s", db_trigger.uuid, lifecycle_err)
+
+    if db_trigger.trigger_mode == 'body_posture':
+        try:
+            worker = get_body_posture_worker()
+            if db_trigger.is_active and not was_active:
+                await worker.activate_trigger(db_trigger)
+            elif not db_trigger.is_active and was_active:
+                await worker.deactivate_trigger(str(db_trigger.uuid))
+        except Exception as lifecycle_err:
+            logger.error(
+                "Failed to handle body_posture lifecycle on toggle %s: %s",
+                db_trigger.uuid,
+                lifecycle_err,
+            )
+
+    if db_trigger.trigger_mode == 'velocity':
+        try:
+            worker = get_velocity_trigger_worker()
+            if db_trigger.is_active and not was_active:
+                await worker.activate_trigger(db_trigger)
+            elif not db_trigger.is_active and was_active:
+                await worker.deactivate_trigger(str(db_trigger.uuid))
+        except Exception as lifecycle_err:
+            logger.error(
+                "Failed to handle velocity lifecycle on toggle %s: %s",
+                db_trigger.uuid,
+                lifecycle_err,
+            )
     
     return db_trigger
 
@@ -507,6 +595,39 @@ async def delete_trigger(
     db_trigger = db.query(Trigger).filter(Trigger.uuid == trigger_uuid).first()
     if not db_trigger:
         raise HTTPException(status_code=404, detail="Trigger not found")
+
+    if db_trigger.trigger_mode == 'body_posture':
+        try:
+            worker = get_body_posture_worker()
+            await worker.deactivate_trigger(str(db_trigger.uuid))
+        except Exception as lifecycle_err:
+            logger.error(
+                "Failed to deactivate body_posture trigger %s on delete: %s",
+                db_trigger.uuid,
+                lifecycle_err,
+            )
+    elif db_trigger.trigger_mode == 'velocity':
+        try:
+            worker = get_velocity_trigger_worker()
+            await worker.deactivate_trigger(str(db_trigger.uuid))
+        except Exception as lifecycle_err:
+            logger.error(
+                "Failed to deactivate velocity trigger %s on delete: %s",
+                db_trigger.uuid,
+                lifecycle_err,
+            )
+    elif db_trigger.trigger_mode == 'vprofile_match':
+        try:
+            worker = get_vprofile_worker()
+            group_ids_raw = db_trigger.ppl_match_group_ids
+            group_ids = json.loads(group_ids_raw) if group_ids_raw else []
+            await worker.deactivate_trigger(str(db_trigger.uuid), group_ids=group_ids)
+        except Exception as lifecycle_err:
+            logger.error(
+                "Failed to deactivate vprofile trigger %s on delete: %s",
+                db_trigger.uuid,
+                lifecycle_err,
+            )
     
     db.delete(db_trigger)
     db.commit()

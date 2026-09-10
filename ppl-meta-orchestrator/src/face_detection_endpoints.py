@@ -15,6 +15,7 @@ Key Features:
 
 import asyncio
 import logging
+import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -365,12 +366,132 @@ class FaceDetectionSessionManager:
         logger.info(f"🆔 Starting Enhanced Logic V2 for media {media_id}")
         logger.info(f"   🎯 Session UUID: {session_uuid}")
 
+        # Short-circuit: if this media already has persisted person objects, reuse them
+        # instead of creating another empty session and re-running bulk detection.
+        try:
+            lookup_headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+            existing_session_resp = requests.get(
+                f"http://localhost:8003/sessions/media/{media_id}",
+                headers=lookup_headers,
+                timeout=10,
+            )
+            if existing_session_resp.status_code == 200:
+                existing_session_uuid = (existing_session_resp.json() or {}).get(
+                    "session_uuid"
+                )
+                if existing_session_uuid:
+                    existing_po_resp = requests.get(
+                        f"http://localhost:8003/api/v1/person-objects/sessions/{existing_session_uuid}",
+                        headers=lookup_headers,
+                        timeout=30,
+                    )
+                    if existing_po_resp.status_code == 200:
+                        existing_po = existing_po_resp.json() or {}
+                        person_count = existing_po.get(
+                            "total_persons",
+                            existing_po.get("merged_groups", 0),
+                        ) or 0
+                        if person_count > 0:
+                            logger.info(
+                                "✅ Enhanced Logic V2 short-circuit: media %s already has "
+                                "%s persisted persons on session %s — returning stored faces "
+                                "in full overlay payload (no new session)",
+                                media_id,
+                                person_count,
+                                existing_session_uuid,
+                            )
+                            faces_headers = {
+                                "Cache-Control": "no-cache, no-store, must-revalidate",
+                                "Pragma": "no-cache",
+                                "Expires": "0",
+                                **lookup_headers,
+                            }
+                            faces_resp = requests.get(
+                                f"http://localhost:8003/faces/media/{media_id}",
+                                headers=faces_headers,
+                                timeout=120,
+                            )
+                            if faces_resp.status_code == 200:
+                                faces_data = faces_resp.json() or {}
+                                if faces_data.get("has_stored_faces"):
+                                    faces_by_frame = (
+                                        faces_data.get("faces_by_frame") or {}
+                                    )
+                                    faces_array = []
+                                    for frame_num, frame_faces in faces_by_frame.items():
+                                        for face in frame_faces or []:
+                                            face_copy = dict(face)
+                                            if face_copy.get("frame_number") is None:
+                                                try:
+                                                    face_copy["frame_number"] = int(
+                                                        frame_num
+                                                    )
+                                                except (TypeError, ValueError):
+                                                    face_copy["frame_number"] = 0
+                                            faces_array.append(face_copy)
+
+                                    enhanced_faces = (
+                                        enhance_face_detections_with_distance(
+                                            faces_array
+                                        )
+                                    )
+                                    processing_time = time.time() - start_time
+                                    # Keep top-level faces sparse for backward compatibility;
+                                    # overlay consumers require detection_result.faces_by_frame.
+                                    representative_faces = enhanced_faces[:5]
+                                    return {
+                                        "success": True,
+                                        "session_uuid": existing_session_uuid,
+                                        "media_id": media_id,
+                                        "source": "stored_faces",
+                                        "total_faces": len(faces_array),
+                                        "faces": representative_faces,
+                                        "faces_by_frame": {
+                                            str(face.get("frame_number", 0)): [face]
+                                            for face in representative_faces
+                                        },
+                                        "detection_result": {
+                                            "success": True,
+                                            "total_faces": len(faces_array),
+                                            "faces_by_frame": faces_by_frame,
+                                            "source": "vision_service_database",
+                                            "processing_method": "existing_person_objects_short_circuit",
+                                        },
+                                        "processing_time": processing_time,
+                                        "message": (
+                                            f"Reused {len(faces_array)} stored faces for media "
+                                            f"with {person_count} existing person objects"
+                                        ),
+                                        "person_objects": existing_po.get(
+                                            "person_objects", []
+                                        ),
+                                    }
+                                logger.warning(
+                                    "⚠️ Short-circuit found persons for %s but Vision has no "
+                                    "stored faces; falling through to full Enhanced Logic V2",
+                                    media_id,
+                                )
+                            else:
+                                logger.warning(
+                                    "⚠️ Short-circuit could not load stored faces for %s "
+                                    "(HTTP %s); falling through",
+                                    media_id,
+                                    faces_resp.status_code,
+                                )
+        except Exception as short_circuit_error:
+            logger.warning(
+                "⚠️ Enhanced Logic V2 short-circuit check failed for %s: %s",
+                media_id,
+                short_circuit_error,
+            )
+
         # Step 0: Create session record in Vision Service database
         # This is required for person-objects workflow
         logger.info("💾 Step 0: Creating face detection session record...")
         session_creation_result = await self._create_vision_session(
             session_uuid, media_id, auth_token
         )
+        serving_pipeline = bool(session_creation_result.get("serving", True))
         
         # Check if session creation succeeded
         if not session_creation_result.get("success", False):
@@ -378,6 +499,7 @@ class FaceDetectionSessionManager:
                 f"❌ Session creation failed: {session_creation_result.get('error', 'Unknown error')}"
             )
             # Continue anyway - person-objects workflow will handle missing session
+            serving_pipeline = True
 
         try:
             # Step 1: Check for stored faces in Vision Service
@@ -455,9 +577,9 @@ class FaceDetectionSessionManager:
                     )
                     logger.info(f"✅ Session {session_uuid} completed")
 
-                    # ✨ STEP 1.7: Materialize isolated VMeta rows from persisted person objects
+                    # ✨ STEP 1.7/1.8: Materialize + enqueue only when serving (not shadow)
                     person_objects_data = person_objects_result.get("person_objects", [])
-                    if person_objects_data:
+                    if person_objects_data and serving_pipeline:
                         logger.info(
                             f"🧬 Step 1.7: Materializing {len(person_objects_data)} "
                             f"persisted person objects into VMeta for media {media_id}..."
@@ -473,9 +595,6 @@ class FaceDetectionSessionManager:
                             media_id,
                             vmeta_materialization,
                         )
-
-                    # ✨ STEP 1.8: Enqueue person objects for cross-video tracking
-                    if person_objects_data:
                         logger.info(
                             f"📦 Step 1.8: Enqueueing {len(person_objects_data)} "
                             f"person objects for cross-video tracking..."
@@ -486,6 +605,12 @@ class FaceDetectionSessionManager:
                             person_objects=person_objects_data
                         )
                         logger.info("✅ Person objects enqueued for batch processing")
+                    elif person_objects_data and not serving_pipeline:
+                        logger.info(
+                            "🌑 Shadow assignment (serving=false): skipping VMeta materialize "
+                            "and cross-video enqueue for media %s",
+                            media_id,
+                        )
                     else:
                         logger.warning("⚠️ No person objects returned from workflow")
 
@@ -665,9 +790,9 @@ class FaceDetectionSessionManager:
                     )
                     logger.info(f"✅ Session {session_uuid} completed")
 
-                    # ✨ STEP 2.7: Materialize isolated VMeta rows from persisted person objects
+                    # ✨ STEP 2.7/2.8: Materialize + enqueue only when serving (not shadow)
                     person_objects_data = person_objects_result.get("person_objects", [])
-                    if person_objects_data:
+                    if person_objects_data and serving_pipeline:
                         logger.info(
                             f"🧬 Step 2.7: Materializing {len(person_objects_data)} "
                             f"persisted person objects into VMeta for media {media_id}..."
@@ -683,9 +808,6 @@ class FaceDetectionSessionManager:
                             media_id,
                             vmeta_materialization,
                         )
-
-                    # ✨ STEP 2.8: Enqueue person objects for cross-video tracking
-                    if person_objects_data:
                         logger.info(
                             f"📦 Step 2.8: Enqueueing {len(person_objects_data)} "
                             f"person objects for cross-video tracking..."
@@ -696,6 +818,12 @@ class FaceDetectionSessionManager:
                             person_objects=person_objects_data
                         )
                         logger.info("✅ Person objects enqueued for batch processing")
+                    elif person_objects_data and not serving_pipeline:
+                        logger.info(
+                            "🌑 Shadow assignment (serving=false): skipping VMeta materialize "
+                            "and cross-video enqueue for media %s",
+                            media_id,
+                        )
                     else:
                         logger.warning("⚠️ No person objects returned from workflow")
 
@@ -776,7 +904,8 @@ class FaceDetectionSessionManager:
             }
 
     async def _create_vision_session(
-        self, session_uuid: str, media_id: str, auth_token: str
+        self, session_uuid: str, media_id: str, auth_token: str,
+        camera_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a face detection session record in Vision Service database.
@@ -796,11 +925,45 @@ class FaceDetectionSessionManager:
             # Vision Service session creation endpoint (correct path)
             session_url = "http://localhost:8003/sessions/start"
 
-            # Prepare session data matching FaceDetectionSessionRequest model
+            provenance = {
+                "model_id": "face-two-stage-builtin",
+                "model_version": "1.0.0",
+                "runtime": "two_stage",
+                "path": "bulk",
+                "serving": True,
+            }
+            try:
+                models_url = os.getenv("MODELS_SERVICE_URL", "http://localhost:8013")
+                params = {"path": "bulk", "capability": "face_detection"}
+                if camera_id:
+                    params["camera_id"] = camera_id
+                resolved = requests.get(
+                    f"{models_url}/api/v1/mv-models/resolve",
+                    params=params,
+                    timeout=3,
+                )
+                if resolved.status_code == 200:
+                    body = resolved.json()
+                    hyper = body.get("hyperparameters") or {}
+                    provenance = {
+                        "model_id": body.get("model_id") or provenance["model_id"],
+                        "model_version": body.get("version") or provenance["model_version"],
+                        "runtime": body.get("runtime") or provenance["runtime"],
+                        "path": "bulk",
+                        "serving": body.get("serving", True),
+                        "confidence_threshold": hyper.get("confidence"),
+                        "recipe_id": body.get("recipe_id"),
+                        "kind": body.get("kind"),
+                        "stages": body.get("stages") or [],
+                    }
+            except Exception as resolve_error:
+                logger.warning("Models resolve failed, using builtin two_stage: %s", resolve_error)
+
             session_data = {
                 "session_uuid": session_uuid,
                 "media_uuid": media_id,
                 "session_type": "streaming",  # Must be streaming/upload/batch
+                **provenance,
             }
 
             # Create headers with Authorization token
@@ -828,7 +991,13 @@ class FaceDetectionSessionManager:
 
             if response.status_code in [200, 201, 409]:
                 logger.info(f"✅ Session {session_uuid} created successfully")
-                return {"success": True, "session_uuid": session_uuid}
+                return {
+                    "success": True,
+                    "session_uuid": session_uuid,
+                    "serving": bool(provenance.get("serving", True)),
+                    "shadow": not bool(provenance.get("serving", True)),
+                    "provenance": provenance,
+                }
             else:
                 logger.warning(
                     f"⚠️ Session creation returned {response.status_code}: {response.text}"
@@ -1111,7 +1280,7 @@ class FaceDetectionSessionManager:
     # - Accumulate videos per collection until batch threshold reached
     # - Trigger cross-video tracking automatically
     # 
-    # See: docs/guides/developer/continuous-individuals-and-mvr-pipeline.md
+    # See: docs/modules/AI-vision-pipeline/frame-to-analytics-pipeline.md
 
     async def trigger_orchestrator_processing(
         self, request: FaceDetectionRequest

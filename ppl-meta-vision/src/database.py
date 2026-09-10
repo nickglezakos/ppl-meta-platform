@@ -39,15 +39,19 @@ class VisionDatabase:
             conn_params = self._get_connection_params()
             self.connection = psycopg2.connect(**conn_params)
             self.connection.autocommit = True
+        except Exception as e:
+            logger.error(f"Database connection failed: {e}")
+            self.connection = None
+            return
 
-            # Create tables
+        try:
             self.create_tables()
             logger.info("PostgreSQL database initialized successfully")
-
         except Exception as e:
-            logger.error(f"Database initialization failed: {e}")
-            # Continue without database for now
-            self.connection = None
+            # Keep the connection. Schema ensure must not disable bulk persistence.
+            logger.error(
+                "Database schema setup failed (connection kept alive): %s", e
+            )
 
     def create_tables(self):
         """Create database tables."""
@@ -116,6 +120,11 @@ class VisionDatabase:
             ON face_detections (frame_number)
         """
         )
+
+        from provenance import ensure_provenance_columns_sql
+
+        for statement in ensure_provenance_columns_sql():
+            cursor.execute(statement)
 
         # Face detection sessions table (for PPL Thread workflow)
         cursor.execute(
@@ -367,6 +376,15 @@ class VisionDatabase:
                         detection.method,
                     ),
                 )
+
+            try:
+                from provenance import COPY_DETECTION_PROVENANCE_SQL
+
+                cursor.execute(
+                    COPY_DETECTION_PROVENANCE_SQL, (detection.id, session_uuid)
+                )
+            except Exception as provenance_error:
+                logger.debug("Skipping detection provenance copy: %s", provenance_error)
 
             cursor.close()
             return True

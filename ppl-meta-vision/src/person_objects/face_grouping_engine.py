@@ -724,6 +724,9 @@ class VisionFaceGroupingEngine:
             ]
             quality_score = self._calculate_aggregate_quality(person_face_records)
 
+        velocity = track_info.get("velocity") or {"x": 0.0, "y": 0.0}
+        frame_history = int(track_info.get("frame_history", track_info.get("face_count", 1)) or 1)
+
         return {
             "person_id": track_id,
             "face_count": track_info["face_count"],
@@ -734,6 +737,13 @@ class VisionFaceGroupingEngine:
             "original_face_ids": face_ids,
             "first_seen_frame": min(fm["frame_number"] for fm in person_faces),
             "last_seen_frame": track_info["last_seen_frame"],
+            # Tier-2 track velocity (px/ms). Valid when frame_history >= 2.
+            "velocity": {
+                "x": float(velocity.get("x", 0.0)),
+                "y": float(velocity.get("y", 0.0)),
+            },
+            "frame_history": frame_history,
+            "samples": frame_history,
         }
 
     async def group_by_orchestrator_person_id(

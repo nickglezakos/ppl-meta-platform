@@ -229,6 +229,26 @@ async def lifespan(_app: FastAPI):
         logger.error(f"Failed to restore vprofile match triggers: {e}")
         logger.info("VProfile match triggers will load lazily on first activation")
 
+    # Restore body_posture triggers (in-memory rolling windows)
+    try:
+        from src.services.body_posture_worker import get_body_posture_worker
+        body_worker = get_body_posture_worker()
+        await body_worker.load_all_active_triggers()
+        logger.info("Body posture triggers restored")
+    except Exception as e:
+        logger.error(f"Failed to restore body posture triggers: {e}")
+        logger.info("Body posture triggers will load lazily on first activation")
+
+    # Restore velocity triggers (camera allow-list cache)
+    try:
+        from src.services.velocity_trigger_worker import get_velocity_trigger_worker
+        velocity_worker = get_velocity_trigger_worker()
+        await velocity_worker.load_all_active_triggers()
+        logger.info("Velocity triggers restored")
+    except Exception as e:
+        logger.error(f"Failed to restore velocity triggers: {e}")
+        logger.info("Velocity triggers will load lazily on first activation")
+
     logger.info("Service startup completed successfully")
 
     yield

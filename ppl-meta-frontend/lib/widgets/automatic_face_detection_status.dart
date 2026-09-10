@@ -50,8 +50,8 @@ class AutomaticFaceDetectionStatus extends ConsumerWidget {
                   const SizedBox(height: 2),
                   Text(
                     automaticState.isGloballyEnabled
-                        ? 'Camera recordings will trigger face detection automatically'
-                        : 'Disabled - recordings will not trigger face detection',
+                        ? 'Manual uploads trigger face detection; cameras use their own Face setting'
+                        : 'Disabled — manual uploads will not auto-run face detection',
                     style: TextStyle(
                       fontSize: 10,
                       color: automaticState.isGloballyEnabled ? Colors.green[700] : Colors.grey[600],

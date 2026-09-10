@@ -83,6 +83,27 @@ class TriggerModel {
   @JsonKey(name: 'ppl_match_negate')
   final bool pplMatchNegate;
 
+  @JsonKey(name: 'body_posture_target')
+  final String? bodyPostureTarget;
+
+  @JsonKey(name: 'body_posture_window_size')
+  final int? bodyPostureWindowSize;
+
+  @JsonKey(name: 'body_posture_min_matches')
+  final int? bodyPostureMinMatches;
+
+  @JsonKey(name: 'body_posture_min_confidence')
+  final double? bodyPostureMinConfidence;
+
+  @JsonKey(name: 'body_posture_iou_threshold')
+  final double? bodyPostureIouThreshold;
+
+  @JsonKey(name: 'velocity_scope')
+  final String? velocityScope;
+
+  @JsonKey(name: 'velocity_band')
+  final String? velocityBand;
+
   @JsonKey(name: 'search_camera_device_ids')
   final List<String>? searchCameraDeviceIds;
 
@@ -126,6 +147,13 @@ class TriggerModel {
     this.pplMatchSimilarityThreshold = 0.75,
     this.pplMatchTopK = 1,
     this.pplMatchNegate = false,
+    this.bodyPostureTarget,
+    this.bodyPostureWindowSize,
+    this.bodyPostureMinMatches,
+    this.bodyPostureMinConfidence,
+    this.bodyPostureIouThreshold,
+    this.velocityScope,
+    this.velocityBand,
     this.searchCameraDeviceIds,
     this.searchIntervalSeconds,
     this.lastMatchInfo,
@@ -144,6 +172,26 @@ class TriggerModel {
   
   /// Human-readable display for conditions
   String get conditionsDisplay {
+    if (triggerMode == 'velocity') {
+      final cameraCount = cameraDeviceIds?.length ?? 0;
+      final scope = velocityScope ?? 'crowd';
+      final band = velocityBand ?? 'walking';
+      const floors = {
+        'walking': '1.25',
+        'light_running': '2.2',
+        'running': '3.3',
+        'fast_running': '5.0',
+      };
+      final floor = floors[band] ?? '?';
+      return 'Velocity: $scope ≥ $band ($floor m/s), $cameraCount camera(s)';
+    }
+    if (triggerMode == 'body_posture') {
+      final cameraCount = cameraDeviceIds?.length ?? 0;
+      final target = bodyPostureTarget ?? 'horizontal';
+      final window = bodyPostureWindowSize ?? 4;
+      final minMatches = bodyPostureMinMatches ?? 3;
+      return 'Body posture: $target ($minMatches/$window), $cameraCount camera(s)';
+    }
     if (triggerMode == 'vprofile_match') {
       final groupCount = pplMatchGroupIds?.length ?? 0;
       final cameraCount = cameraDeviceIds?.length ?? 0;
@@ -216,6 +264,27 @@ class TriggerCreateRequest {
   @JsonKey(name: 'ppl_match_negate')
   final bool? pplMatchNegate;
 
+  @JsonKey(name: 'body_posture_target')
+  final String? bodyPostureTarget;
+
+  @JsonKey(name: 'body_posture_window_size')
+  final int? bodyPostureWindowSize;
+
+  @JsonKey(name: 'body_posture_min_matches')
+  final int? bodyPostureMinMatches;
+
+  @JsonKey(name: 'body_posture_min_confidence')
+  final double? bodyPostureMinConfidence;
+
+  @JsonKey(name: 'body_posture_iou_threshold')
+  final double? bodyPostureIouThreshold;
+
+  @JsonKey(name: 'velocity_scope')
+  final String? velocityScope;
+
+  @JsonKey(name: 'velocity_band')
+  final String? velocityBand;
+
   @JsonKey(name: 'search_camera_device_ids')
   final List<String>? searchCameraDeviceIds;
 
@@ -242,6 +311,13 @@ class TriggerCreateRequest {
     this.pplMatchSimilarityThreshold,
     this.pplMatchTopK,
     this.pplMatchNegate,
+    this.bodyPostureTarget,
+    this.bodyPostureWindowSize,
+    this.bodyPostureMinMatches,
+    this.bodyPostureMinConfidence,
+    this.bodyPostureIouThreshold,
+    this.velocityScope,
+    this.velocityBand,
     this.searchCameraDeviceIds,
     this.searchIntervalSeconds,
     this.name,

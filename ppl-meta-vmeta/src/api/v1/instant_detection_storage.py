@@ -39,6 +39,11 @@ class AgeGender(BaseModel):
     gender_confidence: Optional[float] = None
 
 
+class VelocityPxMs(BaseModel):
+    x: float = 0.0
+    y: float = 0.0
+
+
 class PersonObject(BaseModel):
     person_object_uuid: str
     mvr_person_uuid: Optional[str] = None
@@ -47,6 +52,12 @@ class PersonObject(BaseModel):
     avg_confidence: float = 0.5
     best_face: Optional[BestFace] = None
     age_gender: Optional[AgeGender] = None
+    # Instant-detection velocity (optional; stripped previously by strict schema)
+    speed_mps: Optional[float] = None
+    velocity_px_ms: Optional[VelocityPxMs] = None
+    gait_band: Optional[str] = None
+    samples: Optional[int] = None
+    scale_face_height_m: Optional[float] = None
 
 
 class InstantDetectionPersistRequest(BaseModel):
@@ -54,7 +65,11 @@ class InstantDetectionPersistRequest(BaseModel):
     camera_id: str
     cycle_timestamp: str
     person_objects: List[PersonObject] = Field(default_factory=list)
+    body_persons: List[Dict[str, Any]] = Field(default_factory=list)
     demographics: Dict[str, Any] = Field(default_factory=dict)
+    crowd_velocity_mps: Optional[float] = None
+    max_person_speed_mps: Optional[float] = None
+    crowd_person_count: Optional[int] = None
 
 
 class InstantDetectionPersistResponse(BaseModel):
@@ -64,6 +79,7 @@ class InstantDetectionPersistResponse(BaseModel):
     existing_individuals_updated: int = 0
     mvr_records_promoted: int = 0
     appearances_created: int = 0
+    body_mvr_created: int = 0
 
 
 class InstantDetectionPersistBatchRequest(BaseModel):
@@ -78,6 +94,7 @@ class InstantDetectionPersistBatchResponse(BaseModel):
     existing_individuals_updated: int = 0
     mvr_records_promoted: int = 0
     appearances_created: int = 0
+    body_mvr_created: int = 0
 
 
 class TrackingSessionCreateRequest(BaseModel):
@@ -238,6 +255,7 @@ async def persist_instant_detection(
             existing_individuals_updated=counts["existing_individuals_updated"],
             mvr_records_promoted=counts["mvr_records_promoted"],
             appearances_created=counts["appearances_created"],
+            body_mvr_created=counts.get("body_mvr_created", 0),
         )
 
     except Exception as e:
@@ -280,6 +298,7 @@ async def persist_instant_detection_batch(
             existing_individuals_updated=counts["existing_individuals_updated"],
             mvr_records_promoted=counts["mvr_records_promoted"],
             appearances_created=counts["appearances_created"],
+            body_mvr_created=counts.get("body_mvr_created", 0),
         )
     except Exception as e:
         logger.error(
@@ -297,11 +316,40 @@ async def persist_instant_detection_batch(
 # ---------- Internal helpers ----------
 
 
+def _movement_pattern_for_person(po: PersonObject) -> Optional[str]:
+    """Build recording-compatible movement_pattern JSON for one appearance."""
+    if po.speed_mps is None and po.velocity_px_ms is None and not po.gait_band:
+        return None
+
+    px_per_s = None
+    if po.velocity_px_ms is not None:
+        mag = (float(po.velocity_px_ms.x) ** 2 + float(po.velocity_px_ms.y) ** 2) ** 0.5
+        px_per_s = round(mag * 1000.0, 4)
+
+    return json.dumps(
+        {
+            "movement_statistics": {
+                "average_speed_mps": po.speed_mps,
+                "average_speed_pixels_per_second": px_per_s,
+                "gait_band": po.gait_band,
+                "samples": po.samples,
+                "scale": {
+                    "method": "face_height",
+                    "face_height_m": po.scale_face_height_m or 0.20,
+                },
+            }
+        }
+    )
+
+
 async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]) -> Dict[str, int]:
+    from services import mvr_people_body_service as body_svc
+
     total_new_created = 0
     total_existing_updated = 0
     total_promoted = 0
     total_appearances = 0
+    total_body_mvr = 0
 
     for request in requests:
         session_id = _uuid.UUID(request.session_uuid)
@@ -349,16 +397,27 @@ async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]
 
                     if featured:
                         individual_uuid = featured
+                        temporal_patch = {}
+                        if po.speed_mps is not None:
+                            temporal_patch = {
+                                "last_speed_mps": po.speed_mps,
+                                "gait_band": po.gait_band,
+                            }
                         await conn.execute(
                             """
                             UPDATE individuals
                             SET total_appearances = COALESCE(total_appearances, 0) + 1,
                                 last_seen = $1,
-                                updated_at = $1
+                                updated_at = $1,
+                                temporal_signature = CASE
+                                    WHEN $3::text IS NULL THEN temporal_signature
+                                    ELSE COALESCE(temporal_signature, '{}'::jsonb) || $3::jsonb
+                                END
                             WHERE individual_uuid = $2
                             """,
                             cycle_ts,
                             individual_uuid,
+                            json.dumps(temporal_patch) if temporal_patch else None,
                         )
                         existing_updated += 1
                     else:
@@ -380,6 +439,8 @@ async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]
                     [{"bbox": po.best_face.bbox, "confidence": po.best_face.confidence}]
                 )
 
+            movement_pattern = _movement_pattern_for_person(po)
+
             await conn.execute(
                 """
                 INSERT INTO individual_video_appearances (
@@ -387,16 +448,19 @@ async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]
                     start_timestamp, end_timestamp,
                     confidence, quality_score,
                     processing_method, source_session_uuid,
-                    representative_faces, created_at
+                    representative_faces, movement_pattern, created_at
                 ) VALUES (
                     $1, $2, $3,
                     $4, $5,
                     $6, $7,
                     $8, $9,
-                    $10, $11
+                    $10, $11::jsonb, $12
                 )
                 ON CONFLICT (individual_uuid, video_uuid, person_object_uuid)
-                DO NOTHING
+                DO UPDATE SET
+                    movement_pattern = COALESCE(EXCLUDED.movement_pattern, individual_video_appearances.movement_pattern),
+                    confidence = EXCLUDED.confidence,
+                    quality_score = EXCLUDED.quality_score
                 """,
                 individual_uuid,
                 synthetic_video_uuid,
@@ -408,24 +472,44 @@ async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]
                 "instant_detection",
                 session_id,
                 representative_faces,
+                movement_pattern,
                 cycle_ts,
             )
             appearances += 1
 
         total_stored = new_created + existing_updated
-        await conn.execute(
-            """
-            UPDATE tracking_sessions
-            SET individuals_found = COALESCE(individuals_found, 0) + $1,
-                person_objects_processed = COALESCE(person_objects_processed, 0) + $2,
-                completed_at = $3
-            WHERE session_uuid = $4
-            """,
-            total_stored,
-            len(request.person_objects),
-            cycle_ts,
-            session_id,
-        )
+        if request.person_objects or request.crowd_velocity_mps is not None:
+            crowd_patch = {
+                "last_crowd_velocity_mps": request.crowd_velocity_mps,
+                "last_max_person_speed_mps": request.max_person_speed_mps,
+                "last_crowd_person_count": request.crowd_person_count,
+            }
+            await conn.execute(
+                """
+                UPDATE tracking_sessions
+                SET individuals_found = COALESCE(individuals_found, 0) + $1,
+                    person_objects_processed = COALESCE(person_objects_processed, 0) + $2,
+                    completed_at = $3,
+                    algorithm_config = COALESCE(algorithm_config, '{}'::jsonb) || $5::jsonb
+                WHERE session_uuid = $4
+                """,
+                total_stored,
+                len(request.person_objects),
+                cycle_ts,
+                session_id,
+                json.dumps({k: v for k, v in crowd_patch.items() if v is not None}),
+            )
+
+        # Body persons: same flush batch as faces → mvr_people_body
+        if request.body_persons:
+            body_result = await body_svc.materialize_from_body_persons(
+                conn,
+                request.body_persons,
+                media_id=str(synthetic_video_uuid),
+                camera_id=request.camera_id,
+                session_uuid=request.session_uuid,
+            )
+            total_body_mvr += int(body_result.get("count") or 0)
 
         total_new_created += new_created
         total_existing_updated += existing_updated
@@ -438,6 +522,7 @@ async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]
         "existing_individuals_updated": total_existing_updated,
         "mvr_records_promoted": total_promoted,
         "appearances_created": total_appearances,
+        "body_mvr_created": total_body_mvr,
     }
 
 
@@ -456,6 +541,13 @@ async def _create_individual(
     # Extract demographics from age_gender if available
     gender_est = po.age_gender.gender if po.age_gender and po.age_gender.gender else None
     age_est = po.age_gender.age_min if po.age_gender and po.age_gender.age_min is not None else None
+
+    temporal_signature: Dict[str, Any] = {}
+    if po.speed_mps is not None:
+        temporal_signature = {
+            "last_speed_mps": po.speed_mps,
+            "gait_band": po.gait_band,
+        }
 
     await conn.execute(
         """
@@ -481,7 +573,7 @@ async def _create_individual(
         individual_id,
         po.avg_confidence,
         json.dumps({}),
-        json.dumps({}),
+        json.dumps(temporal_signature),
         "instant_detection",
         session_id,
         1,

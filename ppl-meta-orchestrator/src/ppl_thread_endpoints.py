@@ -101,7 +101,84 @@ class PPLThreadEndpoints:
     ):
         self.orchestrator = orchestrator
         self.service_manager = service_manager
+        self._live_fallback_locks: Dict[str, asyncio.Lock] = {}
         self._setup_routes()
+
+    def _get_live_fallback_lock(self, media_id: str) -> asyncio.Lock:
+        """Serialize Enhanced Logic V2 fallbacks per media to stop stampede loops."""
+        lock = self._live_fallback_locks.get(media_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._live_fallback_locks[media_id] = lock
+        return lock
+
+    async def _live_fallback_single_flight(
+        self,
+        media_id: str,
+        auth_token: str,
+        session_uuid: str = "",
+    ) -> PPLThreadWorkflowResponse:
+        """
+        Run live Enhanced Logic at most once at a time per media.
+
+        Concurrent GETs wait, then re-check persisted person objects before
+        starting another bulk pass.
+        """
+        lock = self._get_live_fallback_lock(media_id)
+        async with lock:
+            start_time = datetime.now()
+            if session_uuid:
+                persisted = await self._load_persisted_person_objects_response(
+                    media_id=media_id,
+                    auth_token=auth_token,
+                    session_uuid=session_uuid,
+                    start_time=start_time,
+                    attempts=3,
+                )
+                if persisted and persisted.total_persons > 0:
+                    logger.info(
+                        "✅ Skipping live fallback for %s; persisted persons ready on session %s",
+                        media_id,
+                        session_uuid,
+                    )
+                    return persisted
+
+            # Re-query after waiting — another request may have finished materializing.
+            trace_ctx = TraceabilityContext(
+                workflow_id=str(uuid.uuid4()),
+                request_id=str(uuid.uuid4()),
+                source_service="orchestrator",
+                operation="get_person_objects_for_media_pre_live_recheck",
+                metadata={"media_id": media_id},
+            )
+            media_summary = await self.service_manager.vision.get_person_objects_for_media(
+                trace_ctx=trace_ctx,
+                media_id=media_id,
+                auth_token=auth_token,
+            )
+            summary_data = media_summary.data or {}
+            refreshed_session = summary_data.get("session_uuid") or session_uuid
+            if refreshed_session and (summary_data.get("total_persons") or 0) > 0:
+                persisted = await self._load_persisted_person_objects_response(
+                    media_id=media_id,
+                    auth_token=auth_token,
+                    session_uuid=refreshed_session,
+                    start_time=start_time,
+                    attempts=3,
+                )
+                if persisted and persisted.total_persons > 0:
+                    logger.info(
+                        "✅ Skipping live fallback for %s after lock wait; session %s ready",
+                        media_id,
+                        refreshed_session,
+                    )
+                    return persisted
+
+            return await self._build_person_objects_from_live_faces(
+                media_id=media_id,
+                auth_token=auth_token,
+                session_uuid=refreshed_session or session_uuid,
+            )
 
     def _calculate_iou(self, bbox1, bbox2):
         """
@@ -1139,10 +1216,13 @@ class PPLThreadEndpoints:
                 )
 
                 summary_data = media_summary.data or {}
-                session_uuid = summary_data.get("session_uuid", "")
+                session_uuid = summary_data.get("session_uuid", "") or ""
+                total_persons = summary_data.get("total_persons", 0) or 0
 
-                if not media_summary.success or not session_uuid:
-                    return await self._build_person_objects_from_live_faces(
+                # Persisted persons available → return them. Otherwise single-flight
+                # live materialization (concurrent GETs wait and re-check first).
+                if not (media_summary.success and session_uuid and total_persons > 0):
+                    return await self._live_fallback_single_flight(
                         media_id=media_id,
                         auth_token=auth_token,
                         session_uuid=session_uuid,
@@ -1155,19 +1235,9 @@ class PPLThreadEndpoints:
                 )
 
                 if not session_details.success or not session_details.data:
-                    error_msg = (
-                        session_details.error_message
-                        or "Failed to retrieve persisted person objects"
-                    )
-                    logger.error("❌ Persisted person object retrieval failed: %s", error_msg)
-
-                    return PPLThreadWorkflowResponse(
-                        success=False,
+                    return await self._live_fallback_single_flight(
                         media_id=media_id,
-                        total_persons=0,
-                        total_faces=0,
-                        status="error",
-                        message=error_msg,
+                        auth_token=auth_token,
                         session_uuid=session_uuid,
                     )
 

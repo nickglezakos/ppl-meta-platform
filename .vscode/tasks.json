@@ -4,7 +4,7 @@
         {
             "label": "🏥 Health Check via Nginx Proxy",
             "type": "shell",
-            "command": "echo '🏥 PPL Meta Platform - Health Check via Nginx Proxy' && echo '========================================================' && echo && echo '🔍 Step 1: Checking Gateway (Critical Service)...' && if curl -s --connect-timeout 3 http://localhost:8080/health >/dev/null 2>&1; then echo '✅ Gateway running on port 8080' && echo && echo '🔍 Step 2: Checking Nginx Proxy...' && if curl -s --connect-timeout 2 http://localhost/ >/dev/null 2>&1 || curl -s --connect-timeout 2 http://localhost:80/ >/dev/null 2>&1; then echo '✅ Nginx is running' && echo && echo '📋 Service Status via Nginx Proxy:' && echo && echo '• Gateway (via proxy):' && curl -L -s --connect-timeout 3 http://localhost/health/gateway | python3 -m json.tool 2>/dev/null || curl -L -s --connect-timeout 3 http://localhost:80/health/gateway | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx' && echo && echo '• Node Service:' && curl -L -s --connect-timeout 3 http://localhost/health/node | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx' && echo && echo '• Media Service:' && curl -L -s --connect-timeout 3 http://localhost/health/media | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx' && echo && echo '• Orchestrator:' && curl -L -s --connect-timeout 3 http://localhost/health/orchestrator | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx' && echo && echo '• Cameras:' && curl -L -s --connect-timeout 3 http://localhost/health/cameras | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx'; else echo '❌ Nginx is NOT running on port 80' && echo && echo '💡 Start nginx with: 🌐 Start Nginx Proxy (Local Dev)' && echo '   Or check if nginx config is correct'; fi; else echo '❌ Gateway NOT running on port 8080' && echo && echo '⚠️  The gateway must be running for frontend to work!' && echo '💡 Start gateway with one of these:' && echo '   • ./manage-services.sh start' && echo '   • Task: 🌐 Start Gateway Service (Local Python)' && echo '   • Task: 🚀 Start All Local Python Services' && echo && echo '🔍 Checking if any other services are running...' && for port in 8000 8001 8002 8005; do if lsof -i :$port >/dev/null 2>&1; then echo \"  ✅ Port $port is in use\"; fi; done; fi",
+            "command": "echo '🏥 PPL Meta Platform - Health Check via Nginx Proxy' && echo '========================================================' && echo && echo '🔍 Step 1: Checking Gateway (Critical Service)...' && if curl -s --connect-timeout 3 http://localhost:8080/health >/dev/null 2>&1; then echo '✅ Gateway running on port 8080' && echo && echo '🔍 Step 2: Checking Nginx Proxy...' && if curl -s --connect-timeout 2 http://localhost/ >/dev/null 2>&1 || curl -s --connect-timeout 2 http://localhost:80/ >/dev/null 2>&1; then echo '✅ Nginx is running' && echo && echo '📋 Service Status via Nginx Proxy:' && echo && echo '• Gateway (via proxy):' && curl -L -s --connect-timeout 3 http://localhost/health/gateway | python3 -m json.tool 2>/dev/null || curl -L -s --connect-timeout 3 http://localhost:80/health/gateway | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx' && echo && echo '• Node Service:' && curl -L -s --connect-timeout 3 http://localhost/health/node | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx' && echo && echo '• Media Service:' && curl -L -s --connect-timeout 3 http://localhost/health/media | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx' && echo && echo '• Orchestrator:' && curl -L -s --connect-timeout 3 http://localhost/health/orchestrator | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx' && echo && echo '• Cameras:' && curl -L -s --connect-timeout 3 http://localhost/health/cameras | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx' && echo && echo '• Models:' && curl -L -s --connect-timeout 3 http://localhost/health/models | python3 -m json.tool 2>/dev/null || echo '❌ Not responding via nginx'; else echo '❌ Nginx is NOT running on port 80' && echo && echo '💡 Start nginx with: 🌐 Start Nginx Proxy (Local Dev)' && echo '   Or check if nginx config is correct'; fi; else echo '❌ Gateway NOT running on port 8080' && echo && echo '⚠️  The gateway must be running for frontend to work!' && echo '💡 Start gateway with one of these:' && echo '   • ./manage-services.sh start' && echo '   • Task: 🌐 Start Gateway Service (Local Python)' && echo '   • Task: 🚀 Start All Local Python Services' && echo && echo '🔍 Checking if any other services are running...' && for port in 8000 8001 8002 8005 8013; do if lsof -i :$port >/dev/null 2>&1; then echo \"  ✅ Port $port is in use\"; fi; done; fi",
             "group": "test",
             "isBackground": false,
             "problemMatcher": []
@@ -88,6 +88,30 @@
             "problemMatcher": []
         },
         {
+            "label": "📦 Start Models Service (Local Python 3.11)",
+            "type": "shell",
+            "command": "cd ppl-meta-models/src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-models/src python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8013 --reload",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop Models Service (Local Python)",
+            "type": "shell",
+            "command": "echo '🛑 Stopping Models Service...' && lsof -ti:8013 | xargs kill -9 2>/dev/null || true && echo 'Models service stopped.'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Models Service Health Check (Local)",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8013/health | python3 -m json.tool 2>/dev/null || echo 'Models service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
             "label": "🧪 Validate Presence Flow (Local)",
             "type": "shell",
             "command": "PORT_PIDS=$(lsof -ti tcp:8012 | tr '\n' ' ') && if [[ -n \"$PORT_PIDS\" ]]; then kill $PORT_PIDS; fi && cd ppl-meta-presence/src && source /Users/nickgklezakos/Documents/ppl-meta-code/scripts/load-presence-runtime-env.sh && PRESENCE_DETECTION_BACKEND_MODE=simulate PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-presence/src python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8012 >/tmp/ppl-meta-presence-simulated.log 2>&1 & SERVER_PID=$! && trap 'kill $SERVER_PID 2>/dev/null || true' EXIT && python3.11 -c \"import json,time,urllib.request; url='http://localhost:8012/health'; deadline=time.time()+30; last_error='';\nwhile time.time() < deadline:\n    try:\n        with urllib.request.urlopen(url, timeout=2) as response:\n            data=json.load(response)\n            assert data.get('status') == 'healthy'\n            break\n    except Exception as exc:\n        last_error=str(exc)\n        time.sleep(1)\nelse:\n    raise SystemExit(f'Simulated presence service did not become healthy: {last_error}')\" && cd .. && PRESENCE_VALIDATION_BASE_URL=http://localhost:8012/api/v1/presence PRESENCE_VALIDATION_USERNAME=${env:PRESENCE_VALIDATION_USERNAME} PRESENCE_VALIDATION_PASSWORD=${env:PRESENCE_VALIDATION_PASSWORD} python3.11 validate_presence_flow.py",
@@ -122,7 +146,7 @@
         {
             "label": "🚀 Start All Local Python Services",
             "type": "shell",
-            "command": "echo '🚀 Starting all PPL Meta services in local Python mode...' && echo 'Starting Discovery Service...' && (cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload) & echo 'Starting Node Service...' && (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload) & echo 'Starting Media Service...' && (cd ppl-meta-media && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload) & echo 'Starting Gateway Service...' && (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & echo 'Starting Orchestrator Service...' && (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Vision Service...' && (cd ppl-meta-vision && source venv/bin/activate && python src/main.py) & echo 'Starting Cameras Service...' && (cd ppl-meta-cameras && set -a && source .env && set +a && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload) & echo 'Starting Bootcore Service...' && (cd ppl-meta-bootcore/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8007 --reload) & echo 'Starting vmeta Service...' && (cd ppl-meta-vmeta && source venv/bin/activate && cd src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-vmeta/src uvicorn main:app --host 0.0.0.0 --port 8008 --reload) & echo 'Starting Communications Service...' && (cd ppl-meta-communications && /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-communications/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8009 --reload) & echo 'Starting Presence Service...' && (cd ppl-meta-presence/src && source /Users/nickgklezakos/Documents/ppl-meta-code/scripts/load-presence-runtime-env.sh && PRESENCE_DETECTION_BACKEND_MODE=auto PRESENCE_PREFERRED_CAMERA_TYPES=${env:PRESENCE_PREFERRED_CAMERA_TYPES} PRESENCE_PREFERRED_CAMERA_NAMES=${env:PRESENCE_PREFERRED_CAMERA_NAMES} PRESENCE_ALLOWED_CAMERA_STATUSES=${env:PRESENCE_ALLOWED_CAMERA_STATUSES} PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-presence/src python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8011 --reload) & echo '✅ All services started! Use separate nginx task if needed.' && wait",
+            "command": "echo '🚀 Starting all PPL Meta services in local Python mode...' && echo 'Starting Discovery Service...' && (cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload) & echo 'Starting Node Service...' && (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload) & echo 'Starting Media Service...' && (cd ppl-meta-media && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload) & echo 'Starting Gateway Service...' && (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & echo 'Starting Orchestrator Service...' && (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Vision Service...' && (cd ppl-meta-vision && source venv/bin/activate && python src/main.py) & echo 'Starting Cameras Service...' && (cd ppl-meta-cameras && set -a && source .env && set +a && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload) & echo 'Starting Bootcore Service...' && (cd ppl-meta-bootcore/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8007 --reload) & echo 'Starting vmeta Service...' && (cd ppl-meta-vmeta && source venv/bin/activate && cd src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-vmeta/src uvicorn main:app --host 0.0.0.0 --port 8008 --reload) & echo 'Starting Communications Service...' && (cd ppl-meta-communications && /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-communications/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8009 --reload) & echo 'Starting Presence Service...' && (cd ppl-meta-presence/src && source /Users/nickgklezakos/Documents/ppl-meta-code/scripts/load-presence-runtime-env.sh && PRESENCE_DETECTION_BACKEND_MODE=auto PRESENCE_PREFERRED_CAMERA_TYPES=${env:PRESENCE_PREFERRED_CAMERA_TYPES} PRESENCE_PREFERRED_CAMERA_NAMES=${env:PRESENCE_PREFERRED_CAMERA_NAMES} PRESENCE_ALLOWED_CAMERA_STATUSES=${env:PRESENCE_ALLOWED_CAMERA_STATUSES} PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-presence/src python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8011 --reload) & echo 'Starting Models Service...' && (cd ppl-meta-models/src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-models/src python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8013 --reload) & echo '✅ All services started! Use separate nginx task if needed.' && wait",
             "group": "build",
             "isBackground": true,
             "problemMatcher": []
@@ -130,7 +154,7 @@
         {
             "label": "🛑 Stop All Local Python Services",
             "type": "shell",
-            "command": "echo '🛑 Stopping all local Python services...' && echo '1. Killing Python processes...' && pkill -9 -f 'python.*ppl-meta' 2>/dev/null || true && pkill -9 -f 'uvicorn.*ppl-meta' 2>/dev/null || true && echo '2. Force-killing ports...' && sleep 1 && for port in 8000 8001 8002 8003 8005 8006 8007 8008 8009 8011 8080; do lsof -ti:$port | xargs kill -9 2>/dev/null || true; done && sleep 1 && echo '3. Verifying ports are free...' && for port in 8000 8001 8002 8003 8005 8006 8007 8008 8009 8011 8080; do if lsof -i :$port >/dev/null 2>&1; then echo \"⚠️  Port $port still in use\"; else echo \"✅ Port $port free\"; fi; done && echo '✅ All services stopped and ports verified free!'",
+            "command": "echo '🛑 Stopping all local Python services...' && echo '1. Killing Python processes...' && pkill -9 -f 'python.*ppl-meta' 2>/dev/null || true && pkill -9 -f 'uvicorn.*ppl-meta' 2>/dev/null || true && echo '2. Force-killing ports...' && sleep 1 && for port in 8000 8001 8002 8003 8005 8006 8007 8008 8009 8011 8013 8080; do lsof -ti:$port | xargs kill -9 2>/dev/null || true; done && sleep 1 && echo '3. Verifying ports are free...' && for port in 8000 8001 8002 8003 8005 8006 8007 8008 8009 8011 8013 8080; do if lsof -i :$port >/dev/null 2>&1; then echo \"⚠️  Port $port still in use\"; else echo \"✅ Port $port free\"; fi; done && echo '✅ All services stopped and ports verified free!'",
             "group": "build",
             "isBackground": false,
             "problemMatcher": []
@@ -154,7 +178,7 @@
         {
             "label": "🚀 Start Complete Platform (Services + Nginx)",
             "type": "shell",
-            "command": "echo '🚀 Starting Complete PPL Meta Platform...' && echo '1. Starting all backend services...' && (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & (cd ppl-meta-vision && python src/main.py) & (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo '2. Waiting for services to initialize...' && sleep 8 && echo '3. Starting Nginx proxy...' && bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/setup-nginx-local.sh && echo '✅ Complete platform started! Services + Nginx running.' && wait",
+            "command": "echo '🚀 Starting Complete PPL Meta Platform...' && echo '1. Starting all backend services...' && (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & (cd ppl-meta-vision && python src/main.py) & (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & (cd ppl-meta-models/src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-models/src python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8013 --reload) & echo '2. Waiting for services to initialize...' && sleep 8 && echo '3. Starting Nginx proxy...' && bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/setup-nginx-local.sh && echo '✅ Complete platform started! Services + Nginx running.' && wait",
             "group": "build",
             "isBackground": true,
             "problemMatcher": []
@@ -170,7 +194,7 @@
         {
             "label": "🏥 Local Python Health Check - All Services",
             "type": "shell",
-            "command": "echo '🏥 PPL Meta Platform - Local Python Development Health Check' && echo '========================================================' && echo && echo '📋 Service Status:' && echo '• ppl-meta-node (8001):' && curl -L -s http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-media (8000):' && curl -L -s http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-gateway (8080):' && curl -L -s http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-orchestrator (8002):' && curl -L -s http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-vision (8003):' && curl -L -s http://localhost:8003/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-cameras (8005):' && curl -L -s http://localhost:8005/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-discovery (8006):' && curl -L -s http://localhost:8006/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-bootcore (8007):' && curl -L -s http://localhost:8007/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-vmeta (8008):' && curl -L -s http://localhost:8008/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-communications (8009):' && curl -L -s http://localhost:8009/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-presence (8011):' && curl -L -s http://localhost:8011/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding'",
+            "command": "echo '🏥 PPL Meta Platform - Local Python Development Health Check' && echo '========================================================' && echo && echo '📋 Service Status:' && echo '• ppl-meta-node (8001):' && curl -L -s http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-media (8000):' && curl -L -s http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-gateway (8080):' && curl -L -s http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-orchestrator (8002):' && curl -L -s http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-vision (8003):' && curl -L -s http://localhost:8003/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-cameras (8005):' && curl -L -s http://localhost:8005/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-discovery (8006):' && curl -L -s http://localhost:8006/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-bootcore (8007):' && curl -L -s http://localhost:8007/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-vmeta (8008):' && curl -L -s http://localhost:8008/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-communications (8009):' && curl -L -s http://localhost:8009/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-presence (8011):' && curl -L -s http://localhost:8011/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-models (8013):' && curl -L -s http://localhost:8013/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding'",
             "group": "test",
             "isBackground": false,
             "problemMatcher": []
@@ -640,7 +664,7 @@
         {
             "label": "🚀 Start All Services then Nginx (Interactive)",
             "type": "shell",
-            "command": "echo '🚀 Starting all PPL Meta services...' && echo 'Starting Node Service...' && (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & echo 'Starting Media Service...' && (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & echo 'Starting Gateway Service...' && (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & echo 'Starting Orchestrator Service...' && (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Vision Service...' && (cd ppl-meta-vision && python src/main.py) & echo 'Starting Cameras Service...' && (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo 'Waiting for services to start...' && sleep 8 && echo 'Starting Nginx Proxy (will prompt for password)...' && sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && echo '✅ All services and nginx started!'",
+            "command": "echo '🚀 Starting all PPL Meta services...' && echo 'Starting Node Service...' && (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & echo 'Starting Media Service...' && (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & echo 'Starting Gateway Service...' && (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & echo 'Starting Orchestrator Service...' && (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Vision Service...' && (cd ppl-meta-vision && python src/main.py) & echo 'Starting Cameras Service...' && (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & (cd ppl-meta-models/src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-models/src python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8013 --reload) & echo 'Waiting for services to start...' && sleep 8 && echo 'Starting Nginx Proxy (will prompt for password)...' && sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && echo '✅ All services and nginx started!'",
             "group": "build",
             "isBackground": false,
             "problemMatcher": []
@@ -648,7 +672,7 @@
         {
             "label": "🛑 Stop All Services + Nginx (Local Python)",
             "type": "shell",
-            "command": "echo '🛑 Stopping all local Python services and Nginx...' && sudo nginx -s quit 2>/dev/null || true && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && pkill -f 'uvicorn.*main_minimal:app' 2>/dev/null || true && pkill -f 'ppl-meta-vision.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-cameras.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-node.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-media.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-gateway.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-orchestrator.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-discovery.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-bootcore.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-vmeta.*uvicorn' 2>/dev/null || true && echo 'All services and nginx stopped.'",
+            "command": "echo '🛑 Stopping all local Python services and Nginx...' && sudo nginx -s quit 2>/dev/null || true && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && pkill -f 'uvicorn.*main_minimal:app' 2>/dev/null || true && pkill -f 'ppl-meta-vision.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-cameras.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-node.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-media.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-gateway.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-orchestrator.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-discovery.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-bootcore.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-vmeta.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-models.*uvicorn' 2>/dev/null || true && lsof -ti:8013 | xargs kill -9 2>/dev/null || true && echo 'All services and nginx stopped.'",
             "group": "build",
             "isBackground": false,
             "problemMatcher": []
@@ -656,7 +680,7 @@
         {
             "label": "🏥 Health Check - Direct Services Only",
             "type": "shell",
-            "command": "echo '🏥 PPL Meta Platform - Direct Service Health Check' && echo '========================================================' && echo && echo '📋 Direct Service Status:' && echo '• Node Service (8001):' && curl -L -s --connect-timeout 3 http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Media Service (8000):' && curl -L -s --connect-timeout 3 http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Gateway Service (8080):' && curl -L -s --connect-timeout 3 http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Orchestrator Service (8002):' && curl -L -s --connect-timeout 3 http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Vision Service (8003):' && curl -L -s --connect-timeout 3 http://localhost:8003/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Cameras Service (8005):' && curl -L -s --connect-timeout 3 http://localhost:8005/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Bootcore Service (8007):' && curl -L -s --connect-timeout 3 http://localhost:8007/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• vmeta Service (8008):' && curl -L -s --connect-timeout 3 http://localhost:8008/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Presence Service (8011):' && curl -L -s --connect-timeout 3 http://localhost:8011/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding'",
+            "command": "echo '🏥 PPL Meta Platform - Direct Service Health Check' && echo '========================================================' && echo && echo '📋 Direct Service Status:' && echo '• Node Service (8001):' && curl -L -s --connect-timeout 3 http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Media Service (8000):' && curl -L -s --connect-timeout 3 http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Gateway Service (8080):' && curl -L -s --connect-timeout 3 http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Orchestrator Service (8002):' && curl -L -s --connect-timeout 3 http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Vision Service (8003):' && curl -L -s --connect-timeout 3 http://localhost:8003/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Cameras Service (8005):' && curl -L -s --connect-timeout 3 http://localhost:8005/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Bootcore Service (8007):' && curl -L -s --connect-timeout 3 http://localhost:8007/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• vmeta Service (8008):' && curl -L -s --connect-timeout 3 http://localhost:8008/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Presence Service (8011):' && curl -L -s --connect-timeout 3 http://localhost:8011/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Models Service (8013):' && curl -L -s --connect-timeout 3 http://localhost:8013/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding'",
             "group": "test",
             "isBackground": false,
             "problemMatcher": []
@@ -853,7 +877,6 @@
             "command": "export KEY=$(cat /tmp/last_preauth_key.txt 2>/dev/null | tr -d '\\n'); if [ -z \"$KEY\" ]; then echo '❌ No pre-auth key found. Run \"Headscale Create Dev Pre-Auth Key\" first.'; exit 1; fi; pkill -f 'tailscaled --tun=userspace-networking' 2>/dev/null || true; sleep 1; rm -f /tmp/tailscaled.sock; rm -rf /tmp/tailscaled-state; nohup tailscaled --tun=userspace-networking --socket=/tmp/tailscaled.sock --statedir=/tmp/tailscaled-state > /tmp/tailscaled.log 2>&1 & for i in 1 2 3 4 5 6 7 8 9 10; do [ -S /tmp/tailscaled.sock ] && break; sleep 1; done; tailscale --socket=/tmp/tailscaled.sock up --login-server http://127.0.0.1:8081 --authkey \"$KEY\" --accept-routes=false --accept-dns=false --hostname=eyenet-dev 2>&1 && echo '✅ Enrolled!' || echo '❌ Enrollment failed. Check /tmp/tailscaled.log for details.'",
             "detail": "Starts tailscaled in userspace-networking mode (using a writable /tmp socket to avoid macOS /var/run permission errors) and wipes the previous state dir so each enrollment starts fresh (avoids 'authkey already used' from a stale node identity), then enrolls this machine to the local Headscale (127.0.0.1:8081) using the last generated pre-auth key",
             "group": "build",
-
             "isBackground": false,
             "problemMatcher": []
         },
@@ -941,7 +964,6 @@
         {
             "label": "🛑 Stop VPN + Matrix Only (Layered)",
             "type": "shell",
-
             "command": "echo '🛑 PPL Meta -- Stopping VPN + Matrix Only' && echo '=====================================================' && echo '' && echo '--- Step 1: Stop Matrix Service ---' && pkill -f 'ppl-meta-matrix.*uvicorn.*main:app' 2>/dev/null || true && lsof -ti:8015 | xargs kill -9 2>/dev/null || true && echo '  Matrix stopped' && echo '' && echo '--- Step 2: Stop Authority Service ---' && pkill -f 'ppl-meta-authority/src.*uvicorn.*main:app' 2>/dev/null || true && lsof -ti:8010 | xargs kill -9 2>/dev/null || true && echo '  Authority stopped' && echo '' && echo '--- Step 3: Disconnect + Stop Tailscale ---' && tailscale --socket=/tmp/tailscaled.sock logout 2>&1 || true && pkill -f 'tailscaled --tun=userspace-networking' 2>/dev/null || true && echo '  Tailscale stopped' && echo '' && echo '--- Step 4: Stop Headscale ---' && pkill -9 headscale 2>/dev/null || true && echo '  Headscale stopped' && echo '' && echo '--- Verifying ports are free ---' && for port in 8010 8015 8081; do if lsof -i :$port >/dev/null 2>&1; then echo \"  WARN: Port $port still in use\"; else echo \"  OK: Port $port free\"; fi; done && echo '' && echo 'VPN + Matrix stopped! (Core services untouched)'",
             "detail": "Stops ONLY Headscale, Tailscale VPN, Authority, and Matrix. Leaves the 11 core backend services (started separately via 'Start All Local Python Services') running untouched.",
             "group": "build",
@@ -965,7 +987,68 @@
             "group": "build",
             "isBackground": false,
             "problemMatcher": []
+        },
+        {
+            "label": "☁️ Deploy Authority to Hetzner",
+            "type": "shell",
+            "command": "HETZNER_SSH_HOST=${input:hetznerSshHost} AUTHORITY_HEALTH_URL=${input:authorityHealthUrl} ${workspaceFolder}/scripts/deploy-authority-to-hetzner.sh --version ${input:authorityDeployVersion}",
+            "detail": "Rsync authority source to Hetzner, remote docker build, and recreate the ppl-meta-authority container. Uses SSH alias from ~/.ssh/config (default: hetzner).",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "☁️ Sync Authority Source to Hetzner",
+            "type": "shell",
+            "command": "HETZNER_SSH_HOST=${input:hetznerSshHost} ${workspaceFolder}/scripts/deploy-authority-to-hetzner.sh --sync-only",
+            "detail": "Step 1 only: rsync autonomous/ppl-meta-authority to the Hetzner source directory.",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "☁️ Build Authority Image on Hetzner",
+            "type": "shell",
+            "command": "HETZNER_SSH_HOST=${input:hetznerSshHost} ${workspaceFolder}/scripts/deploy-authority-to-hetzner.sh --build-only --version ${input:authorityDeployVersion}",
+            "detail": "Step 2 only: remote docker build for ppl-meta-authority on Hetzner.",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "☁️ Recreate Authority Container on Hetzner",
+            "type": "shell",
+            "command": "HETZNER_SSH_HOST=${input:hetznerSshHost} AUTHORITY_HEALTH_URL=${input:authorityHealthUrl} ${workspaceFolder}/scripts/deploy-authority-to-hetzner.sh --deploy-only --version ${input:authorityDeployVersion}",
+            "detail": "Step 3 only: stop and recreate the ppl-meta-authority container with the selected image tag.",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
         }
     ],
-    "inputs": []
+    "inputs": [
+        {
+            "id": "authorityDeployVersion",
+            "type": "promptString",
+            "description": "Authority Docker image version tag (e.g. 2.25.77)",
+            "default": "2.25.77"
+        },
+        {
+            "id": "hetznerSshHost",
+            "type": "promptString",
+            "description": "SSH host alias from ~/.ssh/config",
+            "default": "hetzner"
+        },
+        {
+            "id": "authorityHealthUrl",
+            "type": "promptString",
+            "description": "Optional post-deploy health URL (leave blank to skip)",
+            "default": ""
+        },
+        {
+            "id": "bootstrapAuthorityBaseUrl",
+            "type": "promptString",
+            "description": "Authority base URL for bootstrap state scripts",
+            "default": "http://localhost:8010"
+        }
+    ]
 }

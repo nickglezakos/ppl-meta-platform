@@ -21,6 +21,7 @@ import '../providers/person_objects_provider.dart';
 import '../services/orchestrator_api_client.dart';
 import '../widgets/person_objects_components.dart';
 import 'person_objects_detail_screen.dart';
+import '../widgets/mvr_people_body_detail_panel.dart';
 import '../core/providers/features_providers.dart';
 import '../widgets/media_privacy_placeholder.dart';
 
@@ -342,10 +343,10 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
               'Authorization': 'Bearer ${apiClient.authToken}',
           },
           collectionId: null, // TODO: Pass collection ID from route parameters
-          initialFaceData: _previewMvrFaces,
-          initialFaceDataSource: _previewMvrPeople.isNotEmpty
-              ? 'media_preview_mvr_data'
-              : 'media_preview_person_objects_data',
+          // Leave initialFaceData empty so SmartVideoPlayer loads full per-frame
+          // Enhanced Logic V2 faces (detection_result.faces_by_frame) for rectangles.
+          initialFaceData: null,
+          initialFaceDataSource: 'enhanced_v2_per_frame',
           enableWorkflowIntegration: false,
           onControllerReady: (controller) {
             debugPrint('🎬 Smart video controller ready with workflow integration');
@@ -423,18 +424,19 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
       // preview screen caused MVRs to be "fired by" UI navigation and
       // produced the race-condition flicker between two preview layouts.
 
+      // Rectangle overlay needs full per-frame detections (Enhanced Logic V2 /
+      // detection_result.faces_by_frame). MVR / person-object payloads only carry
+      // sparse representative faces and must not be used as overlay input — that
+      // blocked the stored-face load path and left the painter on the wrong JSON.
       if (!mounted) {
         return;
       }
 
-      final overlayFaces = mvrPeople.isNotEmpty
-          ? _buildMvrOverlayFaces(mediaUuid, mvrPeople)
-          : _buildPersonObjectOverlayFaces(mediaUuid, personObjects);
       final analysisContext = mvrPeople.isEmpty ? null : _buildPreviewAnalysisContext(mvrPeople);
 
       setState(() {
         _previewMvrPeople = mvrPeople;
-        _previewMvrFaces = overlayFaces;
+        _previewMvrFaces = const [];
         _previewAnalysisContext = analysisContext;
       });
     } catch (e) {
@@ -1885,6 +1887,45 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
             onPressed: _isComputing ? null : _triggerComputeFromPreview,
             tooltip: 'Compute: run pipeline & create/update MVRs',
           ),
+        if (widget.mediaItem.mediaType == MediaType.video)
+          IconButton(
+            icon: const Icon(Icons.accessibility_new),
+            tooltip: 'MVR People Body',
+            onPressed: () {
+              showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                builder: (ctx) => DraggableScrollableSheet(
+                  expand: false,
+                  initialChildSize: 0.5,
+                  minChildSize: 0.3,
+                  maxChildSize: 0.9,
+                  builder: (_, controller) => Column(
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text(
+                          'MVR People Body',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          controller: controller,
+                          child: MvrPeopleBodyDetailPanel(
+                            mediaUuid: widget.mediaItem.uuid,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
         // Gallery button
         IconButton(
           icon: const Icon(Icons.photo_library),
@@ -1975,6 +2016,22 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
       // 2. Run continuous pipeline.
       final response =
           await orchestratorApiClient.getEnhancedLogicV2Response(mediaUuid);
+
+      // 2b. Also run body/pose → MVRPeopleBody pipeline (explicit Compute).
+      try {
+        final apiClient = ref.read(apiClientProvider);
+        await apiClient.post(
+          '/api/v1/object-detections/process-media',
+          queryParameters: {
+            'media_id': mediaUuid,
+            'model_id': 'body-yolo-pose-os',
+            'frame_interval': '10',
+            'materialize': 'true',
+          },
+        );
+      } catch (e) {
+        debugPrint('Body compute process-media skipped/failed: $e');
+      }
 
       if (!mounted) return;
 

@@ -431,6 +431,24 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
   }
 
   String _latestMatchSummary(TriggerModel trigger) {
+    if (trigger.triggerMode == 'velocity') {
+      final match = trigger.lastMatchInfo;
+      if (match == null || match.isEmpty) return 'No match yet';
+      final scope = match['scope']?.toString() ?? 'velocity';
+      final band = match['band']?.toString() ?? '';
+      final measured = match['measured_mps'];
+      final cam = match['camera_id']?.toString() ?? '';
+      return '$scope ≥ $band ${measured ?? ''} m/s • $cam';
+    }
+    if (trigger.triggerMode == 'body_posture') {
+      final match = trigger.lastMatchInfo;
+      if (match == null || match.isEmpty) return 'No match yet';
+      final target = match['target']?.toString() ?? 'posture';
+      final count = match['match_count'];
+      final window = match['window_size'];
+      final cam = match['source_camera_id']?.toString() ?? '';
+      return '$target $count/$window • $cam';
+    }
     if (trigger.triggerMode != 'ppl_match' && trigger.triggerMode != 'vprofile_match') {
       return '—';
     }
@@ -585,6 +603,8 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     'search': 'Search People Match',
     'search_demographic': 'Search Demographic',
     'vprofile_match': 'VProfile Multi-Group',
+    'body_posture': 'Body Posture',
+    'velocity': 'Velocity',
   };
 
   static const _modeIcons = {
@@ -593,6 +613,8 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     'search': Icons.search,
     'search_demographic': Icons.analytics,
     'vprofile_match': Icons.people_outline,
+    'body_posture': Icons.accessibility_new,
+    'velocity': Icons.speed,
   };
 
   static const _modeColors = {
@@ -601,6 +623,8 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     'search': AppColors.secondary,
     'search_demographic': AppColors.error,
     'vprofile_match': AppColors.info,
+    'body_posture': AppColors.warning,
+    'velocity': AppColors.info,
   };
 
   /// Status filter toggles (All / Active / Inactive) for the action bar.
@@ -1058,6 +1082,26 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     bool pplMatchNegate = trigger?.pplMatchNegate ?? false;
     List<String> selectedVProfileGroupIds = trigger?.pplMatchGroupIds ?? [];
     List<String> selectedVProfileCameraIds = trigger?.cameraDeviceIds ?? [];
+    List<String> selectedBodyPostureCameraIds =
+        trigger?.triggerMode == 'body_posture'
+            ? (trigger?.cameraDeviceIds ?? [])
+            : <String>[];
+    List<String> selectedVelocityCameraIds =
+        trigger?.triggerMode == 'velocity'
+            ? (trigger?.cameraDeviceIds ?? [])
+            : <String>[];
+    String bodyPostureTarget = trigger?.bodyPostureTarget ?? 'horizontal';
+    String velocityScope = trigger?.velocityScope ?? 'crowd';
+    String velocityBand = trigger?.velocityBand ?? 'walking';
+    final bodyWindowController = TextEditingController(
+      text: (trigger?.bodyPostureWindowSize ?? 4).toString(),
+    );
+    final bodyMinMatchesController = TextEditingController(
+      text: (trigger?.bodyPostureMinMatches ?? 3).toString(),
+    );
+    final bodyMinConfidenceController = TextEditingController(
+      text: (trigger?.bodyPostureMinConfidence ?? 0.5).toString(),
+    );
     final searchIntervalController = TextEditingController(
       text: (trigger?.searchIntervalSeconds ?? 300).toString(),
     );
@@ -1109,7 +1153,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
       try {
         final apiClient = ref.read(apiClientProvider);
 
-        final cameraName = (triggerMode == 'search' || triggerMode == 'search_demographic')
+        final cameraName = (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match' || triggerMode == 'body_posture' || triggerMode == 'velocity')
             ? null
             : availableCameras.firstWhere(
                 (c) => c.deviceId == selectedCameraDeviceId,
@@ -1129,7 +1173,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
           description: descriptionController.text.trim().isEmpty ? null : descriptionController.text.trim(),
           demographicConditions: (triggerMode == 'demographic' || triggerMode == 'search_demographic') ? demographicConditions : const [],
           timeSpan: timeSpanController.text.trim(),
-          cameraDeviceId: (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match') ? null : selectedCameraDeviceId,
+          cameraDeviceId: (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match' || triggerMode == 'body_posture' || triggerMode == 'velocity') ? null : selectedCameraDeviceId,
           cameraName: cameraName,
           actionUuid: selectedActionUuids.isNotEmpty ? selectedActionUuids.first : null,
           actionUuids: selectedActionUuids.isNotEmpty ? selectedActionUuids : null,
@@ -1140,7 +1184,11 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
           pplMatchGroupId: (triggerMode == 'ppl_match' || triggerMode == 'search')
             ? selectedPplMatchGroupId : null,
           pplMatchGroupIds: triggerMode == 'vprofile_match' ? selectedVProfileGroupIds : null,
-          cameraDeviceIds: triggerMode == 'vprofile_match' ? selectedVProfileCameraIds : null,
+          cameraDeviceIds: triggerMode == 'vprofile_match'
+              ? selectedVProfileCameraIds
+              : (triggerMode == 'body_posture'
+                  ? selectedBodyPostureCameraIds
+                  : (triggerMode == 'velocity' ? selectedVelocityCameraIds : null)),
           pplMatchSimilarityThreshold: (triggerMode == 'ppl_match' || triggerMode == 'search' || triggerMode == 'vprofile_match')
             ? (double.tryParse(similarityThresholdController.text) ?? 0.75)
             : null,
@@ -1149,6 +1197,19 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
             : null,
           pplMatchNegate: (triggerMode == 'ppl_match' || triggerMode == 'search' || triggerMode == 'vprofile_match')
             ? pplMatchNegate : null,
+          bodyPostureTarget: triggerMode == 'body_posture' ? bodyPostureTarget : null,
+          bodyPostureWindowSize: triggerMode == 'body_posture'
+              ? (int.tryParse(bodyWindowController.text) ?? 4)
+              : null,
+          bodyPostureMinMatches: triggerMode == 'body_posture'
+              ? (int.tryParse(bodyMinMatchesController.text) ?? 3)
+              : null,
+          bodyPostureMinConfidence: triggerMode == 'body_posture'
+              ? (double.tryParse(bodyMinConfidenceController.text) ?? 0.5)
+              : null,
+          bodyPostureIouThreshold: triggerMode == 'body_posture' ? 0.3 : null,
+          velocityScope: triggerMode == 'velocity' ? velocityScope : null,
+          velocityBand: triggerMode == 'velocity' ? velocityBand : null,
           searchCameraDeviceIds: (triggerMode == 'search' || triggerMode == 'search_demographic') ? selectedSearchCameraIds : null,
           searchIntervalSeconds: (triggerMode == 'search' || triggerMode == 'search_demographic')
             ? (int.tryParse(searchIntervalController.text) ?? 300)
@@ -1236,6 +1297,14 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                           value: 'vprofile_match',
                           child: Text('VProfile Match (Multi-Group, Multi-Camera)'),
                         ),
+                        DropdownMenuItem(
+                          value: 'body_posture',
+                          child: Text('Body Posture (Multi-Camera)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'velocity',
+                          child: Text('Velocity (Multi-Camera)'),
+                        ),
                       ],
                       selectedItemBuilder: (context) => const [
                         Text('Instant Demographic', overflow: TextOverflow.ellipsis),
@@ -1243,6 +1312,8 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                         Text('Search People Match', overflow: TextOverflow.ellipsis),
                         Text('Search Demographic', overflow: TextOverflow.ellipsis),
                         Text('VProfile Match (Multi-Group, Multi-Camera)', overflow: TextOverflow.ellipsis),
+                        Text('Body Posture (Multi-Camera)', overflow: TextOverflow.ellipsis),
+                        Text('Velocity (Multi-Camera)', overflow: TextOverflow.ellipsis),
                       ],
                       onChanged: (value) {
                         if (value == null) return;
@@ -2054,10 +2125,239 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                           ),
                         ),
                       ),
+                    if (triggerMode == 'body_posture')
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.accessibility_new, color: AppColors.warning, size: 20),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Body Posture Configuration',
+                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              const Text('Cameras *', style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 4),
+                              Container(
+                                constraints: const BoxConstraints(maxHeight: 140),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: AppColors.gray400),
+                                  borderRadius: BorderRadius.circular(AppRadius.chipBadge),
+                                ),
+                                child: availableCameras.isEmpty
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(12),
+                                        child: Text('No cameras available', style: TextStyle(color: AppColors.warning)),
+                                      )
+                                    : ListView.builder(
+                                        shrinkWrap: true,
+                                        itemCount: availableCameras.length,
+                                        itemBuilder: (context, index) {
+                                          final camera = availableCameras[index];
+                                          final isSelected = selectedBodyPostureCameraIds.contains(camera.deviceId);
+                                          return CheckboxListTile(
+                                            dense: true,
+                                            title: Text(camera.name, style: const TextStyle(fontSize: 13)),
+                                            subtitle: Text(camera.deviceId, style: const TextStyle(fontSize: 11, color: AppColors.gray500)),
+                                            value: isSelected,
+                                            onChanged: (checked) {
+                                              setDialogState(() {
+                                                if (checked == true) {
+                                                  selectedBodyPostureCameraIds.add(camera.deviceId);
+                                                } else {
+                                                  selectedBodyPostureCameraIds.remove(camera.deviceId);
+                                                }
+                                              });
+                                            },
+                                          );
+                                        },
+                                      ),
+                              ),
+                              if (selectedBodyPostureCameraIds.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text('${selectedBodyPostureCameraIds.length} camera(s) selected',
+                                      style: TextStyle(fontSize: 12, color: AppColors.gray600)),
+                                ),
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<String>(
+                                value: bodyPostureTarget,
+                                decoration: const InputDecoration(
+                                  labelText: 'Target posture',
+                                  border: OutlineInputBorder(),
+                                ),
+                                items: const [
+                                  DropdownMenuItem(value: 'horizontal', child: Text('Horizontal')),
+                                  DropdownMenuItem(value: 'upright', child: Text('Upright')),
+                                  DropdownMenuItem(value: 'either', child: Text('Either (upright or horizontal)')),
+                                ],
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setDialogState(() => bodyPostureTarget = value);
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: bodyWindowController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Window size (3-4)',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: bodyMinMatchesController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Min matches',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: bodyMinConfidenceController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Min posture confidence (0..1)',
+                                  border: OutlineInputBorder(),
+                                ),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (triggerMode == 'velocity')
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.speed, color: AppColors.info, size: 20),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Velocity Configuration',
+                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              const Text('Cameras *', style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 4),
+                              Container(
+                                constraints: const BoxConstraints(maxHeight: 140),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: AppColors.gray400),
+                                  borderRadius: BorderRadius.circular(AppRadius.chipBadge),
+                                ),
+                                child: availableCameras.isEmpty
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(12),
+                                        child: Text('No cameras available', style: TextStyle(color: AppColors.warning)),
+                                      )
+                                    : ListView.builder(
+                                        shrinkWrap: true,
+                                        itemCount: availableCameras.length,
+                                        itemBuilder: (context, index) {
+                                          final camera = availableCameras[index];
+                                          final isSelected = selectedVelocityCameraIds.contains(camera.deviceId);
+                                          return CheckboxListTile(
+                                            dense: true,
+                                            title: Text(camera.name, style: const TextStyle(fontSize: 13)),
+                                            subtitle: Text(camera.deviceId, style: const TextStyle(fontSize: 11, color: AppColors.gray500)),
+                                            value: isSelected,
+                                            onChanged: (checked) {
+                                              setDialogState(() {
+                                                if (checked == true) {
+                                                  selectedVelocityCameraIds.add(camera.deviceId);
+                                                } else {
+                                                  selectedVelocityCameraIds.remove(camera.deviceId);
+                                                }
+                                              });
+                                            },
+                                          );
+                                        },
+                                      ),
+                              ),
+                              if (selectedVelocityCameraIds.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text('${selectedVelocityCameraIds.length} camera(s) selected',
+                                      style: TextStyle(fontSize: 12, color: AppColors.gray600)),
+                                ),
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<String>(
+                                value: velocityScope,
+                                decoration: const InputDecoration(
+                                  labelText: 'Scope',
+                                  border: OutlineInputBorder(),
+                                  helperText: 'Crowd = mean speed; Any person = at least one exceeds',
+                                ),
+                                items: const [
+                                  DropdownMenuItem(value: 'crowd', child: Text('Crowd mean')),
+                                  DropdownMenuItem(value: 'single', child: Text('Any person')),
+                                ],
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setDialogState(() => velocityScope = value);
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<String>(
+                                value: velocityBand,
+                                decoration: const InputDecoration(
+                                  labelText: 'Gait band (fires when speed ≥ floor)',
+                                  border: OutlineInputBorder(),
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'walking',
+                                    child: Text('Walking (≥ 1.25 m/s ≈ 4.5 km/h)'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'light_running',
+                                    child: Text('Light running (≥ 2.2 m/s ≈ 8 km/h)'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'running',
+                                    child: Text('Running (≥ 3.3 m/s ≈ 12 km/h)'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'fast_running',
+                                    child: Text('Fast running (≥ 5.0 m/s ≈ 18 km/h)'),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setDialogState(() => velocityBand = value);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 16),
                     
-                    // Camera selector (hidden for search & vprofile modes — cameras selected in their panels)
-                    if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match') ...[
+                    // Camera selector (hidden for search & multicamera modes — cameras selected in their panels)
+                    if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match' && triggerMode != 'body_posture' && triggerMode != 'velocity') ...[
                     const Text('Camera *', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     availableCameras.isEmpty
@@ -2299,7 +2599,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                     return;
                   }
                   
-                  if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match' && selectedCameraDeviceId == null) {
+                  if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match' && triggerMode != 'body_posture' && triggerMode != 'velocity' && selectedCameraDeviceId == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Camera is required')),
                     );
@@ -2416,6 +2716,45 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                       return;
                     }
                   }
+
+                  if (triggerMode == 'body_posture') {
+                    if (selectedBodyPostureCameraIds.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Select at least one camera for Body Posture mode')),
+                      );
+                      return;
+                    }
+                    final window = int.tryParse(bodyWindowController.text) ?? 0;
+                    if (window < 3 || window > 4) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Window size must be 3 or 4')),
+                      );
+                      return;
+                    }
+                    final minMatches = int.tryParse(bodyMinMatchesController.text) ?? 0;
+                    if (minMatches < 1 || minMatches > window) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Min matches must be between 1 and window size')),
+                      );
+                      return;
+                    }
+                    final conf = double.tryParse(bodyMinConfidenceController.text);
+                    if (conf == null || conf < 0.0 || conf > 1.0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Min confidence must be between 0 and 1')),
+                      );
+                      return;
+                    }
+                  }
+
+                  if (triggerMode == 'velocity') {
+                    if (selectedVelocityCameraIds.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Select at least one camera for Velocity mode')),
+                      );
+                      return;
+                    }
+                  }
                   
                   if (embedded) {
                     await doSave();
@@ -2452,6 +2791,9 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     similarityThresholdController.dispose();
     topKController.dispose();
     searchIntervalController.dispose();
+    bodyWindowController.dispose();
+    bodyMinMatchesController.dispose();
+    bodyMinConfidenceController.dispose();
   }
 
   @override

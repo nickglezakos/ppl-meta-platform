@@ -105,6 +105,12 @@ def _face_payload_from_record(face: Dict[str, Any], match_type: Optional[str] = 
     }
     if face.get("embedding") is not None:
         payload["embedding"] = face["embedding"]
+    created_at = face.get("created_at")
+    if created_at is not None:
+        if isinstance(created_at, datetime):
+            payload["created_at"] = created_at.isoformat()
+        else:
+            payload["created_at"] = created_at
     if match_type:
         payload["match_type"] = match_type
     return payload
@@ -195,6 +201,18 @@ async def group_faces_in_memory(
             sum(confidences) / len(confidences) if confidences else 0.0
         )
 
+        velocity = person.get("velocity") or {"x": 0.0, "y": 0.0}
+        frame_history = int(
+            person.get("frame_history", person.get("samples", len(group_faces))) or 0
+        )
+        # Prefer live track state when available (authoritative after grouping).
+        track_info = engine.active_tracks.get(person_id) or {}
+        if track_info:
+            velocity = track_info.get("velocity") or velocity
+            frame_history = int(
+                track_info.get("frame_history", frame_history) or frame_history
+            )
+
         person_groups.append(
             {
                 "person_id": person_id,
@@ -204,6 +222,12 @@ async def group_faces_in_memory(
                 "average_position": person.get("average_position", {"x": 0.0, "y": 0.0}),
                 "faces": group_faces,
                 "best_face": _best_face_payload(best_quality_faces.get(person_id)),
+                "velocity": {
+                    "x": float(velocity.get("x", 0.0)),
+                    "y": float(velocity.get("y", 0.0)),
+                },
+                "frame_history": frame_history,
+                "samples": frame_history,
             }
         )
 

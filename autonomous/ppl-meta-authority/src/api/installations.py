@@ -30,6 +30,13 @@ class InstallationRecord(BaseModel):
     tenant_name: str | None = None
     notes: str | None = None
     installation_name: str | None = None
+    licence_features: list[str] = Field(
+        default_factory=lambda: [
+            "eyenet_mv_models",
+            "mv_models_upload",
+            "mv_models_custom_capability",
+        ]
+    )
 
 
 class EntitlementRecord(BaseModel):
@@ -47,6 +54,13 @@ class EntitlementRecord(BaseModel):
     activation_status: str
     notes: str | None = None
     max_platform_nodes: int = Field(default=0, ge=0)
+    licence_features: list[str] = Field(
+        default_factory=lambda: [
+            "eyenet_mv_models",
+            "mv_models_upload",
+            "mv_models_custom_capability",
+        ]
+    )
 
 
 class InstallationUpsertRequest(BaseModel):
@@ -66,6 +80,11 @@ class InstallationUpsertRequest(BaseModel):
     # Licence platform-node limit (0 = unlimited, default). Enforced by the
     # Authority at ``tag:platform`` enrollment (Phase 2).
     max_platform_nodes: int = Field(default=0, ge=0)
+    # Installation-scoped Models features (catalog / upload / custom capability).
+    licence_features: list[str] | None = Field(
+        default=None,
+        description="e.g. eyenet_mv_models, mv_models_upload, mv_models_custom_capability",
+    )
 
 
 class ActivationRequest(BaseModel):
@@ -90,6 +109,7 @@ class ActivationResponse(BaseModel):
     tenant_name: str | None = None
     activation_status: str | None = None
     notes: str | None = None
+    licence_features: list[str] | None = None
 
 
 class OwnerStatusResponse(BaseModel):

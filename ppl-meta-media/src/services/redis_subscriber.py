@@ -23,6 +23,8 @@ from src.services.signage_service import SignageService, SignagePlaybackService
 from src.schemas.signage import PlaybackControlRequest, PlaybackCommand, PlaybackParameters
 from src.services.communications_client import CommunicationsClient
 from src.services.vprofile_match_worker import get_vprofile_worker
+from src.services.body_posture_worker import get_body_posture_worker
+from src.services.velocity_trigger_worker import get_velocity_trigger_worker
 from src.config import get_config
 
 logger = logging.getLogger(__name__)
@@ -372,12 +374,12 @@ class InstantDetectionSubscriber:
                     Trigger.is_active == True,
                     Trigger.camera_device_id == camera_id
                 ).all()
-                # Also include vprofile_match triggers (they use camera_device_ids array, not camera_device_id)
-                vprofile_triggers = db.query(Trigger).filter(
+                # Also include multicam triggers (they use camera_device_ids array, not camera_device_id)
+                multicam_triggers = db.query(Trigger).filter(
                     Trigger.is_active == True,
-                    Trigger.trigger_mode == 'vprofile_match'
+                    Trigger.trigger_mode.in_(['vprofile_match', 'body_posture', 'velocity'])
                 ).all()
-                triggers = triggers + [t for t in vprofile_triggers if t not in triggers]
+                triggers = triggers + [t for t in multicam_triggers if t not in triggers]
             
             if not triggers:
                 logger.info(f"  ℹ️  No active triggers for camera {camera_id}")
@@ -394,6 +396,7 @@ class InstantDetectionSubscriber:
                 logger.info(f"\n--- Evaluating Trigger #{trigger.id}: '{trigger.name}' ---")
                 trigger_mode = (getattr(trigger, "trigger_mode", None) or "demographic").lower()
                 match_info = None
+                reason = None
                 
                 # Check cooldown
                 if trigger.last_fired_at:
@@ -489,6 +492,96 @@ class InstantDetectionSubscriber:
                         continue
 
                     logger.info(f"  ✅ vprofile_match MET: {reason}")
+                elif trigger_mode == "body_posture":
+                    logger.info("  🔎 Evaluating body_posture mode (in-memory, multi-camera)")
+                    worker = get_body_posture_worker()
+                    event_camera_id = data.get("camera_id")
+                    allowed_cameras = worker.get_camera_device_ids(trigger)
+                    if allowed_cameras and event_camera_id not in allowed_cameras:
+                        logger.debug(
+                            "  ⏭️ Camera %s not in body_posture camera list, skipping",
+                            event_camera_id,
+                        )
+                        continue
+                    try:
+                        ready = await worker.ensure_trigger_loaded(trigger)
+                    except Exception as e:
+                        logger.warning(
+                            "  ⚠️ Error ensuring body_posture trigger loaded %s: %s",
+                            trigger.uuid,
+                            e,
+                        )
+                        ready = False
+                    if not ready:
+                        self._log_execution(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason="body_posture trigger not loaded (missing cameras)",
+                            match_info=None,
+                            detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+                    passed, reason, match_info = await worker.evaluate(trigger, data)
+                    if not passed:
+                        logger.info(f"  ❌ SKIP: {reason}")
+                        self._log_execution(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason=reason,
+                            match_info=match_info,
+                            detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+                    logger.info(f"  ✅ body_posture MET: {reason}")
+                elif trigger_mode == "velocity":
+                    logger.info("  🔎 Evaluating velocity mode (crowd / single person)")
+                    worker = get_velocity_trigger_worker()
+                    event_camera_id = data.get("camera_id")
+                    allowed_cameras = worker.get_camera_device_ids(trigger)
+                    if allowed_cameras and event_camera_id not in allowed_cameras:
+                        logger.debug(
+                            "  ⏭️ Camera %s not in velocity camera list, skipping",
+                            event_camera_id,
+                        )
+                        continue
+                    try:
+                        ready = await worker.ensure_trigger_loaded(trigger)
+                    except Exception as e:
+                        logger.warning(
+                            "  ⚠️ Error ensuring velocity trigger loaded %s: %s",
+                            trigger.uuid,
+                            e,
+                        )
+                        ready = False
+                    if not ready:
+                        self._log_execution(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason="velocity trigger not loaded (missing cameras)",
+                            match_info=None,
+                            detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+                    passed, reason, match_info = await worker.evaluate(trigger, data)
+                    if not passed:
+                        logger.info(f"  ❌ SKIP: {reason}")
+                        self._log_execution(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason=reason,
+                            match_info=match_info,
+                            detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+                    logger.info(f"  ✅ velocity MET: {reason}")
                 else:
                     conditions = json.loads(trigger.demographic_conditions)
                     logger.info(f"  📋 Conditions to evaluate: {json.dumps(conditions, indent=4)}")
@@ -517,7 +610,10 @@ class InstantDetectionSubscriber:
                     trigger.last_match_info = json.dumps(match_info)
                     trigger.last_matched_at = datetime.now(timezone.utc)
 
-                success_reason = reason if trigger_mode == "ppl_match" else "Demographic conditions met"
+                if trigger_mode in ("ppl_match", "vprofile_match", "body_posture", "velocity") and reason:
+                    success_reason = reason
+                else:
+                    success_reason = "Demographic conditions met"
                 
                 # Execute action(s) if configured
                 action_executed = False

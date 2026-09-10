@@ -57,6 +57,17 @@ TriggerModel _$TriggerModelFromJson(Map<String, dynamic> json) => TriggerModel(
           (json['ppl_match_similarity_threshold'] as num?)?.toDouble() ?? 0.75,
       pplMatchTopK: (json['ppl_match_top_k'] as num?)?.toInt() ?? 1,
       pplMatchNegate: json['ppl_match_negate'] as bool? ?? false,
+      bodyPostureTarget: json['body_posture_target'] as String?,
+      bodyPostureWindowSize:
+          (json['body_posture_window_size'] as num?)?.toInt(),
+      bodyPostureMinMatches:
+          (json['body_posture_min_matches'] as num?)?.toInt(),
+      bodyPostureMinConfidence:
+          (json['body_posture_min_confidence'] as num?)?.toDouble(),
+      bodyPostureIouThreshold:
+          (json['body_posture_iou_threshold'] as num?)?.toDouble(),
+      velocityScope: json['velocity_scope'] as String?,
+      velocityBand: json['velocity_band'] as String?,
       searchCameraDeviceIds:
           (json['search_camera_device_ids'] as List<dynamic>?)
               ?.map((e) => e as String)
@@ -97,6 +108,13 @@ Map<String, dynamic> _$TriggerModelToJson(TriggerModel instance) =>
       'ppl_match_similarity_threshold': instance.pplMatchSimilarityThreshold,
       'ppl_match_top_k': instance.pplMatchTopK,
       'ppl_match_negate': instance.pplMatchNegate,
+      'body_posture_target': instance.bodyPostureTarget,
+      'body_posture_window_size': instance.bodyPostureWindowSize,
+      'body_posture_min_matches': instance.bodyPostureMinMatches,
+      'body_posture_min_confidence': instance.bodyPostureMinConfidence,
+      'body_posture_iou_threshold': instance.bodyPostureIouThreshold,
+      'velocity_scope': instance.velocityScope,
+      'velocity_band': instance.velocityBand,
       'search_camera_device_ids': instance.searchCameraDeviceIds,
       'search_interval_seconds': instance.searchIntervalSeconds,
       'last_match_info': instance.lastMatchInfo,
@@ -135,6 +153,17 @@ TriggerCreateRequest _$TriggerCreateRequestFromJson(
           (json['ppl_match_similarity_threshold'] as num?)?.toDouble(),
       pplMatchTopK: (json['ppl_match_top_k'] as num?)?.toInt(),
       pplMatchNegate: json['ppl_match_negate'] as bool?,
+      bodyPostureTarget: json['body_posture_target'] as String?,
+      bodyPostureWindowSize:
+          (json['body_posture_window_size'] as num?)?.toInt(),
+      bodyPostureMinMatches:
+          (json['body_posture_min_matches'] as num?)?.toInt(),
+      bodyPostureMinConfidence:
+          (json['body_posture_min_confidence'] as num?)?.toDouble(),
+      bodyPostureIouThreshold:
+          (json['body_posture_iou_threshold'] as num?)?.toDouble(),
+      velocityScope: json['velocity_scope'] as String?,
+      velocityBand: json['velocity_band'] as String?,
       searchCameraDeviceIds:
           (json['search_camera_device_ids'] as List<dynamic>?)
               ?.map((e) => e as String)
@@ -167,6 +196,18 @@ Map<String, dynamic> _$TriggerCreateRequestToJson(
         'ppl_match_similarity_threshold': value,
       if (instance.pplMatchTopK case final value?) 'ppl_match_top_k': value,
       if (instance.pplMatchNegate case final value?) 'ppl_match_negate': value,
+      if (instance.bodyPostureTarget case final value?)
+        'body_posture_target': value,
+      if (instance.bodyPostureWindowSize case final value?)
+        'body_posture_window_size': value,
+      if (instance.bodyPostureMinMatches case final value?)
+        'body_posture_min_matches': value,
+      if (instance.bodyPostureMinConfidence case final value?)
+        'body_posture_min_confidence': value,
+      if (instance.bodyPostureIouThreshold case final value?)
+        'body_posture_iou_threshold': value,
+      if (instance.velocityScope case final value?) 'velocity_scope': value,
+      if (instance.velocityBand case final value?) 'velocity_band': value,
       if (instance.searchCameraDeviceIds case final value?)
         'search_camera_device_ids': value,
       if (instance.searchIntervalSeconds case final value?)

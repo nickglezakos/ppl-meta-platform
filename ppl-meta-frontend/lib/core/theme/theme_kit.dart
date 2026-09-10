@@ -163,6 +163,7 @@ class AppIcons {
   static const IconData signage       = Icons.tv_outlined;
   static const IconData monitoring    = Icons.auto_awesome_outlined;
   static const IconData storage       = Icons.storage_outlined;
+  static const IconData models        = Icons.hub_outlined;
   static const IconData network       = Icons.lan_outlined;
   static const IconData groups        = Icons.groups_outlined;
   static const IconData analytics     = Icons.analytics_outlined;

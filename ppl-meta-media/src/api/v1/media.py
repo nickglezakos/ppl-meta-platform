@@ -265,6 +265,22 @@ def _get_android_compatible_file(original_path: Path, media_id: str) -> Path:
         return original_path
 
 
+async def _is_face_detection_on_save_enabled() -> bool:
+    """Return True when Node global face_detection_on_save is explicitly true."""
+    try:
+        node_url = os.getenv("NODE_SERVICE_URL", "http://localhost:8001")
+        setting_url = f"{node_url.rstrip('/')}/api/v1/settings/face_detection_on_save"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(setting_url, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                if response.status != 200:
+                    return False
+                payload = await response.json()
+                return str(payload.get("value", "")).lower() == "true"
+    except Exception as exc:
+        logger.warning("Failed to read face_detection_on_save setting: %s", exc)
+        return False
+
+
 async def _trigger_enhanced_logic_v2_for_media(
     media_uuid: str, current_user: Optional[AuthUser] = None
 ):
@@ -508,21 +524,28 @@ async def upload_media(
         media_response.thumbnail_url = urls["thumbnail_url"]
         media_response.url = urls["url"]
 
-        # 🎯 AUTO-TRIGGER: Enhanced Logic V2 for video uploads
-        # ⚠️ DISABLED - November 20, 2025
-        # Note: This trigger is for bulk upload endpoint, NOT needed for continuous pipeline.
-        # The continuous pipeline uses Camera service auto-trigger instead.
-        # Only re-enable if bulk upload workflow needs automatic face detection.
-        # if media.media_type == MediaType.VIDEO:
-        #     try:
-        #         await _trigger_enhanced_logic_v2_for_media(
-        #             str(media.uuid), current_user=None
-        #         )
-        #     except Exception as e:
-        #         logger.warning(
-        #             f"Failed to trigger Enhanced Logic V2 for uploaded media "
-        #             f"{media.uuid}: {e}"
-        #         )
+        # AUTO-TRIGGER: Enhanced Logic V2 for manual video uploads only when
+        # Features "Face Detection on Save" is enabled. Camera recordings are
+        # gated separately by each camera's auto_face_detection setting.
+        if media.media_type == MediaType.VIDEO:
+            try:
+                if await _is_face_detection_on_save_enabled():
+                    asyncio.create_task(
+                        _trigger_enhanced_logic_v2_for_media(
+                            str(media.uuid), current_user=None
+                        )
+                    )
+                else:
+                    logger.info(
+                        "Skipping Enhanced Logic V2 for uploaded media %s "
+                        "(face_detection_on_save disabled)",
+                        media.uuid,
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to trigger Enhanced Logic V2 for uploaded media "
+                    f"{media.uuid}: {e}"
+                )
 
         return media_response
 
@@ -1652,21 +1675,9 @@ async def stream_media(
         media_id, current_user.user_id, share_token, db
     )
 
-    # 🎯 AUTO-TRIGGER: Enhanced Logic V2 for video loads
+    # Face detection is not auto-triggered on stream/open. Use manual upload
+    # (face_detection_on_save) or the video preview Compute action instead.
     media = access_info["media"]
-    if media.media_type == MediaType.VIDEO:
-        try:
-            # Trigger Enhanced Logic V2 asynchronously (don't block streaming)
-            asyncio.create_task(
-                _trigger_enhanced_logic_v2_for_media(
-                    media_id, current_user=current_user
-                )
-            )
-        except Exception as e:
-            logger.warning(
-                f"Failed to trigger Enhanced Logic V2 for loaded media "
-                f"{media_id}: {e}"
-            )
 
     file_path = Path(access_info["file_path"])
 
@@ -1796,21 +1807,9 @@ async def stream_media_with_token(
         media_id, current_user.user_id, share_token, db
     )
 
-    # 🎯 AUTO-TRIGGER: Enhanced Logic V2 for video loads (token endpoint)
+    # Face detection is not auto-triggered on stream/open. Use manual upload
+    # (face_detection_on_save) or the video preview Compute action instead.
     media = access_info["media"]
-    if media.media_type == MediaType.VIDEO:
-        try:
-            # Trigger Enhanced Logic V2 asynchronously (don't block streaming)
-            asyncio.create_task(
-                _trigger_enhanced_logic_v2_for_media(
-                    media_id, current_user=current_user
-                )
-            )
-        except Exception as e:
-            logger.warning(
-                f"Failed to trigger Enhanced Logic V2 for loaded media "
-                f"{media_id}: {e}"
-            )
 
     file_path = Path(access_info["file_path"])
     effective_mime_type = access_info["mime_type"]

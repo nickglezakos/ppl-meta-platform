@@ -111,7 +111,7 @@ class Trigger(BaseModel):
         nullable=False,
         default="demographic",
         index=True,
-        comment="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match"
+        comment="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match | body_posture | velocity"
     )
     ppl_match_group_id = Column(
         String(255),
@@ -148,6 +148,52 @@ class Trigger(BaseModel):
         Text,
         nullable=True,
         comment='JSON array of camera device IDs for vprofile_match multi-camera mode (e.g., ["usb_camera_0", "rtsp_192.168.1.76_554"])'
+    )
+
+    # Body posture trigger configuration (instant body rolling window)
+    body_posture_target = Column(
+        String(32),
+        nullable=True,
+        default="horizontal",
+        comment="Target posture for body_posture mode: horizontal | upright | either",
+    )
+    body_posture_window_size = Column(
+        Integer,
+        nullable=True,
+        default=4,
+        comment="Consecutive instant-body scans used for voting (3-4)",
+    )
+    body_posture_min_matches = Column(
+        Integer,
+        nullable=True,
+        default=3,
+        comment="Minimum matching scans in the window required to fire",
+    )
+    body_posture_min_confidence = Column(
+        Float,
+        nullable=True,
+        default=0.5,
+        comment="Minimum posture_confidence for a scan label to count",
+    )
+    body_posture_iou_threshold = Column(
+        Float,
+        nullable=True,
+        default=0.3,
+        comment="Minimum bbox IoU to continue a body track across cycles",
+    )
+
+    # Velocity trigger configuration (instant face/body speed bands)
+    velocity_scope = Column(
+        String(16),
+        nullable=True,
+        default="crowd",
+        comment="Velocity trigger scope: crowd | single",
+    )
+    velocity_band = Column(
+        String(32),
+        nullable=True,
+        default="walking",
+        comment="Gait band floor: walking | light_running | running | fast_running",
     )
     
     # Search trigger configuration

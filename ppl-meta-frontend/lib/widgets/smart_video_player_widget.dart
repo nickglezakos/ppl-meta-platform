@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
+import '../core/api/api_client.dart';
 import '../models/media_models.dart';
 import '../models/face_detection_models.dart';
 import '../services/media_api_client.dart';
@@ -11,6 +12,7 @@ import '../widgets/simple_video_face_detection_overlay.dart';
 import '../providers/workflow_providers.dart';
 import '../providers/face_data_providers.dart';
 import '../providers/face_memory_manager.dart';
+import '../providers/body_data_providers.dart';
 
 /// EXPERIMENTAL SMOOTH TRANSITIONS: 
 /// To revert to basic frame sync, change _enableSmoothTransitions to false on line ~55
@@ -838,35 +840,30 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
 
   /// Build video player with appropriate overlay strategy
   Widget _buildVideoPlayerWithOverlay(String videoUrl, bool useStoredFaceData, List<FaceDetection> facesToDisplay, String dataSource) {
-    // [FIX] ALWAYS use OptimizedFacePainter to prevent SimpleFaceDetectionOverlay cache issues
-    // The old logic switched between paths based on cache state, causing inconsistent rendering
-    // Now we ALWAYS use OptimizedFacePainter (multicolor GREEN rectangles)
-    // If no faces available yet, we'll make the API call first
-    
+    // ALWAYS use OptimizedFacePainter (faces + cyan body boxes). Kick off face loads when
+    // empty, but still mount the overlay so body detections can paint without waiting for faces.
     if (facesToDisplay.isEmpty) {
       final hasExternalFaceData =
           widget.initialFaceData != null && widget.initialFaceData!.isNotEmpty;
-      if (hasExternalFaceData) {
-        return _buildBasicVideoPlayerForLoading(videoUrl);
-      }
-      if (!widget.enableWorkflowIntegration) {
-        if (!_isLoadingStoredFaces && _storedFaceData?.isNotEmpty != true) {
-          debugPrint('[OVERLAY STRATEGY] No stored faces yet in preview flow; starting direct stored-face load');
-          _startPreviewStoredFaceLoad();
+      if (!hasExternalFaceData) {
+        if (!widget.enableWorkflowIntegration) {
+          if (!_isLoadingStoredFaces && _storedFaceData?.isNotEmpty != true) {
+            debugPrint('[OVERLAY STRATEGY] No stored faces yet in preview flow; starting direct stored-face load');
+            _startPreviewStoredFaceLoad();
+          } else {
+            debugPrint('[OVERLAY STRATEGY] No stored faces yet in preview flow; waiting for direct stored-face load');
+          }
         } else {
-          debugPrint('[OVERLAY STRATEGY] No stored faces yet in preview flow; waiting for direct stored-face load');
+          debugPrint('[OVERLAY STRATEGY] No faces available, loading via Enhanced Logic V2...');
+          _loadFacesViaEnhancedLogicV2();
         }
-        return _buildBasicVideoPlayerForLoading(videoUrl);
       }
-      // No faces in cache yet - need to load them first
-      debugPrint('[OVERLAY STRATEGY] No faces available, loading via Enhanced Logic V2...');
-      _loadFacesViaEnhancedLogicV2();
-      // Show video player without overlay while loading
-      return _buildBasicVideoPlayerForLoading(videoUrl);
     }
-    
-    // We have faces - delegate to the simpler frame-based overlay path.
-    debugPrint('ACTIVE OVERLAY PATH: SMART_WIDGET -> OPTIMIZED_FACE_DATA_OVERLAY with ${facesToDisplay.length} faces from $dataSource');
+
+    debugPrint(
+      'ACTIVE OVERLAY PATH: SMART_WIDGET -> OPTIMIZED_FACE_DATA_OVERLAY '
+      'with ${facesToDisplay.length} faces from $dataSource',
+    );
     return _buildOptimizedVideoPlayer(videoUrl, facesToDisplay, dataSource);
   }
 
@@ -881,7 +878,10 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
           technicalMetadata: widget.mediaItem.technicalMetadata,
           videoDuration: widget.mediaItem.duration,
           onControllerReady: (controller) {
-            _videoController = controller;
+            if (!mounted) return;
+            setState(() {
+              _videoController = controller;
+            });
             if (controller != null) {
               widget.onControllerReady?.call(controller);
               // Set up frame synchronization for face rectangles
@@ -1299,9 +1299,9 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
   }
 }
 
-/// Optimized Face Data Overlay for Workflow 5
-/// Uses pre-processed face detection data for high-performance playback
-class OptimizedFaceDataOverlay extends StatefulWidget {
+/// Optimized Face + Body Data Overlay for Workflow 5 / media preview
+/// Uses pre-processed face detection data and object-detections/by-frame for bodies
+class OptimizedFaceDataOverlay extends ConsumerStatefulWidget {
   final VideoPlayerController? videoController;
   final List<FaceDetection> storedFaceData;
   final String dataSource;
@@ -1316,12 +1316,16 @@ class OptimizedFaceDataOverlay extends StatefulWidget {
   });
 
   @override
-  State<OptimizedFaceDataOverlay> createState() => _OptimizedFaceDataOverlayState();
+  ConsumerState<OptimizedFaceDataOverlay> createState() =>
+      _OptimizedFaceDataOverlayState();
 }
 
-class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
+class _OptimizedFaceDataOverlayState
+    extends ConsumerState<OptimizedFaceDataOverlay> {
   List<FaceDetection> _currentFrameFaces = [];
+  List<BodyDetection> _currentFrameBodies = [];
   Map<int, List<FaceDetection>>? _facesByFrame;
+  Map<int, List<BodyDetection>> _bodiesByFrame = {};
   final Map<FaceDetection, int> _faceFirstSeenFrame = {}; // Track when each face first appeared
   int _lastFrameNumber = -1; // Track last processed frame to prevent showing faces before video starts
   bool _hasPlaybackStarted = false; // Track if playback has ever started
@@ -1369,6 +1373,7 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
     
     // Load frame-based face data from global cache
     _loadFrameBasedFaceData();
+    _loadBodyDetections();
     _setupVideoListener();
   }
 
@@ -1388,10 +1393,77 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
       _currentFrameFaces = const [];
       _loadFrameBasedFaceData();
     }
+    if (oldWidget.mediaItem.uuid != widget.mediaItem.uuid) {
+      _bodiesByFrame = {};
+      _currentFrameBodies = [];
+      _loadBodyDetections();
+    }
     // If the underlying video controller instance changes, re-attach listener.
     if (oldWidget.videoController != widget.videoController) {
       oldWidget.videoController?.removeListener(_onVideoPositionChanged);
       _setupVideoListener();
+    }
+  }
+
+  Future<void> _loadBodyDetections() async {
+    final mediaId = widget.mediaItem.uuid;
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final response = await apiClient.get(
+        '/api/v1/object-detections/by-frame',
+        queryParameters: {'media_id': mediaId},
+      );
+      final data = response.data;
+      final raw = (data is Map && data['bodies_by_frame'] is Map)
+          ? data['bodies_by_frame'] as Map
+          : <dynamic, dynamic>{};
+      final mapped = <int, List<BodyDetection>>{};
+      raw.forEach((key, value) {
+        final frame = int.tryParse(key.toString()) ?? 0;
+        final list = <BodyDetection>[];
+        if (value is List) {
+          for (final item in value) {
+            if (item is! Map) continue;
+            final bbox = item['bbox'];
+            if (bbox is! List || bbox.length < 4) continue;
+            final x1 = (bbox[0] as num).toDouble();
+            final y1 = (bbox[1] as num).toDouble();
+            final x2 = (bbox[2] as num).toDouble();
+            final y2 = (bbox[3] as num).toDouble();
+            list.add(
+              BodyDetection(
+                id: item['id']?.toString() ?? '${frame}_${list.length}',
+                frameNumber: frame,
+                boundingBox: FaceBoundingBox(
+                  left: x1,
+                  top: y1,
+                  width: (x2 - x1).abs(),
+                  height: (y2 - y1).abs(),
+                ),
+                confidence: (item['confidence'] as num?)?.toDouble() ?? 0,
+                posture: item['posture']?.toString(),
+              ),
+            );
+          }
+        }
+        if (list.isNotEmpty) mapped[frame] = list;
+      });
+      if (!mounted) return;
+      final total =
+          mapped.values.fold<int>(0, (sum, list) => sum + list.length);
+      setState(() {
+        _bodiesByFrame = mapped;
+      });
+      debugPrint(
+        '🧍 OptimizedFaceDataOverlay: Loaded body boxes for ${mapped.length} frames '
+        '($total detections) media=$mediaId',
+      );
+      // Sync current playhead immediately if playback already started
+      if (_hasPlaybackStarted && widget.videoController != null) {
+        _onVideoPositionChanged();
+      }
+    } catch (e) {
+      debugPrint('🧍 OptimizedFaceDataOverlay: Failed to load body detections: $e');
     }
   }
 
@@ -1450,6 +1522,24 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
     widget.videoController?.addListener(_onVideoPositionChanged);
   }
 
+  List<BodyDetection> _bodiesForFrame(int currentFrameNumber, double fps) {
+    if (_bodiesByFrame.isEmpty) return const [];
+    final frameTolerance = (fps / 6).ceil().clamp(2, 10);
+    int? closestFrame;
+    int minDistance = 9999;
+    for (final cachedFrame in _bodiesByFrame.keys) {
+      final distance = (cachedFrame - currentFrameNumber).abs();
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestFrame = cachedFrame;
+      }
+    }
+    if (closestFrame != null && minDistance <= frameTolerance) {
+      return _bodiesByFrame[closestFrame] ?? const [];
+    }
+    return const [];
+  }
+
   /// Handle video position changes to show appropriate face data
   /// Faces are displayed for 10 frames (0.33 seconds at 30fps) from when they first appear
   void _onVideoPositionChanged() {
@@ -1464,14 +1554,17 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
     // Don't show any faces until video has actually started playing
     // This prevents faces from showing during initial load/pause at frame 0
     if (!_hasPlaybackStarted) {
-      if (_currentFrameFaces.isNotEmpty || _faceFirstSeenFrame.isNotEmpty) {
+      if (_currentFrameFaces.isNotEmpty ||
+          _faceFirstSeenFrame.isNotEmpty ||
+          _currentFrameBodies.isNotEmpty) {
         if (mounted) {
           setState(() {
             _currentFrameFaces = [];
+            _currentFrameBodies = [];
             _faceFirstSeenFrame.clear();
           });
         }
-        debugPrint('🚫 Playback not started - clearing faces');
+        debugPrint('🚫 Playback not started - clearing faces/bodies');
       }
       return;
     }
@@ -1534,10 +1627,20 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
       debugPrint('🎯 FRAME $currentFrameNumber: Showing ${visibleFaces.length} faces (tracking ${_faceFirstSeenFrame.length} active)');
     }
 
-    if (!_listsEqual(_currentFrameFaces, visibleFaces)) {
+    final visibleBodies = _bodiesForFrame(currentFrameNumber, fps);
+
+    final facesChanged = !_listsEqual(_currentFrameFaces, visibleFaces);
+    final bodiesChanged = !_bodyListsEqual(_currentFrameBodies, visibleBodies);
+    if (facesChanged || bodiesChanged) {
       setState(() {
-        _currentFrameFaces = visibleFaces;
+        if (facesChanged) _currentFrameFaces = visibleFaces;
+        if (bodiesChanged) _currentFrameBodies = List.from(visibleBodies);
       });
+      if (bodiesChanged) {
+        debugPrint(
+          '🧍 FRAME $currentFrameNumber: Showing ${visibleBodies.length} body boxes',
+        );
+      }
     }
   }
 
@@ -1560,6 +1663,19 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
     return true;
   }
 
+  bool _bodyListsEqual(List<BodyDetection> a, List<BodyDetection> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].boundingBox.left != b[i].boundingBox.left ||
+          a[i].boundingBox.top != b[i].boundingBox.top ||
+          a[i].boundingBox.width != b[i].boundingBox.width ||
+          a[i].boundingBox.height != b[i].boundingBox.height) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = widget.videoController;
@@ -1574,6 +1690,7 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
         child: CustomPaint(
           painter: OptimizedFacePainter(
             faces: _currentFrameFaces,
+            bodies: _currentFrameBodies,
             videoSize: videoSize,
             dataSource: widget.dataSource,
           ),
@@ -1589,14 +1706,16 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
   }
 }
 
-/// Custom painter for optimized face detection rectangles
+/// Custom painter for optimized face + body detection rectangles
 class OptimizedFacePainter extends CustomPainter {
   final List<FaceDetection> faces;
+  final List<BodyDetection> bodies;
   final Size videoSize;
   final String dataSource;
 
   OptimizedFacePainter({
     required this.faces,
+    this.bodies = const [],
     required this.videoSize,
     required this.dataSource,
   });
@@ -1696,8 +1815,40 @@ class OptimizedFacePainter extends CustomPainter {
       textPainter.paint(canvas, Offset(rect.left, rect.top - 35)); // Moved up to accommodate distance text
     }
 
+    final bodyPaint = Paint()
+      ..color = Colors.cyanAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
+
+    for (final body in bodies) {
+      final bbox = body.boundingBox;
+      final rect = Rect.fromLTRB(
+        bbox.left * scaleX + offsetX,
+        bbox.top * scaleY + offsetY,
+        (bbox.left + bbox.width) * scaleX + offsetX,
+        (bbox.top + bbox.height) * scaleY + offsetY,
+      );
+      canvas.drawRect(rect, bodyPaint);
+      final label = body.posture ?? 'body';
+      textPainter.text = TextSpan(
+        text: label,
+        style: const TextStyle(
+          color: Colors.cyanAccent,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          shadows: [
+            Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.black),
+          ],
+        ),
+      );
+      textPainter.layout();
+      textPainter.paint(canvas, Offset(rect.left, rect.top - 18));
+    }
+
     // Success message with distance-based color coding
-    debugPrint('🎨 ${faces.length} distance-colored rectangles painted successfully');
+    debugPrint(
+      '🎨 ${faces.length} face + ${bodies.length} body rectangles painted successfully',
+    );
   }
 
   /// Calculate distance from camera based on face area using PPL Meta methodology
@@ -1719,7 +1870,8 @@ class OptimizedFacePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(OptimizedFacePainter oldDelegate) {
-    return faces != oldDelegate.faces || 
+    return faces != oldDelegate.faces ||
+           bodies != oldDelegate.bodies ||
            videoSize != oldDelegate.videoSize ||
            dataSource != oldDelegate.dataSource;
   }

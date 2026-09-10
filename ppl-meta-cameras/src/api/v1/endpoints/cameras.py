@@ -38,6 +38,286 @@ from src.services.streaming_session_manager import streaming_session_manager
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+_ASSIGNED_MODEL_KEYS = (
+    "assigned_model_id",
+    "assigned_model_id_instant",
+    "assigned_model_id_bulk",
+)
+
+_PIPELINE_OPTION_KEYS = (
+    "auto_body_detection",
+    "assigned_recipe_id_face_instant",
+    "assigned_recipe_id_face_bulk",
+    "assigned_recipe_id_body_instant",
+    "assigned_recipe_id_body_bulk",
+    "pipeline_face_instant",
+    "pipeline_face_bulk",
+    "pipeline_body_instant",
+    "pipeline_body_bulk",
+)
+
+_CAPABILITY_PATHS = (
+    ("face_detection", "instant", "assigned_recipe_id_face_instant", "pipeline_face_instant"),
+    ("face_detection", "bulk", "assigned_recipe_id_face_bulk", "pipeline_face_bulk"),
+    ("body_detection", "instant", "assigned_recipe_id_body_instant", "pipeline_body_instant"),
+    ("body_detection", "bulk", "assigned_recipe_id_body_bulk", "pipeline_body_bulk"),
+)
+
+
+def _processing_options_dict(camera: Camera) -> Dict[str, Any]:
+    opts = camera.processing_options
+    return dict(opts) if isinstance(opts, dict) else {}
+
+
+def _assigned_model_fields(camera: Camera) -> Dict[str, Any]:
+    opts = _processing_options_dict(camera)
+    fields = {key: opts.get(key) for key in _ASSIGNED_MODEL_KEYS}
+    for key in _PIPELINE_OPTION_KEYS:
+        fields[key] = opts.get(key)
+    fields["auto_body_detection"] = bool(opts.get("auto_body_detection", False))
+    return fields
+
+
+def _store_assigned_models(camera: Camera, body: Dict[str, Any]) -> Dict[str, Any]:
+    opts = _processing_options_dict(camera)
+    changed = False
+    for key in _ASSIGNED_MODEL_KEYS:
+        if key in body:
+            value = body.get(key)
+            opts[key] = value if value else None
+            changed = True
+    if changed:
+        camera.processing_options = opts
+    return opts
+
+
+def _models_request(
+    method: str,
+    path: str,
+    payload: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    from src.config import Config
+
+    url = f"{Config.MODELS_SERVICE_URL}{path}"
+    data = None
+    headers = {"Content-Type": "application/json", "X-Actor": "cameras"}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+    try:
+        import urllib.request
+
+        request = urllib.request.Request(
+            url,
+            data=data,
+            method=method,
+            headers=headers,
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            raw = response.read()
+            if not raw:
+                return {}
+            return json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        logger.warning("Models request %s %s failed: %s", method, path, exc)
+        return None
+
+
+def _activate_camera_catalog(device_id: str, model_id: Optional[str], path: str) -> None:
+    if not model_id:
+        return
+    result = _models_request(
+        "POST",
+        f"/api/v1/mv-models/{model_id}/versions/1.0.0/activate",
+        {
+            "path": path,
+            "capability": "face_detection",
+            "scope_type": "camera",
+            "scope_id": device_id,
+        },
+    )
+    if result is None:
+        logger.warning(
+            "Catalog activate failed for camera %s model %s path %s",
+            device_id,
+            model_id,
+            path,
+        )
+
+
+def _sanitize_recipe_token(value: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in value)
+    return cleaned.strip("-_")[:80] or "cam"
+
+
+def _activate_camera_recipe(
+    device_id: str,
+    recipe_id: str,
+    *,
+    capability: str,
+    path: str,
+) -> bool:
+    result = _models_request(
+        "POST",
+        f"/api/v1/mv-models/recipes/{recipe_id}/activate",
+        {
+            "path": path,
+            "capability": capability,
+            "scope_type": "camera",
+            "scope_id": device_id,
+            "shadow": False,
+        },
+    )
+    return result is not None
+
+
+def _deactivate_camera_assignment(
+    device_id: str,
+    *,
+    capability: str,
+    path: str,
+) -> None:
+    _models_request(
+        "POST",
+        "/api/v1/mv-models/assignments/deactivate",
+        {
+            "capability": capability,
+            "scope_type": "camera",
+            "scope_id": device_id,
+            "path": path,
+        },
+    )
+
+
+def _ensure_camera_recipe(
+    device_id: str,
+    *,
+    capability: str,
+    path: str,
+    composition: Dict[str, Any],
+) -> Optional[str]:
+    """Return recipe_id to activate from composition or seeded shortcut."""
+    seeded = composition.get("recipe_id")
+    if seeded:
+        return str(seeded)
+
+    kind = str(composition.get("kind") or "single")
+    recipe_id = (
+        f"cam-{_sanitize_recipe_token(device_id)}-"
+        f"{_sanitize_recipe_token(capability)}-{path}"
+    )
+    if kind == "two_stage":
+        proposal = composition.get("proposal_model_id")
+        refine = composition.get("refine_model_id")
+        if not proposal or not refine:
+            return None
+        steps = [
+            {
+                "role": "proposal",
+                "model_id": proposal,
+                "version": composition.get("proposal_version") or "1.0.0",
+            },
+            {
+                "role": "refine",
+                "model_id": refine,
+                "version": composition.get("refine_version") or "1.0.0",
+            },
+        ]
+    else:
+        model_id = composition.get("model_id") or composition.get("proposal_model_id")
+        if not model_id:
+            return None
+        steps = [
+            {
+                "role": "single",
+                "model_id": model_id,
+                "version": composition.get("version")
+                or composition.get("proposal_version")
+                or "1.0.0",
+            }
+        ]
+
+    ensured = _models_request(
+        "PUT",
+        f"/api/v1/mv-models/recipes/{recipe_id}",
+        {
+            "recipe_id": recipe_id,
+            "display_name": f"Camera {device_id} {capability} {path}",
+            "capability": capability,
+            "kind": kind,
+            "steps": steps,
+        },
+    )
+    if ensured is None:
+        return None
+    return recipe_id
+
+
+def _sync_detection_pipelines(camera: Camera, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Persist compositions and activate/deactivate camera-scoped catalog recipes."""
+    opts = _processing_options_dict(camera)
+    device_id = camera.device_id
+
+    if "auto_body_detection" in body:
+        opts["auto_body_detection"] = bool(body.get("auto_body_detection"))
+
+    pipelines = body.get("detection_pipelines")
+    if not isinstance(pipelines, dict):
+        pipelines = {}
+
+    face_enabled = (
+        body.get("auto_face_detection")
+        if "auto_face_detection" in body
+        else bool(getattr(camera, "auto_face_detection", False))
+    )
+    body_enabled = bool(opts.get("auto_body_detection", False))
+
+    enabled_by_capability = {
+        "face_detection": bool(face_enabled),
+        "body_detection": body_enabled,
+    }
+
+    for capability, path, recipe_key, composition_key in _CAPABILITY_PATHS:
+        cap_block = pipelines.get(capability) if isinstance(pipelines.get(capability), dict) else {}
+        composition = cap_block.get(path) if isinstance(cap_block.get(path), dict) else None
+
+        if composition is not None:
+            opts[composition_key] = composition
+
+        if not enabled_by_capability.get(capability):
+            opts[recipe_key] = None
+            _deactivate_camera_assignment(device_id, capability=capability, path=path)
+            continue
+
+        composition = opts.get(composition_key) if isinstance(opts.get(composition_key), dict) else None
+        if not composition:
+            # Legacy fallback: model_id activate for face only.
+            if capability == "face_detection":
+                legacy = (
+                    body.get(f"assigned_model_id_{path}")
+                    or opts.get(f"assigned_model_id_{path}")
+                    or body.get("assigned_model_id")
+                    or opts.get("assigned_model_id")
+                )
+                if legacy:
+                    _activate_camera_catalog(device_id, legacy, path)
+            continue
+
+        recipe_id = _ensure_camera_recipe(
+            device_id,
+            capability=capability,
+            path=path,
+            composition=composition,
+        )
+        if recipe_id and _activate_camera_recipe(
+            device_id, recipe_id, capability=capability, path=path
+        ):
+            opts[recipe_key] = recipe_id
+        elif recipe_id:
+            opts[recipe_key] = recipe_id
+
+    camera.processing_options = opts
+    return opts
+
 
 class RTSPCameraCreate(BaseModel):
     """Model for RTSP camera creation/update"""
@@ -2785,6 +3065,7 @@ async def get_workflow_settings(
             "mvr_periodic_scheduler_enabled": camera.mvr_periodic_scheduler_enabled if hasattr(camera, 'mvr_periodic_scheduler_enabled') else False,
             "mvr_periodic_scheduler_threshold": camera.mvr_periodic_scheduler_threshold if hasattr(camera, 'mvr_periodic_scheduler_threshold') else 0.70,
             "mvr_periodic_scheduler_frequency_seconds": camera.mvr_periodic_scheduler_frequency_seconds if hasattr(camera, 'mvr_periodic_scheduler_frequency_seconds') else 300,
+            **_assigned_model_fields(camera),
         }
     except HTTPException:
         raise
@@ -2911,7 +3192,26 @@ async def update_workflow_settings(
             camera.mvr_periodic_scheduler_threshold = mvr_periodic_scheduler_threshold
         if mvr_periodic_scheduler_frequency_seconds is not None:
             camera.mvr_periodic_scheduler_frequency_seconds = mvr_periodic_scheduler_frequency_seconds
-        
+
+        assigned_opts = _store_assigned_models(camera, body)
+        pipeline_opts = _sync_detection_pipelines(camera, body)
+        # Legacy model-id activate only when no detection_pipelines payload was sent.
+        if not isinstance(body.get("detection_pipelines"), dict):
+            _activate_camera_catalog(
+                device_id,
+                assigned_opts.get("assigned_model_id_instant")
+                or assigned_opts.get("assigned_model_id"),
+                "instant",
+            )
+            _activate_camera_catalog(
+                device_id,
+                assigned_opts.get("assigned_model_id_bulk")
+                or assigned_opts.get("assigned_model_id"),
+                "bulk",
+            )
+        else:
+            assigned_opts = pipeline_opts
+
         # Update tolerance_percent in camera_settings table
         if tolerance_percent is not None:
             from src.models.camera_settings import CameraSettings
@@ -2973,6 +3273,7 @@ async def update_workflow_settings(
             "mvr_periodic_scheduler_threshold": camera.mvr_periodic_scheduler_threshold,
             "mvr_periodic_scheduler_frequency_seconds": camera.mvr_periodic_scheduler_frequency_seconds,
             "updated_at": camera.updated_at.isoformat() if camera.updated_at else None,
+            **_assigned_model_fields(camera),
         }
     
     except HTTPException:
