@@ -108,18 +108,23 @@ def extract_user_from_token(request: Request) -> Dict[str, Any]:
         raise HTTPException(status_code=401, detail=f"Token validation error: {str(e)}")
 
 
-# Service endpoints configuration
+def _service_url(env_name: str, fallback: str) -> str:
+    return (os.getenv(env_name) or fallback).rstrip("/")
+
+
+# Docker Compose DNS names by default. Localhost overrides belong in env files,
+# not in this map — inside a container localhost is the gateway itself.
 SERVICES = {
-    "node": "http://localhost:8001",
-    "media": "http://localhost:8000",
-    "orchestrator": "http://localhost:8002",
-    "vision": "http://localhost:8003",
-    "cameras": "http://localhost:8005",
-    "discovery": "http://localhost:8006",
-    "vmeta": "http://localhost:8008",
-    "communications": "http://localhost:8009",
-    "presence": "http://localhost:8011",
-    "models": "http://localhost:8013",
+    "node": _service_url("USER_SERVICE_URL", settings.user_service_url),
+    "media": _service_url("MEDIA_SERVICE_URL", settings.media_service_url),
+    "orchestrator": _service_url("ORCHESTRATOR_SERVICE_URL", "http://ppl-meta-orchestrator:8002"),
+    "vision": _service_url("VISION_SERVICE_URL", "http://ppl-meta-vision:8003"),
+    "cameras": _service_url("CAMERAS_SERVICE_URL", "http://ppl-meta-cameras:8005"),
+    "discovery": _service_url("DISCOVERY_SERVICE_URL", "http://ppl-meta-discovery:8006"),
+    "vmeta": _service_url("VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008"),
+    "communications": _service_url("COMMUNICATIONS_SERVICE_URL", "http://ppl-meta-communications:8009"),
+    "presence": _service_url("PRESENCE_SERVICE_URL", "http://ppl-meta-presence:8011"),
+    "models": _service_url("MODELS_SERVICE_URL", "http://ppl-meta-models:8013"),
     # Authority (licence/matrix/VPN). The admin token stays server-side.
     "authority": settings.authority_base_url.rstrip("/"),
 }

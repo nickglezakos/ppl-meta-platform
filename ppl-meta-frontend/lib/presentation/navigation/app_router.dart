@@ -64,6 +64,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           path == '/verify-email';
       final bootstrapPending = bootstrapStatus.maybeWhen(
         data: (status) => status.needsOwnerBootstrap,
+        error: (_, __) => true,
         orElse: () => false,
       );
 
@@ -75,6 +76,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         final hash = windowLocationHash();
         if (hash.isNotEmpty) {
           return null; // Let hash route be processed
+        }
+        if (!isAuthenticated && bootstrapPending) {
+          return '/bootstrap';
         }
         return isAuthenticated ? '/home' : '/login';
       }

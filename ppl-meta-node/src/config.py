@@ -1,4 +1,5 @@
 import logging
+import os
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
@@ -111,6 +112,18 @@ class Settings(BaseSettings):
         if not self.DATABASE_URL:
             logger.error("DATABASE_URL not set")
             raise ValueError("DATABASE_URL is required")
+
+        # Windows installer and VPN helpers historically used short names.
+        if not os.getenv("AUTHORITY_SERVICE_URL") and os.getenv("AUTHORITY_URL"):
+            self.AUTHORITY_SERVICE_URL = os.environ["AUTHORITY_URL"].strip()
+        if not os.getenv("AUTHORITY_APPLICATION_KEY") and os.getenv("APPLICATION_KEY"):
+            self.AUTHORITY_APPLICATION_KEY = os.environ["APPLICATION_KEY"].strip()
+        if not os.getenv("AUTHORITY_INSTALLATION_UUID") and os.getenv("INSTALLATION_UUID"):
+            self.AUTHORITY_INSTALLATION_UUID = os.environ["INSTALLATION_UUID"].strip()
+        if "AUTHORITY_SERVICE_ENABLED" not in os.environ and (
+            os.getenv("AUTHORITY_URL") or os.getenv("AUTHORITY_SERVICE_URL")
+        ):
+            self.AUTHORITY_SERVICE_ENABLED = True
 
         logger.info("Configuration loaded - Database: %s", self.DATABASE_URL)
         logger.info("Service will run on %s:%s", self.HOST, self.PORT)

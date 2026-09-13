@@ -46,8 +46,12 @@ services:
       HOST: 0.0.0.0
       PORT: 8001
       AUTHORITY_URL: ${AUTHORITY_URL}
+      AUTHORITY_SERVICE_URL: ${AUTHORITY_URL}
+      AUTHORITY_SERVICE_ENABLED: "true"
       INSTALLATION_UUID: ${INSTALLATION_UUID}
+      AUTHORITY_INSTALLATION_UUID: ${INSTALLATION_UUID}
       APPLICATION_KEY: ${APPLICATION_KEY}
+      AUTHORITY_APPLICATION_KEY: ${APPLICATION_KEY}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:
       postgres:
@@ -82,6 +86,11 @@ services:
     environment:
       USER_SERVICE_URL: http://ppl-meta-node:8001
       MEDIA_SERVICE_URL: http://ppl-meta-media:8000
+      ORCHESTRATOR_SERVICE_URL: http://ppl-meta-orchestrator:8002
+      VISION_SERVICE_URL: http://ppl-meta-vision:8003
+      DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8004
+      VMETA_SERVICE_URL: http://ppl-meta-vmeta:8008
+      COMMUNICATIONS_SERVICE_URL: http://ppl-meta-communications:8009
       REDIS_URL: redis://redis:6379/0
     depends_on:
       ppl-meta-node:
