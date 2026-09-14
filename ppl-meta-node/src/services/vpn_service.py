@@ -21,22 +21,30 @@ import logging
 
 import httpx
 
+from src.services.vpn_login_server import (
+    extract_control_url,
+    is_eyenet_login_server,
+)
+
 logger = logging.getLogger(__name__)
 
 AUTHORITY_URL = (
     os.environ.get("AUTHORITY_BASE_URL")
     or os.environ.get("AUTHORITY_SERVICE_URL")
+    or os.environ.get("AUTHORITY_URL")
     or "https://authority.eyenet-vision.com"
 )
-# Prefer EYENET_* (VPN mesh); fall back to AUTHORITY_* so a single .env block works.
+# Prefer EYENET_* (VPN mesh); fall back to AUTHORITY_* / installer names.
 INSTALLATION_UUID = (
     os.environ.get("EYENET_INSTALLATION_UUID")
     or os.environ.get("AUTHORITY_INSTALLATION_UUID")
+    or os.environ.get("INSTALLATION_UUID")
     or ""
 )
 APPLICATION_KEY = (
     os.environ.get("EYENET_APPLICATION_KEY")
     or os.environ.get("AUTHORITY_APPLICATION_KEY")
+    or os.environ.get("APPLICATION_KEY")
     or ""
 )
 
@@ -60,11 +68,47 @@ def _derive_hostname(install_uuid: str) -> str:
     return sanitized if sanitized else "eyenet-node"
 
 
+def _tailscale_cmd(args: list[str]) -> list[str]:
+    cmd = ["tailscale"]
+    socket_path = os.environ.get("EYENET_TS_SOCKET") or os.environ.get("TS_SOCKET", "")
+    if socket_path:
+        cmd.extend(["--socket", socket_path])
+    return cmd + args
+
+
+def _get_control_url() -> str:
+    """Return this daemon's coordination server URL, or ''."""
+    try:
+        prefs_result = subprocess.run(
+            _tailscale_cmd(["debug", "prefs"]),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        prefs = None
+        if prefs_result.returncode == 0 and prefs_result.stdout.strip():
+            import json
+            prefs = json.loads(prefs_result.stdout)
+        status_result = subprocess.run(
+            _tailscale_cmd(["status", "--json"]),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        status = None
+        if status_result.returncode == 0 and status_result.stdout.strip():
+            import json
+            status = json.loads(status_result.stdout)
+        return extract_control_url(prefs=prefs, status=status) or ""
+    except Exception:
+        return ""
+
+
 def _is_tailscale_installed() -> bool:
     """Check if tailscale CLI is available."""
     try:
         subprocess.run(
-            ["tailscale", "version"],
+            _tailscale_cmd(["version"]),
             capture_output=True,
             text=True,
             timeout=5,
@@ -75,29 +119,27 @@ def _is_tailscale_installed() -> bool:
 
 
 def _is_already_enrolled() -> bool:
-    """Check if tailscale is already enrolled and connected."""
-    try:
-        result = subprocess.run(
-            ["tailscale", "status", "--json"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode != 0:
-            return False
-        import json
-        status = json.loads(result.stdout)
-        # If there's a valid tailscale IP, we're already enrolled
-        return bool(status.get("Self", {}).get("TailscaleIPs"))
-    except Exception:
-        return False
+    """True only when this daemon has an IP on the EyeNet Headscale mesh."""
+    return bool(_get_tailscale_ip())
 
 
-def _get_tailscale_ip() -> str:
-    """Return this node's mesh IP (``100.64.x.x``) if enrolled, else ''."""
+def _connected_to_other_server() -> bool:
+    control = _get_control_url()
+    ip = _get_tailscale_ip(require_eyenet=False)
+    if ip and not is_eyenet_login_server(control):
+        return True
+    return bool(control) and not is_eyenet_login_server(control)
+
+
+def _get_tailscale_ip(require_eyenet: bool = True) -> str:
+    """Return this node's mesh IP (``100.64.x.x``) if enrolled, else ''.
+
+    By default only returns an IP when the daemon is on EyeNet Headscale,
+    so Tailscale.com / lab-mesh addresses are not reported as platform IPs.
+    """
     try:
         result = subprocess.run(
-            ["tailscale", "status", "--json"],
+            _tailscale_cmd(["status", "--json"]),
             capture_output=True,
             text=True,
             timeout=5,
@@ -107,7 +149,11 @@ def _get_tailscale_ip() -> str:
         import json
         status = json.loads(result.stdout)
         ips = status.get("Self", {}).get("TailscaleIPs") or []
-        return ips[0] if ips else ""
+        if not ips:
+            return ""
+        if require_eyenet and not is_eyenet_login_server(_get_control_url()):
+            return ""
+        return ips[0]
     except Exception:
         return ""
 
@@ -195,10 +241,20 @@ def enroll_once() -> bool:
         return False
 
     if _is_already_enrolled():
-        logger.info("VPN: already enrolled — skipping enrollment")
+        logger.info("VPN: already enrolled on EyeNet — skipping enrollment")
         # Still re-report our current local LAN IP in case it changed (router/DHCP).
         report_platform_local_ip()
         return True
+
+    if _connected_to_other_server():
+        control = _get_control_url() or "another coordination server"
+        logger.warning(
+            "VPN: tailscale is connected to %s — skipping in-place EyeNet "
+            "enrollment so the existing mesh is not logged out. Set "
+            "EYENET_TS_SOCKET to a userspace daemon to join EyeNet.",
+            control,
+        )
+        return False
 
     try:
         resp = httpx.post(
@@ -220,13 +276,14 @@ def enroll_once() -> bool:
         matrix_group_id = data.get("matrix_group_id", "")
 
         result = subprocess.run(
-            [
-                "tailscale", "up",
+            _tailscale_cmd([
+                "up",
                 "--login-server", headscale_server,
                 "--auth-key", auth_key,
-                "--accept-routes",
+                "--accept-routes=false",
+                "--accept-dns=false",
                 "--hostname", VPN_HOSTNAME or _derive_hostname(INSTALLATION_UUID),
-            ],
+            ]),
             capture_output=True,
             text=True,
             timeout=30,

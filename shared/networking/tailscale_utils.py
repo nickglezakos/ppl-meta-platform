@@ -16,8 +16,8 @@ TAILSCALE_CGNAT = "100.64.0.0/10"
 
 
 def _tailscale_cmd(args: list[str]) -> list[str]:
-    """Build a tailscale command, respecting TS_SOCKET if set."""
-    ts_socket = os.environ.get("TS_SOCKET", "")
+    """Build a tailscale command, preferring the EyeNet userspace socket."""
+    ts_socket = os.environ.get("EYENET_TS_SOCKET") or os.environ.get("TS_SOCKET", "")
     if ts_socket:
         return ["tailscale", "--socket", ts_socket] + args
     return ["tailscale"] + args

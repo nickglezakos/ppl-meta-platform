@@ -7,12 +7,11 @@ with the bootcore licensing system and manage local platform identity.
 
 import logging
 import os
-import subprocess
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session
 from src.auth_utils import create_access_token, get_user_role_names
 from src.config import settings
@@ -36,24 +35,8 @@ APPLICATION_KEY_PATTERN = r"^lic_[0-9a-f]{32}$"
 def _check_tailscale_enrolled() -> bool:
     """Check if tailscale is enrolled AND connected to EyeNet headscale."""
     try:
-        result = subprocess.run(
-            ["tailscale", "status", "--json"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.returncode != 0:
-            return False
-        import json
-        status = json.loads(result.stdout)
-        self_data = status.get("Self", {})
-        ips = self_data.get("TailscaleIPs")
-        if not ips:
-            return False
-        # Verify this is connected to EyeNet, not the default tailscale.com
-        backend = self_data.get("BackendState", "").lower()
-        hostname = self_data.get("HostName", "").lower()
-        # Default tailscale.com nodes typically don't have vpn.eyenet-vision.com in BackendState
-        # EyeNet nodes have it in BackendState or use a hostname pattern
-        return "eyenet" in backend or "eyenet" in hostname
+        from src.services.vpn_service import _get_tailscale_ip
+        return bool(_get_tailscale_ip(require_eyenet=True))
     except Exception:
         return False
 
@@ -63,6 +46,13 @@ class BootstrapActivationRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     application_key: str = Field(pattern=APPLICATION_KEY_PATTERN)
+
+    @field_validator("application_key", mode="before")
+    @classmethod
+    def normalize_application_key(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
 
 
 class BootstrapActivationResponse(BaseModel):

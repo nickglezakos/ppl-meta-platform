@@ -24,7 +24,10 @@ import threading
 import time
 from typing import Any, Dict, Optional
 
-import netifaces
+try:
+    import netifaces
+except ImportError:
+    netifaces = None
 
 
 class MulticastServiceDiscoveryBroadcaster:
@@ -66,6 +69,12 @@ class MulticastServiceDiscoveryBroadcaster:
         3. Ethernet interfaces
         4. Fallback to localhost
         """
+        if netifaces is None:
+            self.logger.warning(
+                "netifaces not installed; using localhost for multicast announcements"
+            )
+            return "127.0.0.1"
+
         try:
             # Get all network interfaces
             interfaces = netifaces.interfaces()

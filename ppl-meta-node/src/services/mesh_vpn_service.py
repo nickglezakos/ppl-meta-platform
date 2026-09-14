@@ -18,6 +18,13 @@ from typing import Optional
 
 import httpx
 
+from src.services.vpn_login_server import (
+    expected_headscale_url,
+    extract_control_url,
+    is_eyenet_login_server,
+    userspace_enroll_command,
+)
+
 logger = logging.getLogger(__name__)
 
 TAILSCALE_UP_TIMEOUT = 30  # seconds for tailscale up to complete
@@ -46,18 +53,27 @@ class MeshVPNService:
         """Find the tailscale binary on PATH.
 
         Returns:
-            Absolute path to tailscale binary.
-
-        Raises:
-            RuntimeError: If tailscale is not installed.
+            Absolute path to tailscale binary, or empty string if missing.
+            Missing CLI must not crash Node import (Docker images omit it).
         """
         path = shutil.which("tailscale")
         if not path:
-            raise RuntimeError(
-                "tailscale not found on PATH. Install with: brew install tailscale"
+            logger.warning(
+                "tailscale not found on PATH — VPN status will report uninstalled"
             )
+            return ""
         logger.info("Found tailscale at %s", path)
         return path
+
+    def _tailscale_argv(self, args: list[str]) -> list[str]:
+        """Build a tailscale argv, preferring the EyeNet userspace socket."""
+        cmd = [self.tailscale_binary]
+        socket_path = os.environ.get("EYENET_TS_SOCKET") or os.environ.get(
+            "TS_SOCKET", ""
+        )
+        if socket_path:
+            cmd.extend(["--socket", socket_path])
+        return cmd + args
 
     def is_available(self) -> bool:
         """Check if tailscale binary is available."""
@@ -186,18 +202,21 @@ class MeshVPNService:
         Returns:
             True if tailscale up succeeded, False otherwise.
         """
-        cmd = [
-            self.tailscale_binary,
+        if not self.tailscale_binary:
+            logger.error("tailscale up skipped — CLI not installed")
+            return False
+
+        cmd = self._tailscale_argv([
             "up",
             "--authkey", auth_key,
             "--hostname", hostname,
             "--accept-routes=false",
             "--accept-dns=false",
-        ]
+        ])
 
-        # If headscale server URL is known, add it
-        if self._headscale_server:
-            cmd.extend(["--login-server", self._headscale_server])
+        login_server = self._headscale_server or expected_headscale_url()
+        if login_server:
+            cmd.extend(["--login-server", login_server])
 
         logger.info("Running: %s", " ".join(
             a if a != auth_key else "tskey-auth-***" for a in cmd
@@ -259,7 +278,9 @@ class MeshVPNService:
         Returns:
             Parsed JSON dict, or None on failure.
         """
-        cmd = [self.tailscale_binary] + args
+        if not self.tailscale_binary:
+            return None
+        cmd = self._tailscale_argv(args)
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -383,24 +404,37 @@ class MeshVPNService:
         online_count = 0
         matrix_peers = []
         current_server = None
+        expected_server = expected_headscale_url()
         headscale_server = self._headscale_server
         hostname = None
+        connected_to_other_server = False
 
         if has_tailscale_installed:
             result = await self._run_tailscale_json(["status", "--json"])
+            prefs = None
+            if result:
+                prefs = await self._run_tailscale_json(["debug", "prefs"])
+            current_server = extract_control_url(prefs=prefs, status=result)
             if result:
                 available = True
                 self_data = result.get("Self", {})
-                current_server = self._resolve_server_from_status(self_data)
                 tailscale_ip = (self_data.get("TailscaleIPs") or [None])[0]
-                if tailscale_ip:
-                    enrolled = True
                 vpn_ips = list(self_data.get("TailscaleIPs") or [])
-                # Read local hostname but prefer canonical from headscale via authority
                 hostname = self_data.get("HostName", "")
+                on_eyenet = is_eyenet_login_server(current_server)
+                if tailscale_ip and on_eyenet:
+                    enrolled = True
+                elif tailscale_ip:
+                    # Live mesh IP that is not confirmed EyeNet — do not hijack.
+                    connected_to_other_server = True
+                    if not current_server:
+                        current_server = "unknown-coordination-server"
+                    tailscale_ip = None
+                    vpn_ips = []
+                elif current_server and not on_eyenet:
+                    connected_to_other_server = True
 
-                # Try to resolve canonical hostname from authority API
-                if tailscale_ip:
+                if enrolled and tailscale_ip:
                     try:
                         resolved = await self._resolve_hostname_from_authority(tailscale_ip)
                         if resolved:
@@ -409,25 +443,32 @@ class MeshVPNService:
                         pass
 
                 peers = result.get("Peer") or {}
-                all_peers = list(peers.values())
+                all_peers = list(peers.values()) if enrolled else []
                 peer_count = len(all_peers)
                 online_count = sum(1 for p in all_peers if p.get("Online"))
                 matrix_peers = all_peers
+            elif current_server and not is_eyenet_login_server(current_server):
+                connected_to_other_server = True
 
         if enrolled and not self.enrolled:
             self.enrolled = True
             self.tailscale_ip = tailscale_ip
+        elif not enrolled:
+            self.enrolled = False
+            if not is_eyenet_login_server(current_server):
+                self.tailscale_ip = None
 
         return {
             "enrolled": enrolled,
             "available": available,
             "has_tailscale_installed": has_tailscale_installed,
+            "connected_to_other_server": connected_to_other_server,
             "tailscale_ip": tailscale_ip,
             "vpn_ips": vpn_ips,
             "online": enrolled,
             "current_server": current_server,
-            "expected_server": "https://vpn.eyenet-vision.com",
-            "headscale_server": headscale_server or "https://vpn.eyenet-vision.com",
+            "expected_server": expected_server,
+            "headscale_server": headscale_server or expected_server,
             "matrix_group_id": os.environ.get("EYENET_MATRIX_GROUP_ID", ""),
             "hostname": hostname,
             "peer_count": peer_count,
@@ -445,14 +486,37 @@ class MeshVPNService:
             "checked_at": datetime.now(timezone.utc).isoformat(),
         }
 
+    async def can_safely_auto_enroll(self) -> tuple[bool, str]:
+        """Whether `tailscale up` on this daemon would hijack another mesh."""
+        if not self.tailscale_binary:
+            return False, "tailscale CLI not found"
+        status = await self.get_status()
+        if status.get("enrolled"):
+            return True, ""
+        if status.get("connected_to_other_server"):
+            current = status.get("current_server") or "another coordination server"
+            return False, (
+                f"Tailscale is logged into {current}. Refusing to logout or "
+                "repoint this daemon so the operator mesh stays up. Use a "
+                "userspace second daemon for EyeNet."
+            )
+        return True, ""
+
+    def build_userspace_enroll_command(
+        self, auth_key: str, headscale_server: str, hostname: str
+    ) -> str:
+        return userspace_enroll_command(auth_key, headscale_server, hostname)
+
     async def _run_tailscale_command(self, args: list[str]) -> bool:
         """Run an arbitrary tailscale command (e.g., logout, up, down).
 
         Returns:
             True if command succeeded (exit 0), False otherwise.
         """
+        if not self.tailscale_binary:
+            return False
         try:
-            cmd = [self.tailscale_binary] + args
+            cmd = self._tailscale_argv(args)
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -465,14 +529,8 @@ class MeshVPNService:
             return False
 
     def _resolve_server_from_status(self, self_data: dict) -> Optional[str]:
-        """Extract the coordination server URL from tailscale status data."""
-        try:
-            backend_state = self_data.get("BackendState", "")
-            if "https://" in backend_state:
-                return backend_state.split("https://")[1].split()[0].rstrip("/")
-        except Exception:
-            pass
-        return None
+        """Extract the coordination server URL from tailscale status Self data."""
+        return extract_control_url(status={"Self": self_data})
 
     async def set_hostname(self, new_hostname: str) -> dict:
         """Change the node's Tailscale hostname (MagicDNS name).
@@ -510,12 +568,12 @@ class MeshVPNService:
             )
 
         # Run tailscale up with new hostname (preserve existing DNS/routes)
-        cmd = [
-            self.tailscale_binary, "up",
+        cmd = self._tailscale_argv([
+            "up",
             "--hostname", sanitized,
             "--accept-routes=false",
             "--accept-dns=false",
-        ]
+        ])
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -551,7 +609,7 @@ class MeshVPNService:
 
     async def connect(self, hostname: str | None = None) -> dict:
         """Reconnect Tailscale with existing identity."""
-        cmd = [self.tailscale_binary, "up"]
+        cmd = self._tailscale_argv(["up"])
         if hostname:
             cmd.extend(["--hostname", hostname])
         proc = await asyncio.create_subprocess_exec(

@@ -45,14 +45,19 @@ class VpnStatus {
     final currentServer = json['current_server']?.toString();
     final expectedServer = json['expected_server']?.toString();
     final hasTailscale = json['has_tailscale_installed'] == true;
-    final connectedToOther =
-        hasTailscale && !(json['enrolled'] == true) && currentServer != null && currentServer.isNotEmpty;
+    final enrolled = json['enrolled'] == true;
+    final backendFlag = json['connected_to_other_server'] == true;
+    final inferredForeign = hasTailscale &&
+        !enrolled &&
+        currentServer != null &&
+        currentServer.isNotEmpty &&
+        !_isEyenetServer(currentServer);
 
     return VpnStatus(
-      enrolled: json['enrolled'] == true,
+      enrolled: enrolled,
       available: json['available'] == true,
       hasTailscaleInstalled: hasTailscale,
-      connectedToOtherServer: connectedToOther,
+      connectedToOtherServer: backendFlag || inferredForeign,
       currentServer: currentServer,
       expectedServer: expectedServer,
       tailscaleIp: json['tailscale_ip']?.toString(),
@@ -66,6 +71,10 @@ class VpnStatus {
   }
 }
 
+bool _isEyenetServer(String server) {
+  return server.toLowerCase().contains('vpn.eyenet-vision.com');
+}
+
 class EnrollmentKey {
   final String authKey;
   final String headscaleServer;
@@ -73,6 +82,8 @@ class EnrollmentKey {
   final String tailscaleUpCommand;
   final bool enrolled;
   final String? tailscaleIp;
+  final bool autoEnrollSkipped;
+  final String? message;
 
   const EnrollmentKey({
     required this.authKey,
@@ -81,6 +92,8 @@ class EnrollmentKey {
     required this.tailscaleUpCommand,
     this.enrolled = false,
     this.tailscaleIp,
+    this.autoEnrollSkipped = false,
+    this.message,
   });
 
   factory EnrollmentKey.fromJson(Map<String, dynamic> json) {
@@ -91,6 +104,8 @@ class EnrollmentKey {
       tailscaleUpCommand: json['tailscale_up_command'] as String? ?? '',
       enrolled: json['enrolled'] == true,
       tailscaleIp: json['tailscale_ip']?.toString(),
+      autoEnrollSkipped: json['auto_enroll_skipped'] == true,
+      message: json['message']?.toString(),
     );
   }
 }
@@ -159,7 +174,7 @@ class VpnStatusClient {
   /// Request a fresh enrollment key from the authority via the node.
   Future<EnrollmentKey> enroll() async {
     final response = await _nodeClient.post('/node/vpn/enroll',
-        data: {'node_type': 'node'});
+        data: {'node_type': 'platform'});
     return EnrollmentKey.fromJson(Map<String, dynamic>.from(response.data as Map));
   }
 
@@ -228,38 +243,39 @@ final vpnStatusProvider = FutureProvider<VpnStatus>((ref) async {
   return await client.getStatus();
 });
 
-/// Per-OS installation instructions for Tailscale.
+/// Per-OS installation instructions for Tailscale (only when CLI is missing).
 String tailscaleInstallGuide(String os) {
   switch (os.toLowerCase()) {
     case 'macos':
     case 'darwin':
-      return 'brew install tailscale && '
-          'tailscale up --login-server https://vpn.eyenet-vision.com '
-          '--auth-key <your-enrollment-key>';
+      return 'If Tailscale.app is already running, do not brew-install another copy.\n'
+          'Use Enroll Now to mint an EyeNet key, then run the userspace daemon command it prints.\n'
+          'Only if there is no Tailscale at all:\n'
+          'brew install tailscale';
     case 'windows':
     case 'win32':
-      return 'winget install tailscale.tailscale; '
-          'tailscale up --login-server https://vpn.eyenet-vision.com '
-          '--auth-key <your-enrollment-key>';
+      return 'winget install tailscale.tailscale\n'
+          'Then use Enroll Now. Do not log out of an existing Tailscale mesh.';
     case 'linux':
-      return 'curl -fsSL https://tailscale.com/install.sh | sh; '
-          'tailscale up --login-server https://vpn.eyenet-vision.com '
-          '--auth-key <your-enrollment-key>';
-    case 'ios':
-      return '1. Install "Tailscale" from the App Store\n'
-          '2. Open the app → Settings → Add Account\n'
-          '3. Choose "Custom coordination server"\n'
-          '4. Enter: https://vpn.eyenet-vision.com\n'
-          '5. Paste your enrollment key when prompted';
-    case 'android':
-      return '1. Install "Tailscale" from Google Play\n'
-          '2. Open the app → Settings → Login\n'
-          '3. Tap "Use custom coordination server"\n'
-          '4. Enter: https://vpn.eyenet-vision.com\n'
-          '5. Paste your enrollment key when prompted';
+      return 'curl -fsSL https://tailscale.com/install.sh | sh\n'
+          'Then use Enroll Now. Do not log out of an existing Tailscale mesh.';
     default:
       return 'Install Tailscale from https://tailscale.com/download\n'
-          'Then run: tailscale up --login-server https://vpn.eyenet-vision.com '
-          '--auth-key <your-enrollment-key>';
+          'Then use Enroll Now. Do not run tailscale logout if another mesh is in use.';
   }
+}
+
+String eyenetUserspaceEnrollGuide({String expectedServer = 'https://vpn.eyenet-vision.com'}) {
+  return '# Keep Tailscale.app on its current mesh (lab / Windows access).\n'
+      '# Do not run tailscale logout.\n'
+      '# Join EyeNet with a second userspace daemon:\n\n'
+      'mkdir -p "\$HOME/.eyenet-tailscale"\n'
+      'tailscaled --tun=userspace-networking \\\n'
+      '  --socket="\$HOME/.eyenet-tailscale/tailscaled.sock" \\\n'
+      '  --statedir="\$HOME/.eyenet-tailscale" &\n\n'
+      'TS_SOCKET="\$HOME/.eyenet-tailscale/tailscaled.sock" tailscale up \\\n'
+      '  --login-server $expectedServer \\\n'
+      '  --auth-key <enrollment-key> \\\n'
+      '  --accept-routes=false --accept-dns=false\n\n'
+      'export EYENET_TS_SOCKET="\$HOME/.eyenet-tailscale/tailscaled.sock"';
 }

@@ -9,7 +9,7 @@ REGISTRY="${REGISTRY:-ghcr.io/nickglezakos/ppl-meta-platform}"
 RELEASE_TAG="${RELEASE_TAG:-$(cat "$PROJECT_ROOT/VERSION" 2>/dev/null || echo latest)}"
 PLATFORM="${PLATFORM:-linux/amd64}"
 MIN_FREE_GB="${MIN_FREE_GB:-12}"
-SERVICES=(node media gateway orchestrator discovery communications frontend vision vmeta)
+SERVICES=(node media gateway orchestrator discovery communications frontend vision vmeta cameras presence models)
 
 if [[ $# -gt 0 ]]; then
     SERVICES=("$@")
@@ -82,6 +82,21 @@ resolve_service() {
             SERVICE_DIR="$PROJECT_ROOT/ppl-meta-vmeta"
             DOCKERFILE="$SERVICE_DIR/docker/Dockerfile.protected"
             IMAGE_NAME="$REGISTRY/ppl-meta-vmeta-protected:$RELEASE_TAG"
+            ;;
+        cameras)
+            SERVICE_DIR="$PROJECT_ROOT/ppl-meta-cameras"
+            DOCKERFILE="$SERVICE_DIR/Dockerfile"
+            IMAGE_NAME="$REGISTRY/ppl-meta-cameras:$RELEASE_TAG"
+            ;;
+        presence)
+            SERVICE_DIR="$PROJECT_ROOT/ppl-meta-presence"
+            DOCKERFILE="$SERVICE_DIR/Dockerfile"
+            IMAGE_NAME="$REGISTRY/ppl-meta-presence:$RELEASE_TAG"
+            ;;
+        models)
+            SERVICE_DIR="$PROJECT_ROOT/ppl-meta-models"
+            DOCKERFILE="$SERVICE_DIR/Dockerfile"
+            IMAGE_NAME="$REGISTRY/ppl-meta-models:$RELEASE_TAG"
             ;;
         *)
             echo "Unsupported service: $service" >&2

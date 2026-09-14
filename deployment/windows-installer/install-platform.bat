@@ -4,13 +4,13 @@ setlocal enabledelayedexpansion
 :: ============================================================
 ::  EyeNet Platform Manager
 ::  Windows Batch Installer & Management Console
-::  Version: 2.25.79
+::  Version: 2.25.80
 ::
 ::  Download ONLY this file to any folder on your Windows PC.
 ::  Double-click to run.  No PowerShell, no setup required.
 :: ============================================================
 
-set "VERSION=2.25.79"
+set "VERSION=2.25.80"
 set "ENV_FILE=.env.windows"
 set "COMPOSE_FILE=docker-compose.windows-installer.yml"
 set "ENV_TEMPLATE=.env.windows.template"
@@ -21,6 +21,13 @@ set "MIN_HOST_RAM_GB=16"
 set "MIN_WSL_MEM_GB=12"
 set "INSTALL_DIR="
 set "FIRST_RUN=0"
+set "WSL_DISTRO=eyenet"
+set "USE_WSL_DOCKER=0"
+set "COMPOSE_PROJECT=pplmeta"
+
+:: Prefer WSL docker-ce when available
+wsl -d %WSL_DISTRO% --user root -- docker info >nul 2>&1
+if not errorlevel 1 set "USE_WSL_DOCKER=1"
 
 :: Detect if this is first run (no .env.windows in current directory)
 if not exist "%ENV_FILE%" (
@@ -138,11 +145,11 @@ if errorlevel 1 (
 
 :: -- STEP 4: Check Docker --
 echo.
-echo   [Step 4/9] Docker Desktop check
+echo   [Step 4/9] Docker Engine check
 echo   -----------------------------------
 call :check_docker
 if errorlevel 1 (
-    echo   [FAILED] Step 4/9 - Docker Desktop is not running
+    echo   [FAILED] Step 4/9 - Docker Engine not available
     goto install_done
 )
 
@@ -286,37 +293,38 @@ echo   [ OK ] Sufficient disk space
 goto :eof
 
 :: ============================================================
-::  CHECK DOCKER DESKTOP
+::  CHECK DOCKER ENGINE (WSL eyenet preferred; Desktop legacy)
 :: ============================================================
 :check_docker
-echo   [CHECK] Docker Desktop...
+echo   [CHECK] Docker Engine (WSL eyenet preferred)...
+set "USE_WSL_DOCKER=0"
+wsl -d %WSL_DISTRO% --user root -- docker info >nul 2>&1
+if not errorlevel 1 (
+    set "USE_WSL_DOCKER=1"
+    for /f "tokens=*" %%a in ('wsl -d %WSL_DISTRO% --user root -- docker version --format "{{.Server.Version}}" 2^>nul') do set "docker_ver=%%a"
+    if "!docker_ver!"=="" set "docker_ver=running"
+    echo   [ OK ] WSL/%WSL_DISTRO% docker-ce (v!docker_ver!)
+    goto :eof
+)
+
 docker version >nul 2>&1
 if not errorlevel 1 (
     for /f "tokens=*" %%a in ('docker version --format "{{.Server.Version}}" 2^>nul') do set "docker_ver=%%a"
-    if "%docker_ver%"=="" set "docker_ver=running"
-    echo   [ OK ] Docker Desktop detected (v%docker_ver%)
+    if "!docker_ver!"=="" set "docker_ver=running"
+    echo   [WARN] Using host Docker (legacy Desktop path). Prefer install-eyenet-wsl.bat.
+    echo   [ OK ] Host docker detected (v!docker_ver!)
     goto :eof
 )
 
 echo.
-echo   [WARN] Docker Desktop is not running!
+echo   [FAIL] No Docker Engine found.
 echo.
-echo   Please start Docker Desktop from the Start menu now.
-echo   Press any key when Docker Desktop is ready...
-pause >nul
-echo.
-
-echo   Waiting for Docker...
-:wait_docker
-docker version >nul 2>&1
-if not errorlevel 1 (
-    echo   [ OK ] Docker Desktop detected!
-    goto :eof
-)
-:: simple timeout
-ping -n 4 127.0.0.1 >nul
-echo   Still waiting...
-goto wait_docker
+echo   Preferred: run install-eyenet-wsl.bat first (Docker Engine CE in WSL).
+echo   Legacy: start Docker Desktop, then re-run this installer.
+echo   Or use install-platform.ps1 for the WSL-aware PowerShell path.
+pause
+exit /b 1
+goto :eof
 
 :: ============================================================
 ::  CHECK WSL CONFIG
@@ -328,7 +336,7 @@ echo   [CHECK] WSL configuration...
 if not exist "%wslconfig%" (
     echo   [WARN] No .wslconfig found.
     echo.
-    echo   Docker Desktop needs at least %MIN_WSL_MEM_GB% GB RAM and 4 CPUs for EyeNet.
+    echo   EyeNet needs at least %MIN_WSL_MEM_GB% GB RAM and 4 CPUs for the WSL distro.
     echo   A .wslconfig file will be created with 12 GB RAM and 6 CPUs (16 GB host standard).
     echo.
     set /p "fix_wsl=  Create .wslconfig now? [Y/n]: "
@@ -341,7 +349,7 @@ if not exist "%wslconfig%" (
         ) > "%wslconfig%"
         echo   [ OK ] Created %wslconfig%
         echo.
-        echo   [WARN] WSL must restart.  Please quit and restart Docker Desktop.
+        echo   [WARN] WSL must restart. Re-run install-eyenet-wsl.bat if needed.
         echo   Press any key to continue...
         pause >nul
     ) else (
@@ -390,7 +398,7 @@ if /i "%fix_wsl%"=="n" (
     echo swap=2GB
 ) > "%wslconfig%"
 echo   [ OK ] Updated %wslconfig%
-echo   Please quit and restart Docker Desktop for changes to take effect.
+echo   Please restart WSL for changes to take effect (wsl --shutdown).
 echo   Press any key to continue...
 pause >nul
 goto :eof
@@ -510,15 +518,31 @@ findstr /r "^APPLICATION_KEY=$" "%ENV_FILE%" >nul 2>&1 && (
 )
 goto :eof
 
+goto :eof
+
+:: ============================================================
+::  RUN DOCKER COMPOSE (WSL eyenet when USE_WSL_DOCKER=1)
+::  Usage: call :run_compose pull
+::         call :run_compose up -d
+:: ============================================================
+:run_compose
+cd /d "%INSTALL_DIR%"
+if "%USE_WSL_DOCKER%"=="1" (
+    for /f "delims=" %%P in ('powershell -NoProfile -Command "$p=(Resolve-Path '%CD%').Path; if($p -match '^([A-Za-z]):\\(.*)$'){ '/mnt/'+$matches[1].ToLower()+'/'+($matches[2] -replace '\\','/') }"') do set "WSL_CWD=%%P"
+    wsl -d %WSL_DISTRO% --user root -- bash -lc "cd '!WSL_CWD!' && docker compose --project-name %COMPOSE_PROJECT% --env-file %ENV_FILE% -f %COMPOSE_FILE% %*"
+) else (
+    docker compose --project-name %COMPOSE_PROJECT% --env-file "%ENV_FILE%" -f "%COMPOSE_FILE%" %*
+)
+goto :eof
+
 :: ============================================================
 ::  PULL IMAGES
 :: ============================================================
 :pull_images
 echo   --- Pulling Images (this may take several minutes) ---
-cd /d "%INSTALL_DIR%"
-docker compose --env-file "%ENV_FILE%" -f "%COMPOSE_FILE%" pull
+call :run_compose pull
 if errorlevel 1 (
-    echo   [FAIL] Image pull failed.  Check your internet connection.
+    echo   [FAIL] Image pull failed.  Check GHCR login: wsl -d %WSL_DISTRO% -- docker login ghcr.io
     exit /b 1
 )
 echo.
@@ -530,8 +554,7 @@ goto :eof
 :: ============================================================
 :start_containers
 echo   --- Starting Stack ---
-cd /d "%INSTALL_DIR%"
-docker compose --env-file "%ENV_FILE%" -f "%COMPOSE_FILE%" up -d
+call :run_compose up -d
 if errorlevel 1 (
     echo   [FAIL] Failed to start containers.
     exit /b 1
@@ -546,7 +569,11 @@ if %count% gtr 30 (
     echo   [WARN] PostgreSQL is taking longer than expected.
     goto :wait_redis
 )
-docker inspect --format="{{.State.Health.Status}}" ppl-postgres 2>nul | findstr "healthy" >nul
+if "%USE_WSL_DOCKER%"=="1" (
+    wsl -d %WSL_DISTRO% --user root -- docker inspect --format="{{.State.Health.Status}}" ppl-postgres 2>nul | findstr "healthy" >nul
+) else (
+    docker inspect --format="{{.State.Health.Status}}" ppl-postgres 2>nul | findstr "healthy" >nul
+)
 if errorlevel 1 (
     ping -n 3 127.0.0.1 >nul
     goto wait_pg
@@ -560,14 +587,20 @@ set "count=0"
 set /a count+=1
 if %count% gtr 20 (
     echo   [WARN] Redis is taking longer than expected.
-    goto :eof
+    goto :start_containers_done
 )
-docker inspect --format="{{.State.Health.Status}}" ppl-redis 2>nul | findstr "healthy" >nul
+if "%USE_WSL_DOCKER%"=="1" (
+    wsl -d %WSL_DISTRO% --user root -- docker inspect --format="{{.State.Health.Status}}" ppl-redis 2>nul | findstr "healthy" >nul
+) else (
+    docker inspect --format="{{.State.Health.Status}}" ppl-redis 2>nul | findstr "healthy" >nul
+)
 if errorlevel 1 (
     ping -n 3 127.0.0.1 >nul
     goto wait_rd
 )
 echo   [ OK ] Redis healthy
+:start_containers_done
+if "%USE_WSL_DOCKER%"=="1" echo   VPN check: wsl -d %WSL_DISTRO% -- tailscale status
 goto :eof
 
 :: ============================================================
@@ -579,13 +612,8 @@ call :banner
 echo.
 echo   === Starting EyeNet Platform ===
 echo.
-echo   [CHECK] Docker Desktop...
-docker version >nul 2>&1
-if errorlevel 1 (
-    echo   [FAIL] Docker Desktop is not running.  Start it and try again.
-    goto start_done
-)
-echo   [ OK ] Docker Desktop running
+call :check_docker
+if errorlevel 1 goto start_done
 
 cd /d "%INSTALL_DIR%"
 if not exist "%ENV_FILE%" (
@@ -616,7 +644,7 @@ if not exist "%ENV_FILE%" (
     echo   [FAIL] %ENV_FILE% not found.
     goto stop_done
 )
-docker compose --env-file "%ENV_FILE%" -f "%COMPOSE_FILE%" down
+call :run_compose down
 echo.
 echo   [ OK ] All containers stopped.  Data volumes are preserved.
 
@@ -650,7 +678,7 @@ goto main_menu
 :display_status
 echo.
 echo   === Container Status ===
-docker compose --env-file "%ENV_FILE%" -f "%COMPOSE_FILE%" ps 2>nul
+call :run_compose ps
 if errorlevel 1 (
     echo   [WARN] Could not retrieve container status.
 )
@@ -716,7 +744,7 @@ cls
 echo.
 echo   === %container% (last 100 lines) ===
 echo.
-docker compose --env-file "%ENV_FILE%" -f "%COMPOSE_FILE%" logs --tail 100 "%container%" 2>nul
+call :run_compose logs --tail 100 "%container%"
 echo.
 echo   === End of logs ===
 echo.
@@ -730,7 +758,7 @@ if /i "%log_action%"=="f" (
     echo.
     echo   === Following %container% logs (Ctrl+C to stop) ===
     echo.
-    docker compose --env-file "%ENV_FILE%" -f "%COMPOSE_FILE%" logs -f --tail 20 "%container%"
+    call :run_compose logs -f --tail 20 "%container%"
     echo.
     echo   === Stopped following ===
     echo   Press any key...

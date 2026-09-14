@@ -50,9 +50,17 @@ services:
       AUTHORITY_SERVICE_ENABLED: "true"
       INSTALLATION_UUID: ${INSTALLATION_UUID}
       AUTHORITY_INSTALLATION_UUID: ${INSTALLATION_UUID}
+      EYENET_INSTALLATION_UUID: ${INSTALLATION_UUID}
       APPLICATION_KEY: ${APPLICATION_KEY}
       AUTHORITY_APPLICATION_KEY: ${APPLICATION_KEY}
+      EYENET_APPLICATION_KEY: ${APPLICATION_KEY}
+      EYENET_VPN_NODE_TYPE: platform
+      EYENET_HEADSCALE_URL: ${EYENET_HEADSCALE_URL:-https://vpn.eyenet-vision.com}
+      EYENET_TS_SOCKET: /var/run/tailscale/tailscaled.sock
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    volumes:
+      - ${EYENET_TS_SOCKET_HOST:-/var/run/tailscale/tailscaled.sock}:/var/run/tailscale/tailscaled.sock
+      - tailscale_state:/var/lib/tailscale
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,9 +96,12 @@ services:
       MEDIA_SERVICE_URL: http://ppl-meta-media:8000
       ORCHESTRATOR_SERVICE_URL: http://ppl-meta-orchestrator:8002
       VISION_SERVICE_URL: http://ppl-meta-vision:8003
-      DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8004
+      CAMERAS_SERVICE_URL: http://ppl-meta-cameras:8005
+      DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
       VMETA_SERVICE_URL: http://ppl-meta-vmeta:8008
       COMMUNICATIONS_SERVICE_URL: http://ppl-meta-communications:8009
+      PRESENCE_SERVICE_URL: http://ppl-meta-presence:8011
+      MODELS_SERVICE_URL: http://ppl-meta-models:8013
       REDIS_URL: redis://redis:6379/0
     depends_on:
       ppl-meta-node:
@@ -130,7 +141,7 @@ services:
     image: ${REGISTRY}/ppl-meta-discovery:${RELEASE_TAG}
     platform: linux/amd64
     ports:
-      - "${DISCOVERY_PORT}:8004"
+      - "${DISCOVERY_PORT}:8006"
     restart: unless-stopped
     mem_limit: 256m
     mem_reservation: 128m
@@ -140,6 +151,92 @@ services:
     platform: linux/amd64
     ports:
       - "${COMMUNICATIONS_PORT}:8009"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      REDIS_ENABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 256m
+
+  ppl-meta-cameras:
+    image: ${REGISTRY}/ppl-meta-cameras:${RELEASE_TAG}
+    platform: linux/amd64
+    ports:
+      - "${CAMERAS_PORT:-8005}:8005"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8005"
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-ppl-meta-secret-key-change-in-production}
+      SECRET_KEY: ${JWT_SECRET_KEY:-ppl-meta-secret-key-change-in-production}
+      STREAM_STATE_REDIS_HOST: redis
+      STREAM_STATE_REDIS_PORT: "6379"
+      MODELS_SERVICE_URL: http://ppl-meta-models:8013
+      AUTHORITY_URL: ${AUTHORITY_URL}
+      INSTALLATION_UUID: ${INSTALLATION_UUID}
+      APPLICATION_KEY: ${APPLICATION_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 512m
+
+  ppl-meta-presence:
+    image: ${REGISTRY}/ppl-meta-presence:${RELEASE_TAG}
+    platform: linux/amd64
+    ports:
+      - "${PRESENCE_PORT:-8011}:8011"
+    environment:
+      HOST: 0.0.0.0
+      PRESENCE_SERVICE_PORT: "8011"
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      GATEWAY_SERVICE_URL: http://ppl-meta-gateway:8080
+      COMMUNICATIONS_SERVICE_URL: http://ppl-meta-communications:8009/api/v1
+      NODE_SERVICE_URL: http://ppl-meta-node:8001/api/v1
+      CAMERAS_SERVICE_URL: http://ppl-meta-cameras:8005
+      PRESENCE_PREFERRED_CAMERA_TYPES: MOBILE,RTSP,EDGE
+      SERVICE_SECRET: ${SERVICE_SECRET:-ppl-meta-secret-key-change-in-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ppl-meta-cameras:
+        condition: service_started
+      ppl-meta-communications:
+        condition: service_started
+    restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 256m
+
+  ppl-meta-models:
+    image: ${REGISTRY}/ppl-meta-models:${RELEASE_TAG}
+    platform: linux/amd64
+    ports:
+      - "${MODELS_PORT:-8013}:8013"
+    environment:
+      HOST: 0.0.0.0
+      MODELS_SERVICE_PORT: "8013"
+      ENVIRONMENT: production
+      MODELS_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      NODE_SERVICE_URL: http://ppl-meta-node:8001/api/v1
+      VISION_SERVICE_URL: http://ppl-meta-vision:8003
+      SERVICE_SECRET: ${SERVICE_SECRET:-ppl-meta-secret-key-change-in-production}
+      MODELS_REQUIRE_LICENCE: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ppl-meta-node:
+        condition: service_started
     restart: unless-stopped
     mem_limit: 512m
     mem_reservation: 256m
@@ -198,3 +295,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  tailscale_state:

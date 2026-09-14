@@ -135,22 +135,29 @@ class EnrollRequest(BaseModel):
 
 @router.post("/enroll")
 async def vpn_enroll(payload: EnrollRequest = EnrollRequest()):
-    """Full VPN enrollment — logout from other networks, fetch key, run tailscale up.
+    """Mint an EyeNet pre-auth key and enroll this platform as tag:platform.
 
-    Returns enrollment success status, assigned IP, and matrix group ID.
-    If automatic enrollment fails, returns the manual tailscale up command.
+    Never logs out an existing Tailscale.app / Tailscale.com session. If this
+    daemon is already on another coordination server, the key is returned with
+    a userspace second-daemon command instead of running `tailscale up`.
     """
-    installation_uuid = os.environ.get(
-        "EYENET_INSTALLATION_UUID",
-        settings.AUTHORITY_INSTALLATION_UUID,
+    installation_uuid = (
+        os.environ.get("EYENET_INSTALLATION_UUID")
+        or os.environ.get("AUTHORITY_INSTALLATION_UUID")
+        or os.environ.get("INSTALLATION_UUID")
+        or settings.AUTHORITY_INSTALLATION_UUID
     )
-    application_key = os.environ.get(
-        "EYENET_APPLICATION_KEY",
-        settings.AUTHORITY_APPLICATION_KEY,
+    application_key = (
+        os.environ.get("EYENET_APPLICATION_KEY")
+        or os.environ.get("AUTHORITY_APPLICATION_KEY")
+        or os.environ.get("APPLICATION_KEY")
+        or settings.AUTHORITY_APPLICATION_KEY
     )
-    authority_url = os.environ.get(
-        "AUTHORITY_BASE_URL",
-        settings.AUTHORITY_SERVICE_URL,
+    authority_url = (
+        os.environ.get("AUTHORITY_BASE_URL")
+        or os.environ.get("AUTHORITY_SERVICE_URL")
+        or os.environ.get("AUTHORITY_URL")
+        or settings.AUTHORITY_SERVICE_URL
     )
 
     if not installation_uuid or not application_key:
@@ -160,16 +167,11 @@ async def vpn_enroll(payload: EnrollRequest = EnrollRequest()):
                     "(set EYENET_INSTALLATION_UUID and EYENET_APPLICATION_KEY env vars)",
         )
 
-    # Check if connected to a different server — logout first
-    try:
-        status = await mesh_vpn_service.get_status()
-        if status.get("connected_to_other_server") or (
-            status.get("has_tailscale_installed") and not status.get("enrolled")
-        ):
-            await mesh_vpn_service._run_tailscale_command(["logout"])
-            logger.info("Logged out from previous tailscale network")
-    except Exception as exc:
-        logger.warning("Could not logout from previous tailscale: %s", exc)
+    node_type = (payload.node_type or "platform").lower()
+    if node_type in ("node", ""):
+        node_type = "platform"
+
+    safe_to_auto_enroll, skip_reason = await mesh_vpn_service.can_safely_auto_enroll()
 
     # Fetch key from authority
     try:
@@ -179,7 +181,7 @@ async def vpn_enroll(payload: EnrollRequest = EnrollRequest()):
                 json={
                     "installation_uuid": installation_uuid,
                     "application_key": application_key,
-                    "node_type": payload.node_type,
+                    "node_type": node_type,
                 },
             )
             if resp.status_code != 200:
@@ -194,7 +196,6 @@ async def vpn_enroll(payload: EnrollRequest = EnrollRequest()):
     auth_key = data["auth_key"]
     headscale_server = data["headscale_server"]
     matrix_group_id = data.get("matrix_group_id")
-    tailscale_up_command = f'tailscale up --login-server {headscale_server} --auth-key {auth_key} --accept-routes'
 
     # Derive hostname from installation identity for unique MagicDNS
     hostname = os.environ.get("EYENET_VPN_HOSTNAME", f"eyenet-{installation_uuid[:20]}")
@@ -202,20 +203,50 @@ async def vpn_enroll(payload: EnrollRequest = EnrollRequest()):
     magic_dns = f"{sanitized_hostname}.eyenet-vpn.local"
     discovery_url = f"http://{magic_dns}:8002"
 
-    # Attempt to run tailscale up
+    userspace_command = mesh_vpn_service.build_userspace_enroll_command(
+        auth_key, headscale_server, sanitized_hostname
+    )
+    inplace_command = (
+        f"tailscale up --login-server {headscale_server} "
+        f"--auth-key {auth_key} --hostname {sanitized_hostname} "
+        "--accept-routes=false --accept-dns=false"
+    )
+
     enrolled = False
     assigned_ip = None
-    try:
-        success = await mesh_vpn_service._run_tailscale_up(auth_key, sanitized_hostname)
-        if success:
-            assigned_ip = await mesh_vpn_service._get_tailscale_ip_async()
-            if assigned_ip:
-                mesh_vpn_service.enrolled = True
-                mesh_vpn_service.tailscale_ip = assigned_ip
-                enrolled = True
-                logger.info("VPN enrollment succeeded: %s", assigned_ip)
-    except Exception as exc:
-        logger.warning("tailscale up failed: %s", exc)
+    auto_enroll_skipped = not safe_to_auto_enroll
+    message = skip_reason or ""
+
+    if safe_to_auto_enroll:
+        mesh_vpn_service._headscale_server = headscale_server
+        try:
+            success = await mesh_vpn_service._run_tailscale_up(
+                auth_key, sanitized_hostname
+            )
+            if success:
+                post = await mesh_vpn_service.get_status()
+                if post.get("enrolled") and post.get("tailscale_ip"):
+                    assigned_ip = post["tailscale_ip"]
+                    mesh_vpn_service.enrolled = True
+                    mesh_vpn_service.tailscale_ip = assigned_ip
+                    enrolled = True
+                    logger.info("VPN enrollment succeeded: %s", assigned_ip)
+                else:
+                    auto_enroll_skipped = True
+                    current = post.get("current_server")
+                    message = (
+                        f"tailscale up did not land on EyeNet (now on {current})"
+                        if current
+                        else "tailscale up did not assign an EyeNet IP"
+                    )
+        except Exception as exc:
+            logger.warning("tailscale up failed: %s", exc)
+            message = f"Automatic tailscale up failed: {exc}"
+            auto_enroll_skipped = True
+    else:
+        logger.warning("Skipping in-place tailscale up: %s", skip_reason)
+
+    tailscale_up_command = userspace_command if auto_enroll_skipped else inplace_command
 
     # Tailscale Android deep link — bypasses the hidden "custom server" menu
     deep_link = f"tailscale://login?server={headscale_server}&key={auth_key}"
@@ -232,6 +263,9 @@ async def vpn_enroll(payload: EnrollRequest = EnrollRequest()):
         "hostname": sanitized_hostname,
         "magic_dns": magic_dns,
         "discovery_url": discovery_url,
+        "auto_enroll_skipped": auto_enroll_skipped,
+        "message": message,
+        "node_type": node_type,
     }
 
 

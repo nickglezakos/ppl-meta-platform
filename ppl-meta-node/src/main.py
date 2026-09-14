@@ -197,7 +197,13 @@ def get_local_network_ips():
 
 def get_dynamic_allowed_hosts():
     """Get dynamically detected allowed hosts for TrustedHostMiddleware."""
-    base_hosts = ["localhost", "127.0.0.1", "*.localhost", "0.0.0.0"]
+    base_hosts = [
+        "localhost",
+        "127.0.0.1",
+        "*.localhost",
+        "0.0.0.0",
+        "ppl-meta-node",
+    ]
     network_ips = get_local_network_ips()
 
     all_hosts = base_hosts + network_ips
@@ -448,7 +454,14 @@ async def lifespan(_app: FastAPI):
                         try:
                             ensure_exact_system_roles(db, email, role_names)
                         except ValueError as exc:
-                            if str(exc) != "Cannot remove the final owner role assignment":
+                            message = str(exc)
+                            if message.startswith("User not found:"):
+                                logger.info(
+                                    "Skipping role bootstrap for missing user %s",
+                                    email,
+                                )
+                                return
+                            if message != "Cannot remove the final owner role assignment":
                                 raise
                             logger.warning(
                                 "Preserving existing owner role for %s during startup bootstrap because authority fallback did not identify a replacement owner yet",

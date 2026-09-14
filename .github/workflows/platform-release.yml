@@ -105,6 +105,18 @@ jobs:
             context: ppl-meta-vmeta
             file: ppl-meta-vmeta/docker/Dockerfile.protected
             image: ppl-meta-vmeta-protected
+          - key: cameras
+            context: ppl-meta-cameras
+            file: ppl-meta-cameras/Dockerfile
+            image: ppl-meta-cameras
+          - key: presence
+            context: ppl-meta-presence
+            file: ppl-meta-presence/Dockerfile
+            image: ppl-meta-presence
+          - key: models
+            context: ppl-meta-models
+            file: ppl-meta-models/Dockerfile
+            image: ppl-meta-models
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

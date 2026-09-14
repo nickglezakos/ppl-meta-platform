@@ -112,6 +112,32 @@ def _service_url(env_name: str, fallback: str) -> str:
     return (os.getenv(env_name) or fallback).rstrip("/")
 
 
+_HOP_BY_HOP_HEADERS = frozenset(
+    {
+        "content-length",
+        "transfer-encoding",
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailers",
+        "upgrade",
+        "date",
+        "server",
+    }
+)
+
+
+def _passthrough_headers(headers) -> dict:
+    """Copy downstream headers without hop-by-hop / length fields."""
+    return {
+        key: value
+        for key, value in headers.items()
+        if key.lower() not in _HOP_BY_HOP_HEADERS
+    }
+
+
 # Docker Compose DNS names by default. Localhost overrides belong in env files,
 # not in this map — inside a container localhost is the gateway itself.
 SERVICES = {
@@ -266,6 +292,8 @@ async def _proxy_to_node_service(request: Request) -> JSONResponse:
         # Get headers (exclude host to avoid conflicts)
         headers = dict(request.headers)
         headers.pop("host", None)
+        # Node TrustedHostMiddleware allows localhost/127.0.0.1, not compose DNS.
+        headers["host"] = "127.0.0.1"
 
         # Make the proxy request
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
@@ -288,7 +316,7 @@ async def _proxy_to_node_service(request: Request) -> JSONResponse:
             return JSONResponse(
                 content=response_content,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=_passthrough_headers(response.headers),
             )
 
     except httpx.RequestError as e:
@@ -546,7 +574,7 @@ async def get_user_profile_singular(request: Request):
             return JSONResponse(
                 content=response_content,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=_passthrough_headers(response.headers),
             )
 
     except httpx.RequestError as e:
@@ -611,7 +639,7 @@ async def _proxy_to_media_service(request: Request, target_path: Optional[str] =
                 return Response(
                     content=response.content,
                     status_code=response.status_code,
-                    headers=dict(response.headers),
+                    headers=_passthrough_headers(response.headers),
                     media_type=response.headers.get(
                         "content-type", "application/octet-stream"
                     ),
@@ -661,7 +689,7 @@ async def _proxy_to_presence_service(request: Request) -> Response:
             return Response(
                 content=response.content,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=_passthrough_headers(response.headers),
                 media_type=response.headers.get(
                     "content-type", "application/octet-stream"
                 ),
@@ -714,7 +742,7 @@ async def _proxy_to_models_service(request: Request) -> Response:
             return Response(
                 content=response.content,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=_passthrough_headers(response.headers),
                 media_type=response.headers.get(
                     "content-type", "application/octet-stream"
                 ),
@@ -1415,7 +1443,7 @@ async def _proxy_to_vision_service(
             return Response(
                 content=response.content,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=_passthrough_headers(response.headers),
                 media_type=response.headers.get("content-type", "application/json"),
             )
 
@@ -1605,7 +1633,7 @@ async def _proxy_to_cameras_service(request: Request) -> Response:
             return Response(
                 content=response.content,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=_passthrough_headers(response.headers),
                 media_type=response.headers.get("content-type", "application/json"),
             )
 
@@ -2187,7 +2215,7 @@ async def _proxy_to_orchestrator_service(request: Request) -> Response:
             return JSONResponse(
                 content=response_content,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=_passthrough_headers(response.headers),
             )
 
     except httpx.RequestError as e:
@@ -2753,7 +2781,7 @@ async def _proxy_to_vmeta_service(request: Request, target_path: Optional[str] =
             return Response(
                 content=response.content,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=_passthrough_headers(response.headers),
                 media_type=response.headers.get(
                     "content-type", "application/json"
                 ),
@@ -3131,7 +3159,7 @@ async def _proxy_to_discovery_service(request: Request) -> Response:
             return Response(
                 content=response.content,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=_passthrough_headers(response.headers),
                 media_type=response.headers.get("content-type", "application/json"),
             )
 

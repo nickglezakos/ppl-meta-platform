@@ -7,7 +7,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 REGISTRY="${REGISTRY:-ghcr.io/nickglezakos/ppl-meta-platform}"
 RELEASE_TAG="${RELEASE_TAG:-$(cat "$PROJECT_ROOT/VERSION" 2>/dev/null || echo latest)}"
 
-SERVICES=("node" "media" "gateway" "orchestrator" "discovery" "communications" "frontend" "vision" "vmeta")
+SERVICES=("node" "media" "gateway" "orchestrator" "discovery" "communications" "frontend" "vision" "vmeta" "cameras" "presence" "models")
 if [[ $# -gt 0 ]]; then
     SERVICES=("$@")
 fi
@@ -42,6 +42,15 @@ for service in "${SERVICES[@]}"; do
             ;;
         vmeta)
             docker push "$REGISTRY/ppl-meta-vmeta-protected:$RELEASE_TAG"
+            ;;
+        cameras)
+            docker push "$REGISTRY/ppl-meta-cameras:$RELEASE_TAG"
+            ;;
+        presence)
+            docker push "$REGISTRY/ppl-meta-presence:$RELEASE_TAG"
+            ;;
+        models)
+            docker push "$REGISTRY/ppl-meta-models:$RELEASE_TAG"
             ;;
         *)
             echo "Unsupported service: $service" >&2

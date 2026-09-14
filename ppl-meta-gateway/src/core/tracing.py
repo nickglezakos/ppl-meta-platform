@@ -7,12 +7,17 @@ from typing import Optional
 
 import structlog
 from opentelemetry import trace
-from opentelemetry.exporter.jaeger.thrift import JaegerExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+try:
+    from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+except ImportError:
+    # opentelemetry-exporter-jaeger is deprecated and crashes on newer SDK.
+    JaegerExporter = None
 
 logger = structlog.get_logger()
 
@@ -60,6 +65,12 @@ class DistributedTracing:
         """Initialize distributed tracing with OpenTelemetry."""
         if not self.config.enabled:
             logger.info("Distributed tracing is disabled")
+            return False
+
+        if JaegerExporter is None:
+            logger.warning(
+                "Jaeger exporter unavailable; distributed tracing disabled"
+            )
             return False
 
         try:

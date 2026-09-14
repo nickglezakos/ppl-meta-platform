@@ -1,6 +1,6 @@
 # EyeNet Platform Manager
 # Autonomous Windows installer & management console
-# Version: 2.25.79
+# Version: 2.25.80
 # Repository: https://github.com/nickglezakos/ppl-meta-platform
 
 param(
@@ -18,8 +18,10 @@ $script:TargetWslMemoryGb = 12
 $script:TargetWslProcessors = 6
 $script:GitHubRawBase = "https://raw.githubusercontent.com/nickglezakos/ppl-meta-platform/main/deployment/windows-installer"
 $script:InstallDir = $null
-$script:ReleaseTag = "2.25.79"
+$script:ReleaseTag = "2.25.80"
 $script:ComposeProjectName = "pplmeta"
+$script:WslDistro = "eyenet"
+$script:UseWslDocker = $false
 
 # ============================================================
 # COLOR / STYLE HELPERS
@@ -193,46 +195,91 @@ function Get-FreeSpaceGb {
     }
 }
 
+function ConvertTo-WslPath {
+    param([string]$WindowsPath)
+    $full = [System.IO.Path]::GetFullPath($WindowsPath)
+    if ($full -match '^([A-Za-z]):\\(.*)$') {
+        $drive = $matches[1].ToLower()
+        $rest = ($matches[2] -replace '\\', '/')
+        return "/mnt/$drive/$rest"
+    }
+    return $WindowsPath.Replace('\', '/')
+}
+
+function Test-WslDockerEngine {
+    try {
+        $distros = @(wsl -l -q 2>$null | ForEach-Object { ($_ -replace "`0", "").Trim() } | Where-Object { $_ })
+        if ($distros -notcontains $script:WslDistro) {
+            return $false
+        }
+        wsl -d $script:WslDistro --user root -- docker info *>$null 2>&1
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
+}
+
+function Invoke-EyeNetDocker {
+    param([Parameter(Mandatory = $true)][string[]]$DockerArgs)
+
+    if ($script:UseWslDocker) {
+        $cwd = ConvertTo-WslPath (Get-Location).Path
+        $escaped = foreach ($arg in $DockerArgs) {
+            $safe = $arg -replace "'", "'\''"
+            "'$safe'"
+        }
+        $joined = $escaped -join ' '
+        wsl -d $script:WslDistro --user root -- bash -lc "cd '$cwd' && docker $joined"
+        return $LASTEXITCODE
+    }
+
+    & docker @DockerArgs
+    return $LASTEXITCODE
+}
+
 function Test-DockerRunning {
+    if (Test-WslDockerEngine) {
+        $script:UseWslDocker = $true
+        return $true
+    }
     try {
         docker version *>$null 2>&1
         docker info *>$null 2>&1
-        return $true
+        if ($LASTEXITCODE -eq 0) {
+            $script:UseWslDocker = $false
+            return $true
+        }
+        return $false
     } catch {
         return $false
     }
 }
 
 function Wait-ForDocker {
-    Write-Step "Checking Docker Desktop..." ""
-    if (Test-DockerRunning) {
-        $version = (docker version --format '{{.Server.Version}}' 2>$null) -replace "`n|`r", ""
+    Write-Step "Checking Docker Engine (WSL $script:WslDistro preferred)..." ""
+    if (Test-WslDockerEngine) {
+        $script:UseWslDocker = $true
+        $version = (wsl -d $script:WslDistro --user root -- docker version --format '{{.Server.Version}}' 2>$null) -replace "`n|`r|`0", ""
         if (-not $version) { $version = "running" }
-        Write-Host "  OK (v$version)" -ForegroundColor $script:Green
+        Write-Host "  OK (WSL/$script:WslDistro docker-ce v$version)" -ForegroundColor $script:Green
         return $true
     }
 
-    Write-WarningMsg "Docker Desktop is not running."
-    Write-Host ""
-    Write-Host "    Please start Docker Desktop from the Start menu." -ForegroundColor $script:Yellow
-    Write-Host "    Waiting for Docker to become available..." -ForegroundColor $script:Yellow
-    Write-Host ""
-
-    $attempt = 0
-    while (-not (Test-DockerRunning)) {
-        $attempt++
-        Write-Host "`r    Waiting... ($attempt s)" -NoNewline -ForegroundColor $script:Gray
-        Start-Sleep -Seconds 3
-        if ($attempt -gt 120) {
-            Write-Host ""
-            Write-ErrorMsg "Docker Desktop did not start within 6 minutes. Please start Docker manually and re-run this script."
-            Pause-ForUser
-            return $false
-        }
+    if (Test-DockerRunning -and -not $script:UseWslDocker) {
+        Write-WarningMsg "Using host Docker (Docker Desktop). Preferred path is install-eyenet-wsl.ps1."
+        $version = (docker version --format '{{.Server.Version}}' 2>$null) -replace "`n|`r", ""
+        if (-not $version) { $version = "running" }
+        Write-Host "  OK (host docker v$version)" -ForegroundColor $script:Yellow
+        return $true
     }
+
+    Write-ErrorMsg "No Docker Engine found."
     Write-Host ""
-    Write-Host "    Docker Desktop detected!" -ForegroundColor $script:Green
-    return $true
+    Write-Host "    Preferred: run install-eyenet-wsl.bat first (Docker Engine CE in WSL distro '$script:WslDistro')." -ForegroundColor $script:Yellow
+    Write-Host "    Legacy: start Docker Desktop, then re-run this installer." -ForegroundColor $script:Gray
+    Write-Host ""
+    Pause-ForUser
+    return $false
 }
 
 function Test-HostMemory {
@@ -291,7 +338,7 @@ function Test-WslConfig {
 
     if ($needsFix) {
         Write-Host ""
-        Write-WarningMsg "Docker Desktop requires at least $($script:MinimumWslMemoryGb) GB RAM and 4 CPUs for EyeNet (16 GB host standard)."
+        Write-WarningMsg "EyeNet needs at least $($script:MinimumWslMemoryGb) GB RAM and 4 CPUs for the WSL distro (16 GB host standard)."
         Write-Host ""
         Write-InputPrompt "Auto-configure WSL now?" "Y"
         $response = Read-Host
@@ -301,18 +348,19 @@ function Test-WslConfig {
 memory=$($script:TargetWslMemoryGb)GB
 processors=$($script:TargetWslProcessors)
 swap=2GB
+networkingMode=mirrored
 "@
             Set-Content -Path $wslConfigPath -Value $wslContent -Force
             Write-Success "WSL config created at $wslConfigPath"
 
             Write-WarningMsg "WSL must be restarted for changes to take effect."
-            Write-InputPrompt "Restart WSL now? (Docker Desktop will need to restart)" "Y"
+            Write-InputPrompt "Restart WSL now?" "Y"
             $restart = Read-Host
             if ($restart -eq "" -or $restart -eq "Y" -or $restart -eq "y") {
                 Write-Step "Shutting down WSL..." ""
                 wsl --shutdown 2>$null
                 Write-Host "  DONE" -ForegroundColor $script:Green
-                Write-Host "    Please restart Docker Desktop now." -ForegroundColor $script:Yellow
+                Write-Host "    Re-run install-eyenet-wsl.bat if the eyenet distro needs docker-ce." -ForegroundColor $script:Yellow
                 Pause-ForUser
                 return (Wait-ForDocker)
             }
@@ -349,7 +397,9 @@ function Download-InstallerFiles {
 
     $files = @(
         @{Name = $script:ComposeFile; Url = "$script:GitHubRawBase/$script:ComposeFile"},
-        @{Name = $script:EnvTemplateFile; Url = "$script:GitHubRawBase/$script:EnvTemplateFile"}
+        @{Name = $script:EnvTemplateFile; Url = "$script:GitHubRawBase/$script:EnvTemplateFile"},
+        @{Name = "install-eyenet-wsl.ps1"; Url = "$script:GitHubRawBase/install-eyenet-wsl.ps1"},
+        @{Name = "install-eyenet-wsl.bat"; Url = "$script:GitHubRawBase/install-eyenet-wsl.bat"}
     )
 
     foreach ($file in $files) {
@@ -479,20 +529,26 @@ function Set-EnvValue {
     Set-Content -Path $Path -Value $lines
 }
 
+function Get-ContainerHealthStatus {
+    param([string]$Name)
+    if ($script:UseWslDocker) {
+        $status = wsl -d $script:WslDistro --user root -- docker inspect --format='{{.State.Health.Status}}' $Name 2>$null
+    } else {
+        $status = docker inspect --format='{{.State.Health.Status}}' $Name 2>$null
+    }
+    return ($status -replace "`0|`n|`r", "").Trim()
+}
+
 function Invoke-PullImages {
     Write-Step "Pulling Docker images (this may take several minutes)..." ""
     Write-Host ""
     try {
-        docker compose --env-file "$script:EnvFile" -f "$script:ComposeFile" pull 2>&1 | ForEach-Object {
-            $line = $_.ToString()
-            if ($line -match "Pulling|Downloading|Extracting|Pulled|Already") {
-                Write-Host "    $line" -ForegroundColor $script:Gray
-            } else {
-                Write-Host "    $line" -ForegroundColor $script:White
-            }
-        }
-        if ($LASTEXITCODE -ne 0) {
-            Write-ErrorMsg "Image pull failed. Check your internet connection and try again."
+        $code = Invoke-EyeNetDocker -DockerArgs @(
+            "compose", "--project-name", $script:ComposeProjectName,
+            "--env-file", $script:EnvFile, "-f", $script:ComposeFile, "pull"
+        )
+        if ($code -ne 0) {
+            Write-ErrorMsg "Image pull failed. Log in with: wsl -d $($script:WslDistro) -- docker login ghcr.io"
             return $false
         }
     } catch {
@@ -508,20 +564,23 @@ function Invoke-StartStack {
     Write-Step "Starting platform containers..." ""
     Write-Host ""
     try {
-        docker compose --env-file "$script:EnvFile" -f "$script:ComposeFile" up -d 2>&1 | ForEach-Object {
-            Write-Host "    $_" -ForegroundColor $script:Gray
+        $code = Invoke-EyeNetDocker -DockerArgs @(
+            "compose", "--project-name", $script:ComposeProjectName,
+            "--env-file", $script:EnvFile, "-f", $script:ComposeFile, "up", "-d"
+        )
+        if ($code -ne 0) {
+            Write-ErrorMsg "Failed to start containers"
+            return $false
         }
     } catch {
         Write-ErrorMsg "Failed to start containers: $_"
         return $false
     }
 
-    # Wait for postgres health
     Write-Step "Waiting for PostgreSQL..." ""
     $pgHealthy = $false
     for ($i = 0; $i -lt 30; $i++) {
-        $status = docker inspect --format='{{.State.Health.Status}}' ppl-postgres 2>$null
-        if ($status -eq "healthy") {
+        if ((Get-ContainerHealthStatus -Name "ppl-postgres") -eq "healthy") {
             Write-Host "  HEALTHY" -ForegroundColor $script:Green
             $pgHealthy = $true
             break
@@ -534,12 +593,10 @@ function Invoke-StartStack {
         Write-WarningMsg "PostgreSQL is not yet healthy. Containers may restart until it is ready."
     }
 
-    # Wait for redis health
     Write-Step "Waiting for Redis..." ""
     $redisHealthy = $false
     for ($i = 0; $i -lt 20; $i++) {
-        $status = docker inspect --format='{{.State.Health.Status}}' ppl-redis 2>$null
-        if ($status -eq "healthy") {
+        if ((Get-ContainerHealthStatus -Name "ppl-redis") -eq "healthy") {
             Write-Host "  HEALTHY" -ForegroundColor $script:Green
             $redisHealthy = $true
             break
@@ -548,15 +605,22 @@ function Invoke-StartStack {
         Write-Host "`r    Waiting... ($($i*2)s)" -NoNewline -ForegroundColor $script:Gray
     }
     Write-Host ""
+    Write-Success "Platform started. Open http://localhost:3000"
+    if ($script:UseWslDocker) {
+        Write-Host "    VPN: Node enrolls via WSL Tailscale → https://vpn.eyenet-vision.com" -ForegroundColor $script:Gray
+        Write-Host "    Check: wsl -d $($script:WslDistro) -- tailscale status" -ForegroundColor $script:Gray
+    }
     return $true
 }
 
 function Invoke-StopStack {
     Write-Step "Stopping all containers..." ""
     try {
-        docker compose --env-file "$script:EnvFile" -f "$script:ComposeFile" down 2>&1 | ForEach-Object {
-            Write-Host "    $_" -ForegroundColor $script:Gray
-        }
+        $code = Invoke-EyeNetDocker -DockerArgs @(
+            "compose", "--project-name", $script:ComposeProjectName,
+            "--env-file", $script:EnvFile, "-f", $script:ComposeFile, "down"
+        )
+        if ($code -ne 0) { throw "docker compose down exited $code" }
         Write-Success "All containers stopped. Data volumes are preserved."
     } catch {
         Write-ErrorMsg "Failed to stop containers: $_"
@@ -570,14 +634,18 @@ function Show-Status {
     Write-Host (" " * 60) -NoNewline
     Write-Host "║" -ForegroundColor $script:Cyan
     try {
-        $output = docker compose --env-file "$script:EnvFile" -f "$script:ComposeFile" ps 2>&1
+        $cwd = ConvertTo-WslPath (Get-Location).Path
+        if ($script:UseWslDocker) {
+            $output = wsl -d $script:WslDistro --user root -- bash -lc "cd '$cwd' && docker compose --project-name $($script:ComposeProjectName) --env-file $($script:EnvFile) -f $($script:ComposeFile) ps" 2>&1
+        } else {
+            $output = docker compose --project-name $script:ComposeProjectName --env-file "$script:EnvFile" -f "$script:ComposeFile" ps 2>&1
+        }
         foreach ($line in $output) {
-            $trimmed = $line.ToString().TrimEnd()
+            $trimmed = $line.ToString().TrimEnd() -replace "`0", ""
             if ($trimmed.Length -gt 60) { $trimmed = $trimmed.Substring(0, 57) + "..." }
             $padLen = 60 - $trimmed.Length
             if ($padLen -lt 0) { $padLen = 0 }
             Write-Host "  ║ " -NoNewline -ForegroundColor $script:Cyan
-            # Colorize based on status
             if ($trimmed -match "healthy|Up") {
                 Write-Host $trimmed -NoNewline -ForegroundColor $script:Green
             } elseif ($trimmed -match "Restarting|unhealthy") {
@@ -601,9 +669,16 @@ function Show-Status {
 function Get-ContainerList {
     $containers = @()
     try {
-        $output = docker compose --env-file "$script:EnvFile" -f "$script:ComposeFile" ps --format "{{.Name}}|{{.Status}}" 2>$null
+        $cwd = ConvertTo-WslPath (Get-Location).Path
+        if ($script:UseWslDocker) {
+            $output = wsl -d $script:WslDistro --user root -- bash -lc "cd '$cwd' && docker compose --project-name $($script:ComposeProjectName) --env-file $($script:EnvFile) -f $($script:ComposeFile) ps --format '{{.Name}}|{{.Status}}'" 2>$null
+        } else {
+            $output = docker compose --project-name $script:ComposeProjectName --env-file "$script:EnvFile" -f "$script:ComposeFile" ps --format "{{.Name}}|{{.Status}}" 2>$null
+        }
         foreach ($line in $output) {
-            $parts = $line -split '\|', 2
+            $clean = ($line -replace "`0", "").Trim()
+            if (-not $clean) { continue }
+            $parts = $clean -split '\|', 2
             $containers += @{ Name = $parts[0]; Status = $parts[1] }
         }
     } catch {
@@ -683,11 +758,21 @@ function Show-ContainerLogs {
 
     $logLines = @()
     try {
-        $output = docker compose --env-file "$script:EnvFile" -f "$script:ComposeFile" logs --tail 150 $ContainerName 2>&1
+        $code = Invoke-EyeNetDocker -DockerArgs @(
+            "compose", "--project-name", $script:ComposeProjectName,
+            "--env-file", $script:EnvFile, "-f", $script:ComposeFile,
+            "logs", "--tail", "150", $ContainerName
+        )
+        # Capture via wsl/docker stdout already printed by Invoke; re-run for capture
+        $cwd = ConvertTo-WslPath (Get-Location).Path
+        if ($script:UseWslDocker) {
+            $output = wsl -d $script:WslDistro --user root -- bash -lc "cd '$cwd' && docker compose --project-name $($script:ComposeProjectName) --env-file $($script:EnvFile) -f $($script:ComposeFile) logs --tail 150 $ContainerName" 2>&1
+        } else {
+            $output = docker compose --project-name $script:ComposeProjectName --env-file "$script:EnvFile" -f "$script:ComposeFile" logs --tail 150 $ContainerName 2>&1
+        }
         foreach ($line in $output) {
             $logLines += $line.ToString()
-            $trimmed = $line.ToString().TrimEnd()
-            # Colorize based on content
+            $trimmed = ($line.ToString() -replace "`0", "").TrimEnd()
             if ($trimmed -match "ERROR|error|Error|FATAL|fatal|CRITICAL|critical") {
                 Write-Host "  $trimmed" -ForegroundColor $script:Red
             } elseif ($trimmed -match "WARN|warn|WARNING|warning") {
@@ -734,7 +819,12 @@ function Show-ContainerLogs {
             Write-Host "  Following logs (Ctrl+C to stop)..." -ForegroundColor $script:Yellow
             Write-Divider $script:Cyan
             try {
-                docker compose --env-file "$script:EnvFile" -f "$script:ComposeFile" logs -f --tail 20 $ContainerName 2>&1
+                $cwd = ConvertTo-WslPath (Get-Location).Path
+                if ($script:UseWslDocker) {
+                    wsl -d $script:WslDistro --user root -- bash -lc "cd '$cwd' && docker compose --project-name $($script:ComposeProjectName) --env-file $($script:EnvFile) -f $($script:ComposeFile) logs -f --tail 20 $ContainerName"
+                } else {
+                    docker compose --project-name $script:ComposeProjectName --env-file "$script:EnvFile" -f "$script:ComposeFile" logs -f --tail 20 $ContainerName 2>&1
+                }
             } catch {
                 # User pressed Ctrl+C
             }

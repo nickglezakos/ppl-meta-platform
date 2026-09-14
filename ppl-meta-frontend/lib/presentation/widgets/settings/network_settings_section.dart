@@ -280,7 +280,7 @@ class NetworkSettingsSection extends ConsumerWidget {
   Widget _buildVpnContent(BuildContext context, WidgetRef ref, VpnStatus status) {
     if (!status.available && !status.hasTailscaleInstalled) return _buildVpnNotAvailable('Tailscale not installed on this device');
     if (status.connectedToOtherServer) return _buildVpnWrongServer(status);
-    if (!status.enrolled) return _buildVpnNotEnrolled();
+    if (!status.enrolled) return _buildVpnNotEnrolled(status);
     return _buildVpnActive(context, ref, status);
   }
 
@@ -306,24 +306,49 @@ class NetworkSettingsSection extends ConsumerWidget {
     );
   }
 
-  Widget _buildVpnNotEnrolled() {
+  Widget _buildVpnNotEnrolled(VpnStatus status) {
     final targetPlatform = defaultTargetPlatform;
     final os = switch (targetPlatform) { TargetPlatform.android => 'android', TargetPlatform.iOS => 'ios', TargetPlatform.linux => 'linux', TargetPlatform.macOS => 'macos', TargetPlatform.windows => 'windows', _ => 'linux' };
-    return _VpnEnrollmentCard(os: os, guide: tailscaleInstallGuide(os));
+    final guide = status.hasTailscaleInstalled
+        ? 'Tailscale CLI is installed, but this Node is not on the EyeNet mesh. '
+            'Enroll Now mints a tag:platform key and will not log out Tailscale.app.'
+        : tailscaleInstallGuide(os);
+    return _VpnEnrollmentCard(
+      os: os,
+      guide: guide,
+      tailscaleInstalled: status.hasTailscaleInstalled,
+    );
   }
 
   Widget _buildVpnWrongServer(VpnStatus status) {
-    return Container(
-      padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: AppColors.warning.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.warning.withValues(alpha: 0.5))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [const Icon(Icons.swap_horiz, color: AppColors.warning, size: 20), const SizedBox(width: 8), Expanded(child: Text('Switch Tailscale to EyeNet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.warning)))]),
-        const SizedBox(height: 8),
-        Text('Tailscale is running but connected to ${status.currentServer ?? "another coordination server"}. To join the EyeNet VPN mesh, switch to ${status.expectedServer ?? "https://vpn.eyenet-vision.com"}:', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+    final targetPlatform = defaultTargetPlatform;
+    final os = switch (targetPlatform) { TargetPlatform.android => 'android', TargetPlatform.iOS => 'ios', TargetPlatform.linux => 'linux', TargetPlatform.macOS => 'macos', TargetPlatform.windows => 'windows', _ => 'linux' };
+    final expected = status.expectedServer ?? 'https://vpn.eyenet-vision.com';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(color: AppColors.warning.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.warning.withValues(alpha: 0.5))),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [const Icon(Icons.swap_horiz, color: AppColors.warning, size: 20), const SizedBox(width: 8), Expanded(child: Text('Tailscale is on another network', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.warning)))]),
+            const SizedBox(height: 8),
+            Text(
+              'This machine is logged into ${status.currentServer ?? "another coordination server"} '
+              '(lab / Windows mesh). EyeNet uses $expected. Do not run tailscale logout — '
+              'that would drop the operator mesh. Join EyeNet with a second userspace daemon.',
+              style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            ),
+          ]),
+        ),
         const SizedBox(height: 12),
-        Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(6), border: Border.all(color: AppColors.border)), child: SelectableText('# Step 1: Disconnect from the other network\ntailscale logout\n\n# Step 2: Get an enrollment key from the authority\ncurl -s -X POST https://authority.eyenet-vision.com/api/v1/vpn/enroll-installation \\\n  -H "Content-Type: application/json" \\\n  -d \'{"installation_uuid":"<your-installation>","application_key":"<your-key>"}\'\n\n# Step 3: Connect to EyeNet headscale\ntailscale up \\\n  --login-server https://vpn.eyenet-vision.com \\\n  --auth-key <returned-hskey-auth-key> \\\n  --accept-routes', style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: AppColors.textPrimary))),
-        const SizedBox(height: 8),
-        const Text('You will get a new 100.64.x.x IP on the EyeNet mesh. Your existing IP from the other network will be released.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-      ]),
+        _VpnEnrollmentCard(
+          os: os,
+          guide: eyenetUserspaceEnrollGuide(expectedServer: expected),
+          tailscaleInstalled: true,
+          connectedToOtherServer: true,
+        ),
+      ],
     );
   }
 
@@ -431,7 +456,14 @@ class _VpnPeersCardState extends ConsumerState<_VpnPeersCard> {
 class _VpnEnrollmentCard extends StatefulWidget {
   final String os;
   final String guide;
-  const _VpnEnrollmentCard({required this.os, required this.guide});
+  final bool tailscaleInstalled;
+  final bool connectedToOtherServer;
+  const _VpnEnrollmentCard({
+    required this.os,
+    required this.guide,
+    this.tailscaleInstalled = false,
+    this.connectedToOtherServer = false,
+  });
   @override
   State<_VpnEnrollmentCard> createState() => _VpnEnrollmentCardState();
 }
@@ -448,14 +480,19 @@ class _VpnEnrollmentCardState extends State<_VpnEnrollmentCard> {
   @override
   Widget build(BuildContext context) {
     return Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: AppColors.warning.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.warning.withValues(alpha: 0.5))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [const Icon(Icons.vpn_lock_outlined, color: AppColors.warning, size: 20), const SizedBox(width: 8), const Expanded(child: Text('VPN Not Connected', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.warning)))]),
+      Row(children: [const Icon(Icons.vpn_lock_outlined, color: AppColors.warning, size: 20), const SizedBox(width: 8), Expanded(child: Text(widget.connectedToOtherServer ? 'Join EyeNet without logging out' : 'VPN Not Connected to EyeNet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.warning)))]),
       const SizedBox(height: 8),
-      const Text('This device is not enrolled in the EyeNet VPN mesh. Install Tailscale and enroll to connect with other installations.', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+      Text(widget.connectedToOtherServer
+          ? 'Mint a tag:platform key, then run the userspace command. Tailscale.app stays on its current mesh.'
+          : widget.tailscaleInstalled
+              ? 'This Node is not enrolled in the EyeNet VPN mesh. Enroll Now will not log out an existing Tailscale.app session.'
+              : 'This device is not enrolled in the EyeNet VPN mesh. Install Tailscale only if it is not already present, then enroll.',
+          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
       const SizedBox(height: 12),
       if (_key != null && _key!.enrolled) ...[
         Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.success.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppColors.success)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Row(children: [Icon(Icons.check_circle, color: AppColors.success, size: 18), SizedBox(width: 8), Expanded(child: Text('Enrolled!', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.success)))]), const SizedBox(height: 6), if (_key!.tailscaleIp != null) Text('VPN IP: ${_key!.tailscaleIp}', style: const TextStyle(fontFamily: 'monospace', fontSize: 12, fontWeight: FontWeight.w600)), if (_key!.matrixGroupId != null) Text('Matrix: ${_key!.matrixGroupId!.substring(0, 16)}...', style: const TextStyle(fontSize: 10, color: AppColors.textSecondary))])),
       ] else if (_key != null && !_key!.enrolled) ...[
-        Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.success.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppColors.success)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Row(children: [Icon(Icons.check_circle, color: AppColors.success, size: 16), SizedBox(width: 6), Text('Key ready — copy and run this command:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.success))]), const SizedBox(height: 8), SelectableText(_key!.tailscaleUpCommand, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: AppColors.textPrimary)), if (_key!.matrixGroupId != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text('Matrix: ${_key!.matrixGroupId!.substring(0, 16)}...', style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)))])),
+        Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.success.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppColors.success)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(Icons.check_circle, color: AppColors.success, size: 16), SizedBox(width: 6), Expanded(child: Text(_key!.autoEnrollSkipped ? 'Key ready — run this userspace command (do not logout):' : 'Key ready — copy and run this command:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.success)))]), if (_key!.message != null && _key!.message!.isNotEmpty) ...[const SizedBox(height: 6), Text(_key!.message!, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary))], const SizedBox(height: 8), SelectableText(_key!.tailscaleUpCommand, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: AppColors.textPrimary)), if (_key!.matrixGroupId != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text('Matrix: ${_key!.matrixGroupId!.substring(0, 16)}...', style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)))])),
       ] else if (_loading) ...[
         const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
       ] else ...[
@@ -469,7 +506,7 @@ class _VpnEnrollmentCardState extends State<_VpnEnrollmentCard> {
       ]),
       if (_error != null) ...[
         const SizedBox(height: 8),
-        Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.error.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppColors.error.withValues(alpha: 0.3))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('⚠ Automatic key generation failed', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.error)), const SizedBox(height: 4), Text('Error: $_error', style: TextStyle(fontSize: 10, color: AppColors.error)), const SizedBox(height: 8), const Text('Manual steps (admin):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary)), const SizedBox(height: 4), SelectableText('1. Go to https://authority.eyenet-vision.com/admin\n2. Open Data Console → VPN tab\n3. Click "Enrol device" on your installation\n4. Copy the key and run:\n\ntailscale logout\ntailscale up --login-server https://vpn.eyenet-vision.com \\\n  --auth-key <paste-key-here> \\\n  --accept-routes', style: const TextStyle(fontFamily: 'monospace', fontSize: 10, color: AppColors.textSecondary))])),
+        Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.error.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppColors.error.withValues(alpha: 0.3))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('⚠ Automatic key generation failed', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.error)), const SizedBox(height: 4), Text('Error: $_error', style: TextStyle(fontSize: 10, color: AppColors.error)), const SizedBox(height: 8), const Text('Manual steps (admin):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textPrimary)), const SizedBox(height: 4), SelectableText('1. Go to https://authority.eyenet-vision.com/admin\n2. Open Data Console → VPN tab\n3. Click "Enrol device" on your installation\n4. Copy the key and run a *userspace* daemon (do not logout):\n\nmkdir -p "\$HOME/.eyenet-tailscale"\ntailscaled --tun=userspace-networking --socket="\$HOME/.eyenet-tailscale/tailscaled.sock" --statedir="\$HOME/.eyenet-tailscale" &\nTS_SOCKET="\$HOME/.eyenet-tailscale/tailscaled.sock" tailscale up --login-server https://vpn.eyenet-vision.com --auth-key <paste-key-here> --accept-routes=false --accept-dns=false', style: const TextStyle(fontFamily: 'monospace', fontSize: 10, color: AppColors.textSecondary))])),
       ],
     ]));
   }

@@ -16,6 +16,9 @@ IMAGES=(
   ppl-meta-frontend
   ppl-meta-vision-protected
   ppl-meta-vmeta-protected
+  ppl-meta-cameras
+  ppl-meta-presence
+  ppl-meta-models
 )
 
 echo "Verifying platform release ${RELEASE_TAG} at ${REGISTRY}"

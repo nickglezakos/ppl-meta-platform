@@ -20,9 +20,9 @@ def setup_logging(
     
     # Setup log file path if not provided
     if log_file is None:
-        log_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "logs"
+        log_dir = os.environ.get("LOG_DIR") or os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "logs",
         )
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, "ppl-meta-gateway.log")

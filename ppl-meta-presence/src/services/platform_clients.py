@@ -37,6 +37,7 @@ except ImportError:
 class PlatformClients:
     def __init__(self) -> None:
         self.gateway_url = os.getenv("GATEWAY_SERVICE_URL", "http://localhost:8080").rstrip("/")
+        self.cameras_url = config.CAMERAS_SERVICE_URL
         self.communications_url = config.COMMUNICATIONS_SERVICE_URL
         self.service_name = "ppl-meta-presence"
         self.service_port = int(os.getenv("PRESENCE_SERVICE_PORT", "8011"))
@@ -170,7 +171,7 @@ class PlatformClients:
 
     async def list_cameras(self, token: str) -> list[dict[str, Any]]:
         data = await self._get_json(
-            "http://localhost:8005/api/v1/cameras/",
+            f"{self.cameras_url}/api/v1/cameras/",
             headers={"Authorization": f"Bearer {token}"},
             service_name="cameras",
         )
@@ -178,7 +179,7 @@ class PlatformClients:
 
     async def connect_camera(self, camera_id: str) -> Dict[str, Any]:
         response = await self._http_client.post(
-            f"http://localhost:8005/api/v1/cameras/{camera_id}/connect",
+            f"{self.cameras_url}/api/v1/cameras/{camera_id}/connect",
             headers=self._camera_service_headers(),
         )
         response.raise_for_status()
@@ -186,7 +187,7 @@ class PlatformClients:
 
     async def disconnect_camera(self, camera_id: str) -> Dict[str, Any]:
         response = await self._http_client.post(
-            f"http://localhost:8005/api/v1/cameras/{camera_id}/disconnect",
+            f"{self.cameras_url}/api/v1/cameras/{camera_id}/disconnect",
             headers=self._camera_service_headers(),
         )
         response.raise_for_status()
