@@ -196,7 +196,12 @@ def get_local_network_ips():
 
 
 def get_dynamic_allowed_hosts():
-    """Get dynamically detected allowed hosts for TrustedHostMiddleware."""
+    """Get dynamically detected allowed hosts for TrustedHostMiddleware.
+
+    Container-local IP detection only sees Docker bridge addresses. Mobile /
+    LAN clients hit the host via ADVERTISE_HOST (set by installers to the
+    machine LAN or Tailscale IP), so that value must be on the allow-list.
+    """
     base_hosts = [
         "localhost",
         "127.0.0.1",
@@ -206,7 +211,25 @@ def get_dynamic_allowed_hosts():
     ]
     network_ips = get_local_network_ips()
 
-    all_hosts = base_hosts + network_ips
+    advertise_host = (os.getenv("ADVERTISE_HOST") or "").strip()
+    extra_hosts = []
+    if advertise_host:
+        # Host header is hostname-only; strip optional port if present.
+        extra_hosts.append(advertise_host.split(":")[0])
+
+    for raw in (os.getenv("ALLOWED_HOSTS") or "").split(","):
+        host = raw.strip()
+        if host:
+            extra_hosts.append(host.split(":")[0])
+
+    # De-dupe while preserving order
+    all_hosts = []
+    seen = set()
+    for host in base_hosts + network_ips + extra_hosts:
+        if host and host not in seen:
+            seen.add(host)
+            all_hosts.append(host)
+
     logger.info("Dynamic allowed hosts: %s", all_hosts)
     return all_hosts
 

@@ -15,8 +15,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# PPL Meta Discovery Service URL
-DISCOVERY_SERVICE_URL = "http://localhost:8006"
+# PPL Meta Discovery Service URL (Docker DNS in compose; localhost for bare-metal)
+DISCOVERY_SERVICE_URL = os.getenv(
+    "DISCOVERY_SERVICE_URL", "http://ppl-meta-discovery:8006"
+).rstrip("/")
 
 # Service-token auth (Issue #8): must match shared/auth/service_auth.py / Discovery.
 INTERNAL_SERVICE_TOKEN = os.getenv(

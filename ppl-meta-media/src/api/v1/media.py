@@ -158,6 +158,21 @@ def _has_codec_issues(user_agent: str) -> bool:
     return False
 
 
+def _resolve_ffmpeg_binary() -> Optional[str]:
+    """Locate ffmpeg for Linux containers and local Mac/Homebrew installs."""
+    import shutil
+
+    for candidate in (
+        shutil.which("ffmpeg"),
+        "/usr/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/opt/homebrew/bin/ffmpeg",
+    ):
+        if candidate and Path(candidate).exists():
+            return candidate
+    return None
+
+
 def _get_android_compatible_file(original_path: Path, media_id: str) -> Path:
     """
     Generate (or reuse) an Android-compatible MP4 variant.
@@ -178,10 +193,21 @@ def _get_android_compatible_file(original_path: Path, media_id: str) -> Path:
             logger.info(f"🎬 ANDROID TRANSCODE: Using cached file {output_path}")
             return output_path
         
-        logger.info(f"🎬 ANDROID TRANSCODE: Cache miss or source newer, starting ffmpeg transcode...")
+        ffmpeg_bin = _resolve_ffmpeg_binary()
+        if not ffmpeg_bin:
+            logger.error(
+                "🎬 ANDROID TRANSCODE: ffmpeg not found on PATH "
+                "(/usr/bin/ffmpeg, /usr/local/bin/ffmpeg, /opt/homebrew/bin/ffmpeg)"
+            )
+            return original_path
+
+        logger.info(
+            f"🎬 ANDROID TRANSCODE: Cache miss or source newer, "
+            f"starting ffmpeg transcode via {ffmpeg_bin}..."
+        )
 
         cmd = [
-            "/opt/homebrew/bin/ffmpeg",
+            ffmpeg_bin,
             "-y",
             "-i",
             str(original_path),
@@ -213,10 +239,7 @@ def _get_android_compatible_file(original_path: Path, media_id: str) -> Path:
             "48",
             "-movflags",
             "+faststart",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "128k",
+            "-an",
             str(output_path),
         ]
 
@@ -1814,9 +1837,18 @@ async def stream_media_with_token(
     file_path = Path(access_info["file_path"])
     effective_mime_type = access_info["mime_type"]
 
-    # 🚀 Force transcode for ALL videos to ensure Android compatibility
-    logger.info(f"📽️ /stream-token endpoint: media_id={media_id}, media_type={media.media_type}")
-    if media.media_type == MediaType.VIDEO:
+    # 🚀 Force transcode for ALL videos to ensure Android compatibility.
+    # ORM Media.media_type is models.MediaType; this module imports schemas.MediaType —
+    # those are different Enum classes, so == MediaType.VIDEO is always False.
+    media_type_val = getattr(media.media_type, "value", media.media_type)
+    is_video = (
+        str(media_type_val).lower() == "video"
+        or str(media.media_type).lower().endswith(".video")
+    )
+    logger.info(
+        f"📽️ /stream-token endpoint: media_id={media_id}, media_type={media.media_type}, is_video={is_video}"
+    )
+    if is_video:
         logger.info(f"📽️ /stream-token: Forcing Android-compatible transcode for {media_id}")
         transcoded_path = _get_android_compatible_file(file_path, media_id)
         if transcoded_path != file_path:

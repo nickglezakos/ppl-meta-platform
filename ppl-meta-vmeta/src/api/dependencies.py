@@ -70,9 +70,11 @@ async def get_current_user(
         is_valid = await verify_jwt_token(token)
         
         if not is_valid:
+            # Avoid "invalid token" wording — older frontends clear the whole
+            # session when any API returns that phrase, including MVR preview.
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired authentication token",
+                detail="VMeta rejected the request credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
@@ -82,7 +84,7 @@ async def get_current_user(
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
+                detail="VMeta could not resolve request credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         

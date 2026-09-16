@@ -20,6 +20,11 @@ alembic==1.11.1
 # Microservices dependencies
 psutil>=5.9.0  # System monitoring
 httpx>=0.24.0  # HTTP client for service-to-service communication
+aiohttp>=3.9.0
+requests>=2.31.0
+redis>=5.0.0
+python-consul>=1.1.0
+tenacity>=8.0.0
 
 # Metrics collection
 prometheus-client>=0.19.0
@@ -33,7 +38,8 @@ python-magic>=0.4.27
 moviepy>=1.0.3
 
 # Face detection dependencies
-opencv-python>=4.8.0
+# OpenCV 5.x wheels used here omit CascadeClassifier; pin to 4.x for Haar.
+opencv-python-headless>=4.8.0,<5
 numpy>=1.24.0
 dlib-bin>=19.24.0
 

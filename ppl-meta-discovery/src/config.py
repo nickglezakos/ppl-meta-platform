@@ -63,6 +63,12 @@ class Settings(BaseSettings):
     VPN_DISCOVERY_ENABLED: bool = True
     TAILSCALE_DOMAINS: List[str] = ["*.tailnet.ts.net"]
     OPENVPN_RANGES: List[str] = ["10.8.0.0/24", "192.168.255.0/24"]
+
+    # Host IP (LAN or Tailscale) that mobile / LAN clients should use.
+    # Required when discovery runs inside Docker/WSL/Lima: without this,
+    # get_machine_ip() returns a Docker-bridge address (e.g. 172.18.0.x)
+    # that phones cannot reach. Set by installers to the host machine IP.
+    ADVERTISE_HOST: str = ""
     
     # Logging Configuration  
     LOG_LEVEL: str = "INFO"

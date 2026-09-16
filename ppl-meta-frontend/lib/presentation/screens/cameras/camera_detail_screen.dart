@@ -492,7 +492,7 @@ class _CameraDetailScreenState extends ConsumerState<CameraDetailScreen> {
       final collectionId = await ref.read(cameraCollectionIdProvider(cameraId).future);
       if (collectionId != null && mounted) {
         // Navigate to collections screen with collection ID as query parameter
-        context.go('/collections?collectionId=$collectionId');
+        context.go('/collections?initialCollectionId=$collectionId');
       } else {
         _showSnackBar('Collection not found for this camera.');
       }

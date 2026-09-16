@@ -1,0 +1,65 @@
+# Lima Ubuntu guest for EyeNet platform smoke testing on Apple Silicon.
+# Images are linux/amd64; Docker installs qemu-user-static for emulation.
+vmType: vz
+rosetta:
+  enabled: true
+  binfmt: true
+cpus: 4
+memory: "8GiB"
+disk: "24GiB"
+mounts:
+- location: "~/Documents/ppl-meta-code"
+  writable: true
+- location: "/tmp/lima"
+  writable: true
+# Publish platform ports on all Mac interfaces (not only 127.0.0.1) so phones
+# on the same LAN can reach discovery / gateway / cameras during onboarding.
+portForwards:
+- guestPort: 8006
+  hostPort: 8006
+  hostIP: "0.0.0.0"
+- guestPort: 8080
+  hostPort: 8080
+  hostIP: "0.0.0.0"
+- guestPort: 8001
+  hostPort: 8001
+  hostIP: "0.0.0.0"
+- guestPort: 8005
+  hostPort: 8005
+  hostIP: "0.0.0.0"
+- guestPort: 8000
+  hostPort: 8000
+  hostIP: "0.0.0.0"
+- guestPort: 3000
+  hostPort: 3000
+  hostIP: "0.0.0.0"
+- guestPort: 8009
+  hostPort: 8009
+  hostIP: "0.0.0.0"
+- guestPort: 8011
+  hostPort: 8011
+  hostIP: "0.0.0.0"
+containerd:
+  system: false
+  user: false
+images:
+- location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+  arch: "aarch64"
+provision:
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    if ! command -v docker >/dev/null 2>&1; then
+      apt-get update -y
+      apt-get install -y ca-certificates curl gnupg
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      chmod a+r /etc/apt/keyrings/docker.gpg
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+      apt-get update -y
+      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin qemu-user-static binfmt-support
+    fi
+    usermod -aG docker "$LIMA_CIDATA_USER" || true
+    systemctl enable --now docker

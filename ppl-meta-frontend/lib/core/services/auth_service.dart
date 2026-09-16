@@ -328,9 +328,17 @@ class AuthService {
     }
   }
 
-  /// Get the current stored token for auth provider
+  /// Get the current auth token (storage first, then in-memory ApiClient).
   Future<String?> getToken() async {
-    return await _getStoredToken();
+    final stored = await _getStoredToken();
+    if (stored != null && stored.isNotEmpty) {
+      return stored;
+    }
+    final memory = _apiClient.authToken;
+    if (memory != null && memory.isNotEmpty) {
+      return memory;
+    }
+    return null;
   }
 
   // Request password reset email

@@ -24,6 +24,21 @@ class VisionDatabase:
 
     def _get_connection_params(self) -> Dict[str, Any]:
         """Get database connection parameters."""
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        if database_url.startswith("postgresql://") or database_url.startswith(
+            "postgres://"
+        ):
+            # postgresql://user:pass@host:port/db
+            from urllib.parse import urlparse
+
+            parsed = urlparse(database_url)
+            return {
+                "host": parsed.hostname or "localhost",
+                "port": int(parsed.port or 5432),
+                "database": (parsed.path or "/").lstrip("/") or "ppl_vision_db",
+                "user": parsed.username or "postgres",
+                "password": parsed.password or "",
+            }
         return {
             "host": os.getenv("DB_HOST", "localhost"),
             "port": int(os.getenv("DB_PORT", "5432")),

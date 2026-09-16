@@ -105,4 +105,25 @@ update_check_response = client.post('/api/v1/installations/check-update', json={
 assert update_check_response.status_code == 200
 assert update_check_response.json()['installation_uuid'] == settings_payload['installation_uuid']
 
+placeholder_key = 'lic_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+placeholder_entitlement = client.post('/api/v1/admin/installations', json={
+    'application_key': placeholder_key,
+    'approved_owner_email': 'owner.placeholder@example.com',
+    'owner_enabled': True,
+    'licence_status': 'active',
+    'tenant_name': 'Placeholder Tenant',
+    'installation_uuid': 'owner.placeholder@example.com-0',
+    'activation_status': 'active',
+}, headers=admin_headers)
+assert placeholder_entitlement.status_code == 200
+
+placeholder_rebind = client.post('/api/v1/installations/activate', json={
+    'application_key': placeholder_key,
+    'installation_uuid': 'windows-lab-real-uuid',
+    'owner_email': 'owner.placeholder@example.com',
+})
+assert placeholder_rebind.status_code == 200
+assert placeholder_rebind.json()['approved'] is True
+assert placeholder_rebind.json()['installation_uuid'] == 'windows-lab-real-uuid'
+
 print('Authority activation contract validation passed.')

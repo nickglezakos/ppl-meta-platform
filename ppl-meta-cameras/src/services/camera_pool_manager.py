@@ -87,10 +87,28 @@ class CameraPoolManager:
         self.redis_client = None
         if REDIS_AVAILABLE:
             try:
-                self.redis_client = redis.Redis(
-                    host='localhost', port=6379, db=0, 
-                    decode_responses=True, socket_timeout=1
-                )
+                import os
+                from urllib.parse import urlparse
+
+                redis_url = os.getenv("REDIS_URL", "").strip()
+                if redis_url:
+                    parsed = urlparse(redis_url)
+                    self.redis_client = redis.Redis(
+                        host=parsed.hostname or "redis",
+                        port=int(parsed.port or 6379),
+                        db=int((parsed.path or "/0").lstrip("/") or 0),
+                        password=parsed.password,
+                        decode_responses=True,
+                        socket_timeout=1,
+                    )
+                else:
+                    self.redis_client = redis.Redis(
+                        host=os.getenv("REDIS_HOST", "localhost"),
+                        port=int(os.getenv("REDIS_PORT", "6379")),
+                        db=0,
+                        decode_responses=True,
+                        socket_timeout=1,
+                    )
                 self.redis_client.ping()
                 logger.info("🎯 [CAMERA-POOL] Redis connected for distributed state")
             except Exception as e:

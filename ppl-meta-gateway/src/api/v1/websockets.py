@@ -4,15 +4,96 @@ WebSocket endpoints for real-time data streaming
 
 import asyncio
 import json
-from typing import Set
+from typing import Optional, Set
+from urllib.parse import urlencode
+
+import os
 
 import redis.asyncio as aioredis
+import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/ws", tags=["websockets"])
+
+# Camera status WS lives at /api/v1/cameras/ws/... (no /ws prefix).
+cameras_status_proxy_router = APIRouter(tags=["camera-status-ws-proxy"])
+
+
+def _cameras_service_base() -> str:
+    return os.getenv("CAMERAS_SERVICE_URL", "http://ppl-meta-cameras:8005").rstrip("/")
+
+
+def _cameras_ws_upstream(path_suffix: str, query_params) -> str:
+    """Build ws://cameras-service URL for status websocket proxying."""
+    base = _cameras_service_base()
+    if base.startswith("https://"):
+        ws_base = "wss://" + base[len("https://") :]
+    elif base.startswith("http://"):
+        ws_base = "ws://" + base[len("http://") :]
+    else:
+        ws_base = base
+    query = urlencode([(k, v) for k, v in query_params.items()])
+    url = f"{ws_base}/api/v1/cameras{path_suffix}"
+    return f"{url}?{query}" if query else url
+
+
+async def _proxy_camera_status_websocket(client_ws: WebSocket, path_suffix: str) -> None:
+    """Bidirectional proxy between browser and cameras status websocket."""
+    await client_ws.accept()
+    upstream_url = _cameras_ws_upstream(path_suffix, client_ws.query_params)
+    logger.info(f"Proxying camera status WS -> {upstream_url.split('?')[0]}")
+
+    try:
+        async with websockets.connect(upstream_url, open_timeout=10) as upstream_ws:
+
+            async def client_to_upstream() -> None:
+                try:
+                    while True:
+                        message = await client_ws.receive_text()
+                        await upstream_ws.send(message)
+                except WebSocketDisconnect:
+                    await upstream_ws.close()
+                except Exception:
+                    try:
+                        await upstream_ws.close()
+                    except Exception:
+                        pass
+
+            async def upstream_to_client() -> None:
+                try:
+                    async for message in upstream_ws:
+                        if isinstance(message, bytes):
+                            await client_ws.send_bytes(message)
+                        else:
+                            await client_ws.send_text(message)
+                except Exception:
+                    try:
+                        await client_ws.close()
+                    except Exception:
+                        pass
+
+            await asyncio.gather(client_to_upstream(), upstream_to_client())
+    except Exception as e:
+        logger.error(f"Camera status WS proxy error: {e}")
+        try:
+            await client_ws.close(code=1011)
+        except Exception:
+            pass
+
+
+@cameras_status_proxy_router.websocket("/cameras/ws/status")
+async def proxy_all_cameras_status_ws(websocket: WebSocket):
+    """Proxy /api/v1/cameras/ws/status to the cameras service."""
+    await _proxy_camera_status_websocket(websocket, "/ws/status")
+
+
+@cameras_status_proxy_router.websocket("/cameras/ws/status/{device_id}")
+async def proxy_one_camera_status_ws(websocket: WebSocket, device_id: str):
+    """Proxy /api/v1/cameras/ws/status/{device_id} to the cameras service."""
+    await _proxy_camera_status_websocket(websocket, f"/ws/status/{device_id}")
 
 
 class ConnectionManager:

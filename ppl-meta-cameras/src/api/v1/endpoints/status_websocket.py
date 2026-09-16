@@ -181,6 +181,9 @@ async def camera_status_websocket(
     token = websocket.query_params.get("token")
     
     if not token:
+        # Must accept before close; otherwise Starlette returns HTTP 403 during handshake
+        # and the Flutter UI treats it as a hard page failure.
+        await websocket.accept()
         await websocket.close(code=1008, reason="Missing authentication token")
         return
     
@@ -257,6 +260,9 @@ async def all_cameras_status_websocket(
     token = websocket.query_params.get("token")
     
     if not token:
+        # Must accept before close; otherwise Starlette returns HTTP 403 during handshake
+        # and the Flutter UI treats it as a hard page failure.
+        await websocket.accept()
         await websocket.close(code=1008, reason="Missing authentication token")
         return
     

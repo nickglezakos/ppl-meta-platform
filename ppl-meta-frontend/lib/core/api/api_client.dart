@@ -95,25 +95,21 @@ class ApiClient {
                   final retryResponse = await _dio.fetch(retryRequest);
                   return handler.resolve(retryResponse);
                 } catch (_) {
+                  // Retry failed, but silent login already minted a valid token.
+                  // Never clear it because of a downstream resource failure.
+                  print('⚠️ ApiClient: Retry after silent reauth failed on $path; keeping new token');
+                  return handler.next(error);
                 }
               }
             }
             
+            // Only clear the session when Node identity endpoints reject the token.
+            // Downstream services (vmeta/media/cameras) often return 401 with
+            // "invalid token" wording when their JWT secret/config is wrong;
+            // clearing here logs the user out during video preview.
             if (isAuthEndpoint) {
               shouldClearToken = true;
               print('🔓 ApiClient: $statusCode on auth endpoint: $path, clearing token');
-            }
-            
-            // Check if server explicitly said authentication failed
-            if (error.response?.data is Map) {
-              final detail = error.response?.data['detail']?.toString().toLowerCase() ?? '';
-              if (detail.contains('validate token') || 
-                  detail.contains('not authenticated') ||
-                  detail.contains('authentication required') ||
-                  detail.contains('invalid token')) {
-                shouldClearToken = true;
-                print('🔓 ApiClient: Server reported authentication failure ($statusCode): $detail, clearing token');
-              }
             }
             
             if (shouldClearToken) {

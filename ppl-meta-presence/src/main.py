@@ -12,20 +12,21 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.presence_routes import build_internal_router, build_presence_router
 from config import config
-from database import test_connection
+from database import create_tables, test_connection
 from services.presence_service import PresenceService
 
 workspace_root = Path(__file__).resolve().parents[2]
 if str(workspace_root) not in sys.path:
     sys.path.insert(0, str(workspace_root))
 
+# Register ORM models, then create tables before PresenceService loads sessions.
+import models.persistence_models  # noqa: F401
+create_tables()
 presence_service = PresenceService()
 
 
 @asynccontextmanager
 async def lifespan(_application: FastAPI):
-    from database import create_tables
-
     create_tables()  # idempotent: creates any missing tables (incl. people profiles)
     await presence_service.startup()
     yield

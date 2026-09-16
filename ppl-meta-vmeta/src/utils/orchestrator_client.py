@@ -11,13 +11,17 @@ Version: 1.0.0
 
 import logging
 import httpx
+import os
 from typing import Optional, List, Dict
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
 # Orchestrator service configuration
-ORCHESTRATOR_BASE_URL = "http://localhost:8002"  # TODO: Load from env
+ORCHESTRATOR_BASE_URL = os.getenv(
+    "ORCHESTRATOR_SERVICE_URL",
+    os.getenv("PPL_ORCHESTRATOR_URL", "http://ppl-meta-orchestrator:8002"),
+).rstrip("/")
 ORCHESTRATOR_TIMEOUT = 30.0  # seconds
 
 

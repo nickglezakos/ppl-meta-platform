@@ -4,7 +4,7 @@ This directory contains the first MVP installer bundle for Windows deployments.
 
 Current release pin (tracks repository root `VERSION`):
 
-- `2.25.80`
+- `2.25.81`
 - registry: `ghcr.io/nickglezakos/ppl-meta-platform`
 - architecture: **`linux/amd64`** (Intel/AMD Windows PCs via Docker Desktop)
 - host standard: **≥16 GB physical RAM**
@@ -14,15 +14,15 @@ Current release pin (tracks repository root `VERSION`):
 Release verification:
 
 ```bash
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.25.80
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-media:2.25.80
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-gateway:2.25.80
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-orchestrator:2.25.80
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-discovery:2.25.80
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-communications:2.25.80
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-frontend:2.25.80
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vision-protected:2.25.80
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vmeta-protected:2.25.80
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.25.81
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-media:2.25.81
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-gateway:2.25.81
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-orchestrator:2.25.81
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-discovery:2.25.81
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-communications:2.25.81
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-frontend:2.25.81
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vision-protected:2.25.81
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vmeta-protected:2.25.81
 ```
 
 Verify that each manifest shows `"architecture": "amd64"` and `"os": "linux"`.
@@ -43,8 +43,19 @@ Verify that each manifest shows `"architecture": "amd64"` and `"os": "linux"`.
 - `install-eyenet-wsl.bat` / `install-eyenet-wsl.ps1`: one-time WSL runtime bootstrap
 - `install-platform.bat`: Double-click installer and management console
 - `install-platform.ps1`: PowerShell alternative (WSL docker-aware)
-- `docker-compose.windows-installer.yml`: pinned-image compose with memory budgets
+- `docker-compose.windows-installer.yml`: pinned-image compose with memory budgets (`pgvector/pgvector:pg15`)
 - `.env.windows.template`: environment template (`RELEASE_TAG` must match `VERSION`)
+- `schema/`: **vendored DB migrations** (synced from the monorepo) — installer always applies + verifies
+
+## Database schema (installer always matches repo)
+
+Before releasing or testing installs, refresh the pack from the monorepo:
+
+```bash
+bash deployment/mac-lima/sync-schema-pack.sh
+```
+
+`install-platform.ps1` runs `schema/apply.sh` after Postgres is healthy and **fails the install** if `schema/verify.sh` invariants do not pass. Do not use `deployment/mac-lima/sql/archive-stubs`.
 
 ## Build And Push
 
@@ -63,7 +74,7 @@ After the platform starts:
 2. When bootstrap is pending, the app routes to `/bootstrap`
 3. Activate with the Authority-approved owner email and `lic_…` application key
 
-For the current release pin, generated `.env.windows` should keep `RELEASE_TAG=2.25.80` unless you intentionally deploy another published tag.
+For the current release pin, generated `.env.windows` should keep `RELEASE_TAG=2.25.81` unless you intentionally deploy another published tag.
 
 ## Preferred runtime (full-product demo)
 
@@ -87,7 +98,7 @@ Or GitHub → Packages → each `ppl-meta-*` → Package settings → Change vis
 Customers then only need network access:
 
 ```bash
-docker pull ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.25.80
+docker pull ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.25.81
 ```
 
 ## Related Policy

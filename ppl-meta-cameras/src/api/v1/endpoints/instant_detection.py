@@ -35,7 +35,9 @@ def get_instant_detection_manager() -> InstantDetectionSampler:
     
     if _instant_detection_manager is None:
         _instant_detection_manager = InstantDetectionSampler(
-            vision_service_url="http://localhost:8003",
+            vision_service_url=os.getenv(
+                "VISION_SERVICE_URL", "http://ppl-meta-vision:8003"
+            ),
             sampling_interval=5,
             temporal_window=1.0
         )
@@ -95,7 +97,7 @@ async def get_instant_results(
         import redis
         import json
         
-        r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+        r = redis.Redis(host=__import__('os').getenv('REDIS_HOST','redis'), port=int(__import__('os').getenv('REDIS_PORT','6379')), decode_responses=False)
         cache_key = f"instant_detection:{camera_id}"
         cached_bytes = r.get(cache_key)
         
@@ -261,10 +263,15 @@ async def start_instant_detection(
         # Load per-camera pipeline settings for storage configuration
         storage_multiple = camera.storage_multiple if camera.storage_multiple is not None else 1
         session_duration = camera.tracking_session_duration_minutes if camera.tracking_session_duration_minutes is not None else 0
+        from src.services.instant_detection import _clamp_sampling_interval
+        sampling_interval = _clamp_sampling_interval(
+            getattr(camera, "instant_detection_interval_seconds", None),
+            default=manager.sampling_interval,
+        )
 
         # Create tracking session in VMeta for this detection run
         session_uuid = str(uuid.uuid4())
-        vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+        vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008")
         # Build service-to-service auth token
         internal_service_token = os.getenv(
             "INTERNAL_SERVICE_TOKEN",
@@ -295,7 +302,11 @@ async def start_instant_detection(
             logger.warning(f"⚠️ Could not create tracking session in VMeta: {e}")
 
         # Start sampling — the manager creates per-camera state internally
-        manager.start_sampling(camera_id, camera_path)
+        manager.start_sampling(
+            camera_id,
+            camera_path,
+            sampling_interval=sampling_interval,
+        )
 
         # Configure per-camera state that was just created
         with manager._lock:
@@ -305,6 +316,7 @@ async def start_instant_detection(
                 state.session_started_at = datetime.utcnow()
                 state.storage_multiple = storage_multiple
                 state.session_duration_minutes = session_duration
+                state.sampling_interval = sampling_interval
                 state.cycle_counter = 0
                 state.auth_token = internal_service_token
         
@@ -312,7 +324,7 @@ async def start_instant_detection(
             "success": True,
             "message": f"Instant detection started for camera {camera_id}",
             "camera_id": camera_id,
-            "sampling_interval": manager.sampling_interval,
+            "sampling_interval": sampling_interval,
             "temporal_window": manager.temporal_window,
             "session_uuid": session_uuid,
             "storage_multiple": storage_multiple,
@@ -339,7 +351,7 @@ async def stop_instant_detection(
     """
     try:
         # Complete tracking sessions for all active cameras in VMeta before stopping
-        vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+        vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008")
         stop_token = os.getenv(
             "INTERNAL_SERVICE_TOKEN",
             "ppl-meta-internal-service-secret-key-change-in-production",
@@ -403,7 +415,7 @@ async def stop_instant_detection_for_camera(
         if state and state.running:
             # Complete tracking session in VMeta before stopping
             if state.session_uuid:
-                vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+                vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008")
                 stop_token = os.getenv(
                     "INTERNAL_SERVICE_TOKEN",
                     "ppl-meta-internal-service-secret-key-change-in-production",

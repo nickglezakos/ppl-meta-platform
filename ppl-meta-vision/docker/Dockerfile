@@ -3,15 +3,16 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (OpenBLAS helps dlib runtime)
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+    curl \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender-dev \
     libgomp1 \
-    libglib2.0-0 \
+    libopenblas0 \
     cmake \
     build-essential \
     && rm -rf /var/lib/apt/lists/*

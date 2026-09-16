@@ -37,6 +37,8 @@ class RecordingSession(Base):
         String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
     camera_id = Column(Integer, ForeignKey("cameras.id"), nullable=False)
+    # Shared DB also used by orchestrator; that schema requires camera_device_id NOT NULL.
+    camera_device_id = Column(String(100), nullable=True, index=True)
     user_id = Column(String(100), nullable=False)
     status = Column(
         String(20), nullable=False, default="active"

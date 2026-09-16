@@ -108,11 +108,14 @@ from pydantic import BaseModel, Field
 import os
 from logging.handlers import RotatingFileHandler
 
-# Create logs directory if it doesn't exist
-# Use absolute path to workspace root
-workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-log_dir = os.path.join(workspace_root, "logs")
-os.makedirs(log_dir, exist_ok=True)
+# Prefer /app/logs in containers; never resolve to filesystem root.
+workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+log_dir = os.getenv("LOG_DIR", os.path.join(workspace_root, "logs"))
+try:
+    os.makedirs(log_dir, exist_ok=True)
+except PermissionError:
+    log_dir = "/tmp/ppl-meta-vision-logs"
+    os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, "ppl-meta-vision.log")
 
 logging.basicConfig(
@@ -199,29 +202,42 @@ async def trigger_ppl_thread_workflow_auto(
         )
 
 
-# PPL Meta Platform Configuration
+# JWT Configuration (should match Node service and Gateway config)
+import os
+
+JWT_SECRET_KEY = os.getenv(
+    "SECRET_KEY", "ppl-meta-secret-key-development-only-change-in-production"
+)
+JWT_ALGORITHM = "HS256"
+
+# PPL Meta Platform Configuration — prefer Docker service DNS over localhost.
 PPL_META_CONFIG = {
     "vision_service": {
-        "port": 8003,
+        "port": int(os.getenv("VISION_PORT", "8003")),
         "host": "0.0.0.0",
         "name": "ppl-meta-vision",
         "version": "1.1.0",  # Updated for media integration
     },
     "media_service": {
-        "url": "http://localhost:8080",
+        # Direct media service (not Gateway) for service-to-service frame fetch.
+        "url": os.getenv(
+            "MEDIA_SERVICE_URL",
+            "http://ppl-meta-media:8000",
+        ),
         "timeout": 30,
-    },  # Use Gateway URL for media access
-    "gateway": {"url": "http://localhost:8080", "health_endpoint": "/health"},
+    },
+    "gateway": {
+        "url": os.getenv(
+            "GATEWAY_SERVICE_URL",
+            os.getenv("GATEWAY_URL", "http://ppl-meta-gateway:8080"),
+        ),
+        "health_endpoint": "/health",
+    },
     "orchestrator": {
-        "url": "http://localhost:8002",
+        "url": os.getenv("ORCHESTRATOR_URL", "http://ppl-meta-orchestrator:8002"),
         "register_endpoint": "/services/register",
     },
 }
-
-# JWT Configuration (should match Node service and Gateway config)
-import os
-JWT_SECRET_KEY = os.getenv("SECRET_KEY", "ppl-meta-secret-key-development-only-change-in-production")
-JWT_ALGORITHM = "HS256"
 
 
 def extract_user_id_from_token(authorization_header: str) -> Optional[str]:
@@ -265,8 +281,20 @@ def get_user_uuid_from_profile(authorization_header: str) -> Optional[str]:
             uuid = profile_data.get("guid")
             return uuid  # UUID is in 'guid' field
 
+        # Fallback: decode JWT claims when Gateway profile is unreachable.
+        token = authorization_header.split(" ", 1)[1]
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        for key in ("guid", "user_uuid", "uuid"):
+            value = payload.get(key)
+            if value and isinstance(value, str) and len(value) >= 32:
+                return value
+        # Node JWTs often put numeric user_id in `sub` — still usable for media
+        # ownership checks when media accepts integer user ids as strings.
+        sub = payload.get("sub")
+        if sub is not None:
+            return str(sub)
         return None
-    except Exception as e:
+    except Exception:
         return None
 
 
@@ -675,14 +703,14 @@ async def detect_objects_frame(
     model_id: str = "body-yolo-pose-os",
     version: str = "1.0.0",
     conf: float = 0.25,
-    media_id: str | None = None,
-    session_uuid: str | None = None,
-    frame_number: int | None = None,
-    timestamp: float | None = None,
+    media_id: Optional[str] = None,
+    session_uuid: Optional[str] = None,
+    frame_number: Optional[int] = None,
+    timestamp: Optional[float] = None,
     persist: bool = False,
     path: str = "instant",
     capability: str = "body_detection",
-    class_ids: str | None = None,
+    class_ids: Optional[str] = None,
 ):
     """
     Object detection path — writes object_detections only (never face_detections).
@@ -760,11 +788,11 @@ async def detect_objects_frame(
 async def ocr_license_plate_crop(
     file: UploadFile = File(...),
     persist: bool = False,
-    media_id: str | None = None,
-    session_uuid: str | None = None,
-    frame_number: int | None = None,
-    timestamp: float | None = None,
-    vehicle_bbox: str | None = None,
+    media_id: Optional[str] = None,
+    session_uuid: Optional[str] = None,
+    frame_number: Optional[int] = None,
+    timestamp: Optional[float] = None,
+    vehicle_bbox: Optional[str] = None,
 ):
     """
     Run plate localization + OCR on a vehicle crop image.
@@ -816,8 +844,8 @@ async def ocr_license_plate_crop(
 
 @app.get("/api/v1/object-detections/by-frame", summary="Body detections grouped by frame")
 async def get_object_detections_by_frame(
-    session_uuid: str | None = None,
-    media_id: str | None = None,
+    session_uuid: Optional[str] = None,
+    media_id: Optional[str] = None,
 ):
     global vision_db
     from object_detections import bodies_by_frame
@@ -832,9 +860,9 @@ async def get_object_detections_by_frame(
 
 @app.get("/api/v1/object-detections", summary="List object detections")
 async def get_object_detections(
-    session_uuid: str | None = None,
-    media_id: str | None = None,
-    capability: str | None = "body_detection",
+    session_uuid: Optional[str] = None,
+    media_id: Optional[str] = None,
+    capability: Optional[str] = "body_detection",
 ):
     global vision_db
     from object_detections import list_object_detections
@@ -851,7 +879,7 @@ async def get_object_detections(
 async def _fetch_media_file_for_process(
     *,
     media_id: str,
-    media_url: str | None,
+    media_url: Optional[str],
     request: Request,
     tmp_path: str,
 ) -> None:
@@ -860,7 +888,7 @@ async def _fetch_media_file_for_process(
 
     import httpx
 
-    media_base = os.getenv("MEDIA_SERVICE_URL", "http://localhost:8000").rstrip("/")
+    media_base = os.getenv("MEDIA_SERVICE_URL", "http://ppl-meta-media:8000").rstrip("/")
     fetch_headers = {
         k: v
         for k, v in request.headers.items()
@@ -984,12 +1012,12 @@ async def _fetch_media_file_for_process(
 async def process_media_bodies(
     request: Request,
     media_id: str,
-    media_url: str | None = None,
+    media_url: Optional[str] = None,
     model_id: str = "body-yolo-pose-os",
     version: str = "1.0.0",
     frame_interval: int = 10,
-    session_uuid: str | None = None,
-    camera_id: str | None = None,
+    session_uuid: Optional[str] = None,
+    camera_id: Optional[str] = None,
     materialize: bool = True,
     conf: float = 0.25,
 ):
@@ -1546,7 +1574,7 @@ async def process_media_from_service(
                     session_request = FaceDetectionSessionRequest(
                         media_uuid=media_id,
                         camera_device_uuid=camera_device_uuid,
-                        session_type="upload" if media_type == "image" else "batch",
+                        session_type="upload" if media_type == "image" else "bulk_processing",
                         metadata={
                             "media_url": media_url,
                             "media_type": media_type,
@@ -1927,7 +1955,7 @@ async def store_bulk_faces(
                     session_request = FaceDetectionSessionRequest(
                         media_uuid=media_id,
                         camera_device_uuid=camera_device_uuid,
-                        session_type="batch",
+                        session_type="bulk_processing",
                         metadata={
                             "total_frames": faces_data.get("total_frames", 0),
                             "duration": faces_data.get("duration", 0.0),
@@ -2475,7 +2503,7 @@ async def bulk_process_video_faces(
                     session_request = FaceDetectionSessionRequest(
                         media_uuid=media_id,
                         camera_device_uuid=camera_device_uuid,
-                        session_type="batch",
+                        session_type="bulk_processing",
                         metadata={
                             "frame_interval": frame_interval,
                             "max_frames": max_frames,
@@ -2536,14 +2564,20 @@ async def bulk_process_video_faces(
                         pass
                 raise HTTPException(status_code=401, detail="Authentication required")
 
-        # Prepare headers for media service requests
+        # Prepare headers for media service requests.
+        # Prefer caller Authorization; for internal service calls also try
+        # media without user filter when the system UUID is used.
         headers = {"Authorization": authorization} if authorization else {}
         media_service_url = PPL_META_CONFIG["media_service"]["url"]
 
         # Get media info first (service-to-service call with user_id for access control)
         # For internal service requests, use system user UUID; for user requests, use their UUID
         media_url = f"{media_service_url}/api/v1/media/{media_id}?user_id={user_uuid}"
-        media_response = requests.get(media_url, headers=headers)
+        media_response = requests.get(media_url, headers=headers, timeout=30)
+        if media_response.status_code in (401, 403) and is_internal_service:
+            # Media may not accept the internal token — retry without auth using media_id only.
+            media_url = f"{media_service_url}/api/v1/media/{media_id}"
+            media_response = requests.get(media_url, timeout=30)
         if media_response.status_code != 200:
             # Complete session with error if applicable
             if session_mgr and session_uuid:

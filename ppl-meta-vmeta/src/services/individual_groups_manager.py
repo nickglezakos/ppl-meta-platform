@@ -50,7 +50,7 @@ class IndividualGroupsManager:
             db_client: VmetaDatabaseClient instance for database operations
         """
         self.db = db_client
-        self.media_service_url = os.getenv("MEDIA_SERVICE_URL", "http://localhost:8000")
+        self.media_service_url = os.getenv("MEDIA_SERVICE_URL", "http://ppl-meta-media:8000")
         logger.info("IndividualGroupsManager initialized")
     
     @staticmethod

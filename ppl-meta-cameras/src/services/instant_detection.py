@@ -163,7 +163,7 @@ def _delete_instant_detection_redis_cache(camera_id: Optional[str] = None) -> No
     try:
         import redis
 
-        redis_client = redis.Redis(host='localhost', port=6379, decode_responses=False)
+        redis_client = redis.Redis(host=__import__('os').getenv('REDIS_HOST','redis'), port=int(__import__('os').getenv('REDIS_PORT','6379')), decode_responses=False)
         if camera_id:
             redis_client.delete(f"instant_detection:{camera_id}")
             return
@@ -270,6 +270,18 @@ class CameraSamplerState:
     session_uuid: Optional[str] = None
     auth_token: Optional[str] = None
     stagger_offset: float = 0.0
+    pending_task_id: Optional[str] = None
+    # Per-camera cycle period (seconds). Overrides manager default.
+    sampling_interval: int = 5
+
+
+def _clamp_sampling_interval(seconds: Optional[int], default: int = 5) -> int:
+    """Clamp instant-detection cycle interval to the supported 1–60s range."""
+    try:
+        value = int(seconds) if seconds is not None else default
+    except (TypeError, ValueError):
+        value = default
+    return max(1, min(60, value))
 
 
 class InstantDetectionSampler:
@@ -291,21 +303,35 @@ class InstantDetectionSampler:
     
     def __init__(
         self,
-        vision_service_url: str = "http://localhost:8003",
-        vmeta_service_url: str = "http://localhost:8008",
-        orchestrator_service_url: str = "http://localhost:8002",
-        media_service_url: str = "http://localhost:8000",
-        models_service_url: str = "http://localhost:8013",
+        vision_service_url: str = None,
+        vmeta_service_url: str = None,
+        orchestrator_service_url: str = None,
+        media_service_url: str = None,
+        models_service_url: str = None,
         sampling_interval: int = 5,
         temporal_window: float = 1.0
     ):
-        self.vision_service_url = vision_service_url
-        self.vmeta_service_url = vmeta_service_url
-        self.orchestrator_service_url = orchestrator_service_url
-        self.media_service_url = media_service_url
-        self.models_service_url = models_service_url or os.getenv(
-            "MODELS_SERVICE_URL", "http://localhost:8013"
-        )
+        # Defaults must be Docker service DNS names — never localhost inside containers.
+        self.vision_service_url = (
+            vision_service_url
+            or os.getenv("VISION_SERVICE_URL", "http://ppl-meta-vision:8003")
+        ).rstrip("/")
+        self.vmeta_service_url = (
+            vmeta_service_url
+            or os.getenv("VMETA_SERVICE_URL", os.getenv("VMETA_URL", "http://ppl-meta-vmeta:8008"))
+        ).rstrip("/")
+        self.orchestrator_service_url = (
+            orchestrator_service_url
+            or os.getenv("ORCHESTRATOR_SERVICE_URL", "http://ppl-meta-orchestrator:8002")
+        ).rstrip("/")
+        self.media_service_url = (
+            media_service_url
+            or os.getenv("MEDIA_SERVICE_URL", "http://ppl-meta-media:8000")
+        ).rstrip("/")
+        self.models_service_url = (
+            models_service_url
+            or os.getenv("MODELS_SERVICE_URL", "http://ppl-meta-models:8013")
+        ).rstrip("/")
         self._resolved_runtime: Dict[str, str] = {}
         self._resolved_body: Dict[str, Dict[str, str]] = {}
         self._resolved_object: Dict[str, Dict[str, str]] = {}
@@ -416,12 +442,26 @@ class InstantDetectionSampler:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def start_sampling(self, camera_id: str, camera_capture=None):
+    def start_sampling(
+        self,
+        camera_id: str,
+        camera_capture=None,
+        sampling_interval: Optional[int] = None,
+    ):
         """
         Start instant detection for a camera. Multiple cameras can run in parallel
         when INSTANT_DETECTION_MULTI_CAMERA_ENABLED=true.
+
+        Args:
+            camera_id: Camera device ID
+            camera_capture: Unused (legacy); frames come from the queue worker
+            sampling_interval: Per-camera cycle period in seconds (1–60).
+                Falls back to the manager default when omitted.
         """
         self.clear_cache(camera_id)
+        interval = _clamp_sampling_interval(
+            sampling_interval, default=self.sampling_interval
+        )
 
         with self._lock:
             # If multi-camera is disabled, stop any other running cameras first
@@ -441,8 +481,11 @@ class InstantDetectionSampler:
             if camera_id in self._samplers:
                 existing = self._samplers[camera_id]
                 if existing.running and existing.thread and existing.thread.is_alive():
+                    # Hot-update interval so pipeline settings take effect without restart
+                    existing.sampling_interval = interval
                     logger.warning(
-                        f"Instant detection already running for camera {camera_id}"
+                        f"Instant detection already running for camera {camera_id} "
+                        f"— updated sampling_interval={interval}s"
                     )
                     return
                 # Thread died — clean up
@@ -451,6 +494,7 @@ class InstantDetectionSampler:
             state = CameraSamplerState(
                 camera_id=camera_id,
                 stagger_offset=self._calculate_stagger_offset(camera_id),
+                sampling_interval=interval,
             )
             state.running = True
             state.thread = threading.Thread(
@@ -464,9 +508,26 @@ class InstantDetectionSampler:
 
         logger.info(
             f"🚀 Instant detection started for {camera_id} "
-            f"(stagger={state.stagger_offset:.1f}s, "
+            f"(interval={interval}s, stagger={state.stagger_offset:.1f}s, "
             f"active_cameras={len(self._samplers)})"
         )
+
+    def update_sampling_interval(self, camera_id: str, sampling_interval: int) -> bool:
+        """Update cycle interval for a running camera. Returns True if applied."""
+        interval = _clamp_sampling_interval(sampling_interval, default=self.sampling_interval)
+        with self._lock:
+            state = self._samplers.get(camera_id)
+            if not state or not state.running:
+                return False
+            prev = state.sampling_interval
+            state.sampling_interval = interval
+        logger.info(
+            "⏱️ Updated instant detection interval for %s: %ss → %ss",
+            camera_id,
+            prev,
+            interval,
+        )
+        return True
 
     def stop_sampling(self, camera_id: str = None):
         """Stop one camera (if camera_id given) or all cameras."""
@@ -590,8 +651,34 @@ class InstantDetectionSampler:
                 frames = self._capture_3_frames_from_queue(camera_id)
                 
                 if len(frames) == 3:
+                    # Avoid piling soft-time-limit failures: wait for in-flight task
+                    if state.pending_task_id:
+                        try:
+                            from celery.result import AsyncResult
+                            from src.shared.queue_config import celery_app
+
+                            pending = AsyncResult(state.pending_task_id, app=celery_app)
+                            if pending.state in ("PENDING", "STARTED", "RETRY", "RECEIVED"):
+                                logger.info(
+                                    "⏳ [INSTANT] Skipping submit for %s — task %s still %s",
+                                    camera_id,
+                                    state.pending_task_id[:8],
+                                    pending.state,
+                                )
+                                elapsed = time.time() - start_time
+                                time.sleep(max(0, state.sampling_interval - elapsed))
+                                continue
+                        except Exception as skip_exc:
+                            logger.debug(
+                                "Could not inspect pending task for %s: %s",
+                                camera_id,
+                                skip_exc,
+                            )
+
                     # Submit to Celery for background processing (non-blocking)
-                    self._submit_to_celery(camera_id, frames)
+                    task_id = self._submit_to_celery(camera_id, frames)
+                    if task_id:
+                        state.pending_task_id = task_id
                     
                     logger.info(
                         f"📤 [INSTANT] Submitted {camera_id} to Celery for processing "
@@ -639,7 +726,7 @@ class InstantDetectionSampler:
                 
                 # Wait for next iteration (accounting for processing time)
                 elapsed = time.time() - start_time
-                sleep_time = max(0, self.sampling_interval - elapsed)
+                sleep_time = max(0, state.sampling_interval - elapsed)
                 time.sleep(sleep_time)
                 
             except Exception as e:
@@ -658,7 +745,7 @@ class InstantDetectionSampler:
                     state.running = False
                     break
                 
-                time.sleep(self.sampling_interval)
+                time.sleep(state.sampling_interval)
         
         state.running = False
         logger.info(f"🛑 Instant detection sample loop exited for {camera_id}")
@@ -828,8 +915,9 @@ class InstantDetectionSampler:
         """
         Process 3 frames using Vision Service APIs.
 
-        Face path (detect → group → age/gender) runs only when this camera has
-        auto_face_detection enabled. Body YOLO remains independent.
+        Face path (detect → group → age/gender) runs when this camera has
+        auto_face_detection enabled, or when the Instant Detection pipeline is
+        enabled (eye-button / live path). Body YOLO remains independent.
         Both face and body stay in memory for the live cycle; DB flush is batched
         later (same Redis queue / VMeta persist-batch path as faces).
         """
@@ -839,7 +927,7 @@ class InstantDetectionSampler:
         
         # Generate session UUID for this instant detection iteration
         session_uuid = str(uuid.uuid4())
-        face_enabled = self._camera_auto_face_enabled(camera_id)
+        face_enabled = self._camera_instant_face_enabled(camera_id)
         
         # Step 1: Send frames to Vision Service for face detection (if enabled)
         all_face_detections = []
@@ -869,7 +957,8 @@ class InstantDetectionSampler:
                     all_face_detections.extend(detections)
             else:
                 logger.info(
-                    "🎯 Instant face path skipped for camera %s (auto_face_detection OFF)",
+                    "🎯 Instant face path skipped for camera %s "
+                    "(auto_face_detection OFF and instant_detection_enabled OFF)",
                     camera_id,
                 )
 
@@ -1076,6 +1165,40 @@ class InstantDetectionSampler:
         except Exception as exc:
             logger.warning(
                 "🎯 auto_face_detection lookup failed for %s (treating as OFF): %s",
+                camera_id,
+                exc,
+            )
+            return False
+
+    def _camera_instant_face_enabled(self, camera_id: str) -> bool:
+        """
+        Whether the live instant-detection face path should run.
+
+        Uses auto_face_detection OR instant_detection_enabled so a failed
+        workflow-settings save that clears auto_face_detection does not kill
+        an already-running (or pipeline-enabled) instant session.
+        Post-record enhanced-v2 still keys only off auto_face_detection.
+        """
+        if not camera_id:
+            return False
+        try:
+            from src.database import SessionLocal
+            from src.models.camera import Camera
+            from src.models.recording_session import RecordingSession  # noqa: F401
+
+            db = SessionLocal()
+            try:
+                camera = db.query(Camera).filter(Camera.device_id == camera_id).first()
+                if not camera:
+                    return False
+                auto_face = bool(getattr(camera, "auto_face_detection", False))
+                instant_on = bool(getattr(camera, "instant_detection_enabled", False))
+                return auto_face or instant_on
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning(
+                "🎯 instant face enable lookup failed for %s (treating as OFF): %s",
                 camera_id,
                 exc,
             )
@@ -1877,9 +2000,23 @@ class InstantDetectionSampler:
                 return []
             
             logger.debug(f"📸 Frame {frame_index} shape: {frame.shape}, dtype: {frame.dtype}")
+
+            # Downscale high-res RTSP (e.g. Tapo 2560x1440) before Vision —
+            # full-res two_stage is ~6s/frame and blows the Celery soft limit.
+            detect_frame = frame
+            scale = 1.0
+            max_w = int(os.getenv("INSTANT_VISION_MAX_WIDTH", "1280"))
+            h, w = frame.shape[:2]
+            if w > max_w > 0:
+                scale = max_w / float(w)
+                detect_frame = cv2.resize(
+                    frame,
+                    (max_w, int(round(h * scale))),
+                    interpolation=cv2.INTER_AREA,
+                )
             
             # Encode frame as JPEG
-            _, buffer = cv2.imencode('.jpg', frame)
+            _, buffer = cv2.imencode('.jpg', detect_frame)
             frame_bytes = buffer.tobytes()
             logger.debug(f"📸 Frame {frame_index} encoded to {len(frame_bytes)} bytes")
             
@@ -1919,13 +2056,17 @@ class InstantDetectionSampler:
                         logger.info(f"🔍 Vision Service returned {faces_count} faces for frame {frame_index}")
                         
                         # Convert Vision Service format to our format
+                        inv = (1.0 / scale) if scale else 1.0
                         detections = []
                         for face in result.get("faces", []):
+                            bbox = list(face.get("bbox", [0, 0, 0, 0]))
+                            if scale != 1.0 and len(bbox) >= 4:
+                                bbox = [float(v) * inv for v in bbox[:4]] + list(bbox[4:])
                             detections.append({
                                 "face_id": face.get("face_id", str(uuid.uuid4())),
                                 "frame_index": frame_index,
                                 "timestamp": timestamp,
-                                "bbox": face.get("bbox", [0, 0, 0, 0]),
+                                "bbox": bbox,
                                 "confidence": face.get("confidence", 0.0),
                                 "method": "two_stage_haar_dlib",
                                 "embedding": face.get("embedding", [0.0] * 128)
@@ -1987,7 +2128,10 @@ class InstantDetectionSampler:
             
             logger.info(f"🔍 Calling VMeta age/gender endpoint: {url}")
             
-            timeout = aiohttp.ClientTimeout(total=2.0)
+            # DeepFace cold-start on CPU often needs 30–90s; after warmup
+            # inference is usually <2s. Give headroom on 8GB hosts.
+            age_gender_timeout = float(os.getenv("VMETA_AGE_GENDER_TIMEOUT", "45"))
+            timeout = aiohttp.ClientTimeout(total=age_gender_timeout)
             self._vmeta_semaphore.acquire()
             try:
                 async with session.post(url, data=data, timeout=timeout) as response:
@@ -2023,7 +2167,10 @@ class InstantDetectionSampler:
         
         except asyncio.TimeoutError:
             self._vmeta_circuit.record_failure()
-            logger.warning(f"⏱️ VMeta age/gender timeout (>2s) - returning unknown")
+            logger.warning(
+                "⏱️ VMeta age/gender timeout (>%ss) - returning unknown",
+                os.getenv("VMETA_AGE_GENDER_TIMEOUT", "45"),
+            )
             return self._default_age_gender()
         except Exception as e:
             self._vmeta_circuit.record_failure()
@@ -2085,7 +2232,8 @@ class InstantDetectionSampler:
                 f"&create_if_missing=true"
             )
 
-            timeout = aiohttp.ClientTimeout(total=2.0)
+            identity_timeout = float(os.getenv("VMETA_IDENTITY_TIMEOUT", "8"))
+            timeout = aiohttp.ClientTimeout(total=identity_timeout)
             self._vmeta_semaphore.acquire()
             try:
                 async with session.post(url, data=data, timeout=timeout) as response:
@@ -2109,7 +2257,10 @@ class InstantDetectionSampler:
 
         except asyncio.TimeoutError:
             self._vmeta_circuit.record_failure()
-            logger.debug("Identity lookup timeout (>2s)")
+            logger.debug(
+                "Identity lookup timeout (>%ss)",
+                os.getenv("VMETA_IDENTITY_TIMEOUT", "8"),
+            )
             return _no_match
         except Exception as e:
             self._vmeta_circuit.record_failure()
@@ -2483,6 +2634,9 @@ class InstantDetectionSampler:
         Args:
             camera_id: Camera identifier
             frames: List of 3 frame dictionaries
+
+        Returns:
+            Celery task id string, or None on fallback/failure
         """
         result = None
         celery_success = False
@@ -2509,6 +2663,7 @@ class InstantDetectionSampler:
             
             logger.debug(f"✅ [CELERY] Task submitted: {task.id} for {camera_id}")
             celery_success = True
+            return task.id
             
         except (ImportError, Exception) as e:
             # 🚀 CRITICAL: Fallback MUST be non-blocking to prevent camera worker freeze
@@ -2532,7 +2687,7 @@ class InstantDetectionSampler:
                     try:
                         import redis
                         import json
-                        r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+                        r = redis.Redis(host=__import__('os').getenv('REDIS_HOST','redis'), port=int(__import__('os').getenv('REDIS_PORT','6379')), decode_responses=False)
                         cache_key = f"instant_detection:{camera_id}"
                         r.setex(cache_key, 300, json.dumps(result))  # 5 min TTL
                         logger.info(f"✅ [THREAD] Cached in both memory and Redis for {camera_id} at {result['timestamp']}")
@@ -2557,7 +2712,7 @@ class InstantDetectionSampler:
             thread = threading.Thread(target=_process_in_thread, daemon=True)
             thread.start()
             logger.debug(f"✅ [THREAD] Started background processing for {camera_id}")
-            return  # Return immediately, don't block
+            return None  # Return immediately, don't block
         
         # Push to webhook if enabled (non-blocking) - only if we have result from sync processing
         if result and self.webhook_enabled and self.webhook_url:
@@ -2599,6 +2754,7 @@ class InstantDetectionSampler:
                 thread.start()
             except Exception as e:
                 logger.error(f"❌ Failed to start trigger evaluation thread: {e}")
+        return None
     
     # ------------------------------------------------------------------
     # Instant detection persistent storage helpers
@@ -2620,7 +2776,7 @@ class InstantDetectionSampler:
             import redis as _redis
             import json as _json
 
-            r = _redis.Redis(host="localhost", port=6379, decode_responses=False)
+            r = _redis.Redis(host=__import__('os').getenv('REDIS_HOST','redis'), port=int(__import__('os').getenv('REDIS_PORT','6379')), decode_responses=False)
             cached = r.get(f"instant_detection:{camera_id}")
             if not cached:
                 return
@@ -2779,7 +2935,7 @@ class InstantDetectionSampler:
             import json
             
             # Get Redis connection from environment or use default
-            redis_host = os.getenv("REDIS_HOST", "localhost")
+            redis_host = os.getenv("REDIS_HOST", "redis")
             redis_port = int(os.getenv("REDIS_PORT", 6379))
             redis_db = int(os.getenv("REDIS_DB", 0))
             
@@ -3168,6 +3324,7 @@ class InstantDetectionSampler:
                     "cycle_counter": state.cycle_counter,
                     "session_uuid": state.session_uuid,
                     "stagger_offset": state.stagger_offset,
+                    "sampling_interval": state.sampling_interval,
                 }
 
         return {

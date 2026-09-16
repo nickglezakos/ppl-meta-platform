@@ -9,9 +9,11 @@ Author: PPL Meta Platform Team
 """
 
 import numpy as np
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 import logging
 from deepface import DeepFace
+
+from .deepface_compat import deepface_analyze
 import cv2
 
 logger = logging.getLogger(__name__)
@@ -41,24 +43,11 @@ class GenderClassifier:
         )
     
     def _ensure_model_loaded(self) -> bool:
-        """Ensure DeepFace gender model is loaded."""
+        """Mark gender model ready. Weights load lazily on first real inference."""
         if not self._model_loaded:
-            try:
-                logger.info("Loading gender classification model...")
-                # Trigger model load
-                DeepFace.analyze(
-                    img_path=np.zeros((160, 160, 3), dtype=np.uint8),
-                    actions=['gender'],
-                    enforce_detection=False,
-                    detector_backend='opencv',
-                    silent=True
-                )
-                self._model_loaded = True
-                logger.info("✅ Gender model loaded successfully")
-                return True
-            except Exception as e:
-                logger.error(f"Failed to load gender model: {e}")
-                return False
+            # Avoid dummy zero-image warmup: older DeepFace OOMs / fails on blanks.
+            logger.info("Gender classification model will load on first inference")
+            self._model_loaded = True
         return True
     
     def classify_gender(
@@ -80,23 +69,25 @@ class GenderClassifier:
             return None
         
         try:
-            result = DeepFace.analyze(
+            result = deepface_analyze(
                 img_path=face_image,
                 actions=['gender'],
                 enforce_detection=enforce_detection,
                 detector_backend='opencv',
-                silent=True
             )
             
             if result and len(result) > 0:
-                gender_data = result[0].get('gender', {})
+                row = result[0]
+                gender_data = row.get('gender', {})
+                if not gender_data and row.get('dominant_gender'):
+                    gender_data = row.get('dominant_gender')
                 
                 if not gender_data:
                     logger.warning("No gender prediction in result")
                     return None
                 
-                # DeepFace returns dict like:
-                # {'Man': 98.5, 'Woman': 1.5}
+                # DeepFace returns dict like {'Man': 98.5, 'Woman': 1.5}
+                # or a string / dominant_gender label on older builds.
                 gender_result = self._parse_gender_result(gender_data)
                 
                 logger.debug(
@@ -115,28 +106,48 @@ class GenderClassifier:
     
     def _parse_gender_result(
         self,
-        gender_scores: Dict[str, float]
+        gender_scores: Any,
     ) -> Dict[str, Any]:
         """
         Parse DeepFace gender result.
         
         Args:
-            gender_scores: Dict with 'Man' and 'Woman' scores
+            gender_scores: Dict with 'Man'/'Woman' scores, or a label string
             
         Returns:
             Dict with normalized gender and confidence
         """
-        # Get scores
-        man_score = gender_scores.get('Man', 0.0)
-        woman_score = gender_scores.get('Woman', 0.0)
+        if isinstance(gender_scores, str):
+            label = gender_scores.strip().lower()
+            if label in ("man", "male"):
+                gender, confidence = "male", 0.9
+            elif label in ("woman", "female"):
+                gender, confidence = "female", 0.9
+            else:
+                gender, confidence = "unknown", 0.5
+            if confidence < self.confidence_threshold:
+                gender = "unknown"
+            return {
+                "gender": gender,
+                "confidence": confidence,
+                "raw_scores": {"male": 0.0, "female": 0.0},
+            }
+
+        # Get scores (support Man/Woman and Male/Female keys)
+        man_score = float(
+            gender_scores.get("Man", gender_scores.get("male", 0.0)) or 0.0
+        )
+        woman_score = float(
+            gender_scores.get("Woman", gender_scores.get("female", 0.0)) or 0.0
+        )
         
         # Determine gender
         if man_score > woman_score:
             gender = 'male'
-            confidence = man_score / 100.0
+            confidence = man_score / 100.0 if man_score > 1.0 else man_score
         elif woman_score > man_score:
             gender = 'female'
-            confidence = woman_score / 100.0
+            confidence = woman_score / 100.0 if woman_score > 1.0 else woman_score
         else:
             gender = 'unknown'
             confidence = 0.5
@@ -149,8 +160,8 @@ class GenderClassifier:
             'gender': gender,
             'confidence': confidence,
             'raw_scores': {
-                'male': man_score / 100.0,
-                'female': woman_score / 100.0
+                'male': man_score / 100.0 if man_score > 1.0 else man_score,
+                'female': woman_score / 100.0 if woman_score > 1.0 else woman_score,
             }
         }
     

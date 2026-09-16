@@ -16,8 +16,8 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
 # Configure logging FIRST - Simple approach like vmeta service
-workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-log_dir = os.path.join(workspace_root, "logs")
+workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+log_dir = os.getenv("MEDIA_LOG_DIR", os.path.join(workspace_root, "logs"))
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, "ppl-meta-media.log")
 
@@ -74,8 +74,16 @@ from src.models.user_trigger_action import UserTriggerAction
 
 from src.services.signage_etl_worker import start_etl_worker, stop_etl_worker
 
-# Import metrics but not complex shared logging
-from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
+# Metrics are optional — shared/ is not always baked into the media image.
+try:
+    from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
+
+    metrics_available = True
+except ImportError:
+    PrometheusMiddleware = None  # type: ignore
+    create_metrics_endpoint = None  # type: ignore
+    init_metrics = None  # type: ignore
+    metrics_available = False
 
 # Try to import the shared service discovery module
 try:
@@ -320,8 +328,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Initialize metrics
-metrics_collector = init_metrics(service_name="ppl-meta-media", service_version="1.0.0")
+# Initialize metrics (optional)
+if metrics_available and init_metrics is not None:
+    metrics_collector = init_metrics(
+        service_name="ppl-meta-media", service_version="1.0.0"
+    )
+else:
+    metrics_collector = None
+    logger.warning("Shared metrics module not available — Prometheus metrics disabled")
 
 # Security middleware
 app.add_middleware(
@@ -333,7 +347,8 @@ app.add_middleware(
 # If needed in future, the middleware files are still in src/middleware/logging.py
 
 # Add metrics middleware
-app.add_middleware(PrometheusMiddleware, metrics_collector=metrics_collector)
+if metrics_available and PrometheusMiddleware is not None and metrics_collector is not None:
+    app.add_middleware(PrometheusMiddleware, metrics_collector=metrics_collector)
 
 # CORS middleware for microservices
 app.add_middleware(
@@ -403,8 +418,9 @@ app.include_router(user_actions_router)  # User-defined actions
 app.include_router(demographic_triggers_router)  # Demographic triggers (webhook-based)
 
 # Add metrics endpoint
-metrics_router = create_metrics_endpoint()
-app.include_router(metrics_router, tags=["Metrics"])
+if metrics_available and create_metrics_endpoint is not None:
+    metrics_router = create_metrics_endpoint()
+    app.include_router(metrics_router, tags=["Metrics"])
 
 
 # Root endpoint

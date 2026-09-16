@@ -47,6 +47,38 @@ edge_registry = EdgeRegistry(heartbeat_timeout=get_settings().EDGE_DEVICE_TIMEOU
 multicast_announcer = MulticastAnnouncer()
 
 
+def _is_ipv4(value: str) -> bool:
+    try:
+        socket.inet_aton(value)
+        return True
+    except OSError:
+        return False
+
+
+def _is_docker_bridge_ip(ip: str) -> bool:
+    """True for typical Docker/WSL/Lima bridge addresses unreachable from LAN phones."""
+    if not _is_ipv4(ip):
+        return False
+    parts = [int(p) for p in ip.split(".")]
+    # 172.16.0.0/12 — Docker default bridges (172.17/18/…)
+    if parts[0] == 172 and 16 <= parts[1] <= 31:
+        return True
+    # Docker Desktop / moby host-gateway style
+    if ip.startswith("192.168.65.") or ip.startswith("192.168.5."):
+        # 192.168.5.0/24 is Lima vz host-guest link, not the Mac Wi-Fi LAN
+        return True
+    return False
+
+
+def _is_docker_service_hostname(host: str) -> bool:
+    """Compose service DNS names (e.g. ppl-meta-node) are not LAN-reachable."""
+    if not host or _is_ipv4(host):
+        return False
+    if "." in host:
+        return False
+    return True
+
+
 def get_machine_ip() -> str:
     """Get the machine's IP address for external connections."""
     try:
@@ -78,13 +110,50 @@ def get_tailscale_ip() -> Optional[str]:
     return None
 
 
+def get_advertise_host() -> str:
+    """IP that LAN/mobile clients should use to reach published host ports.
+
+    Preference: explicit ADVERTISE_HOST → Tailscale → non-bridge machine IP →
+    localhost (last resort).
+    """
+    configured = (get_settings().ADVERTISE_HOST or "").strip()
+    if configured:
+        return configured
+
+    tailscale_ip = get_tailscale_ip()
+    if tailscale_ip:
+        return tailscale_ip
+
+    machine_ip = get_machine_ip()
+    if machine_ip and machine_ip not in ("127.0.0.1", "0.0.0.0") and not _is_docker_bridge_ip(machine_ip):
+        return machine_ip
+
+    return machine_ip or "127.0.0.1"
+
+
+def _needs_host_rewrite(host: str) -> bool:
+    if not host:
+        return True
+    if host in ("0.0.0.0", "127.0.0.1", "localhost"):
+        return True
+    if _is_docker_bridge_ip(host):
+        return True
+    if _is_docker_service_hostname(host):
+        return True
+    return False
+
+
 def resolve_service_hosts(services_list: ServiceList, prefer_vpn: bool = False) -> ServiceList:
-    """Resolve 0.0.0.0 hosts to actual machine IP for external clients.
+    """Rewrite container-local hosts to a LAN/VPN IP for external clients.
+
+    Services register with Docker IPs or compose DNS names. Mobile cameras and
+    other LAN clients cannot reach those; replace them with ADVERTISE_HOST
+    (or Tailscale / detected LAN IP).
 
     Phase 2: When prefer_vpn is True and a service has a tailscale_ip,
     returns the service with its VPN IP as the primary host.
     """
-    machine_ip = get_machine_ip()
+    advertise_host = get_advertise_host()
     tailscale_ip = get_tailscale_ip()
 
     resolved_services = []
@@ -96,9 +165,8 @@ def resolve_service_hosts(services_list: ServiceList, prefer_vpn: bool = False) 
                 "port": service.tailscale_port or service.port,
             })
             resolved_services.append(resolved_service)
-        elif service.host == "0.0.0.0":
-            # Resolve 0.0.0.0 — prefer Tailscale IP if available, else machine IP
-            resolved_host = tailscale_ip or machine_ip
+        elif _needs_host_rewrite(service.host):
+            resolved_host = tailscale_ip or advertise_host
             resolved_service = ServiceInfo(
                 service_id=service.service_id,
                 name=service.name,
@@ -199,7 +267,7 @@ async def register_service(request: RegistrationRequest):
 async def list_services(query: Optional[DiscoveryQuery] = None):
     """List all registered services with resolved hosts for external clients."""
     services_list = service_registry.list_services(query)
-    # Resolve 0.0.0.0 hosts to actual machine IP for mobile/external clients
+    # Rewrite Docker/compose hosts to ADVERTISE_HOST (LAN/VPN) for mobile clients
     return resolve_service_hosts(services_list)
 
 

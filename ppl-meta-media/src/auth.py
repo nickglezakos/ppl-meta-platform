@@ -177,7 +177,11 @@ async def require_media_view(
     Returns 403 if the user lacks the media:view permission.
     """
     user = await get_current_user(credentials)
-    if "media:view" not in user.permissions and "all" not in user.permissions:
+    if (
+        "media:view" not in user.permissions
+        and "media.view" not in user.permissions
+        and "all" not in user.permissions
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Media viewing is disabled for your account",

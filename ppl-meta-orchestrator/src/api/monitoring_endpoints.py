@@ -213,7 +213,7 @@ def _calculate_success_rate(completed: int, failed: int) -> float:
     return round((completed / total) * 100, 2)
 
 
-VMETA_BASE_URL = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+VMETA_BASE_URL = os.getenv("VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008")
 
 
 async def _fetch_vmeta_mvr_stats(now: datetime, days: int = 7) -> Dict[str, Any]:

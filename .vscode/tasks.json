@@ -989,6 +989,76 @@
             "problemMatcher": []
         },
         {
+            "label": "🖥️ Start Lima VM (eyenet)",
+            "type": "shell",
+            "command": "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\" && echo '🖥️ Starting Lima VM: eyenet' && echo '(Quit Docker Desktop first if the guest needs the full 8 GiB RAM)' && limactl start eyenet && echo && limactl list eyenet && echo && echo '✅ Lima eyenet is running. Next: 🚀 Start EyeNet Platform (Lima)'",
+            "detail": "Starts the existing Lima instance named eyenet (does not recreate). Platform containers are started separately.",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "🛑 Stop Lima VM (eyenet)",
+            "type": "shell",
+            "command": "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\" && echo '🛑 Stopping Lima VM: eyenet' && limactl stop eyenet && echo && limactl list eyenet && echo && echo '✅ Lima eyenet stopped (platform containers stop with the VM)'",
+            "detail": "Stops the Lima eyenet guest. Prefer stopping the EyeNet compose stack first if you want a clean docker shutdown.",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "🔍 Lima VM Status (eyenet)",
+            "type": "shell",
+            "command": "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\" && echo '🔍 Lima eyenet status' && echo '====================' && limactl list eyenet && echo && limactl shell eyenet -- bash -lc 'echo \"Guest uptime:\"; uptime; echo; echo \"Docker:\"; (docker info >/dev/null 2>&1 && echo OK) || (sudo docker info >/dev/null 2>&1 && echo \"OK (sudo)\") || echo FAIL' 2>/dev/null || echo '(VM not running — start with 🖥️ Start Lima VM (eyenet))'",
+            "detail": "Shows limactl list for eyenet and a quick guest docker check when the VM is up.",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🚀 Start EyeNet Platform (Lima)",
+            "type": "shell",
+            "command": "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\" && echo '🚀 Starting EyeNet platform inside Lima eyenet...' && if ! limactl list eyenet 2>/dev/null | grep -q Running; then echo 'Lima eyenet is not Running — starting VM first...' && limactl start eyenet; fi && limactl shell eyenet -- bash -lc 'set -e; cd ~/eyenet-platform; DC=\"docker compose\"; docker info >/dev/null 2>&1 || DC=\"sudo docker compose\"; OV=(); [ -f docker-compose.override.yml ] && OV=(-f docker-compose.override.yml); echo \"Using: $DC --project-name pplmeta\"; $DC --project-name pplmeta --env-file .env -f docker-compose.yml \"${OV[@]}\" up -d; echo; $DC --project-name pplmeta --env-file .env -f docker-compose.yml \"${OV[@]}\" ps' && echo && echo '✅ EyeNet platform start requested. UI: http://127.0.0.1:3000'",
+            "detail": "docker compose up -d for project pplmeta in ~/eyenet-platform inside the Lima eyenet guest. Starts the VM first if needed.",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "🛑 Stop EyeNet Platform (Lima)",
+            "type": "shell",
+            "command": "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\" && echo '🛑 Stopping EyeNet platform inside Lima eyenet...' && if ! limactl list eyenet 2>/dev/null | grep -q Running; then echo 'Lima eyenet is not Running — nothing to stop.'; exit 0; fi && limactl shell eyenet -- bash -lc 'set -e; cd ~/eyenet-platform; DC=\"docker compose\"; docker info >/dev/null 2>&1 || DC=\"sudo docker compose\"; OV=(); [ -f docker-compose.override.yml ] && OV=(-f docker-compose.override.yml); $DC --project-name pplmeta --env-file .env -f docker-compose.yml \"${OV[@]}\" down; echo; $DC --project-name pplmeta ps -a 2>/dev/null || true' && echo && echo '✅ EyeNet compose stack stopped (Lima VM left running)'",
+            "detail": "docker compose down for project pplmeta inside Lima. Leaves the Lima VM running.",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "📋 EyeNet Platform Status (Lima)",
+            "type": "shell",
+            "command": "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\" && echo '📋 EyeNet platform status (Lima)' && echo '================================' && limactl list eyenet && echo && if ! limactl list eyenet 2>/dev/null | grep -q Running; then echo 'VM not running.'; exit 0; fi && limactl shell eyenet -- bash -lc 'cd ~/eyenet-platform; DC=\"docker compose\"; docker info >/dev/null 2>&1 || DC=\"sudo docker compose\"; $DC --project-name pplmeta ps'",
+            "detail": "Shows limactl + docker compose ps for the pplmeta stack in Lima.",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
             "label": "☁️ Deploy Authority to Hetzner",
             "type": "shell",
             "command": "HETZNER_SSH_HOST=${input:hetznerSshHost} AUTHORITY_HEALTH_URL=${input:authorityHealthUrl} ${workspaceFolder}/scripts/deploy-authority-to-hetzner.sh --version ${input:authorityDeployVersion}",

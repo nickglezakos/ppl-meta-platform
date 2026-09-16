@@ -232,8 +232,13 @@ async def lifespan(app: FastAPI):
             
             # Create pipeline executor
             pipeline_executor = PipelineExecutor(
-                media_service_url="http://localhost:8000",
-                orchestrator_url="http://localhost:8002",
+                media_service_url=os.getenv(
+                    "MEDIA_SERVICE_URL", "http://ppl-meta-media:8000"
+                ),
+                orchestrator_url=os.getenv(
+                    "ORCHESTRATOR_SERVICE_URL",
+                    os.getenv("PPL_ORCHESTRATOR_URL", "http://ppl-meta-orchestrator:8002"),
+                ),
                 max_workers=3
             )
             
@@ -261,10 +266,16 @@ async def lifespan(app: FastAPI):
                 batch_monitor=batch_monitor,
                 poll_interval_seconds=30,  # Check every 30 seconds
                 enabled=True,
-                media_url="http://localhost:8000",
-                vision_url="http://localhost:8003",
-                vmeta_url="http://localhost:8008",
-                node_url="http://localhost:8001",
+                media_url=os.getenv("MEDIA_SERVICE_URL", "http://ppl-meta-media:8000"),
+                vision_url=os.getenv(
+                    "VISION_SERVICE_URL",
+                    os.getenv("PPL_VISION_URL", "http://ppl-meta-vision:8003"),
+                ),
+                vmeta_url=os.getenv("VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008"),
+                node_url=os.getenv(
+                    "NODE_SERVICE_URL",
+                    os.getenv("PPL_NODE_URL", "http://ppl-meta-node:8001"),
+                ),
                 batch_size=5,  # Trigger after 5 videos
                 collection_id=None,  # Dynamic - managed by recording events
                 pipeline_executor=pipeline_executor  # Pass executor for explicit video_uuids
@@ -303,6 +314,10 @@ async def lifespan(app: FastAPI):
             logger.warning(
                 "⚠️ Batch Processing features will not be available"
             )
+
+        # DeepFace Age/Gender are loaded lazily on first /detect-age-gender
+        # request (asyncio.to_thread). Eager in-process warmup deadlocks
+        # Uvicorn/Keras on this CPU image and makes /health hang.
 
         # Register with service discovery
         # await register_with_discovery()

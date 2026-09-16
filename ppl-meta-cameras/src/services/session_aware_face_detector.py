@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-from src.shared.shared.face_detection import SharedFaceDetector
+from src.shared.face_detection import SharedFaceDetector
 
 logger = logging.getLogger(__name__)
 

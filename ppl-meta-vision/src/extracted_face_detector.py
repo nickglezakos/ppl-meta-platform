@@ -243,18 +243,22 @@ class ExtractedFaceDetector:
         Two-stage face detection method proven in monolithic app.
         Stage 1: Haar cascade detection
         Stage 2: Dlib validation to filter false positives
+
+        If dlib is unavailable but haar is loaded, fall back to haar-only
+        so instant detection still works on slim images.
         """
         try:
-            # Ensure we have the required methods
-            if (
-                "haar" not in self.available_methods
-                or "dlib" not in self.available_methods
-            ):
+            if "haar" not in self.available_methods:
                 return {
                     "success": False,
-                    "error": "Required methods (haar, dlib) not available",
+                    "error": "Required method (haar) not available",
                     "detections": [],
                 }
+            if "dlib" not in self.available_methods:
+                self.logger.warning(
+                    "⚠️ two_stage requested but dlib unavailable — falling back to haar"
+                )
+                return self.detect_faces_haar(image)
 
             start_time = time.time()
 
@@ -334,7 +338,7 @@ class ExtractedFaceDetector:
             self.logger.error(f"Two-stage detection error: {e}")
             return {"success": False, "error": str(e), "detections": []}
 
-    def _normalize_runtime(self, runtime: str | None) -> str:
+    def _normalize_runtime(self, runtime: Optional[str]) -> str:
         value = (runtime or "").lower()
         if value in ("haar", "face-haar-builtin"):
             return "haar"
@@ -350,8 +354,8 @@ class ExtractedFaceDetector:
         self,
         model_id: str,
         version: str = "1.0.0",
-        artifact_uri: str | None = None,
-    ) -> str | None:
+        artifact_uri: Optional[str] = None,
+    ) -> Optional[str]:
         """Resolve local ONNX path from uri, env cache, or Models service download."""
         if artifact_uri and Path(artifact_uri).is_file():
             return artifact_uri
@@ -407,9 +411,9 @@ class ExtractedFaceDetector:
         *,
         model_id: str = "face-yolo-onnx-os",
         version: str = "1.0.0",
-        artifact_uri: str | None = None,
+        artifact_uri: Optional[str] = None,
         conf: float = 0.25,
-        class_ids: list | None = None,
+        class_ids: Optional[list] = None,
     ):
         from onnx_yolo import detect_yolo_onnx
 
@@ -437,9 +441,9 @@ class ExtractedFaceDetector:
         *,
         model_id: str = "body-yolo-person-os",
         version: str = "1.0.0",
-        artifact_uri: str | None = None,
+        artifact_uri: Optional[str] = None,
         conf: float = 0.25,
-        use_pose: bool | None = None,
+        use_pose: Optional[bool] = None,
     ):
         """Detect person bodies. Prefer pose when model_id contains 'pose' or use_pose=True."""
         from onnx_yolo import (
@@ -530,10 +534,10 @@ class ExtractedFaceDetector:
         *,
         model_id: str = "body-yolo-person-os",
         version: str = "1.0.0",
-        artifact_uri: str | None = None,
+        artifact_uri: Optional[str] = None,
         conf: float = 0.25,
-        class_ids: list | None = None,
-        class_labels: dict | None = None,
+        class_ids: Optional[list] = None,
+        class_labels: Optional[dict] = None,
     ):
         """
         Generic COCO object detection (not person-only).
@@ -609,7 +613,7 @@ class ExtractedFaceDetector:
         else:
             self._loader_refcount[key] = current - 1
 
-    def detect_faces_pipeline(self, image, stages: list | None = None, method: str | None = None):
+    def detect_faces_pipeline(self, image, stages: Optional[list] = None, method: Optional[str] = None):
         """
         Execute a single-stage or two-stage pipeline from catalog resolve `stages`.
 

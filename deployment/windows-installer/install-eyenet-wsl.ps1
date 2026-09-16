@@ -1,7 +1,7 @@
-# EyeNet WSL Runtime Bootstrap
+﻿# EyeNet WSL Runtime Bootstrap
 # Creates/configures the `eyenet` WSL2 distro with Docker Engine CE + Tailscale
 # (open-source client). Does NOT require Docker Desktop.
-# Version: 2.25.80
+# Version: 2.25.81
 
 param(
     [string]$DistroName = "eyenet",
@@ -38,7 +38,8 @@ function Test-HostMemory {
         Write-Warn "Could not read host RAM; continuing."
         return $true
     }
-    if ($totalGb -lt $script:MinimumHostRamGb) {
+    # Windows often reports ~15.x GB for a 16 GB machine (hardware reserved).
+    if ($totalGb -lt ($script:MinimumHostRamGb - 1)) {
         Write-Err "EyeNet requires at least $($script:MinimumHostRamGb) GB physical RAM (found ${totalGb} GB)."
         return $false
     }
@@ -158,12 +159,16 @@ fi
     wsl -d $DistroName --user root -- echo ready | Out-Null
 
     Write-Info "Installing Docker Engine CE + Compose plugin (no Docker Desktop)..."
-    Invoke-InEyeNet @"
+    # Use a single-quoted here-string so PowerShell does not expand $(...), $VARS, or [brackets].
+    Invoke-InEyeNet @'
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
-if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+# Ignore Windows/Docker-Desktop shims on PATH (/mnt/c/...).
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+if [ -x /usr/bin/docker ] && /usr/bin/docker compose version >/dev/null 2>&1; then
   echo 'Docker Engine already installed'
   systemctl enable --now docker || true
+  /usr/bin/docker version
   exit 0
 fi
 apt-get update -y
@@ -174,14 +179,14 @@ if [ ! -f /etc/apt/keyrings/docker.asc ]; then
   chmod a+r /etc/apt/keyrings/docker.asc
 fi
 . /etc/os-release
-echo "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \$VERSION_CODENAME stable" \
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
   > /etc/apt/sources.list.d/docker.list
 apt-get update -y
 apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 systemctl enable --now docker
-docker version
-docker compose version
-"@
+/usr/bin/docker version
+/usr/bin/docker compose version
+'@
     Write-Ok "Docker Engine CE ready inside $DistroName"
 }
 
@@ -200,22 +205,21 @@ if command -v tailscale >/dev/null 2>&1; then
 fi
 curl -fsSL https://tailscale.com/install.sh | sh
 systemctl enable --now tailscaled
-echo 'Tailscale installed. Wait for Node enroll_once (EyeNet Headscale) — do not run tailscale login to Tailscale.com.'
+echo 'Tailscale installed. Wait for Node enroll_once (EyeNet Headscale) - do not run tailscale login to Tailscale.com.'
 "@
     Write-Ok "Tailscale client installed; enrollment is via Authority Headscale"
 }
 
 function Assert-NotDesktopOnly {
     Write-Info "Verifying Docker Engine is available in $DistroName (not Desktop-only)..."
-    $out = wsl -d $DistroName --user root -- bash -lc "docker info --format '{{.Name}}' 2>/dev/null || true"
-    $out = ($out -replace "`0", "").Trim()
-    if (-not $out) {
-        throw "docker is not usable inside '$DistroName'. Re-run this script or install docker-ce manually."
+    $out = wsl -d $DistroName --user root -- bash -lc "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; /usr/bin/docker info --format '{{.Name}}' 2>/dev/null || true"
+    $out = (($out | Out-String) -replace "`0", "").Trim()
+    if (-not $out -or $out -match "could not be found|Docker Desktop") {
+        throw "docker-ce is not usable inside '$DistroName'. Re-run this script or install docker-ce manually."
     }
-    # Soft check: warn if someone only has Desktop
     $desktop = Get-Process "Docker Desktop" -ErrorAction SilentlyContinue
     if ($desktop) {
-        Write-Warn "Docker Desktop is running on Windows. EyeNet uses docker-ce inside '$DistroName' — prefer quitting Desktop to avoid confusion."
+        Write-Warn "Docker Desktop is running on Windows. EyeNet uses docker-ce inside '$DistroName' - prefer quitting Desktop to avoid confusion."
     }
     Write-Ok "Docker engine name: $out"
 }

@@ -2,8 +2,8 @@
 
 **Status:** Implementation spec  
 **Date:** 2026-09-14  
-**Release pin:** matches repository root `VERSION` (currently `2.25.80`)  
-**Related:** [deployment/windows-installer/](../../deployment/windows-installer/), [first-windows-release-2.25.80.md](../guides/first-windows-release-2.25.80.md), [headscaleVPN guide](../guides/headscaleVPN/headscaleVPN%20guide.md)
+**Release pin:** matches repository root `VERSION` (currently `2.25.81`)  
+**Related:** [deployment/windows-installer/](../../deployment/windows-installer/), [first-windows-release-2.25.81.md](../guides/first-windows-release-2.25.81.md), [headscaleVPN guide](../guides/headscaleVPN/headscaleVPN%20guide.md)
 
 ---
 

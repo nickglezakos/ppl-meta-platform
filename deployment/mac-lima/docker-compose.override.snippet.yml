@@ -1,0 +1,18 @@
+# Merged into ~/eyenet-platform/docker-compose.override.yml by setup / manual apply.
+# Keeps Lima smoke-test healthy without a full image rebuild.
+
+services:
+  ppl-meta-node:
+    volumes:
+      # Image may hard-import netifaces; mount repo module with optional import.
+      - /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node/src/services/multicast_discovery.py:/app/src/services/multicast_discovery.py:ro
+      # Image lacks "skip missing bootstrap user" guard and crash-loops on empty DB.
+      - /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node/src/main.py:/app/src/main.py:ro
+  ppl-meta-vmeta:
+    healthcheck:
+      # Image has no curl; use python for Docker health status.
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/health', timeout=5)\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s

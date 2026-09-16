@@ -214,7 +214,18 @@ class CameraService:
         Returns:
             True if connection successful
         """
-        # Get camera info from cache if not provided
+        # Always refresh from DB when possible so URL/credential edits take effect.
+        # Stale detected_cameras entries were keeping old /stream paths after PUT updates.
+        db_info = await self._load_camera_from_database(device_id)
+        if db_info:
+            camera_info = db_info
+            self.detected_cameras[device_id] = db_info
+            logger.info(
+                f"✅ Camera {device_id} loaded from database "
+                f"(type: {db_info.get('camera_type')})"
+            )
+
+        # Get camera info from cache if not provided / not in DB
         if not camera_info:
             camera_info = self.detected_cameras.get(device_id)
             
@@ -242,12 +253,6 @@ class CameraService:
                 if camera_info:
                     self.detected_cameras[device_id] = camera_info
             
-            # If still not found, try generic database lookup (for UUID-based cameras)
-            if not camera_info:
-                camera_info = await self._load_camera_from_database(device_id)
-                if camera_info:
-                    self.detected_cameras[device_id] = camera_info
-            
             if not camera_info:
                 logger.error(f"❌ Camera info not found for {device_id}")
                 return False
@@ -259,9 +264,25 @@ class CameraService:
                 camera_type=camera_info["camera_type"],
                 camera_info=camera_info
             )
+            # Keep worker config in sync with latest DB connection_string
+            old_cs = (worker.camera_info or {}).get("connection_string")
+            new_cs = camera_info.get("connection_string")
+            worker.camera_info = camera_info
         except RuntimeError as e:
             logger.error(f"❌ Failed to create worker: {e}")
             return False
+
+        # Already open with the same URL — avoid CONNECTED→CONNECTING flap that
+        # makes the UI look disconnected and drops the RTSP session.
+        from src.services.camera_worker import CameraStatus
+        cam_type = camera_info.get("camera_type")
+        type_name = getattr(cam_type, "name", str(cam_type)).upper()
+        already_live = worker.status == CameraStatus.CONNECTED and old_cs == new_cs
+        if already_live and (
+            worker.cap is not None or "MOBILE" in type_name or "EDGE" in type_name
+        ):
+            logger.info(f"✅ Camera {device_id} already connected — skipping reconnect")
+            return True
         
         # Send connect command
         try:
@@ -271,7 +292,8 @@ class CameraService:
             })
             
             # Poll for result with async delays (no executor blocking)
-            timeout = 15.0
+            # RTSP open (esp. Tapo high-res) often takes 20–35s; USB is faster.
+            timeout = 45.0 if "RTSP" in type_name else 15.0
             start_time = asyncio.get_event_loop().time()
             
             while True:
@@ -495,6 +517,18 @@ class CameraService:
                         # Determine connection string and index based on camera type
                         connection_string = camera.connection_string
                         index = None
+
+                        if camera.camera_type == CameraType.RTSP:
+                            from src.services.rtsp_url import rebuild_rtsp_url_from_camera
+
+                            rebuilt = rebuild_rtsp_url_from_camera(
+                                camera.connection_string,
+                                camera.username,
+                                camera.password,
+                                camera.port,
+                            )
+                            if rebuilt:
+                                connection_string = rebuilt
                         
                         # For USB cameras without connection_string, derive from device_id or use index 0
                         if camera.camera_type == CameraType.USB and not connection_string:
@@ -554,11 +588,19 @@ class CameraService:
                 try:
                     camera = db.query(Camera).filter(Camera.device_id == device_id).first()
                     if camera and camera.camera_type == CameraType.RTSP:
+                        from src.services.rtsp_url import rebuild_rtsp_url_from_camera
+
+                        connection_string = rebuild_rtsp_url_from_camera(
+                            camera.connection_string,
+                            camera.username,
+                            camera.password,
+                            camera.port,
+                        ) or camera.connection_string
                         return {
                             "device_id": camera.device_id,
                             "name": camera.name,
                             "camera_type": CameraType.RTSP,
-                            "connection_string": camera.connection_string,
+                            "connection_string": connection_string,
                             "resolution_width": camera.resolution_width,
                             "resolution_height": camera.resolution_height,
                             "max_fps": camera.max_fps,

@@ -10,8 +10,11 @@ final cameraStatusServiceProvider = Provider<CameraStatusService>((ref) {
   // Get auth service to retrieve token
   final authService = ref.watch(authServiceProvider);
   
+  // Use gateway (apiBaseUrl), not direct :8005. Behind local HTTPS nginx the UI
+  // is same-origin on :443, and only /api/... is proxied; camera WS is proxied
+  // by nginx/gateway to the cameras service.
   final service = CameraStatusService(
-    baseUrl: AppConfig.instance.cameraServiceUrl,
+    baseUrl: AppConfig.instance.apiBaseUrl,
     authService: authService,
   );
   

@@ -90,6 +90,9 @@ class Camera {
     if (json['port'] != null) {
       metadata['port'] = json['port'];
     }
+    if (json['username'] != null) {
+      metadata['username'] = json['username'];
+    }
     
     // Determine camera type with mobile and edge detection
     CameraType cameraType;

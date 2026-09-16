@@ -186,7 +186,7 @@ async def create_instant_detection_session(
 async def complete_instant_detection_session(
     session_uuid: str,
     mvr_service: MVRService = Depends(get_mvr_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user_or_internal_service),
 ):
     """Mark a tracking session as completed."""
     requester = current_user.get("email") or current_user.get("service_name") or "unknown"
@@ -549,56 +549,144 @@ async def _create_individual(
             "gait_band": po.gait_band,
         }
 
-    await conn.execute(
-        """
-        INSERT INTO individuals (
-            individual_uuid, individual_id, confidence_score,
-            spatial_signature, temporal_signature,
-            source_type, created_by_session,
-            total_appearances, first_seen, last_seen,
-            created_at, updated_at,
-            person_objects,
-            gender_estimate, age_estimate
-        ) VALUES (
-            $1, $2, $3,
-            $4, $5,
-            $6, $7,
-            $8, $9, $10,
-            $11, $12,
-            $13,
-            $14, $15
-        )
-        """,
-        individual_uuid,
-        individual_id,
-        po.avg_confidence,
-        json.dumps({}),
-        json.dumps(temporal_signature),
-        "instant_detection",
-        session_id,
-        1,
-        cycle_ts,
-        cycle_ts,
-        cycle_ts,
-        cycle_ts,
-        person_objects_json,
-        gender_est,
-        age_est,
-    )
+    # Prefer full schema; fall back for minimal Lima/installer DBs.
+    insert_attempts = [
+        (
+            """
+            INSERT INTO individuals (
+                individual_uuid, individual_id, confidence_score,
+                spatial_signature, temporal_signature,
+                source_type, created_by_session,
+                total_appearances, first_seen, last_seen,
+                created_at, updated_at,
+                person_objects,
+                gender_estimate, age_estimate
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+            )
+            """,
+            (
+                individual_uuid,
+                individual_id,
+                po.avg_confidence,
+                json.dumps({}),
+                json.dumps(temporal_signature),
+                "instant_detection",
+                session_id,
+                1,
+                cycle_ts,
+                cycle_ts,
+                cycle_ts,
+                cycle_ts,
+                person_objects_json,
+                gender_est,
+                age_est,
+            ),
+        ),
+        (
+            """
+            INSERT INTO individuals (
+                individual_uuid, individual_id, confidence_score,
+                spatial_signature, temporal_signature,
+                source_type, created_by_session,
+                created_at, updated_at,
+                gender_estimate, age_estimate
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+            )
+            """,
+            (
+                individual_uuid,
+                individual_id,
+                po.avg_confidence,
+                json.dumps({}),
+                json.dumps(temporal_signature),
+                "instant_detection",
+                session_id,
+                cycle_ts,
+                cycle_ts,
+                gender_est,
+                age_est,
+            ),
+        ),
+        (
+            """
+            INSERT INTO individuals (
+                individual_uuid, individual_id, confidence_score,
+                spatial_signature, temporal_signature,
+                source_type, created_by_session,
+                created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9
+            )
+            """,
+            (
+                individual_uuid,
+                individual_id,
+                po.avg_confidence,
+                json.dumps({}),
+                json.dumps(temporal_signature),
+                "instant_detection",
+                session_id,
+                cycle_ts,
+                cycle_ts,
+            ),
+        ),
+        (
+            """
+            INSERT INTO individuals (
+                individual_uuid, individual_id, confidence_score,
+                spatial_signature, temporal_signature,
+                source_type, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8
+            )
+            """,
+            (
+                individual_uuid,
+                individual_id,
+                po.avg_confidence,
+                json.dumps({}),
+                json.dumps(temporal_signature),
+                "instant_detection",
+                cycle_ts,
+                cycle_ts,
+            ),
+        ),
+    ]
 
-    # Session-individual relationship
-    await conn.execute(
-        """
-        INSERT INTO session_individuals (
-            session_uuid, individual_uuid, processing_type, confidence_contribution
-        ) VALUES ($1, $2, $3, $4)
-        ON CONFLICT DO NOTHING
-        """,
-        session_id,
-        individual_uuid,
-        "new",
-        po.avg_confidence,
-    )
+    last_exc: Optional[Exception] = None
+    for sql, params in insert_attempts:
+        try:
+            await conn.execute(sql, *params)
+            last_exc = None
+            break
+        except Exception as exc:
+            last_exc = exc
+            msg = str(exc).lower()
+            if "does not exist" in msg or "undefinedcolumn" in msg:
+                continue
+            raise
+    if last_exc is not None:
+        raise last_exc
+
+    # Session-individual relationship (optional on minimal schemas)
+    try:
+        await conn.execute(
+            """
+            INSERT INTO session_individuals (
+                session_uuid, individual_uuid, processing_type, confidence_contribution
+            ) VALUES ($1, $2, $3, $4)
+            ON CONFLICT DO NOTHING
+            """,
+            session_id,
+            individual_uuid,
+            "new",
+            po.avg_confidence,
+        )
+    except Exception as exc:
+        if "session_individuals" not in str(exc).lower() and "does not exist" not in str(exc).lower():
+            raise
 
     return individual_uuid
 

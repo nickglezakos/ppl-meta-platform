@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EyeNet PPL Meta Platform — Windows Installation Guide</title>
+  <title>EyeNet — Windows Install Guide (for beginners)</title>
   <style>
     :root {
       --brand-primary: #1976d2;
@@ -124,7 +124,7 @@
 
     .lead {
       font-size: 18px;
-      color: #334155;
+      color: #cbd5e1;
       max-width: 62ch;
     }
 
@@ -367,6 +367,7 @@
       padding: 10px 14px;
       text-align: left;
       border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+      vertical-align: top;
     }
 
     th {
@@ -379,11 +380,6 @@
 
     td {
       font-size: 14px;
-    }
-
-    td:last-child {
-      font-weight: 700;
-      text-align: right;
     }
 
     code {
@@ -431,6 +427,14 @@
       font-weight: 700;
       margin-right: 10px;
       flex-shrink: 0;
+    }
+
+    .checklist li {
+      margin-top: 10px;
+    }
+
+    .plain-list {
+      margin-top: 12px;
     }
 
     @page {
@@ -484,28 +488,6 @@
 
       .hero {
         margin-bottom: 12px;
-        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
-        color: #ffffff;
-        border-color: rgba(34, 211, 238, 0.14);
-      }
-
-      .meta-card {
-        background: rgba(255, 255, 255, 0.04);
-        color: #ffffff;
-        border-color: rgba(34, 211, 238, 0.12);
-      }
-
-      .brand-chip,
-      .callout,
-      .warning-callout,
-      .success-callout {
-        color: #f5fbff;
-      }
-
-      .brand-link,
-      .meta-label,
-      .lead {
-        color: inherit;
       }
 
       .section {
@@ -531,291 +513,270 @@
           <div class="brand-row">
             <div class="brand-stack">
               <img src="../../ppl-meta-frontend/assets/images/eyenet-dark.svg" alt="EyeNet logo" onerror="this.style.display='none'" />
-              <span class="brand-chip">Installation Guide</span>
+              <span class="brand-chip">For beginners</span>
             </div>
           </div>
-          <span class="eyebrow">Windows Deployment — Docker Desktop</span>
-          <h1>EyeNet PPL Meta Platform<br />Windows Installation Guide</h1>
+          <span class="eyebrow">Windows PC · Docker Desktop · Pull from GHCR</span>
+          <h1>Install EyeNet on Windows<br />in plain English</h1>
+          <p class="lead">Follow these steps on a normal Windows desktop or laptop (Intel/AMD). You do <strong>not</strong> need to build software. You download one installer file, answer a few prompts, and open a web page.</p>
           <a class="brand-link" href="https://eyenet-vision.com/">https://eyenet-vision.com/</a>
         </div>
 
         <aside class="meta-card">
-          <h3>Guide Snapshot</h3>
+          <h3>Quick facts</h3>
           <div class="meta-grid">
             <div class="meta-item">
-              <span class="meta-label">Target OS</span>
-              <span class="meta-value">Windows 10 / 11 (AMD64)</span>
+              <span class="meta-label">PC type</span>
+              <span class="meta-value">Windows 10 / 11 (64-bit Intel/AMD)</span>
             </div>
             <div class="meta-item">
-              <span class="meta-label">Architecture</span>
-              <span class="meta-value">linux/amd64 (via Docker)</span>
+              <span class="meta-label">Not supported</span>
+              <span class="meta-value">Windows on ARM (e.g. some Surface)</span>
             </div>
             <div class="meta-item">
-              <span class="meta-label">Release Version</span>
-              <span class="meta-value">2.25.40</span>
+              <span class="meta-label">Release</span>
+              <span class="meta-value">2.25.81</span>
             </div>
             <div class="meta-item">
-              <span class="meta-label">Image Registry</span>
-              <span class="meta-value">ghcr.io/nickglezakos/ppl-meta-platform</span>
+              <span class="meta-label">RAM needed</span>
+              <span class="meta-value">16 GB or more</span>
             </div>
             <div class="meta-item">
-              <span class="meta-label">Prerequisites</span>
-              <span class="meta-value">Docker Desktop</span>
+              <span class="meta-label">Free disk</span>
+              <span class="meta-value">12 GB or more</span>
             </div>
             <div class="meta-item">
-              <span class="meta-label">Disk Space</span>
-              <span class="meta-value">~15 GB free</span>
+              <span class="meta-label">Images</span>
+              <span class="meta-value">9 services from GHCR</span>
             </div>
             <div class="meta-item">
-              <span class="meta-label">Services</span>
-              <span class="meta-value">9 microservices + DB & Redis</span>
+              <span class="meta-label">Open the app at</span>
+              <span class="meta-value">http://localhost:3000</span>
             </div>
             <div class="meta-item">
               <span class="meta-label">Updated</span>
-              <span class="meta-value">6 July 2026</span>
+              <span class="meta-value">13 Sep 2026</span>
             </div>
           </div>
         </aside>
       </div>
     </header>
 
-    <!-- SECTION 1: Overview -->
     <section class="section">
       <div class="section-title">
         <span class="section-number">1</span>
-        <h2>Overview</h2>
+        <h2>What this does (and does not do)</h2>
       </div>
-      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">This guide covers installing the complete EyeNet PPL Meta Platform on a Windows 10 or 11 PC with an Intel or AMD processor. All services run inside Docker containers managed by Docker Desktop — no manual Python, PostgreSQL, or Node.js installations required.</div>
-      <p>The installation uses three files from the <code>deployment/windows-installer/</code> directory. The PowerShell installer script automates the entire process: it creates configuration, pulls pre-built AMD64 Docker images from the public GitHub Container Registry, and starts all services.</p>
+      <div class="callout" style="margin-bottom: 16px;">
+        EyeNet runs as Docker containers on your PC. The installer pulls ready-made images tagged <code>2.25.81</code> from GitHub Container Registry. No Python, no Node, no database install by hand.
+      </div>
       <div class="grid-two">
         <div>
-          <h3>Services Installed</h3>
-          <table>
-            <tr><th>Service</th><th>Port</th><th>Purpose</th></tr>
-            <tr><td>PostgreSQL 15</td><td>5433</td><td>Shared database</td></tr>
-            <tr><td>Redis 7</td><td>6379</td><td>Cache & pub/sub</td></tr>
-            <tr><td>ppl-meta-node</td><td>8001</td><td>User management & auth</td></tr>
-            <tr><td>ppl-meta-media</td><td>8000</td><td>Media storage & processing</td></tr>
-            <tr><td>ppl-meta-gateway</td><td>8080</td><td>API gateway & routing</td></tr>
-            <tr><td>ppl-meta-orchestrator</td><td>8002</td><td>Workflow orchestration</td></tr>
-            <tr><td>ppl-meta-vision</td><td>8003</td><td>Computer vision engine</td></tr>
-            <tr><td>ppl-meta-vmeta</td><td>8008</td><td>Face matching & identity</td></tr>
-            <tr><td>ppl-meta-discovery</td><td>8004</td><td>Device & service discovery</td></tr>
-            <tr><td>ppl-meta-communications</td><td>8009</td><td>Email, webhook & messaging</td></tr>
-            <tr><td>ppl-meta-frontend</td><td>3000</td><td>Web UI</td></tr>
-          </table>
+          <h3>You will</h3>
+          <ul class="plain-list">
+            <li>Install Docker Desktop (once)</li>
+            <li>Double-click <code>install-platform.bat</code></li>
+            <li>Log in to GHCR when asked (token)</li>
+            <li>Wait while images download and start</li>
+            <li>Open the browser and activate ownership (bootstrap)</li>
+          </ul>
         </div>
         <div class="summary-card">
-          <p><strong>Files You'll Need</strong></p>
-          <p>Copy these three files from the project's <code>deployment/windows-installer/</code> directory to a folder on the Windows machine (e.g. <code>C:\EyeNet</code>):</p>
-          <ol style="padding-left: 18px;">
-            <li><code>install-platform.ps1</code> — PowerShell installer</li>
-            <li><code>docker-compose.windows-installer.yml</code> — Compose configuration</li>
-            <li><code>.env.windows.template</code> — Environment template</li>
-          </ol>
+          <p><strong>You will not</strong></p>
+          <ul>
+            <li>Compile the product</li>
+            <li>Run Flutter or GitHub Actions on the customer PC</li>
+            <li>Need Linux skills (Docker Desktop handles that)</li>
+          </ul>
+          <p style="margin-top: 14px;"><strong>One file to start:</strong> <code>install-platform.bat</code> from <code>deployment/windows-installer/</code>. Put it anywhere (Desktop is fine). It can download the other installer files for you.</p>
         </div>
       </div>
     </section>
 
-    <!-- SECTION 2: Prerequisites -->
     <section class="section">
       <div class="section-title">
         <span class="section-number">2</span>
-        <h2>Prerequisites</h2>
+        <h2>Before you start — checklist</h2>
       </div>
       <div class="stats-grid">
         <div class="key-card">
-          <span class="stat-label">Operating System</span>
-          <span class="stat-value">Win 10/11</span>
-          <p>Windows 10 or Windows 11 (64-bit). Must have an Intel or AMD processor — ARM-based Windows devices (like Surface Pro X) are not supported.</p>
+          <span class="stat-label">Computer</span>
+          <span class="stat-value">16 GB+</span>
+          <p>Windows 10 or 11, 64-bit Intel or AMD. At least <strong>16 GB RAM</strong> and <strong>12 GB free disk</strong> (SSD preferred).</p>
         </div>
         <div class="key-card">
           <span class="stat-label">Docker Desktop</span>
-          <span class="stat-value">Req.</span>
-          <p>Docker Desktop must be installed and running. Download from <a href="https://www.docker.com/products/docker-desktop/" target="_blank">docker.com</a>. The free tier is sufficient.</p>
+          <span class="stat-value">On</span>
+          <p>Install from <a href="https://www.docker.com/products/docker-desktop/" target="_blank" rel="noopener">docker.com</a>. Use the <strong>WSL 2</strong> backend. Leave Docker running (whale icon steady in the tray).</p>
         </div>
         <div class="key-card">
-          <span class="stat-label">Disk Space</span>
-          <span class="stat-value">~15 GB</span>
-          <p>Approximately 12 GB for Docker images and 3+ GB for database and application data. An SSD is strongly recommended.</p>
+          <span class="stat-label">From EyeNet</span>
+          <span class="stat-value">Keys</span>
+          <p>Have ready: approved <strong>owner email</strong> and application key starting with <code>lic_…</code> (Authority). Also a GitHub token that can <strong>read packages</strong>.</p>
         </div>
       </div>
-      <div class="warning-callout" style="margin-top: 24px;">
-        <strong>Important:</strong> Before running the installer, ensure Docker Desktop is fully started (the whale icon in the system tray is steady, not animating). The installer verifies Docker availability and will fail if Docker is not running.
+
+      <h3 style="margin-top: 28px;">GitHub token (so Docker can download images)</h3>
+      <p>Images live on a private registry: <code>ghcr.io/nickglezakos/ppl-meta-platform</code>. You need a Personal Access Token with at least <strong>read:packages</strong>.</p>
+      <ol class="checklist">
+        <li>Open <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">github.com/settings/tokens</a></li>
+        <li>Create a classic token (or fine-grained with Packages read)</li>
+        <li>Enable <code>read:packages</code> (or use a token that already has <code>write:packages</code>)</li>
+        <li>Copy the token and keep it handy — you paste it when the installer asks to log in to <code>ghcr.io</code></li>
+      </ol>
+      <div class="warning-callout" style="margin-top: 20px;">
+        Username for login is usually your GitHub username (for EyeNet builds: <code>nickglezakos</code>). Password = the <strong>token</strong>, not your GitHub account password.
       </div>
     </section>
 
-    <!-- SECTION 3: Step-by-Step -->
     <section class="section">
       <div class="section-title">
         <span class="section-number">3</span>
-        <h2>Step-by-Step Installation</h2>
+        <h2>Install — click through the wizard</h2>
       </div>
 
-      <h3 style="margin-top: 8px;"><span class="step-number">1</span> Prepare the Installer Folder</h3>
-      <p>Create a folder on the Windows machine (e.g. <code>C:\EyeNet</code>) and copy the three installer files into it:</p>
-      <pre><code>C:\EyeNet\
-├── install-platform.ps1
-├── docker-compose.windows-installer.yml
-└── .env.windows.template</code></pre>
+      <h3><span class="step-number">1</span> Get the installer</h3>
+      <p>Copy <code>install-platform.bat</code> onto the Windows PC (from your EyeNet package or from the repo folder <code>deployment/windows-installer/</code>). Optional: also copy <code>docker-compose.windows-installer.yml</code> and <code>.env.windows.template</code> into the same folder — if they are missing, the bat file tries to download them.</p>
 
-      <h3 style="margin-top: 24px;"><span class="step-number">2</span> Open PowerShell as Administrator</h3>
-      <p>Right-click the Start button and select <strong>"Terminal (Admin)"</strong> or <strong>"PowerShell (Admin)"</strong>. If PowerShell's execution policy blocks scripts, first run:</p>
-      <pre><code>Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser</code></pre>
-      <p>Confirm the prompt with <strong>Y</strong> when asked.</p>
+      <h3 style="margin-top: 24px;"><span class="step-number">2</span> Start Docker Desktop</h3>
+      <p>Open Docker Desktop and wait until it says it is running. Do not continue while it is still “starting”.</p>
 
-      <h3 style="margin-top: 24px;"><span class="step-number">3</span> Navigate to the Installer Folder</h3>
-      <pre><code>cd C:\EyeNet</code></pre>
+      <h3 style="margin-top: 24px;"><span class="step-number">3</span> Double-click <code>install-platform.bat</code></h3>
+      <p>If Windows SmartScreen asks, choose <strong>More info</strong> → <strong>Run anyway</strong> (only if you trust this EyeNet file).</p>
+      <p>On first run you should see the EyeNet Platform Manager. Choose <strong>[1] Install / Reconfigure Platform</strong> (or press Enter if that is the default).</p>
 
-      <h3 style="margin-top: 24px;"><span class="step-number">4</span> Run the Installer</h3>
-      <pre><code>.\install-platform.ps1</code></pre>
-      <p>The installer will prompt you for three values (only if they're not already in your <code>.env.windows</code> file):</p>
+      <h3 style="margin-top: 24px;"><span class="step-number">4</span> Answer the installer’s questions</h3>
+      <p>The installer walks through about nine steps. In plain language:</p>
       <table>
-        <tr><th>Prompt</th><th>Description</th></tr>
-        <tr><td><strong>Installation UUID</strong></td><td>Your unique platform installation identifier — obtained from the EyeNet Authority dashboard</td></tr>
-        <tr><td><strong>Application Key</strong></td><td>The secret application key linked to your installation — also from the Authority dashboard</td></tr>
-        <tr><td><strong>PostgreSQL Password</strong></td><td>Choose a strong password for the local PostgreSQL database (typed securely, no visible characters)</td></tr>
+        <tr><th>Step</th><th>What it asks / does</th><th>What you do</th></tr>
+        <tr><td>1</td><td>Install folder</td><td>Press Enter for <code>C:\ppl-meta-platform</code>, or type another empty folder</td></tr>
+        <tr><td>2</td><td>RAM check (≥16 GB)</td><td>If it fails, use a PC with more RAM</td></tr>
+        <tr><td>3</td><td>Disk space (≥12 GB free)</td><td>Free space if needed</td></tr>
+        <tr><td>4</td><td>Docker running?</td><td>Start Docker Desktop, then retry</td></tr>
+        <tr><td>5</td><td>WSL memory (aims for 12 GB)</td><td>Allow updating <code>.wslconfig</code> if prompted; restart Docker if asked</td></tr>
+        <tr><td>6</td><td>Download companion files</td><td>Needs internet; wait</td></tr>
+        <tr><td>7</td><td>Credentials / <code>.env.windows</code></td><td>Fill prompts (DB password, etc.). Keep <code>RELEASE_TAG=2.25.81</code></td></tr>
+        <tr><td>8</td><td>Pull 9 Docker images</td><td>Log in to <code>ghcr.io</code> with your token when asked; wait 5–15+ minutes</td></tr>
+        <tr><td>9</td><td>Start containers</td><td>Wait until it says the platform is running</td></tr>
       </table>
 
-      <h3 style="margin-top: 24px;"><span class="step-number">5</span> Wait for Pull & Startup</h3>
-      <p>The script will automatically:</p>
-      <ol>
-        <li>Create <code>.env.windows</code> from the template (if it doesn't exist yet)</li>
-        <li>Pull all 9 Docker images from the public GHCR registry (~2.3 GB total)</li>
-        <li>Start the full stack with Docker Compose</li>
-      </ol>
-      <p>This may take 5–15 minutes depending on your internet connection speed. You'll see progress bars during the pull.</p>
+      <h3 style="margin-top: 24px;"><span class="step-number">5</span> Open the app</h3>
+      <p>When you see success, open a browser on the same PC:</p>
+      <pre><code>http://localhost:3000</code></pre>
 
-      <h3 style="margin-top: 24px;"><span class="step-number">6</span> Verify the Installation</h3>
-      <pre><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml ps</code></pre>
-      <p>All 11 services should show <strong>Status: Up</strong>. If any service shows <strong>Restarting</strong> or <strong>Exited</strong>, check the logs:</p>
-      <pre><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml logs <service-name></code></pre>
+      <div class="success-callout" style="margin-top: 20px;">
+        If the app sends you to <strong>/bootstrap</strong>, that is normal on first start. Enter the Authority-approved <strong>owner email</strong> and the <code>lic_…</code> application key. After success you should land on <strong>/home</strong>.
+      </div>
     </section>
 
-    <!-- SECTION 4: Access Points -->
     <section class="section">
       <div class="section-title">
         <span class="section-number">4</span>
-        <h2>Access Points & Ports</h2>
+        <h2>Did it work? Quick checks</h2>
       </div>
-      <p>Once all services are running, the platform is accessible at:</p>
-      <table>
-        <tr><th>Service</th><th>URL</th><th>Port</th></tr>
-        <tr><td>Web Frontend</td><td><code>http://localhost:3000</code></td><td>3000</td></tr>
-        <tr><td>API Gateway</td><td><code>http://localhost:8080</code></td><td>8080</td></tr>
-        <tr><td>Node Service (Auth)</td><td><code>http://localhost:8001</code></td><td>8001</td></tr>
-        <tr><td>Media Service</td><td><code>http://localhost:8000</code></td><td>8000</td></tr>
-        <tr><td>Orchestrator</td><td><code>http://localhost:8002</code></td><td>8002</td></tr>
-        <tr><td>Vision</td><td><code>http://localhost:8003</code></td><td>8003</td></tr>
-        <tr><td>Discovery</td><td><code>http://localhost:8004</code></td><td>8004</td></tr>
-        <tr><td>VMeta</td><td><code>http://localhost:8008</code></td><td>8008</td></tr>
-        <tr><td>Communications</td><td><code>http://localhost:8009</code></td><td>8009</td></tr>
-      </table>
-      <div class="success-callout" style="margin-top: 24px;">
-        <strong>Ready!</strong> Open <code>http://localhost:3000</code> in your browser. Log in with your EyeNet administrator credentials (configured through the Authority dashboard during onboarding).
+      <div class="grid-two">
+        <div>
+          <h3>From the bat menu</h3>
+          <p>Run <code>install-platform.bat</code> again and use:</p>
+          <ul>
+            <li><strong>[4] View Container Status</strong> — services should be Up</li>
+            <li><strong>[2] Start</strong> / <strong>[3] Stop</strong> if you need to restart later</li>
+          </ul>
+          <h3 style="margin-top: 22px;">From PowerShell (optional)</h3>
+          <pre><code>cd C:\ppl-meta-platform
+docker compose -f docker-compose.windows-installer.yml --env-file .env.windows ps
+curl http://localhost:8080/api/v1/licensing/bootstrap/status</code></pre>
+        </div>
+        <div class="summary-card">
+          <p><strong>Useful URLs on this PC</strong></p>
+          <table>
+            <tr><th>What</th><th>Address</th></tr>
+            <tr><td>Web UI</td><td><code>http://localhost:3000</code></td></tr>
+            <tr><td>API gateway</td><td><code>http://localhost:8080</code></td></tr>
+            <tr><td>Bootstrap (first time)</td><td><code>http://localhost:3000/bootstrap</code></td></tr>
+          </table>
+          <p class="footer-note">Release pin must stay <code>RELEASE_TAG=2.25.81</code> unless EyeNet tells you to move to a newer published tag.</p>
+        </div>
       </div>
     </section>
 
-    <!-- SECTION 5: Day-to-day Operations -->
     <section class="section">
       <div class="section-title">
         <span class="section-number">5</span>
-        <h2>Day-to-Day Operations</h2>
+        <h2>Day-to-day (still simple)</h2>
       </div>
       <div class="grid-two">
         <div>
-          <h3>Starting and Stopping</h3>
-          <p>All commands must be run from <strong>PowerShell (Admin)</strong> in the <code>C:\EyeNet</code> folder.</p>
-          <table>
-            <tr><th>Action</th><th>Command</th></tr>
-            <tr><td>Start all services</td><td><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml up -d</code></td></tr>
-            <tr><td>Stop all services</td><td><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml stop</code></td></tr>
-            <tr><td>Restart all services</td><td><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml restart</code></td></tr>
-            <tr><td>View service status</td><td><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml ps</code></td></tr>
-            <tr><td>View logs (all)</td><td><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml logs -f</code></td></tr>
-            <tr><td>View logs (one service)</td><td><code>docker compose --env-file .env.windows -f docker-compose.windows-installer.yml logs -f ppl-meta-node</code></td></tr>
-          </table>
+          <h3>Start / stop</h3>
+          <ol>
+            <li>Start Docker Desktop</li>
+            <li>Double-click <code>install-platform.bat</code> in the install folder</li>
+            <li>Choose Start or Stop from the menu</li>
+          </ol>
+          <p>Or in PowerShell from the install folder:</p>
+          <pre><code>docker compose -f docker-compose.windows-installer.yml --env-file .env.windows up -d
+docker compose -f docker-compose.windows-installer.yml --env-file .env.windows stop</code></pre>
         </div>
         <div>
-          <h3>Updates</h3>
-          <p>To update to a new release:</p>
+          <h3>Update to a newer release (later)</h3>
           <ol>
-            <li>Stop the stack: <code>docker compose ... stop</code></li>
-            <li>Edit <code>.env.windows</code> and change <code>RELEASE_TAG</code> to the new version number</li>
-            <li>Pull new images: <code>docker compose ... pull</code></li>
-            <li>Start again: <code>docker compose ... up -d</code></li>
-          </ol>
-          <h3 style="margin-top: 22px;">Backup</h3>
-          <p>All persistent data is stored in Docker volumes (<code>postgres_data</code> and <code>redis_data</code>). To backup:</p>
-          <ol>
+            <li>Confirm EyeNet published the new tag on GHCR</li>
             <li>Stop the stack</li>
-            <li>Copy the Docker volumes from Docker Desktop's data directory</li>
-            <li>Alternatively, use <code>pg_dump</code> against <code>localhost:5433</code> to export the database</li>
+            <li>Edit <code>.env.windows</code> → set <code>RELEASE_TAG</code> to the new version</li>
+            <li>Pull and start again (or re-run Install from the bat)</li>
           </ol>
+          <h3 style="margin-top: 22px;">What got installed</h3>
+          <p>Nine app images (node, media, gateway, orchestrator, discovery, communications, frontend, vision-protected, vmeta-protected) plus PostgreSQL and Redis — all via Docker Compose.</p>
         </div>
       </div>
     </section>
 
-    <!-- SECTION 6: Troubleshooting -->
     <section class="section">
       <div class="section-title">
         <span class="section-number">6</span>
-        <h2>Troubleshooting</h2>
+        <h2>If something goes wrong</h2>
       </div>
-      <div class="grid-two">
-        <div>
-          <h3>Common Issues</h3>
-          <table>
-            <tr><th>Issue</th><th>Solution</th></tr>
-            <tr><td>Docker not found</td><td>Ensure Docker Desktop is installed and running (check system tray)</td></tr>
-            <tr><td>"Script not digitally signed"</td><td>Run <code>Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser</code></td></tr>
-            <tr><td>Port already in use</td><td>Check if another app is using ports 3000, 5433, 6379, or 8000–8009. Edit <code>.env.windows</code> to change port assignments</td></tr>
-            <tr><td>Container keeps restarting</td><td>Check logs: <code>docker compose ... logs <service></code>. Often caused by missing <code>INSTALLATION_UUID</code> or <code>APPLICATION_KEY</code></td></tr>
-            <tr><td>Not enough disk space</td><td>Free at least 15 GB. Run Docker Desktop's "Clean up" tool to remove unused images</td></tr>
-            <tr><td>Cannot pull images</td><td>Ensure internet access. If behind a corporate proxy, configure Docker Desktop's proxy settings</td></tr>
-          </table>
-        </div>
-        <div>
-          <h3>Health Checks</h3>
-          <p>Each service exposes a health check endpoint:</p>
-          <table>
-            <tr><th>Service</th><th>Health Check URL</th></tr>
-            <tr><td>Node</td><td><code>http://localhost:8001/api/v1/health/</code></td></tr>
-            <tr><td>Gateway</td><td><code>http://localhost:8080/health</code></td></tr>
-            <tr><td>Media</td><td><code>http://localhost:8000/health/</code></td></tr>
-            <tr><td>Vision</td><td><code>http://localhost:8003/health</code></td></tr>
-          </table>
-          <p class="footer-note">Test from PowerShell with: <code>curl http://localhost:8001/api/v1/health/</code></p>
-        </div>
-      </div>
+      <table>
+        <tr><th>Symptom</th><th>Try this</th></tr>
+        <tr><td>Installer says Docker not running</td><td>Open Docker Desktop; wait until fully started; run the bat again</td></tr>
+        <tr><td>RAM check failed</td><td>Need ≥16 GB physical RAM for this release standard</td></tr>
+        <tr><td>Not enough disk</td><td>Free ≥12 GB; in Docker Desktop use Clean / Purge unused data</td></tr>
+        <tr><td>Cannot pull images / unauthorized</td><td><code>docker login ghcr.io</code> with GitHub user + PAT (<code>read:packages</code>); then retry install</td></tr>
+        <tr><td>manifest unknown</td><td>Wrong tag — confirm <code>RELEASE_TAG=2.25.81</code> and that that tag was published</td></tr>
+        <tr><td>WSL memory warning</td><td>Allow the installer to write <code>%UserProfile%\.wslconfig</code> (12 GB / 6 CPUs / 2 GB swap), then restart Docker Desktop</td></tr>
+        <tr><td>Container keeps restarting</td><td>Check logs from bat menu [5]; often missing or wrong Authority credentials in <code>.env.windows</code></td></tr>
+        <tr><td>Bootstrap fails</td><td>Use the approved owner email and valid <code>lic_…</code> key from Authority</td></tr>
+        <tr><td>Port already in use</td><td>Stop the other app using 3000 / 8080 / 5433 / 6379 / 8000–8009, or change ports in <code>.env.windows</code></td></tr>
+      </table>
+      <pre style="margin-top: 18px;"><code>docker compose -f docker-compose.windows-installer.yml --env-file .env.windows logs --tail=100</code></pre>
     </section>
 
-    <!-- SECTION 7: Reference -->
     <section class="section">
       <div class="section-title">
         <span class="section-number">7</span>
-        <h2>Reference</h2>
+        <h2>Reference (for support)</h2>
       </div>
       <div class="stats-grid">
         <div class="key-card">
-          <span class="stat-label">Image Registry</span>
+          <span class="stat-label">Registry</span>
           <span class="stat-value" style="font-size: 18px;">GHCR</span>
-          <p><code>ghcr.io/nickglezakos/ppl-meta-platform</code><br />(public, no authentication required)</p>
+          <p><code>ghcr.io/nickglezakos/ppl-meta-platform</code><br />Private — needs package read token</p>
         </div>
         <div class="key-card">
-          <span class="stat-label">Total Images</span>
-          <span class="stat-value">9</span>
-          <p>Node, Media, Gateway, Orchestrator, Discovery, Communications, Vision, VMeta, Frontend</p>
+          <span class="stat-label">Tag</span>
+          <span class="stat-value" style="font-size: 22px;">2.25.81</span>
+          <p>Must match installer <code>VERSION</code> / <code>RELEASE_TAG</code>. Verified published for Windows amd64 pull installs.</p>
         </div>
         <div class="key-card">
-          <span class="stat-label">Documentation</span>
-          <span class="stat-value" style="font-size: 18px;">README</span>
-          <p>See <code>deployment/windows-installer/README.md</code> for build instructions, architecture details, and low-disk strategy.</p>
+          <span class="stat-label">Authority</span>
+          <span class="stat-value" style="font-size: 18px;">Online</span>
+          <p><code>https://authority.eyenet-vision.com</code> for license / bootstrap validation</p>
         </div>
       </div>
       <div class="note-card" style="margin-top: 22px;">
-        <p><strong>Note:</strong> The platform runs entirely on-premises. No data is sent to external servers. The only internet requirement is the initial Docker image pull from GHCR and the optional connection to the EyeNet Authority server at <code>https://authority.eyenet-vision.com</code> for license validation.</p>
+        <p><strong>For EyeNet staff:</strong> customer machines only <em>pull</em> pinned images. Publishing new tags is done via CI (<code>platform-release.yml</code>) or a lab Path B build — see <code>docs/deployment/windows-via-tailscale-eyenet-images.md</code> and <code>docs/guides/first-windows-release-2.25.81.md</code>. Installer details: <code>deployment/windows-installer/README.md</code>.</p>
       </div>
+      <p class="footer-note">Platform data stays on the PC (Docker volumes). Internet is needed for the first image pull and for Authority license checks.</p>
     </section>
   </div>
 </body>

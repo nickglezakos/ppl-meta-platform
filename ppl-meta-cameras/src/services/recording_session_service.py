@@ -68,6 +68,7 @@ class RecordingSessionService:
         session = RecordingSession(
             session_uuid=session_uuid,
             camera_id=camera.id,
+            camera_device_id=camera_device_id,
             user_id=user_id,
             status="active",
             recording_quality=(

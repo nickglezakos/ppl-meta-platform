@@ -21,8 +21,8 @@ class VMetaCacheClient:
             redis_url: Redis connection URL (default: from env or localhost)
         """
         self.redis_url = redis_url or os.getenv(
-            "REDIS_URL", 
-            "redis://localhost:6379"
+            "REDIS_URL",
+            "redis://redis:6379/0",
         )
         self.client: Optional[redis.Redis] = None
     

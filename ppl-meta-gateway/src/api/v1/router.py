@@ -76,11 +76,6 @@ async def _stream_proxy_response(target_url: str, headers: dict, query_params):
         )
 
 
-# JWT Configuration (should match Node service config)
-JWT_SECRET_KEY = "ppl-meta-secret-key-development-only-change-in-production"
-JWT_ALGORITHM = "HS256"
-
-
 def extract_user_from_token(request: Request) -> Dict[str, Any]:
     """Extract user information from JWT token in Authorization header."""
     try:
@@ -1958,6 +1953,27 @@ async def get_camera_workflow_settings(request: Request):
 async def update_camera_workflow_settings(request: Request):
     """Proxy update camera workflow settings to Cameras service."""
     # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/{device_id}/settings")
+async def get_camera_settings(request: Request):
+    """Proxy get camera settings to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.put("/cameras/{device_id}/settings")
+async def put_camera_settings(request: Request):
+    """Proxy put camera settings to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/cameras/{device_id}/settings")
+async def post_camera_settings(request: Request):
+    """Proxy post camera settings to Cameras service."""
     extract_user_from_token(request)
     return await _proxy_to_cameras_service(request)
 

@@ -32,6 +32,9 @@ structlog>=23.2.0
 
 # Service discovery dependencies
 python-consul>=1.1.0
+# Optional at runtime (multicast_discovery falls back if missing), but include
+# in images so Node does not crash on hard imports from older entrypoints.
+netifaces>=0.11.0
 
 # Additional shared dependencies
 tenacity>=8.2.3

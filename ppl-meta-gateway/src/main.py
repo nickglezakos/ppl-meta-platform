@@ -8,7 +8,10 @@ import uvicorn
 from api.v1.router import api_router
 from api.v1.camera_counters import router as camera_counters_router
 from api.v1.analytics import router as analytics_router
-from api.v1.websockets import router as websockets_router
+from api.v1.websockets import (
+    cameras_status_proxy_router,
+    router as websockets_router,
+)
 from api.v1.vpn import router as vpn_router
 from core.advanced_middleware import (
     AdvancedRateLimitMiddleware,
@@ -277,6 +280,12 @@ def create_app() -> FastAPI:
     app.include_router(camera_counters_router, prefix=settings.api_v1_prefix, tags=["Camera Counters"])
     app.include_router(analytics_router, prefix=settings.api_v1_prefix, tags=["Analytics"])
     app.include_router(websockets_router, prefix=settings.api_v1_prefix, tags=["WebSockets"])
+    # Camera status WS must be at /api/v1/cameras/ws/... (frontend same-origin / gateway path)
+    app.include_router(
+        cameras_status_proxy_router,
+        prefix=settings.api_v1_prefix,
+        tags=["Camera Status WebSocket Proxy"],
+    )
     app.include_router(vpn_router, prefix=settings.api_v1_prefix, tags=["VPN"])
 
     # Add metrics endpoint

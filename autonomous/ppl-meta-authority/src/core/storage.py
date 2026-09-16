@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 APPLICATION_KEY_PATTERN = re.compile(r"^lic_[0-9a-f]{32}$")
+CHANNEL_ROLES = frozenset({"platform_admin", "distributor", "reseller", "support"})
 CURRENT_DEV_APPLICATION_KEY = "lic_6f3c8d1e2b4a5c7d8e9f0a1b2c3d4e5f"
 ACTIVE_LICENCE_STATES = {"active", "grace"}
 IMMEDIATE_SAFEGUARD_STATUSES = {"revoked"}
@@ -379,6 +380,42 @@ def is_machine_application_key(value: str | None) -> bool:
     return bool(value and APPLICATION_KEY_PATTERN.fullmatch(value.strip().lower()))
 
 
+def is_placeholder_installation_uuid(
+    installation_uuid: str | None,
+    owner_email: str | None,
+) -> bool:
+    """True for leftover `{email}-N` binds that blocked first real activation."""
+    if not installation_uuid or not owner_email:
+        return not bool(installation_uuid)
+    prefix = f"{owner_email.strip().lower()}-"
+    if not installation_uuid.lower().startswith(prefix):
+        return False
+    return installation_uuid[len(prefix) :].isdigit()
+
+
+def _entitlement_can_bind_new_installation(record: dict[str, Any]) -> bool:
+    current_uuid = (record.get("installation_uuid") or "").strip()
+    if not current_uuid:
+        return True
+    return is_placeholder_installation_uuid(
+        current_uuid,
+        record.get("approved_owner_email"),
+    )
+
+
+def ensure_owner_invite_allowed(email: str, role_name: str) -> None:
+    if role_name != "owner":
+        return
+    existing = get_authority_user_by_email(email)
+    if existing is None:
+        return
+    if existing["role_name"] in CHANNEL_ROLES:
+        raise ValueError(
+            f"Cannot invite {email} as owner because that account is already a "
+            f"{existing['role_name']}. Use a different owner email."
+        )
+
+
 def _normalize_application_key(value: str | None) -> str:
     candidate = (value or "").strip().lower()
     if not candidate:
@@ -504,13 +541,24 @@ def create_authority_user_from_invitation(
 
     existing = get_authority_user_by_email(invitation["email"])
     if existing is not None:
+        if (
+            existing["role_name"] in CHANNEL_ROLES
+            and invitation["role_name"] == "owner"
+        ):
+            raise ValueError(
+                f"Cannot accept owner invitation for {existing['email']}: "
+                f"that account is already a {existing['role_name']}. "
+                "Use a different owner email."
+            )
         user = update_authority_user_from_invitation(
             user_uuid=existing["user_uuid"],
             password=password,
             display_name=display_name,
             role_name=invitation["role_name"],
-            distributor_uuid=invitation.get("distributor_uuid"),
-            reseller_uuid=invitation["reseller_uuid"],
+            distributor_uuid=invitation.get("distributor_uuid")
+            or existing.get("distributor_uuid"),
+            reseller_uuid=invitation.get("reseller_uuid")
+            or existing.get("reseller_uuid"),
         )
     else:
         user = create_authority_user(
@@ -540,10 +588,16 @@ def ensure_owner_entitlement_for_user(
         raise ValueError("Automatic entitlement creation only supports owner users")
 
     existing_records = list_entitlements_for_owner_email(user["email"])
-    if existing_records:
-        return existing_records[0]
+    for record in existing_records:
+        if _entitlement_can_bind_new_installation(record):
+            return record
 
     tenant_name = (user.get("display_name") or user["email"].split("@", 1)[0]).strip() or user["email"]
+    notes = (
+        "Auto-created during owner onboarding"
+        if not existing_records
+        else "Auto-created for an additional installation"
+    )
     entitlement = upsert_entitlement(
         {
             "licence_name": tenant_name,
@@ -553,7 +607,8 @@ def ensure_owner_entitlement_for_user(
             "warning_period_days": 0,
             "offline_grace_days": 14,
             "tenant_name": tenant_name,
-            "notes": "Auto-created during owner onboarding",
+            "activation_status": "pending_activation",
+            "notes": notes,
         }
     )
     create_authority_audit_event(
@@ -1148,7 +1203,9 @@ def create_invitation(
 ) -> dict[str, Any]:
     invitation_uuid = str(uuid.uuid4())
     invitation_token = secrets.token_urlsafe(24)
+    normalized_distributor_uuid = (distributor_uuid or "").strip() or None
     normalized_reseller_uuid = (reseller_uuid or "").strip() or None
+    ensure_owner_invite_allowed(email, role_name)
     if role_name == "reseller" and not normalized_reseller_uuid:
         normalized_reseller_uuid = f"reseller-{invitation_uuid[:8]}"
     expires_expr, expires_params = _future_timestamp_expression(expires_in_days, "days")
@@ -1171,7 +1228,7 @@ def create_invitation(
                 invitation_token,
                 email.lower(),
                 role_name,
-                distributor_uuid,
+                normalized_distributor_uuid,
                 normalized_reseller_uuid,
                 issued_by_user_uuid,
                 *expires_params,
@@ -1438,19 +1495,8 @@ def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
     )
     if installation_uuid is None and existing_entitlement is not None:
         installation_uuid = existing_entitlement.get("installation_uuid")
-    # Auto-generate systemic UUID if no installation_uuid provided
-    if installation_uuid is None:
-        owner_email = record.get("approved_owner_email", "").lower()
-        if owner_email:
-            with _connect() as conn:
-                count_row = conn.execute(
-                    "SELECT COUNT(*) AS cnt FROM entitlements WHERE lower(approved_owner_email) = lower(?)",
-                    (owner_email,),
-                ).fetchone()
-                existing_count = count_row["cnt"] if count_row else 0
-            installation_uuid = f"{owner_email}-{existing_count}"
-        else:
-            installation_uuid = None
+    # Leave new entitlements unbound. Placeholder `{email}-N` UUIDs blocked
+    # first-install activation with installation_already_bound_elsewhere.
     installation_uuid = installation_uuid or None
     licence_name = (
         record.get("licence_name")
@@ -1639,7 +1685,11 @@ def activate_entitlement(application_key: str, installation_uuid: str, owner_ema
     if entitlement["licence_status"] not in {"active", "grace"}:
         return {"approved": False, "reason": "licence_inactive"}
     if entitlement["installation_uuid"] and entitlement["installation_uuid"] != installation_uuid:
-        return {"approved": False, "reason": "installation_already_bound_elsewhere"}
+        if not is_placeholder_installation_uuid(
+            entitlement["installation_uuid"],
+            owner_email,
+        ):
+            return {"approved": False, "reason": "installation_already_bound_elsewhere"}
 
     existing_installation = get_installation_by_uuid(installation_uuid)
     if existing_installation and existing_installation["application_key"] != application_key:

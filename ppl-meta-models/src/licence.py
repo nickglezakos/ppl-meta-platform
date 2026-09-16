@@ -38,10 +38,13 @@ def fetch_licence_features() -> list[str]:
 
 
 def has_feature(feature: str) -> bool:
-    if not config.REQUIRE_LICENCE and config.ENVIRONMENT == "development":
-        # Local boot without Authority still needs catalog + upload for Phase B smoke.
-        if feature in (FEATURE_CATALOG, FEATURE_UPLOAD, FEATURE_CUSTOM):
-            return True
+    # Installer/demo stacks set MODELS_REQUIRE_LICENCE=false intentionally.
+    if not config.REQUIRE_LICENCE and feature in (
+        FEATURE_CATALOG,
+        FEATURE_UPLOAD,
+        FEATURE_CUSTOM,
+    ):
+        return True
     if config.ENVIRONMENT == "development" and feature in (
         FEATURE_CATALOG,
         FEATURE_UPLOAD,

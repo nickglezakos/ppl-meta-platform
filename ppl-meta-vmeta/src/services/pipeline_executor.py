@@ -47,8 +47,8 @@ class PipelineExecutor:
     
     def __init__(
         self,
-        media_service_url: str = "http://localhost:8000",
-        orchestrator_url: str = "http://localhost:8002",
+        media_service_url: str = None,
+        orchestrator_url: str = None,
         max_workers: int = 3,
         max_queue_size: int = 10,
         session_timeout_seconds: int = 300,
@@ -71,8 +71,15 @@ class PipelineExecutor:
             retry_max_delay: Maximum retry delay in seconds
             retry_backoff_multiplier: Backoff multiplier for retries
         """
-        self.media_service_url = media_service_url.rstrip('/')
-        self.orchestrator_url = orchestrator_url.rstrip('/')
+        import os
+        self.media_service_url = (
+            media_service_url
+            or os.getenv("MEDIA_SERVICE_URL", "http://ppl-meta-media:8000")
+        ).rstrip('/')
+        self.orchestrator_url = (
+            orchestrator_url
+            or os.getenv("ORCHESTRATOR_SERVICE_URL", "http://ppl-meta-orchestrator:8002")
+        ).rstrip('/')
         self.max_workers = max_workers
         self.max_queue_size = max_queue_size
         self.session_timeout_seconds = session_timeout_seconds

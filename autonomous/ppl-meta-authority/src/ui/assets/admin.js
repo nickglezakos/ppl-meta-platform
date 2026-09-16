@@ -743,9 +743,11 @@ function normalizePickerQuery() {
   return input.value.trim().toLowerCase();
 }
 
+const PICKER_RESULT_LIMIT = 40;
+
 function matchingEntitlements(query) {
   if (!query) {
-    return entitlementSearchCache.slice(0, 8);
+    return entitlementSearchCache.slice(0, PICKER_RESULT_LIMIT);
   }
   return entitlementSearchCache.filter((record) => [
     record.entitlement_uuid,
@@ -755,13 +757,13 @@ function matchingEntitlements(query) {
     record.installation_uuid,
     record.activation_status,
     record.licence_status,
-  ].some((value) => String(value || '').toLowerCase().includes(query))).slice(0, 8);
+  ].some((value) => String(value || '').toLowerCase().includes(query))).slice(0, PICKER_RESULT_LIMIT);
 }
 
 function matchingInstallations(query) {
   const installations = entitlementSearchCache.filter((record) => record.installation_uuid);
   if (!query) {
-    return installations.slice(0, 8);
+    return installations.slice(0, PICKER_RESULT_LIMIT);
   }
   return installations.filter((record) => [
     record.installation_uuid,
@@ -769,20 +771,42 @@ function matchingInstallations(query) {
     record.tenant_name,
     record.application_key,
     record.entitlement_uuid,
-  ].some((value) => String(value || '').toLowerCase().includes(query))).slice(0, 8);
+  ].some((value) => String(value || '').toLowerCase().includes(query))).slice(0, PICKER_RESULT_LIMIT);
 }
 
 function matchingScopedUsers(query, roleName, uuidField) {
-  const records = adminUsersCache.filter((record) => record.role_name === roleName && record[uuidField]);
+  const preferred = [];
+  const seen = new Map();
+  adminUsersCache.forEach((record) => {
+    const uuid = record[uuidField];
+    if (!uuid) {
+      return;
+    }
+    const existing = seen.get(uuid);
+    if (!existing || record.role_name === roleName) {
+      seen.set(uuid, record);
+    }
+  });
+  seen.forEach((record) => preferred.push(record));
+  const records = preferred.sort((left, right) => {
+    if (left.role_name === roleName && right.role_name !== roleName) {
+      return -1;
+    }
+    if (right.role_name === roleName && left.role_name !== roleName) {
+      return 1;
+    }
+    return String(left.email || '').localeCompare(String(right.email || ''));
+  });
   if (!query) {
-    return records.slice(0, 8);
+    return records.slice(0, PICKER_RESULT_LIMIT);
   }
   return records.filter((record) => [
     record.email,
     record.display_name,
     record.user_uuid,
     record[uuidField],
-  ].some((value) => String(value || '').toLowerCase().includes(query))).slice(0, 8);
+    record.role_name,
+  ].some((value) => String(value || '').toLowerCase().includes(query))).slice(0, PICKER_RESULT_LIMIT);
 }
 
 function pickerActivityItems(records, kind) {
@@ -804,17 +828,17 @@ function pickerActivityItems(records, kind) {
   }
   if (kind === 'distributor_scope') {
     return records.map((record) => ({
-      title: `${escapeHtml(record.display_name || record.email)} · distributor`,
+      title: `${escapeHtml(record.distributor_uuid)} · ${escapeHtml(record.role_name)}`,
       badges: statusBadgeMarkup(record.status || 'unknown'),
-      meta: `${escapeHtml(record.email)} · ${escapeHtml(record.distributor_uuid)}`,
+      meta: `${escapeHtml(record.email)} · ${escapeHtml(record.display_name || 'no display name')}`,
       actions: `<button type="button" class="secondary mini-button" data-picker-select-value="${escapeHtml(record.distributor_uuid)}">Use distributor scope</button>`,
     }));
   }
   if (kind === 'reseller_scope') {
     return records.map((record) => ({
-      title: `${escapeHtml(record.display_name || record.email)} · reseller`,
+      title: `${escapeHtml(record.reseller_uuid)} · ${escapeHtml(record.role_name)}`,
       badges: statusBadgeMarkup(record.status || 'unknown'),
-      meta: `${escapeHtml(record.email)} · ${escapeHtml(record.reseller_uuid)} · ${escapeHtml(record.distributor_uuid || 'no distributor')}`,
+      meta: `${escapeHtml(record.email)} · ${escapeHtml(record.distributor_uuid || 'no distributor')}`,
       actions: `<button type="button" class="secondary mini-button" data-picker-select-value="${escapeHtml(record.reseller_uuid)}" data-picker-distributor-uuid="${escapeHtml(record.distributor_uuid || '')}">Use reseller scope</button>`,
     }));
   }
@@ -2227,7 +2251,7 @@ function renderAdminUserDirectory() {
 function matchingUsers(query) {
   const normalized = query.trim().toLowerCase();
   if (!normalized) {
-    return adminUsersCache.slice(0, 8);
+    return adminUsersCache.slice(0, PICKER_RESULT_LIMIT);
   }
   return adminUsersCache.filter((record) => [
     record.email,
@@ -2237,7 +2261,7 @@ function matchingUsers(query) {
     record.status,
     record.distributor_uuid,
     record.reseller_uuid,
-  ].some((value) => String(value || '').toLowerCase().includes(normalized))).slice(0, 8);
+  ].some((value) => String(value || '').toLowerCase().includes(normalized))).slice(0, PICKER_RESULT_LIMIT);
 }
 
 function lookupActivityItems(records, target) {
@@ -2701,6 +2725,10 @@ async function startOwnerOnboarding() {
 
     if (!email) {
       setStatus('Owner onboarding requires an email address.', true);
+      return;
+    }
+    if (!distributorUuid && !resellerUuid) {
+      setStatus('Choose a distributor or reseller UUID so the owner is placed in the hierarchy. Type the UUID if the picker does not list the distributor account.', true);
       return;
     }
 

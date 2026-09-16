@@ -227,14 +227,14 @@
                       <label>Reseller UUID<input id="owner_onboarding_reseller_uuid" data-uuid-picker-kind="reseller_scope" placeholder="Click to search reseller scope"></label>
                       <label>Expiry days<input id="owner_onboarding_expires_in_days" type="number" min="1" max="30" value="7"></label>
                     </div>
-                    <div class="hint">Use reseller scope when the owner belongs under a specific reseller branch. Leave both fields blank only for exceptional platform-admin onboarding.</div>
+                    <div class="hint">Use reseller scope when the owner belongs under a specific reseller branch. Search or type a distributor UUID; the picker lists every known scope UUID, not only the first few distributor accounts.</div>
                   </div>
                 </section>
                 <section class="wizard-step">
                   <div class="wizard-step-number">3</div>
                   <div>
                     <h4>Send and monitor</h4>
-                    <div class="hint">When the owner accepts the email invitation, authority creates or reuses the entitlement automatically. Installation binding still happens later during assignment or activation.</div>
+                    <div class="hint">When the owner accepts, authority creates a new unbound licence if they do not already have one that can still be activated. Installation binding happens later on the Windows/Node bootstrap, not at invite time. Re-inviting an existing owner issues a new key when the previous licence is already bound.</div>
                     <div class="actions">
                       <button type="button" id="startOwnerOnboardingButton">Start owner onboarding</button>
                     </div>
@@ -523,7 +523,7 @@
             <div class="feature-card">
               <h3>Reseller Owner Invitation</h3>
               <div class="small">Creates an owner invitation token and attempts SMTP email delivery when authority mail settings are configured.</div>
-              <div class="hint">When the invited owner accepts, authority creates the entitlement automatically if one does not already exist for that owner email.</div>
+              <div class="hint">When the invited owner accepts, authority creates a new unbound licence unless they already have one that can still be activated. Already-bound licences are left in place.</div>
               <div class="row">
                 <label>Owner email<input id="reseller_invite_email" type="email" placeholder="owner@example.com"></label>
                 <label>Expiry days<input id="reseller_invite_expires" type="number" min="1" max="30" value="7"></label>

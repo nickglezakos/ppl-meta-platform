@@ -40,8 +40,15 @@ class CameraStatusService {
     if (_isDisposed) return;
     
     try {
-      final wsUrl = await _buildWebSocketUrl(deviceId);
-      debugPrint('🔌 Connecting to camera status WebSocket: $wsUrl');
+      final authToken = await _waitForAuthToken();
+      if (authToken == null || authToken.isEmpty) {
+        debugPrint('⏳ [CameraStatusService] No auth token yet — deferring WebSocket connect');
+        _scheduleReconnect(deviceId);
+        return;
+      }
+
+      final wsUrl = _buildWebSocketUrl(deviceId, authToken);
+      debugPrint('🔌 Connecting to camera status WebSocket: ${_redactToken(wsUrl, authToken)}');
       
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
       _reconnectAttempts = 0;
@@ -57,23 +64,30 @@ class CameraStatusService {
       _scheduleReconnect(deviceId);
     }
   }
-  
-  Future<String> _buildWebSocketUrl(String? deviceId) async {
-    // Get current auth token
-    final authToken = await authService.getToken() ?? '';
-    
-    debugPrint('🔑 [CameraStatusService] Got auth token: ${authToken.isNotEmpty ? "${authToken.substring(0, 20)}..." : "EMPTY"}');
-    
-    // Convert http://localhost:8005 to ws://localhost:8005
+
+  /// Prefer stored token, then in-memory ApiClient token; wait briefly for login.
+  Future<String?> _waitForAuthToken() async {
+    for (var attempt = 0; attempt < 20; attempt++) {
+      final token = await authService.getToken();
+      if (token != null && token.isNotEmpty) {
+        return token;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (_isDisposed) return null;
+    }
+    return await authService.getToken();
+  }
+
+  String _buildWebSocketUrl(String? deviceId, String authToken) {
     final wsBase = baseUrl.replaceFirst('http://', 'ws://').replaceFirst('https://', 'wss://');
-    
-    final wsUrl = deviceId != null
+    return deviceId != null
         ? '$wsBase/api/v1/cameras/ws/status/$deviceId?token=$authToken'
         : '$wsBase/api/v1/cameras/ws/status?token=$authToken';
-    
-    debugPrint('🌐 [CameraStatusService] WebSocket URL: ${wsUrl.replaceAll(authToken, "***")}');
-    
-    return wsUrl;
+  }
+
+  String _redactToken(String wsUrl, String authToken) {
+    if (authToken.isEmpty) return wsUrl;
+    return wsUrl.replaceAll(authToken, '***');
   }
   
   void _handleMessage(dynamic message) {
@@ -96,10 +110,9 @@ class CameraStatusService {
   }
   
   void _handleError(dynamic error) {
+    // Do not surface as stream errors — that throws Uncaught Error in the UI
+    // and breaks the cameras page. Reconnect quietly instead.
     debugPrint('❌ WebSocket error: $error');
-    if (!_isDisposed) {
-      _eventController?.addError(error);
-    }
   }
   
   void _handleDisconnect(String? deviceId) {

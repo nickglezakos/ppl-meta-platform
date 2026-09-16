@@ -127,7 +127,7 @@ class Settings(BaseSettings):
         default="http://localhost:8005", env="CAMERA_SERVICE_URL"
     )
     MODELS_SERVICE_URL: str = Field(
-        default="http://localhost:8013", env="MODELS_SERVICE_URL"
+        default="http://ppl-meta-models:8013", env="MODELS_SERVICE_URL"
     )
 
     # Redis Configuration

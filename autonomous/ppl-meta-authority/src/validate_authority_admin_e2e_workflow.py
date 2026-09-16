@@ -130,6 +130,45 @@ assignment = client.post('/api/v1/distributor/installation-assignments', json={
 }, headers=distributor_headers)
 assert assignment.status_code == 201
 
+assert entitlement.get('installation_uuid') in {None, ''}
+
+activate_first = client.post('/api/v1/installations/activate', json={
+    'application_key': entitlement['application_key'],
+    'installation_uuid': 'e2e-windows-lab-001',
+    'owner_email': 'e2e-owner@example.com',
+})
+assert activate_first.status_code == 200
+assert activate_first.json()['approved'] is True
+assert activate_first.json()['installation_uuid'] == 'e2e-windows-lab-001'
+
+second_owner_invite = client.post('/api/v1/reseller/invitations', json={
+    'email': 'e2e-owner@example.com'
+}, headers=reseller_headers)
+assert second_owner_invite.status_code == 201
+assert client.post('/api/v1/auth/accept-invitation', json={
+    'invitation_token': second_owner_invite.json()['invitation_token'],
+    'password': 'e2eowner88',
+}).status_code == 201
+
+installations_after = client.get('/api/v1/admin/installations', headers=admin_headers)
+assert installations_after.status_code == 200
+owner_entitlements = [
+    record for record in installations_after.json()
+    if record['approved_owner_email'] == 'e2e-owner@example.com'
+]
+assert len(owner_entitlements) == 2
+assert any(
+    record['activation_status'] == 'pending_activation' and not record.get('installation_uuid')
+    for record in owner_entitlements
+)
+
+blocked_distributor_as_owner = client.post('/api/v1/admin/invitations', json={
+    'email': 'e2e-distributor@example.com',
+    'role_name': 'owner',
+    'distributor_uuid': 'e2e-distributor-group',
+}, headers=admin_headers)
+assert blocked_distributor_as_owner.status_code == 400
+
 distributor_summary = client.get('/api/v1/dashboard/distributor/summary', headers=distributor_headers)
 assert distributor_summary.status_code == 200
 summary_payload = distributor_summary.json()

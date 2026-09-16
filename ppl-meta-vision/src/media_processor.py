@@ -47,7 +47,9 @@ class MediaProcessingService:
     def __init__(self, face_detector: ExtractedFaceDetector):
         """Initialize with face detector."""
         self.face_detector = face_detector
-        self.media_service_url = "http://localhost:8000"
+        self.media_service_url = os.getenv(
+            "MEDIA_SERVICE_URL", "http://ppl-meta-media:8000"
+        ).rstrip("/")
         self.supported_image_formats = [".jpg", ".jpeg", ".png", ".bmp", ".tiff"]
         self.supported_video_formats = [".mp4", ".avi", ".mov", ".mkv", ".webm"]
 

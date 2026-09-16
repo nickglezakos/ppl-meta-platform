@@ -17,6 +17,7 @@ DEFAULT_ROLE_CAPABILITIES = {
         "analytics.view",
         "cameras.view",
         "media.view",
+        "media:view",
         "workflows.use",
     },
     "admin": {
@@ -28,6 +29,7 @@ DEFAULT_ROLE_CAPABILITIES = {
         "analytics.view",
         "cameras.view",
         "media.view",
+        "media:view",
         "workflows.use",
         "users.accounts.read",
         "users.accounts.create",
@@ -51,6 +53,7 @@ DEFAULT_ROLE_CAPABILITIES = {
         "analytics.view",
         "cameras.view",
         "media.view",
+        "media:view",
         "workflows.use",
         "users.accounts.read",
         "users.accounts.create",

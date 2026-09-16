@@ -10,7 +10,8 @@ Created: December 11, 2025
 
 import logging
 import asyncio
-from typing import Optional
+import threading
+from typing import Any, Dict, Optional
 import cv2
 import numpy as np
 from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Query
@@ -18,6 +19,7 @@ from pydantic import BaseModel
 
 from ml.age_estimator import AgeEstimator
 from ml.gender_classifier import GenderClassifier
+from ml.deepface_compat import deepface_analyze, warmup_age_gender_models
 from api.dependencies import get_mvr_service
 from services.mvr_service import MVRService
 
@@ -28,6 +30,10 @@ router = APIRouter()
 # Global model instances (shared across all requests)
 _age_estimator = None
 _gender_classifier = None
+_deepface_models: Optional[Dict[str, Any]] = None
+_warmup_lock = threading.Lock()
+_warmup_started = False
+
 
 def get_age_estimator() -> AgeEstimator:
     """Get or create age estimator singleton."""
@@ -35,9 +41,9 @@ def get_age_estimator() -> AgeEstimator:
     if _age_estimator is None:
         logger.info("🔧 Creating AgeEstimator singleton...")
         _age_estimator = AgeEstimator(age_tolerance=5)
-        # Pre-warm the model
         _age_estimator._ensure_model_loaded()
     return _age_estimator
+
 
 def get_gender_classifier() -> GenderClassifier:
     """Get or create gender classifier singleton."""
@@ -45,9 +51,41 @@ def get_gender_classifier() -> GenderClassifier:
     if _gender_classifier is None:
         logger.info("🔧 Creating GenderClassifier singleton...")
         _gender_classifier = GenderClassifier(confidence_threshold=0.6)
-        # Pre-warm the model
         _gender_classifier._ensure_model_loaded()
     return _gender_classifier
+
+
+def ensure_deepface_models_warm() -> Dict[str, Any]:
+    """Load Age/Gender weights once; safe to call from request path or startup."""
+    global _deepface_models
+    if _deepface_models is not None:
+        return _deepface_models
+    with _warmup_lock:
+        if _deepface_models is not None:
+            return _deepface_models
+        logger.info("🔥 Warming DeepFace Age + Gender models (CPU; may take 30–90s)...")
+        _deepface_models = warmup_age_gender_models()
+        get_age_estimator()._model_loaded = True
+        get_gender_classifier()._model_loaded = True
+        logger.info("✅ DeepFace Age + Gender models ready")
+        return _deepface_models
+
+
+def start_deepface_warmup_background() -> None:
+    """Kick off model preload without blocking FastAPI startup."""
+    global _warmup_started
+    if _warmup_started:
+        return
+    _warmup_started = True
+
+    def _run():
+        try:
+            ensure_deepface_models_warm()
+        except Exception as exc:
+            logger.error("❌ DeepFace warmup failed: %s", exc, exc_info=True)
+
+    threading.Thread(target=_run, name="deepface-warmup", daemon=True).start()
+    logger.info("🔥 DeepFace warmup thread started")
 
 
 class AgeGenderResponse(BaseModel):
@@ -87,31 +125,57 @@ async def detect_age_gender(
     Used by Camera Service instant detection feature.
     """
     try:
-        # Read and decode image
         file_content = await file.read()
         nparr = np.frombuffer(file_content, np.uint8)
         face_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
+
         if face_image is None:
             raise HTTPException(status_code=400, detail="Invalid image format")
-        
-        # Get singleton instances
+
         age_est = get_age_estimator()
         gender_clf = get_gender_classifier()
-        
-        # Estimate age
-        age_result = age_est.estimate_age(
+
+        # One analyze() for both attributes (avoids loading/running twice).
+        models = None
+        try:
+            models = await asyncio.to_thread(ensure_deepface_models_warm)
+        except Exception as warm_err:
+            logger.warning("DeepFace warmup unavailable, analyzing cold: %s", warm_err)
+
+        rows = await asyncio.to_thread(
+            deepface_analyze,
             face_image,
-            enforce_detection=False
+            ["age", "gender"],
+            False,
+            "opencv",
+            models,
         )
-        
-        # Classify gender
-        gender_result = gender_clf.classify_gender(
-            face_image,
-            enforce_detection=False
+        if not rows:
+            logger.warning("Age/gender detection returned empty result")
+            return AgeGenderResponse(
+                age_min=0,
+                age_max=100,
+                age_confidence=0.0,
+                gender="unknown",
+                gender_confidence=0.0,
+                success=False,
+            )
+
+        row = rows[0]
+        predicted_age = row.get("age")
+        age_result = (
+            age_est._age_to_range(float(predicted_age))
+            if predicted_age is not None
+            else None
         )
-        
-        # Handle failures gracefully
+
+        gender_data = row.get("gender", {})
+        if not gender_data and row.get("dominant_gender"):
+            gender_data = row.get("dominant_gender")
+        gender_result = (
+            gender_clf._parse_gender_result(gender_data) if gender_data else None
+        )
+
         if age_result is None or gender_result is None:
             logger.warning("Age or gender detection failed, returning defaults")
             return AgeGenderResponse(
@@ -120,18 +184,18 @@ async def detect_age_gender(
                 age_confidence=0.0,
                 gender="unknown",
                 gender_confidence=0.0,
-                success=False
+                success=False,
             )
-        
+
         return AgeGenderResponse(
             age_min=age_result.get("min_age", 0),
             age_max=age_result.get("max_age", 100),
             age_confidence=age_result.get("confidence", 0.0),
             gender=gender_result.get("gender", "unknown"),
             gender_confidence=gender_result.get("confidence", 0.0),
-            success=True
+            success=True,
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -154,7 +218,8 @@ async def ml_status():
     return {
         "age_model_loaded": age_est._model_loaded,
         "gender_model_loaded": gender_clf._model_loaded,
-        "ready": age_est._model_loaded and gender_clf._model_loaded
+        "deepface_models_warm": _deepface_models is not None,
+        "ready": bool(_deepface_models),
     }
 
 

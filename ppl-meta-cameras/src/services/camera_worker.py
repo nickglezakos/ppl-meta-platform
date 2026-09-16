@@ -31,6 +31,12 @@ from src.models.camera import CameraType
 
 logger = logging.getLogger(__name__)
 
+def _svc_url(env_name: str, default: str) -> str:
+    """Docker service URL from env; strip trailing slash and accidental /api/v1 suffix."""
+    import os
+    return os.getenv(env_name, default).rstrip("/").removesuffix("/api/v1")
+
+
 
 class CameraCommand(str, Enum):
     """Command types for camera worker queue."""
@@ -549,20 +555,45 @@ class CameraWorker:
                 logger.info(f"📷 [WORKER-{self.device_id}] Opening USB camera at index {device_index}")
                 self.cap = cv2.VideoCapture(device_index)
             else:
-                # RTSP or other - set connection timeout and LOW-LATENCY mode
+                # RTSP or other - force FFmpeg backend + TCP transport.
+                # Leaving backend as CAP_ANY falls through to CAP_IMAGES on auth/path
+                # failure and fails in ~30ms with a misleading OpenCV error.
+                import os
+
                 logger.info(f"📷 [WORKER-{self.device_id}] Opening RTSP camera at {connection_string}")
+
+                # Keep DB URL as-is (percent-encoded user/password). Decoding first
+                # breaks emails / passwords that contain '@'.
+                open_url = connection_string
+
+                os.environ.setdefault(
+                    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                    "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay",
+                )
+
                 self.cap = cv2.VideoCapture()
-                
+
                 # ⚡ CRITICAL: Set buffer size to 1 BEFORE opening to eliminate lag
                 # OpenCV defaults to buffering 5+ frames which causes delay
                 self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                
+
                 # Set timeout properties BEFORE opening
-                self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)  # 5 second timeout
-                
-                # Open with connection string
-                self.cap.open(connection_string)
-                
+                self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)  # 10 second timeout
+                if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):
+                    self.cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)
+
+                # Open with FFmpeg backend explicitly
+                opened = self.cap.open(open_url, cv2.CAP_FFMPEG)
+                if not opened:
+                    logger.warning(
+                        f"⚠️ CAP_FFMPEG open failed for {self.device_id}, retrying CAP_ANY"
+                    )
+                    self.cap.release()
+                    self.cap = cv2.VideoCapture()
+                    self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)
+                    self.cap.open(open_url)
+
                 # ⚡ VERIFY: Double-check buffer size after opening (some backends reset it)
                 actual_buffer = self.cap.get(cv2.CAP_PROP_BUFFERSIZE)
                 logger.info(f"📷 [WORKER-{self.device_id}] Buffer size set to: {actual_buffer} (requested 1)")
@@ -1037,8 +1068,18 @@ class CameraWorker:
             session_info['fps'] = fps
             
             # Create new VideoWriter (blocking but in worker thread = OK)
-            fourcc = cv2.VideoWriter_fourcc(*'H264')
-            self.video_writer = cv2.VideoWriter(next_segment_path, fourcc, fps, (width, height))
+            self.video_writer = None
+            for codec in ("mp4v", "MJPG", "XVID", "H264"):
+                fourcc = cv2.VideoWriter_fourcc(*codec)
+                writer = cv2.VideoWriter(next_segment_path, fourcc, fps, (width, height))
+                if writer.isOpened():
+                    self.video_writer = writer
+                    logger.info(f"🎬 Segment writer opened with codec={codec}")
+                    break
+                writer.release()
+            if not self.video_writer or not self.video_writer.isOpened():
+                logger.error(f"❌ Failed to create segment VideoWriter for {next_segment_path}")
+                return
             
             if not self.video_writer.isOpened():
                 logger.error(f"❌ Failed to create next segment writer: {next_segment_path}")
@@ -1084,6 +1125,47 @@ class CameraWorker:
             logger.error(f"❌ Segment rotation failed: {e}")
             self.is_recording = False
     
+    def _remux_segment_h264(self, segment_path: str) -> str:
+        """Convert OpenCV mp4v output to H.264 for browser playback when possible."""
+        import shutil
+        import subprocess
+        from pathlib import Path
+
+        if not shutil.which("ffmpeg"):
+            logger.warning("⚠️ [UPLOAD] ffmpeg not found — uploading raw OpenCV mp4v")
+            return segment_path
+
+        src = Path(segment_path)
+        if not src.exists():
+            return segment_path
+
+        dst = src.with_suffix(".h264.mp4")
+        try:
+            cmd = [
+                "ffmpeg", "-y", "-i", str(src),
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-an", "-movflags", "+faststart",
+                str(dst),
+            ]
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=180
+            )
+            if proc.returncode == 0 and dst.exists() and dst.stat().st_size > 0:
+                src.unlink(missing_ok=True)
+                dst.rename(src)
+                logger.info(f"✅ [UPLOAD] Remuxed to H.264: {src}")
+                return str(src)
+            logger.warning(
+                f"⚠️ [UPLOAD] H.264 remux failed (rc={proc.returncode}): "
+                f"{(proc.stderr or '')[-300:]}"
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ [UPLOAD] H.264 remux exception: {e}")
+        finally:
+            if dst.exists():
+                dst.unlink(missing_ok=True)
+        return segment_path
+
     def _upload_segment_to_media(self, segment_path: str, session_uuid: str, user_id: str):
         """
         Upload a segment to the media service - EXACT same method used by USB/RTSP cameras.
@@ -1103,6 +1185,11 @@ class CameraWorker:
             
             file_size = path_obj.stat().st_size
             logger.info(f"📤 [UPLOAD] File size: {file_size} bytes")
+
+            # OpenCV mp4v is not browser-playable; remux to H.264 when ffmpeg exists.
+            segment_path = self._remux_segment_h264(segment_path)
+            path_obj = Path(segment_path)
+            file_size = path_obj.stat().st_size
             
             # Get auth token from session info
             auth_token = self.recording_session_info.get('auth_token') if self.recording_session_info else None
@@ -1115,7 +1202,7 @@ class CameraWorker:
                     if auth_token:
                         headers['Authorization'] = f'Bearer {auth_token}'
                     
-                    node_url = f"http://localhost:8001/api/v1/users/{user_id}"
+                    node_url = f"{_svc_url('NODE_SERVICE_URL', 'http://ppl-meta-node:8001')}/api/v1/users/{user_id}"
                     logger.info(f"📤 [UPLOAD] Fetching user GUID from: {node_url}")
                     
                     response = requests.get(node_url, headers=headers, timeout=5)
@@ -1155,7 +1242,7 @@ class CameraWorker:
                     headers['Authorization'] = f'Bearer {auth_token}'
                 
                 # Upload to media service
-                MEDIA_SERVICE_URL = "http://localhost:8000"
+                MEDIA_SERVICE_URL = _svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')
                 response = requests.post(
                     f"{MEDIA_SERVICE_URL}/api/v1/media/upload",
                     files=files,
@@ -1222,7 +1309,7 @@ class CameraWorker:
                 return
             
             # Assign media to collection
-            endpoint = f"http://localhost:8000/api/v1/media/collections/{collection_uuid}/add/{media_uuid}"
+            endpoint = f"{_svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')}/api/v1/media/collections/{collection_uuid}/add/{media_uuid}"
             response = requests.post(
                 endpoint,
                 headers=headers,
@@ -1253,7 +1340,7 @@ class CameraWorker:
                 return cached_uuid
             
             # Try to find existing collection by camera device ID
-            lookup_url = f"http://localhost:8000/api/v1/media/collections/by-camera/{self.device_id}"
+            lookup_url = f"{_svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')}/api/v1/media/collections/by-camera/{self.device_id}"
             logger.info(f"📦 [COLLECTION] Looking for existing: {self.device_id}")
             
             response = requests.get(lookup_url, headers=headers, timeout=10)
@@ -1299,7 +1386,7 @@ class CameraWorker:
             form_headers = {k: v for k, v in headers.items() if k.lower() != 'content-type'}
             
             response = requests.post(
-                "http://localhost:8000/api/v1/media/collections",
+                _svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000') + '/api/v1/media/collections',
                 data=create_data,  # Use data= for form data instead of json=
                 headers=form_headers,
                 timeout=10
@@ -1331,7 +1418,7 @@ class CameraWorker:
 
         delays = [0.5, 1.0, 2.0, 4.0, 8.0]
         total_waited = 0.0
-        download_url = f"http://localhost:8000/api/v1/media/download/{media_uuid}"
+        download_url = f"{_svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')}/api/v1/media/download/{media_uuid}"
         logger.info(
             "⏳ [MEDIA-VERIFY] Waiting for media %s (max %.1fs)",
             media_uuid,
@@ -1342,7 +1429,7 @@ class CameraWorker:
             total_waited += delay
             try:
                 meta_resp = requests.get(
-                    f"http://localhost:8000/api/v1/media/{media_uuid}",
+                    f"{_svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')}/api/v1/media/{media_uuid}",
                     headers=headers,
                     timeout=5,
                 )
@@ -1405,7 +1492,12 @@ class CameraWorker:
         return False
 
     def _camera_auto_face_enabled(self) -> bool:
-        """Per-camera Face detection setting; default False if unknown."""
+        """
+        Whether post-segment Enhanced V2 should run.
+
+        Recording pipeline ON implies continuous face/MVR on segments even if the
+        separate auto_face_detection toggle was left/saved false (common UI race).
+        """
         try:
             from src.database import SessionLocal
             from src.models.camera import Camera
@@ -1420,7 +1512,11 @@ class CameraWorker:
                 )
                 if not camera:
                     return False
-                return bool(getattr(camera, "auto_face_detection", False))
+                auto_face = bool(getattr(camera, "auto_face_detection", False))
+                recording_pipeline = bool(
+                    getattr(camera, "recording_pipeline_enabled", False)
+                )
+                return auto_face or recording_pipeline
             finally:
                 db.close()
         except Exception as exc:
@@ -1442,10 +1538,10 @@ class CameraWorker:
         import requests
         
         try:
-            VISION_SERVICE_URL = "http://localhost:8003"  # Legacy fallback path
+            VISION_SERVICE_URL = _svc_url('VISION_SERVICE_URL', 'http://ppl-meta-vision:8003')  # Legacy fallback path
             ORCHESTRATOR_SERVICE_URL = os.getenv(
                 "ORCHESTRATOR_SERVICE_URL",
-                "http://localhost:8002",
+                _svc_url('ORCHESTRATOR_SERVICE_URL', 'http://ppl-meta-orchestrator:8002'),
             )
 
             if not self._camera_auto_face_enabled():
@@ -1471,9 +1567,23 @@ class CameraWorker:
             logger.info(
                 f"🎯 [FACE-DETECTION] Calling Orchestrator Enhanced V2: {orchestrator_url}"
             )
+            # Force internal service token — user JWT from the upload thread
+            # fails Vision GUID lookup (numeric sub) and yields bulk-process 401.
+            internal_token = os.getenv(
+                "INTERNAL_SERVICE_TOKEN",
+                "ppl-meta-internal-service-secret-key-change-in-production",
+            )
+            service_headers = {
+                "Authorization": f"Bearer {internal_token}",
+                "X-Service-Name": "ppl-meta-cameras",
+                "X-Service-Auth": "internal",
+                "Accept": "application/json",
+            }
             response = None
             for attempt in range(1, 4):
-                response = requests.get(orchestrator_url, headers=headers, timeout=120)
+                response = requests.get(
+                    orchestrator_url, headers=service_headers, timeout=120
+                )
 
                 if response.status_code in [200, 202]:
                     result = response.json()
@@ -1501,7 +1611,7 @@ class CameraWorker:
             # Fallback path: legacy Vision media processing endpoint
             detection_url = f"{VISION_SERVICE_URL}/process/media/enhanced"
 
-            MEDIA_SERVICE_URL = "http://localhost:8000"
+            MEDIA_SERVICE_URL = _svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')
             media_url = f"{MEDIA_SERVICE_URL}/api/v1/media/download/{media_uuid}"
 
             detection_payload = {
@@ -1591,7 +1701,7 @@ class CameraWorker:
                     f"skipping for media {media_uuid}"
                 )
                 return
-            vision_url = os.getenv("VISION_SERVICE_URL", "http://localhost:8003")
+            vision_url = os.getenv("VISION_SERVICE_URL", "http://ppl-meta-vision:8003")
             params = urlencode(
                 {
                     "media_id": media_uuid,
@@ -1697,10 +1807,18 @@ class CameraWorker:
                 return
             
             # Create VideoWriter (blocking operation but in worker thread = OK)
-            fourcc = cv2.VideoWriter_fourcc(*'H264')
-            self.video_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-            
-            if not self.video_writer.isOpened():
+            # H264/avc1 often missing in slim OpenCV builds; fall back to mp4v.
+            self.video_writer = None
+            for codec in ("mp4v", "MJPG", "XVID", "H264"):
+                fourcc = cv2.VideoWriter_fourcc(*codec)
+                writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+                if writer.isOpened():
+                    self.video_writer = writer
+                    logger.info(f"🎬 VideoWriter opened with codec={codec} path={output_path}")
+                    break
+                writer.release()
+
+            if not self.video_writer or not self.video_writer.isOpened():
                 self._set_result(cmd_id, {'success': False, 'error': 'Failed to create video writer'})
                 self.video_writer = None
                 return

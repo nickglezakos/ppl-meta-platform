@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-MEDIA_SERVICE_URL = os.getenv("MEDIA_SERVICE_URL", "http://localhost:8000")
+MEDIA_SERVICE_URL = os.getenv("MEDIA_SERVICE_URL", "http://ppl-meta-media:8000")
 
 
 # ---------------------------------------------------------------------------

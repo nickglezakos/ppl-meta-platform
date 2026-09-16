@@ -67,6 +67,19 @@ class StatusNotificationService:
     
     async def connect(self):
         """Connect to Redis and initialize pub/sub."""
+        # Drop any client bound to a dead/previous event loop (worker threads
+        # publish from different loops and otherwise hit RuntimeError).
+        if self.redis_client is not None:
+            try:
+                await self.redis_client.aclose()
+            except Exception:
+                try:
+                    await self.redis_client.close()
+                except Exception:
+                    pass
+            self.redis_client = None
+            self.connected = False
+
         try:
             self.redis_client = redis.from_url(
                 self.redis_url,
@@ -89,6 +102,7 @@ class StatusNotificationService:
             logger.error(f"❌ Failed to connect to Redis: {e}")
             logger.warning("Status notifications will be disabled")
             self.connected = False
+            self.redis_client = None
     
     async def disconnect(self):
         """Disconnect from Redis."""
@@ -338,7 +352,17 @@ def get_status_service() -> StatusNotificationService:
     """Get singleton status notification service instance."""
     global _status_service
     if _status_service is None:
-        _status_service = StatusNotificationService()
+        import os
+
+        redis_url = (
+            os.getenv("STATUS_REDIS_URL")
+            or os.getenv("REDIS_URL")
+            or "redis://localhost:6379/1"
+        )
+        # Prefer DB 1 for status pub/sub when REDIS_URL points at DB 0
+        if redis_url.endswith("/0"):
+            redis_url = redis_url[:-1] + "1"
+        _status_service = StatusNotificationService(redis_url=redis_url)
     return _status_service
 
 

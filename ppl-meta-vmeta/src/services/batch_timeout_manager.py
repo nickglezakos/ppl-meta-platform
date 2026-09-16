@@ -309,10 +309,10 @@ class PollingFallbackManager:
         batch_monitor: BatchMonitor,
         poll_interval_seconds: int = 60,
         enabled: bool = False,
-        media_url: str = "http://localhost:8000",
-        vision_url: str = "http://localhost:8003",
-        vmeta_url: str = "http://localhost:8008",
-        node_url: str = "http://localhost:8001",
+        media_url: str = None,
+        vision_url: str = None,
+        vmeta_url: str = None,
+        node_url: str = None,
         batch_size: int = 5,
         collection_id: Optional[str] = None,
         pipeline_executor: Any = None,
@@ -332,13 +332,23 @@ class PollingFallbackManager:
             collection_id: DEPRECATED - collections now managed dynamically
                           via recording events (start/stop). Leave as None.
         """
+        import os
         self.batch_monitor = batch_monitor
         self.poll_interval = poll_interval_seconds
         self.enabled = enabled
-        self.media_url = media_url
-        self.vision_url = vision_url
-        self.vmeta_url = vmeta_url
-        self.node_url = node_url
+        self.media_url = (
+            media_url or os.getenv("MEDIA_SERVICE_URL", "http://ppl-meta-media:8000")
+        ).rstrip("/")
+        self.vision_url = (
+            vision_url
+            or os.getenv("VISION_SERVICE_URL", "http://ppl-meta-vision:8003")
+        ).rstrip("/")
+        self.vmeta_url = (
+            vmeta_url or os.getenv("VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008")
+        ).rstrip("/")
+        self.node_url = (
+            node_url or os.getenv("NODE_SERVICE_URL", "http://ppl-meta-node:8001")
+        ).rstrip("/")
         self.batch_size = batch_size
         self.collection_id = collection_id  # DEPRECATED - kept for fallback only
         

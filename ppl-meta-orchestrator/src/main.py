@@ -111,9 +111,9 @@ async def lifespan(_app: FastAPI):
             "Initializing service clients for Camera, Media, and Vision services..."
         )
         service_manager = ServiceClientManager(
-            camera_base_url=os.getenv("CAMERA_SERVICE_URL", "http://localhost:8005"),
-            media_base_url=os.getenv("MEDIA_SERVICE_URL", "http://localhost:8000"),
-            vision_base_url=os.getenv("VISION_SERVICE_URL", "http://localhost:8003"),
+            camera_base_url=os.getenv("CAMERA_SERVICE_URL", "http://ppl-meta-cameras:8005"),
+            media_base_url=os.getenv("MEDIA_SERVICE_URL", "http://ppl-meta-media:8000"),
+            vision_base_url=os.getenv("VISION_SERVICE_URL", "http://ppl-meta-vision:8003"),
         )
 
         # Test service connectivity

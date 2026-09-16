@@ -226,10 +226,19 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
 
       print('🎯 Registering camera with CORRECT data: $registrationData');
 
-      // Register with cameras service using CORRECT endpoint
-      final cameraEndpoint = connectivityInfo['camera_endpoints']?['register'] ?? 
-                            '$serverUrl/api/v1/cameras/mobile';
-      
+      // Prefer gateway on the same host we used for login (:8080). Platform
+      // services may still advertise a Docker bridge IP for cameras :8005.
+      String cameraEndpoint;
+      final serverUri = Uri.tryParse(serverUrl);
+      if (serverUri != null && serverUri.host.isNotEmpty) {
+        cameraEndpoint =
+            'http://${serverUri.host}:8080/api/v1/cameras/mobile';
+      } else {
+        cameraEndpoint = connectivityInfo['camera_endpoints']?['register'] ??
+            '$serverUrl/api/v1/cameras/mobile';
+      }
+      print('🎯 Camera registration endpoint: $cameraEndpoint');
+
       final response = await authService.makeAuthenticatedRequest(
         'POST',
         cameraEndpoint,

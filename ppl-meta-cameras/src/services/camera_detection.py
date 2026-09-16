@@ -14,6 +14,7 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import aiohttp
 import cv2
 from sqlalchemy.orm import Session
@@ -28,6 +29,48 @@ from src.services.streaming_session_manager import streaming_session_manager
 
 logger = logging.getLogger(__name__)
 config = get_config()
+
+def _svc_url(env_name: str, default: str) -> str:
+    return os.getenv(env_name, default).rstrip("/").removesuffix("/api/v1")
+
+
+def _open_video_writer(path, fps, size, label="recording"):
+    """OpenCV builds often lack H264; try portable codecs first."""
+    width, height = size
+    for codec in ("mp4v", "MJPG", "XVID", "H264"):
+        fourcc = cv2.VideoWriter_fourcc(*codec)
+        writer = cv2.VideoWriter(path, fourcc, fps, (width, height))
+        if writer.isOpened():
+            logger.info(f"🎬 VideoWriter opened codec={codec} label={label} path={path}")
+            return writer
+        writer.release()
+    logger.error(f"Failed to open VideoWriter for {label}: {path}")
+    return None
+
+
+def _letterbox_resize(frame, target_size: Tuple[int, int]):
+    """
+    Resize into target canvas preserving aspect ratio (letterbox/pillarbox).
+
+    Mobile frames are often portrait after rotation; a hard cv2.resize to
+    1920x1080 stretches content and makes face overlays miss the true centers.
+    """
+    tw, th = int(target_size[0]), int(target_size[1])
+    if frame is None or tw <= 0 or th <= 0:
+        return frame
+    h, w = frame.shape[:2]
+    if w == tw and h == th:
+        return frame
+    scale = min(tw / float(w), th / float(h))
+    nw = max(1, int(round(w * scale)))
+    nh = max(1, int(round(h * scale)))
+    resized = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_AREA)
+    canvas = np.zeros((th, tw, frame.shape[2]), dtype=frame.dtype)
+    x0 = (tw - nw) // 2
+    y0 = (th - nh) // 2
+    canvas[y0 : y0 + nh, x0 : x0 + nw] = resized
+    return canvas
+
 
 
 class CameraDetectionService:
@@ -1107,7 +1150,7 @@ class CameraDetectionService:
             user_guid = None
             if user_id:
                 async with aiohttp.ClientSession() as session:
-                    node_url = f"http://localhost:8001/api/v1/users/{user_id}"
+                    node_url = f"{os.getenv('NODE_SERVICE_URL', 'http://ppl-meta-node:8001').rstrip('/')}/api/v1/users/{user_id}"
                     async with session.get(node_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
                         if response.status == 200:
                             user_data = await response.json()
@@ -1117,7 +1160,7 @@ class CameraDetectionService:
             # Try to find existing collection by camera_device_id
             if user_guid:  # Only proceed if we have user authentication
                 async with aiohttp.ClientSession() as session:
-                    lookup_url = f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}"
+                    lookup_url = f"{_svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')}/api/v1/media/collections/by-camera/{device_id}"
                     async with session.get(lookup_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
                         if response.status == 200:
                             collection_data = await response.json()
@@ -1158,7 +1201,7 @@ class CameraDetectionService:
                         logger.info(f"🔍 [COLLECTION-DEBUG] Sending form data for {device_id} with user_id {user_guid}")
                         
                         async with session.post(
-                            "http://localhost:8000/api/v1/media/collections",
+                            _svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000') + '/api/v1/media/collections',
                             data=form_data,
                             headers={'Authorization': headers.get('Authorization')},  # Only send auth header
                             timeout=aiohttp.ClientTimeout(total=10)
@@ -1240,7 +1283,7 @@ class CameraDetectionService:
             logger.info(f"📹 [VMETA-NOTIFY] Notifying VMeta of recording start for {session_uuid}")
             async with httpx.AsyncClient(timeout=2.0) as client:
                 await client.post(
-                    "http://localhost:8008/api/v1/recording/started",
+                    f"{__import__('os').getenv('VMETA_SERVICE_URL', __import__('os').getenv('VMETA_URL', 'http://ppl-meta-vmeta:8008')).rstrip('/')}/api/v1/recording/started",
                     json={
                         "collection_id": collection_uuid or device_id,  # Use collection UUID if available
                         "session_uuid": session_uuid,
@@ -1325,7 +1368,7 @@ class CameraDetectionService:
             if user_id and auth_token:
                 headers = {'Authorization': f'Bearer {auth_token}'}
                 async with aiohttp.ClientSession() as session:
-                    node_url = f"http://localhost:8001/api/v1/users/{user_id}"
+                    node_url = f"{os.getenv('NODE_SERVICE_URL', 'http://ppl-meta-node:8001').rstrip('/')}/api/v1/users/{user_id}"
                     async with session.get(node_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
                         if response.status == 200:
                             user_data = await response.json()
@@ -1337,7 +1380,7 @@ class CameraDetectionService:
                 logger.info(f"📦 [COLLECTION] Looking up collection for {device_id}")
                 headers = {'Authorization': f'Bearer {auth_token}'}
                 async with aiohttp.ClientSession() as session:
-                    lookup_url = f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}"
+                    lookup_url = f"{_svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')}/api/v1/media/collections/by-camera/{device_id}"
                     async with session.get(lookup_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
                         if response.status == 200:
                             collection_data = await response.json()
@@ -1357,7 +1400,7 @@ class CameraDetectionService:
                             "camera_device_id": device_id
                         }
                         async with session.post(
-                            "http://localhost:8000/api/v1/media/collections",
+                            _svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000') + '/api/v1/media/collections',
                             json=create_data,
                             headers=headers,
                             timeout=aiohttp.ClientTimeout(total=10)
@@ -1389,12 +1432,9 @@ class CameraDetectionService:
         filename = f"segment_{segment_index:03d}_{timestamp}.mp4"
         file_path = os.path.join(session_dir, filename)
 
-        # Initialize video writer
-        fourcc = cv2.VideoWriter_fourcc(*"H264")
-        video_writer = cv2.VideoWriter(file_path, fourcc, target_fps, (width, height))
-
-        if not video_writer.isOpened():
-            logger.error(f"Failed to initialize mobile video writer for {device_id}")
+        # Initialize video writer (mp4v fallback — H264 often missing in slim OpenCV)
+        video_writer = _open_video_writer(file_path, target_fps, (width, height), label=f"mobile-segment:{device_id}")
+        if not video_writer:
             return None
 
         # Store recording info with session tracking
@@ -1569,13 +1609,9 @@ class CameraDetectionService:
         file_path = os.path.join(recordings_dir, filename)
         logger.info(f"🎬 [DEBUG] Recording file path: {file_path}")
 
-        # Initialize video writer with H.264 codec for web compatibility
-        # Use H.264 codec for better web player support (Flutter video_player)
-        fourcc = cv2.VideoWriter_fourcc(*"H264")
-        logger.info(f"🎬 [DEBUG] Using fourcc codec: H264")
-        video_writer = cv2.VideoWriter(file_path, fourcc, fps, (width, height))
-
-        if not video_writer.isOpened():
+        # Initialize video writer (mp4v fallback — H264 often missing in slim OpenCV)
+        video_writer = _open_video_writer(file_path, fps, (width, height), label=f"recording:{device_id}")
+        if not video_writer:
             logger.error(
                 f"🎬 [DEBUG] ❌ CRITICAL: Failed to initialize video writer for {device_id}"
             )
@@ -1675,12 +1711,9 @@ class CameraDetectionService:
         os.makedirs(recordings_dir, exist_ok=True)
         file_path = os.path.join(recordings_dir, filename)
 
-        # Initialize video writer with H.264 codec for web compatibility
-        fourcc = cv2.VideoWriter_fourcc(*"H264")
-        video_writer = cv2.VideoWriter(file_path, fourcc, target_fps, (width, height))
-
-        if not video_writer.isOpened():
-            logger.error(f"Failed to initialize video writer for mobile {device_id}")
+        # Initialize video writer (mp4v fallback — H264 often missing in slim OpenCV)
+        video_writer = _open_video_writer(file_path, target_fps, (width, height), label=f"mobile:{device_id}")
+        if not video_writer:
             return None
 
         # Store recording info
@@ -1900,7 +1933,7 @@ class CameraDetectionService:
                         try:
                             # Get user GUID
                             headers = {'Authorization': f'Bearer {auth_token}'}
-                            node_url = f"http://localhost:8001/api/v1/users/{user_id}"
+                            node_url = f"{os.getenv('NODE_SERVICE_URL', 'http://ppl-meta-node:8001').rstrip('/')}/api/v1/users/{user_id}"
                             response = requests.get(node_url, headers=headers, timeout=5)
                             
                             if response.status_code != 200:
@@ -1928,7 +1961,7 @@ class CameraDetectionService:
                                 }
                                 
                                 response = requests.post(
-                                    "http://localhost:8000/api/v1/media/upload",
+                                    _svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000') + '/api/v1/media/upload',
                                     files=files,
                                     data=data,
                                     headers=headers,
@@ -1940,7 +1973,7 @@ class CameraDetectionService:
                                     logger.info(f"✅ [UPLOAD] Segment uploaded: {media_uuid}")
                                     
                                     # Assign to collection using in-memory UUID
-                                    assign_url = f"http://localhost:8000/api/v1/media/collections/{collection_uuid}/add/{media_uuid}"
+                                    assign_url = f"{_svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')}/api/v1/media/collections/{collection_uuid}/add/{media_uuid}"
                                     response = requests.post(assign_url, headers=headers, params={"user_id": user_guid}, timeout=10)
                                     
                                     if response.status_code == 200:
@@ -2581,9 +2614,9 @@ class CameraDetectionService:
                     f"🎬 [MOBILE_RECORDING] Got frame from worker for {device_id}: shape {frame.shape}"
                 )
 
-                # Frame is already rotated by worker, just resize to target recording size
+                # Preserve aspect ratio — hard stretch to landscape warps boxes.
                 if frame.shape[1] != target_size[0] or frame.shape[0] != target_size[1]:
-                    frame = cv2.resize(frame, target_size)
+                    frame = _letterbox_resize(frame, target_size)
 
                 # Write frame to video file
                 video_writer.write(frame)
@@ -2788,7 +2821,7 @@ class CameraDetectionService:
                         frame.shape[1] != target_size[0]
                         or frame.shape[0] != target_size[1]
                     ):
-                        frame = cv2.resize(frame, target_size)
+                        frame = _letterbox_resize(frame, target_size)
 
                     # Write frame
                     recording_info["video_writer"].write(frame)
@@ -2916,9 +2949,6 @@ class CameraDetectionService:
             filename = f"segment_{next_index:03d}_{timestamp}.mp4"
             next_segment_path = os.path.join(recording_info["session_dir"], filename)
 
-            # Initialize new video writer
-            fourcc = cv2.VideoWriter_fourcc(*"H264")
-            
             # Get resolution from recording_info (stored as "1280x720" string)
             resolution = recording_info.get("resolution", "1280x720")
             if isinstance(resolution, str):
@@ -2928,8 +2958,9 @@ class CameraDetectionService:
             
             fps = recording_info["fps"]
 
-            video_writer = cv2.VideoWriter(
-                next_segment_path, fourcc, fps, (width, height)
+            # Initialize new video writer (mp4v fallback — H264 often missing)
+            video_writer = _open_video_writer(
+                next_segment_path, fps, (width, height), label=f"segment:{device_id}"
             )
 
             if not video_writer.isOpened():
@@ -3132,7 +3163,7 @@ class CameraDetectionService:
             )
 
             # Get media service URL
-            MEDIA_SERVICE_URL = "http://localhost:8000"
+            MEDIA_SERVICE_URL = _svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')
             logger.info(f"🎬 [DEBUG] Media service URL: {MEDIA_SERVICE_URL}")
 
             # Get file info
@@ -3177,7 +3208,7 @@ class CameraDetectionService:
                     logger.info("🎬 [DEBUG] Getting user profile for GUID...")
                     try:
                         async with session.get(
-                            "http://localhost:8001/api/v1/users/profile",
+                            f"{os.getenv('NODE_SERVICE_URL', 'http://ppl-meta-node:8001').rstrip('/')}/api/v1/users/profile",
                             headers={"Authorization": f"Bearer {auth_token}"},
                         ) as profile_response:
                             if profile_response.status == 200:
@@ -3212,7 +3243,7 @@ class CameraDetectionService:
                             f"{bool(auth_token)}"
                         )
                         node_url = (
-                            f"http://localhost:8001/api/v1/users/{user_id}"
+                            f"{os.getenv('NODE_SERVICE_URL', 'http://ppl-meta-node:8001').rstrip('/')}/api/v1/users/{user_id}"
                         )
                         
                         # Use auth headers if available
@@ -3482,7 +3513,7 @@ class CameraDetectionService:
             )
 
             # First, try to find existing collection by camera device ID
-            lookup_url = f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}"
+            lookup_url = f"{_svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')}/api/v1/media/collections/by-camera/{device_id}"
             logger.info(f"🔍 [COLLECTION] Calling: {lookup_url}")
             logger.info(f"🔍 [COLLECTION] Auth headers: {bool(headers.get('Authorization'))}")
             
@@ -3537,7 +3568,7 @@ class CameraDetectionService:
             data.add_field("is_public", "false")
 
             async with session.post(
-                "http://localhost:8000/api/v1/media/collections/",
+                _svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000') + '/api/v1/media/collections/',
                 data=data,
                 headers=headers,
             ) as response:
@@ -3577,7 +3608,7 @@ class CameraDetectionService:
     ) -> bool:
         """Assign media item to a collection."""
         try:
-            endpoint = f"http://localhost:8000/api/v1/media/collections/{collection_id}/add/{media_id}"
+            endpoint = f"{_svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')}/api/v1/media/collections/{collection_id}/add/{media_id}"
             async with session.post(
                 endpoint, headers=headers, params={"user_id": user_id}
             ) as response:
@@ -3623,7 +3654,7 @@ class CameraDetectionService:
         """
         delays = [0.5, 1.0, 2.0, 4.0, 8.0]  # Exponential backoff
         total_waited = 0.0
-        download_url = f"http://localhost:8000/api/v1/media/download/{media_uuid}"
+        download_url = f"{_svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')}/api/v1/media/download/{media_uuid}"
         
         logger.info(
             f"⏳ [MEDIA-VERIFY] Starting verification for media {media_uuid} "
@@ -3639,7 +3670,7 @@ class CameraDetectionService:
                 # Query media service directly to verify DB state + downloadable bytes
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
-                        f"http://localhost:8000/api/v1/media/{media_uuid}",
+                        f"{_svc_url('MEDIA_SERVICE_URL', 'http://ppl-meta-media:8000')}/api/v1/media/{media_uuid}",
                         headers=headers,
                         timeout=aiohttp.ClientTimeout(total=5)
                     ) as response:
@@ -3708,7 +3739,12 @@ class CameraDetectionService:
         return False
     
     def _camera_auto_face_enabled(self, device_id: Optional[str]) -> bool:
-        """Per-camera Face detection setting; default False if unknown."""
+        """
+        Whether post-segment Enhanced V2 should run.
+
+        Recording pipeline ON implies continuous face/MVR on segments even if the
+        separate auto_face_detection toggle was left/saved false (common UI race).
+        """
         if not device_id:
             return False
         try:
@@ -3721,7 +3757,11 @@ class CameraDetectionService:
                 camera = db.query(Camera).filter(Camera.device_id == device_id).first()
                 if not camera:
                     return False
-                return bool(getattr(camera, "auto_face_detection", False))
+                auto_face = bool(getattr(camera, "auto_face_detection", False))
+                recording_pipeline = bool(
+                    getattr(camera, "recording_pipeline_enabled", False)
+                )
+                return auto_face or recording_pipeline
             finally:
                 db.close()
         except Exception as exc:
@@ -3808,7 +3848,7 @@ class CameraDetectionService:
                 f"🧍 [BODY-DETECTION] Camera {device_id} has auto_body_detection ON, "
                 f"triggering process-media for {media_uuid}"
             )
-            vision_url = os.getenv("VISION_SERVICE_URL", "http://localhost:8003")
+            vision_url = os.getenv("VISION_SERVICE_URL", "http://ppl-meta-vision:8003")
             params = {
                 "media_id": media_uuid,
                 "model_id": os.getenv("BODY_BULK_MODEL_ID", "body-yolo-pose-os"),
@@ -3848,18 +3888,8 @@ class CameraDetectionService:
         )
         
         try:
-            # Import service auth utilities
-            import sys
-            from pathlib import Path
-            # Add shared module to path
-            shared_path = Path(__file__).parent.parent.parent.parent / "shared"
-            if str(shared_path) not in sys.path:
-                sys.path.insert(0, str(shared_path))
-            
-            from auth.service_auth import get_service_auth_headers
-            
             # Service URLs
-            ORCHESTRATOR_SERVICE_URL = "http://localhost:8002"
+            ORCHESTRATOR_SERVICE_URL = _svc_url('ORCHESTRATOR_SERVICE_URL', 'http://ppl-meta-orchestrator:8002')
 
             # Trigger Enhanced Logic V2 face detection via orchestrator
             # Use frame_interval=10 to process every 10th frame (10x speedup)
@@ -3868,15 +3898,26 @@ class CameraDetectionService:
                 f"{media_uuid}/faces/enhanced-v2?frame_interval=10"
             )
             
-            # Use service-to-service authentication headers
-            service_headers = get_service_auth_headers("ppl-meta-cameras")
+            # Always use the shared internal service token for enhanced-v2.
+            # Caller JWTs often have numeric `sub` and fail Vision's GUID profile
+            # lookup, which surfaces as bulk-process 401 Authentication required.
+            internal_token = os.getenv(
+                "INTERNAL_SERVICE_TOKEN",
+                "ppl-meta-internal-service-secret-key-change-in-production",
+            )
+            service_headers = {
+                "Authorization": f"Bearer {internal_token}",
+                "X-Service-Name": "ppl-meta-cameras",
+                "X-Service-Auth": "internal",
+                "Accept": "application/json",
+            }
             
             logger.info(
                 "🎯 [FACE-DETECTION] Calling orchestrator URL: %s",
                 orchestrator_url
             )
             logger.info("🎯 [FACE-DETECTION] Request method: GET")
-            logger.info("🎯 [FACE-DETECTION] Using service auth token (frame_interval=10)")
+            logger.info("🎯 [FACE-DETECTION] Using internal service token (frame_interval=10)")
 
             async with session.get(
                 orchestrator_url, headers=service_headers
@@ -4232,7 +4273,7 @@ class CameraDetectionService:
                 headers["Authorization"] = f"Bearer {auth_token}"
             async with httpx.AsyncClient(timeout=5.0) as client:
                 await client.post(
-                    "http://localhost:8008/api/v1/recording/stopped",
+                    f"{__import__('os').getenv('VMETA_SERVICE_URL', __import__('os').getenv('VMETA_URL', 'http://ppl-meta-vmeta:8008')).rstrip('/')}/api/v1/recording/stopped",
                     json={
                         "collection_id": collection_uuid,
                         "session_uuid": session_uuid,
@@ -4260,7 +4301,7 @@ class CameraDetectionService:
             import httpx
             import os
             
-            vmeta_url = os.getenv("VMETA_URL", "http://localhost:8008")
+            vmeta_url = os.getenv("VMETA_URL", "http://ppl-meta-vmeta:8008")
             endpoint = f"{vmeta_url}/api/v1/recording-events"
             
             # Build vmeta event payload

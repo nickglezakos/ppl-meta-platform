@@ -18,8 +18,12 @@ logger = logging.getLogger(__name__)
 class OrchestratorClient:
     """HTTP client for publishing events to Orchestrator Service."""
 
-    def __init__(self, base_url: str = "http://localhost:8002", timeout: int = 10):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, base_url: str = None, timeout: int = 10):
+        import os
+        self.base_url = (
+            base_url
+            or os.getenv("ORCHESTRATOR_SERVICE_URL", "http://ppl-meta-orchestrator:8002")
+        ).rstrip("/")
         self.timeout = aiohttp.ClientTimeout(total=timeout)
 
     async def publish_camera_event(

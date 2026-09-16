@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../providers/whitelabel_provider.dart';
 
 /// A widget that displays the current logo - either the whitelabel
@@ -20,7 +21,7 @@ class AppLogo extends ConsumerWidget {
 
     return logoState.when(
       data: (customLogo) {
-        if (customLogo != null) {
+        if (customLogo != null && customLogo.isNotEmpty) {
           return Image.memory(
             customLogo,
             height: height,
@@ -32,27 +33,28 @@ class AppLogo extends ConsumerWidget {
         }
         return _buildDefaultLogo();
       },
-      loading: () {
-        // During loading, show nothing or a small placeholder.
-        // This prevents flickering on first load.
-        return _buildDefaultLogo();
-      },
-      error: (error, stack) {
-        return _buildDefaultLogo();
-      },
+      loading: () => _buildDefaultLogo(),
+      error: (error, stack) => _buildDefaultLogo(),
     );
   }
 
   Widget _buildDefaultLogo() {
+    final boxFit = fit ?? BoxFit.contain;
     return Image.asset(
       'assets/images/eyenet-logo.png',
       height: height,
-      fit: fit ?? BoxFit.contain,
+      fit: boxFit,
       errorBuilder: (context, error, stackTrace) {
-        return Icon(
-          Icons.security,
-          size: height * 0.8,
-          color: Colors.blue,
+        // PNG may be missing from older web AssetManifest builds.
+        return SvgPicture.asset(
+          'assets/images/eyenet-dark.svg',
+          height: height,
+          fit: boxFit,
+          placeholderBuilder: (_) => Icon(
+            Icons.security,
+            size: height * 0.8,
+            color: Colors.blue,
+          ),
         );
       },
     );

@@ -127,14 +127,17 @@ async def distributor_create_reseller_invitation(
 ) -> DistributorInvitationResponse:
     distributor_uuid = _resolve_distributor_scope(current_user, current_user.get("distributor_uuid"))
     reseller_uuid = (payload.reseller_uuid or "").strip() or None
-    invitation = create_invitation(
-        email=payload.email,
-        role_name=payload.role_name,
-        distributor_uuid=distributor_uuid,
-        reseller_uuid=reseller_uuid,
-        issued_by_user_uuid=current_user.get("user_uuid"),
-        expires_in_days=payload.expires_in_days,
-    )
+    try:
+        invitation = create_invitation(
+            email=payload.email,
+            role_name=payload.role_name,
+            distributor_uuid=distributor_uuid,
+            reseller_uuid=reseller_uuid,
+            issued_by_user_uuid=current_user.get("user_uuid"),
+            expires_in_days=payload.expires_in_days,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     delivery_result = send_invitation_email(invitation, issuer_email=current_user.get("email"))
     invitation = update_invitation_email_delivery(
         invitation_uuid=invitation["invitation_uuid"],

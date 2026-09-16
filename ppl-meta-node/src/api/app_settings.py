@@ -10,6 +10,10 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 def read_setting(key: str, db: Session = Depends(get_db)):
     setting = get_setting(db, key)
     if not setting:
+        # Optional branding keys: return empty instead of 404 so fresh installs
+        # do not spam the browser console (frontend already falls back to defaults).
+        if key.startswith("whitelabel_"):
+            return AppSettingRead(id=0, key=key, value="")
         raise HTTPException(status_code=404, detail="Setting not found")
     return setting
 

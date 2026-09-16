@@ -1684,15 +1684,24 @@ class _OptimizedFaceDataOverlayState
     }
 
     final videoSize = controller.value.size;
-    
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: CustomPaint(
-          painter: OptimizedFacePainter(
-            faces: _currentFrameFaces,
-            bodies: _currentFrameBodies,
-            videoSize: videoSize,
-            dataSource: widget.dataSource,
+    if (videoSize == Size.zero || videoSize.width <= 0 || videoSize.height <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    // Paint in the same Center+AspectRatio box as VideoPlayerWidget so mobile
+    // portrait/landscape letterboxing is identical (no second guessed offset).
+    return IgnorePointer(
+      child: Center(
+        child: AspectRatio(
+          aspectRatio: controller.value.aspectRatio,
+          child: CustomPaint(
+            painter: OptimizedFacePainter(
+              faces: _currentFrameFaces,
+              bodies: _currentFrameBodies,
+              videoSize: videoSize,
+              dataSource: widget.dataSource,
+            ),
+            child: const SizedBox.expand(),
           ),
         ),
       ),
@@ -1727,31 +1736,17 @@ class OptimizedFacePainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     );
 
-    // Calculate actual video display area within the container (WORKING LOGIC FROM YELLOW RECTANGLES)
-    // This accounts for aspect ratio preservation (BoxFit.contain behavior)
-    final containerAspectRatio = size.width / size.height;
-    final videoAspectRatio = videoSize.width / videoSize.height;
-    
-    double videoDisplayWidth;
-    double videoDisplayHeight;
-    double offsetX = 0;
-    double offsetY = 0;
-    
-    if (containerAspectRatio > videoAspectRatio) {
-      // Container is wider than video - video will be letterboxed horizontally
-      videoDisplayHeight = size.height;
-      videoDisplayWidth = videoDisplayHeight * videoAspectRatio;
-      offsetX = (size.width - videoDisplayWidth) / 2;
-    } else {
-      // Container is taller than video - video will be letterboxed vertically
-      videoDisplayWidth = size.width;
-      videoDisplayHeight = videoDisplayWidth / videoAspectRatio;
-      offsetY = (size.height - videoDisplayHeight) / 2;
+    if (videoSize.width <= 0 || videoSize.height <= 0 || size.isEmpty) {
+      return;
     }
-    
-    // Calculate scaling factors based on actual video display area
-    final scaleX = videoDisplayWidth / videoSize.width;
-    final scaleY = videoDisplayHeight / videoSize.height;
+
+    // Overlay is already laid out in the video's AspectRatio box (same as
+    // VideoPlayerWidget). Scale uniformly — do not re-apply letterbox offsets
+    // or mobile portrait boxes drift off-center.
+    final scaleX = size.width / videoSize.width;
+    final scaleY = size.height / videoSize.height;
+    const offsetX = 0.0;
+    const offsetY = 0.0;
 
     for (int i = 0; i < faces.length; i++) {
       final face = faces[i];

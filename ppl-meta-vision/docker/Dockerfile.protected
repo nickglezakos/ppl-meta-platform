@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     libxrender-dev \
+    libopenblas-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -35,6 +36,7 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     libxrender-dev \
+    libopenblas0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

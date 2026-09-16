@@ -28,8 +28,8 @@ class IndividualThumbnailService:
     def __init__(
         self,
         db_client,
-        media_service_url: str = "http://localhost:8000",
-        orchestrator_service_url: str = "http://localhost:8002",
+        media_service_url: str = None,
+        orchestrator_service_url: str = None,
         thumbnail_sizes: dict = None,
     ):
         """
@@ -41,9 +41,16 @@ class IndividualThumbnailService:
             orchestrator_service_url: URL of the orchestrator service
             thumbnail_sizes: Dict of size presets (small, medium, large)
         """
+        import os
         self.db = db_client
-        self.media_service_url = media_service_url
-        self.orchestrator_service_url = orchestrator_service_url
+        self.media_service_url = (
+            media_service_url
+            or os.getenv("MEDIA_SERVICE_URL", "http://ppl-meta-media:8000")
+        ).rstrip("/")
+        self.orchestrator_service_url = (
+            orchestrator_service_url
+            or os.getenv("ORCHESTRATOR_SERVICE_URL", "http://ppl-meta-orchestrator:8002")
+        ).rstrip("/")
         self.thumbnail_sizes = thumbnail_sizes or {
             "small": (128, 128),
             "medium": (256, 256),

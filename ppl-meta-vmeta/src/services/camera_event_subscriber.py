@@ -35,8 +35,8 @@ class CameraEventSubscriber:
     
     def __init__(
         self,
-        orchestrator_url: str = "http://localhost:8002",
-        camera_service_url: str = "http://localhost:8005",
+        orchestrator_url: str = None,
+        camera_service_url: str = None,
         polling_interval_seconds: int = 5,
         enable_websocket: bool = True,
         enable_polling: bool = True
@@ -51,8 +51,15 @@ class CameraEventSubscriber:
             enable_websocket: Enable WebSocket subscription
             enable_polling: Enable polling fallback
         """
-        self.orchestrator_url = orchestrator_url.rstrip("/")
-        self.camera_service_url = camera_service_url.rstrip("/")
+        import os
+        self.orchestrator_url = (
+            orchestrator_url
+            or os.getenv("ORCHESTRATOR_SERVICE_URL", "http://ppl-meta-orchestrator:8002")
+        ).rstrip("/")
+        self.camera_service_url = (
+            camera_service_url
+            or os.getenv("CAMERAS_SERVICE_URL", "http://ppl-meta-cameras:8005")
+        ).rstrip("/")
         self.polling_interval_seconds = polling_interval_seconds
         self.enable_websocket = enable_websocket
         self.enable_polling = enable_polling

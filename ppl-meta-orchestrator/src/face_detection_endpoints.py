@@ -32,6 +32,11 @@ from service_clients import ServiceClientManager
 # Configure logging
 logger = logging.getLogger(__name__)
 
+def _vision_base_url() -> str:
+    """Docker-friendly Vision base URL (never hardcode localhost inside containers)."""
+    return os.getenv("VISION_SERVICE_URL", "http://ppl-meta-vision:8003").rstrip("/")
+
+
 # Import distance calculator for Enhanced Logic V2 distance integration
 try:
     import os
@@ -197,13 +202,13 @@ class PersonObjectsQueue:
         logger.info(
             f"Created batch {batch['batch_id'][:8]}: "
             f"{batch['video_count']} videos, "
-            f"{batch['total_person_objects']} person objects"
+            f"{batch['total_person_objectsf']} person objects"
         )
 
 
 # Global queue instance
 person_objects_queue = PersonObjectsQueue(batch_size=10, max_queue_size=100)
-VMETA_BASE_URL = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+VMETA_BASE_URL = os.getenv("VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008")
 
 
 # ============================================================================
@@ -312,14 +317,14 @@ class FaceDetectionSessionManager:
     async def check_stored_faces(self, media_id: str) -> Optional[Dict[str, Any]]:
         """Check if faces are already stored in Vision Service database."""
         try:
-            vision_url = f"http://localhost:8003/faces/media/{media_id}"
+            vision_url = f"{_vision_base_url()}/faces/media/{media_id}"
             response = requests.get(vision_url, timeout=10)
 
             if response.status_code == 200:
                 data = response.json()
                 if data and len(data.get("faces", [])) > 0:
                     logger.info(
-                        f"Found stored faces for media {media_id}: {len(data['faces'])} faces"
+                        f"Found stored faces for media {media_id}: {len(data['facesf'])} faces"
                     )
                     return data
                 else:
@@ -371,7 +376,7 @@ class FaceDetectionSessionManager:
         try:
             lookup_headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
             existing_session_resp = requests.get(
-                f"http://localhost:8003/sessions/media/{media_id}",
+                f"{_vision_base_url()}/sessions/media/{media_id}",
                 headers=lookup_headers,
                 timeout=10,
             )
@@ -381,7 +386,7 @@ class FaceDetectionSessionManager:
                 )
                 if existing_session_uuid:
                     existing_po_resp = requests.get(
-                        f"http://localhost:8003/api/v1/person-objects/sessions/{existing_session_uuid}",
+                        f"{_vision_base_url()}/api/v1/person-objects/sessions/{existing_session_uuid}",
                         headers=lookup_headers,
                         timeout=30,
                     )
@@ -407,7 +412,7 @@ class FaceDetectionSessionManager:
                                 **lookup_headers,
                             }
                             faces_resp = requests.get(
-                                f"http://localhost:8003/faces/media/{media_id}",
+                                f"{_vision_base_url()}/faces/media/{media_id}",
                                 headers=faces_headers,
                                 timeout=120,
                             )
@@ -439,6 +444,26 @@ class FaceDetectionSessionManager:
                                     # Keep top-level faces sparse for backward compatibility;
                                     # overlay consumers require detection_result.faces_by_frame.
                                     representative_faces = enhanced_faces[:5]
+                                    existing_person_objects = existing_po.get(
+                                        "person_objects", []
+                                    ) or []
+                                    # Prior runs may have created person objects but failed
+                                    # VMeta materialize (e.g. bad VMETA_SERVICE_URL). Retry.
+                                    if existing_person_objects:
+                                        try:
+                                            await self._materialize_vmeta_from_persisted_person_objects(
+                                                media_id=media_id,
+                                                session_uuid=existing_session_uuid,
+                                                auth_token=auth_token,
+                                                person_objects=existing_person_objects,
+                                            )
+                                        except Exception as mat_err:
+                                            logger.warning(
+                                                "Short-circuit VMeta materialize retry "
+                                                "failed for %s: %s",
+                                                media_id,
+                                                mat_err,
+                                            )
                                     return {
                                         "success": True,
                                         "session_uuid": existing_session_uuid,
@@ -462,9 +487,7 @@ class FaceDetectionSessionManager:
                                             f"Reused {len(faces_array)} stored faces for media "
                                             f"with {person_count} existing person objects"
                                         ),
-                                        "person_objects": existing_po.get(
-                                            "person_objects", []
-                                        ),
+                                        "person_objects": existing_person_objects,
                                     }
                                 logger.warning(
                                     "⚠️ Short-circuit found persons for %s but Vision has no "
@@ -496,7 +519,7 @@ class FaceDetectionSessionManager:
         # Check if session creation succeeded
         if not session_creation_result.get("success", False):
             logger.error(
-                f"❌ Session creation failed: {session_creation_result.get('error', 'Unknown error')}"
+                f"❌ Session creation failed: {session_creation_result.get('error', 'Unknown errorf')}"
             )
             # Continue anyway - person-objects workflow will handle missing session
             serving_pipeline = True
@@ -504,7 +527,7 @@ class FaceDetectionSessionManager:
         try:
             # Step 1: Check for stored faces in Vision Service
             logger.info("🔍 Step 1: Checking for stored faces...")
-            vision_url = f"http://localhost:8003/faces/media/{media_id}"
+            vision_url = f"{_vision_base_url()}/faces/media/{media_id}"
             logger.info(f"🔍 Vision URL: {vision_url}")
             
             # Add cache-busting headers to prevent HTTP caching issues
@@ -643,7 +666,7 @@ class FaceDetectionSessionManager:
                         "message": (
                             f"Retrieved {stored_face_count} stored faces "
                             f"with distance calculations from existing session data, "
-                            f"created {person_objects_result.get('person_count', 0)} person objects"
+                            f"created {person_objects_result.get('person_countf', 0)} person objects"
                         ),
                     }
                 else:
@@ -653,7 +676,12 @@ class FaceDetectionSessionManager:
 
                     # Step 2: No stored faces - trigger real-time detection
                     return await self._trigger_realtime_detection(
-                        media_id, session_uuid, start_time, auth_token, frame_interval
+                        media_id,
+                        session_uuid,
+                        start_time,
+                        auth_token,
+                        frame_interval,
+                        serving_pipeline=serving_pipeline,
                     )
 
             else:
@@ -664,7 +692,11 @@ class FaceDetectionSessionManager:
 
                 # Fallback to real-time detection
                 return await self._trigger_realtime_detection(
-                    media_id, session_uuid, start_time, auth_token
+                    media_id,
+                    session_uuid,
+                    start_time,
+                    auth_token,
+                    serving_pipeline=serving_pipeline,
                 )
 
         except Exception as e:
@@ -690,6 +722,7 @@ class FaceDetectionSessionManager:
         start_time: float,
         auth_token: str,
         frame_interval: int = 10,
+        serving_pipeline: bool = True,
     ) -> Dict[str, Any]:
         """
         Trigger real-time face detection via Vision Service with frame sampling.
@@ -700,6 +733,7 @@ class FaceDetectionSessionManager:
             start_time: Start timestamp for performance measurement
             auth_token: Authentication token for Vision Service requests
             frame_interval: Process every N frames (default: 10)
+            serving_pipeline: When False (shadow), skip VMeta materialize/enqueue
 
         Returns:
             dict: Real-time detection results with session information
@@ -715,7 +749,7 @@ class FaceDetectionSessionManager:
         try:
             # Call Vision Service for real-time detection with frame sampling
             bulk_detect_url = (
-                f"http://localhost:8003/faces/media/{media_id}/bulk-process"
+                f"{_vision_base_url()}/faces/media/{media_id}/bulk-process"
                 f"?force_process=true&frame_interval={frame_interval}"
             )
 
@@ -746,7 +780,7 @@ class FaceDetectionSessionManager:
                 logger.info(f"✅ Real-time detection completed: {detection_data}")
 
                 # Now retrieve the newly detected faces
-                faces_url = f"http://localhost:8003/faces/media/{media_id}"
+                faces_url = f"{_vision_base_url()}/faces/media/{media_id}"
                 faces_response = requests.get(faces_url, headers=headers, timeout=120)
 
                 if faces_response.status_code == 200:
@@ -854,7 +888,7 @@ class FaceDetectionSessionManager:
                         "message": (
                             f"Detected {detected_face_count} faces "
                             f"via real-time processing with distance calculations, "
-                            f"created {person_objects_result.get('person_count', 0)} person objects"
+                            f"created {person_objects_result.get('person_countf', 0)} person objects"
                         ),
                     }
                 else:
@@ -923,7 +957,7 @@ class FaceDetectionSessionManager:
         """
         try:
             # Vision Service session creation endpoint (correct path)
-            session_url = "http://localhost:8003/sessions/start"
+            session_url = f"{_vision_base_url()}/sessions/start"
 
             provenance = {
                 "model_id": "face-two-stage-builtin",
@@ -933,7 +967,9 @@ class FaceDetectionSessionManager:
                 "serving": True,
             }
             try:
-                models_url = os.getenv("MODELS_SERVICE_URL", "http://localhost:8013")
+                models_url = os.getenv(
+                    "MODELS_SERVICE_URL", "http://ppl-meta-models:8013"
+                )
                 params = {"path": "bulk", "capability": "face_detection"}
                 if camera_id:
                     params["camera_id"] = camera_id
@@ -1018,7 +1054,7 @@ class FaceDetectionSessionManager:
         """
         Complete a face detection session in Vision Service database.
         
-        Updates session status to 'completed' and sets total_faces_detected.
+        Updates session status to 'completedf' and sets total_faces_detected.
         
         Args:
             session_uuid: The session UUID to complete
@@ -1029,7 +1065,7 @@ class FaceDetectionSessionManager:
             dict: Completion result
         """
         try:
-            complete_url = f"http://localhost:8003/sessions/{session_uuid}/complete"
+            complete_url = f"{_vision_base_url()}/sessions/{session_uuid}/complete"
             
             headers = {
                 "Content-Type": "application/json",
@@ -1097,7 +1133,7 @@ class FaceDetectionSessionManager:
             if face_detections:
                 # NEW: Use in-memory endpoint with face data (FASTER!)
                 person_objects_url = (
-                    "http://localhost:8003/api/v1/person-objects/workflows/start-from-faces"
+                    f"{_vision_base_url()}/api/v1/person-objects/workflows/start-from-faces"
                 )
 
                 # Prepare request body with face detections
@@ -1120,7 +1156,7 @@ class FaceDetectionSessionManager:
             else:
                 # OLD: Use session-based endpoint (queries database)
                 person_objects_url = (
-                    "http://localhost:8003/api/v1/person-objects/workflows/start"
+                    f"{_vision_base_url()}/api/v1/person-objects/workflows/start"
                 )
 
                 # Prepare request body
@@ -1286,7 +1322,7 @@ class FaceDetectionSessionManager:
         self, request: FaceDetectionRequest
     ) -> FaceDetectionSession:
         """
-        Trigger face detection processing through Orchestrator's own endpoint.
+        Trigger face detection processing through Orchestratorf's own endpoint.
         This implements the self-referencing architecture.
         """
         session = self.create_session(request)
@@ -1311,7 +1347,7 @@ class FaceDetectionSessionManager:
             )
 
             # Call Vision Service for face detection
-            vision_url = f"http://localhost:8003/faces/media/{request.media_id}"
+            vision_url = f"{_vision_base_url()}/faces/media/{request.media_id}"
             params = {
                 "method": request.method,
                 "confidence_threshold": request.confidence_threshold,

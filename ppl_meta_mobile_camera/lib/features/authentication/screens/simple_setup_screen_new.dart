@@ -214,9 +214,11 @@ bool _isEnrolling = false;
         print('🗑️ Cleared invalid stored credentials');
       }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 /// Join the VPN mesh by redeeming a one-time enrollment token minted by a

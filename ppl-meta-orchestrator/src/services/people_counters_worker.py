@@ -113,7 +113,7 @@ def _service_token() -> Optional[str]:
 
 def _service_urls() -> Tuple[str, str, str]:
     return (
-        os.getenv("VMETA_SERVICE_URL", "http://localhost:8008").rstrip("/"),
+        os.getenv("VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008").rstrip("/"),
         os.getenv("MEDIA_SERVICE_URL", "http://localhost:8000").rstrip("/"),
         os.getenv("CAMERA_SERVICE_URL", "http://localhost:8005").rstrip("/"),
     )

@@ -15,9 +15,7 @@ import sys
 from pathlib import Path
 from celery import Task
 
-# Add parent directory to path to import shared
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-from shared.queue_config import celery_app, redis_client
+from src.shared.queue_config import celery_app, redis_client
 
 # Ensure stream operations tasks are registered in the same Celery worker process.
 from src.tasks import stream_operations_tasks as _stream_operations_tasks  # noqa: F401
@@ -343,8 +341,9 @@ class InstantDetectionTask(Task):
     base=InstantDetectionTask,
     name="instant_detection.process_frames",
     queue="instant_detection_queue",
-    time_limit=30,  # 30 seconds max
-    soft_time_limit=25
+    # Age/gender may need ~45s on cold DeepFace CPU; keep headroom for cache write.
+    time_limit=120,
+    soft_time_limit=100
 )
 def process_instant_detection(
     self,
@@ -384,7 +383,7 @@ def process_instant_detection(
             # (Can't use instance cache since Celery worker and FastAPI are separate processes)
             try:
                 import redis
-                r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+                r = redis.Redis(host=__import__('os').getenv('REDIS_HOST','redis'), port=int(__import__('os').getenv('REDIS_PORT','6379')), decode_responses=False)
                 cache_key = f"instant_detection:{camera_id}"
                 # Store with 5 minute TTL
                 r.setex(cache_key, 300, json.dumps(result))

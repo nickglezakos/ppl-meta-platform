@@ -806,12 +806,23 @@ class CameraService {
   /// Update camera auto face detection setting
   Future<void> updateAutoFaceDetection(String deviceId, bool enabled) async {
     try {
-      await _directCameraClient.put(
-        '/api/v1/cameras/$deviceId/settings',
-        data: {
-          'auto_face_detection': enabled,
-        },
-      );
+      // Prefer workflow-settings (gateway-proxied); fall back to /settings.
+      try {
+        await _cameraApiClient.patch(
+          '/api/v1/cameras/$deviceId/workflow-settings',
+          data: {
+            'auto_face_detection': enabled,
+          },
+        );
+        return;
+      } on DioException catch (_) {
+        await _directCameraClient.put(
+          '/api/v1/cameras/$deviceId/settings',
+          data: {
+            'auto_face_detection': enabled,
+          },
+        );
+      }
     } on DioException catch (e) {
       throw _handleDioError(e);
     } catch (e) {

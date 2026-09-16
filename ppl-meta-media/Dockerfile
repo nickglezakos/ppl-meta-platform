@@ -47,10 +47,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/home/app/.local/bin:$PATH"
 
-# Install only runtime dependencies
+# Install only runtime dependencies (ffmpeg required for H.264 stream-token remux)
 RUN apt-get update && apt-get install -y \
     libpq5 \
     curl \
+    ffmpeg \
     libgl1-mesa-dri \
     libglx-mesa0 \
     libglx0 \
@@ -74,7 +75,8 @@ COPY --from=builder /root/.local /home/app/.local
 COPY src/ ./src/
 
 # Set permissions
-RUN chown -R app:app /app
+RUN mkdir -p /logs /app/logs /tmp/ppl-meta-media-android-compat \
+    && chown -R app:app /app /logs /tmp/ppl-meta-media-android-compat
 
 # Switch to non-root user
 USER app

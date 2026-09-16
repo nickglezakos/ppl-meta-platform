@@ -12,6 +12,8 @@ import numpy as np
 from typing import Optional, Dict, Any, Tuple
 import logging
 from deepface import DeepFace
+
+from .deepface_compat import deepface_analyze
 import cv2
 
 logger = logging.getLogger(__name__)
@@ -37,24 +39,11 @@ class AgeEstimator:
         logger.info(f"AgeEstimator initialized (tolerance: ±{age_tolerance})")
     
     def _ensure_model_loaded(self) -> bool:
-        """Ensure DeepFace age model is loaded."""
+        """Mark age model ready. Weights load lazily on first real inference."""
         if not self._model_loaded:
-            try:
-                logger.info("Loading age estimation model...")
-                # Trigger model load
-                DeepFace.analyze(
-                    img_path=np.zeros((160, 160, 3), dtype=np.uint8),
-                    actions=['age'],
-                    enforce_detection=False,
-                    detector_backend='opencv',
-                    silent=True
-                )
-                self._model_loaded = True
-                logger.info("✅ Age model loaded successfully")
-                return True
-            except Exception as e:
-                logger.error(f"Failed to load age model: {e}")
-                return False
+            # Avoid dummy zero-image warmup: older DeepFace OOMs / fails on blanks.
+            logger.info("Age estimation model will load on first inference")
+            self._model_loaded = True
         return True
     
     def estimate_age(
@@ -77,12 +66,11 @@ class AgeEstimator:
             return None
         
         try:
-            result = DeepFace.analyze(
+            result = deepface_analyze(
                 img_path=face_image,
                 actions=['age'],
                 enforce_detection=enforce_detection,
                 detector_backend='opencv',
-                silent=True
             )
             
             if result and len(result) > 0:

@@ -184,7 +184,7 @@ async def _refresh_iva_from_orchestrator_task(
     if initial_delay_seconds > 0:
         await asyncio.sleep(initial_delay_seconds)
 
-    orchestrator_url = os.getenv("PPL_ORCHESTRATOR_URL", "http://localhost:8002")
+    orchestrator_url = os.getenv("ORCHESTRATOR_SERVICE_URL", os.getenv("PPL_ORCHESTRATOR_URL", "http://ppl-meta-orchestrator:8002"))
     internal_token = auth_token or os.getenv(
         "INTERNAL_SERVICE_TOKEN",
         "ppl-meta-internal-service-secret-key-change-in-production",
@@ -503,7 +503,7 @@ async def _materialize_single_media_from_persisted_person_objects(
             processing_time_ms=int((time.time() - start_time) * 1000),
         )
 
-    vision_url = os.getenv("PPL_VISION_URL", "http://localhost:8003")
+    vision_url = os.getenv("VISION_SERVICE_URL", os.getenv("PPL_VISION_URL", "http://ppl-meta-vision:8003"))
     gateway_url = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080")
 
     # NOTE on enrichment: the orchestrator hands us a workflow payload with
@@ -831,7 +831,7 @@ async def _get_mvr_stored_comparison_enabled() -> bool:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(
-                "http://localhost:8002/api/v1/settings/workflow/mvr-merge",
+                f"{os.getenv('ORCHESTRATOR_SERVICE_URL', 'http://ppl-meta-orchestrator:8002').rstrip('/')}/api/v1/settings/workflow/mvr-merge",
                 headers={
                     "Authorization": "Bearer internal-service-token-ppl-meta-frontend"
                 },
@@ -3161,7 +3161,7 @@ async def search_mvr_people_by_videos(
 
             media_client = MediaClient(auth_token=auth_token)
             gateway_url = os.getenv('PPL_GATEWAY_URL', 'http://localhost:8080').rstrip('/')
-            vision_url = os.getenv('PPL_VISION_URL', 'http://localhost:8003').rstrip('/')
+            vision_url = os.getenv('VISION_SERVICE_URL', os.getenv('PPL_VISION_URL', 'http://ppl-meta-vision:8003')).rstrip('/')
             materialized = 0
 
             async with httpx.AsyncClient(timeout=60.0) as client:
@@ -4164,7 +4164,7 @@ async def search_mvr_people_by_videos_persisted_merge_session_batch(
 # ============================================================================
 
 import os as _pc_os  # local alias to avoid confusing other imports
-_PC_MEDIA_SERVICE_URL = _pc_os.getenv("MEDIA_SERVICE_URL", "http://localhost:8000")
+_PC_MEDIA_SERVICE_URL = _pc_os.getenv("MEDIA_SERVICE_URL", "http://ppl-meta-media:8000")
 
 
 @router.get(
@@ -5610,8 +5610,8 @@ async def enrich_person_objects_with_face_crops(
     person_objects: List[Dict[str, Any]],
     media_uuid: UUID,
     auth_token: str,
-    vision_url: str = "http://localhost:8003",
-    gateway_url: str = "http://localhost:8080"
+    vision_url: str = None,
+    gateway_url: str = None,
 ) -> List[Dict[str, Any]]:
     """
     Enrich person objects with face crops extracted from video frames.
@@ -5636,8 +5636,18 @@ async def enrich_person_objects_with_face_crops(
     import httpx
     import cv2
     import numpy as np
+    import os
     from PIL import Image
     from io import BytesIO
+
+    vision_url = (
+        vision_url
+        or os.getenv("VISION_SERVICE_URL", "http://ppl-meta-vision:8003")
+    ).rstrip("/")
+    gateway_url = (
+        gateway_url
+        or os.getenv("GATEWAY_SERVICE_URL", "http://ppl-meta-gateway:8080")
+    ).rstrip("/")
 
     def _is_valid_bbox(bbox: Any) -> bool:
         return (
@@ -6004,7 +6014,7 @@ async def process_media_independently(
     
     # Import httpx for Vision service calls
     import httpx
-    vision_url = os.getenv("PPL_VISION_URL", "http://localhost:8003")
+    vision_url = os.getenv("VISION_SERVICE_URL", os.getenv("PPL_VISION_URL", "http://ppl-meta-vision:8003"))
     gateway_url = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080")
     
     for media_uuid_str in request.media_uuids:
@@ -6033,7 +6043,7 @@ async def process_media_independently(
             # Step 2: Trigger Enhanced Face Detection V2 via Orchestrator (synchronous)
             # This works for both photos and videos
             trigger_data = {}  # Initialize outside httpx block for scoping
-            orchestrator_url = os.getenv("PPL_ORCHESTRATOR_URL", "http://localhost:8002")
+            orchestrator_url = os.getenv("ORCHESTRATOR_SERVICE_URL", os.getenv("PPL_ORCHESTRATOR_URL", "http://ppl-meta-orchestrator:8002"))
             
             async with httpx.AsyncClient(timeout=180.0) as client:
                 # Step 2a: Use Enhanced Logic V2 endpoint (synchronous, no polling needed)
@@ -6895,7 +6905,7 @@ async def get_best_images_for_mvr(
         )
         
         # Initialize image manager with auth token
-        orchestrator_url = os.getenv("ORCHESTRATOR_SERVICE_URL", "http://localhost:8002")
+        orchestrator_url = os.getenv("ORCHESTRATOR_SERVICE_URL", "http://ppl-meta-orchestrator:8002")
         
         image_manager = MVRImageManager(
             mvr_repo=mvr_repository,

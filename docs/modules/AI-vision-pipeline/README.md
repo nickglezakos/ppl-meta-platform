@@ -46,6 +46,7 @@ Documentation for the PPL Meta platform's computer-vision pipeline: frame-based 
 | Face detection & person objects (single video) | [person objects/Person Objects module.md](person%20objects/Person%20Objects%20module.md) |
 | Body detection & MVR People Body | [body-mvr-people-body.md](body-mvr-people-body.md) |
 | Real-time / instant detection | [instant-detection/Instant-detection module.md](instant-detection/Instant-detection%20module.md) |
+| Instant detection event path | [instant-detection/instant-detection-event-path.md](instant-detection/instant-detection-event-path.md) |
 | MVR search & merge UX | [MVR merge/mvr-merge-module.md](MVR%20merge/mvr-merge-module.md) |
 | Individual groups (downstream) | [individual-groups/individual-groups.md](individual-groups/individual-groups.md) |
 

@@ -39,67 +39,97 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
     super.initState();
     
     if (widget.camera != null && widget.isEditing) {
-      // Parse existing camera data
       _nameController.text = widget.camera!.name;
-      
-      // Extract RTSP URL components (format: rtsp://user:pass@host:port/path)
-      final url = widget.camera!.deviceId; // Connection string should be in deviceId or manufacturer field
-      final rtspUrl = widget.camera!.manufacturer ?? widget.camera!.deviceId;
-      
-      // Simple parsing of RTSP URL
-      if (rtspUrl.startsWith('rtsp://')) {
-        try {
-          var remaining = rtspUrl.substring(7); // Remove 'rtsp://'
-          
-          // Extract credentials if present
-          if (remaining.contains('@')) {
-            final parts = remaining.split('@');
-            final credentials = parts[0];
-            remaining = parts[1];
-            
-            if (credentials.contains(':')) {
-              final credParts = credentials.split(':');
-              _usernameController.text = credParts[0];
-              _passwordController.text = credParts[1];
-            } else {
-              _usernameController.text = credentials;
-            }
-          }
-          
-          // Extract host, port, and path
-          if (remaining.contains('/')) {
-            final parts = remaining.split('/');
-            final hostPort = parts[0];
-            _streamPathController.text = '/' + parts.sublist(1).join('/');
-            
-            if (hostPort.contains(':')) {
-              final hostPortParts = hostPort.split(':');
-              _hostController.text = hostPortParts[0];
-              _portController.text = hostPortParts[1];
-            } else {
-              _hostController.text = hostPort;
-              _portController.text = '554';
-            }
-          } else {
-            if (remaining.contains(':')) {
-              final hostPortParts = remaining.split(':');
-              _hostController.text = hostPortParts[0];
-              _portController.text = hostPortParts[1];
-            } else {
-              _hostController.text = remaining;
-              _portController.text = '554';
-            }
-            _streamPathController.text = '/stream';
-          }
-        } catch (e) {
-          // If parsing fails, use defaults
-          _portController.text = '554';
-          _streamPathController.text = '/stream';
-        }
+
+      // Prefer structured fields from API (avoids broken URL parsing / double-encoding).
+      final meta = widget.camera!.metadata ?? const <String, dynamic>{};
+      final metaUser = meta['username']?.toString();
+      final metaPort = meta['port']?.toString();
+      final rtspUrl = _rtspUrlFromCamera(widget.camera!);
+
+      if (metaUser != null && metaUser.isNotEmpty) {
+        _usernameController.text = metaUser;
       }
+      if (metaPort != null && metaPort.isNotEmpty) {
+        _portController.text = metaPort;
+      }
+
+      if (rtspUrl != null && rtspUrl.startsWith('rtsp://')) {
+        _populateFieldsFromRtspUrl(
+          rtspUrl,
+          fillUsername: _usernameController.text.isEmpty,
+          fillPort: _portController.text.isEmpty,
+        );
+      } else if (_portController.text.isEmpty) {
+        _portController.text = '554';
+        _streamPathController.text = '/stream1';
+      }
+      if (_streamPathController.text.isEmpty) {
+        _streamPathController.text = '/stream1';
+      }
+      // Never pre-fill password from URL — user re-enters on change; blank keeps existing.
+      _passwordController.clear();
     } else {
       _portController.text = '554';
-      _streamPathController.text = '/stream';
+      _streamPathController.text = '/stream1';
+    }
+  }
+
+  /// Prefer connection_string from API metadata; never parse deviceId/manufacturer.
+  String? _rtspUrlFromCamera(Camera camera) {
+    final fromMeta = camera.metadata?['connection_string']?.toString();
+    if (fromMeta != null && fromMeta.startsWith('rtsp://')) return fromMeta;
+    final stream = camera.streamUrl;
+    if (stream != null && stream.startsWith('rtsp://')) return stream;
+    return null;
+  }
+
+  /// Split credentials on the *last* '@' so email usernames (user@domain) work.
+  void _populateFieldsFromRtspUrl(
+    String rtspUrl, {
+    bool fillUsername = true,
+    bool fillPort = true,
+  }) {
+    try {
+      var remaining = rtspUrl.substring('rtsp://'.length);
+
+      final at = remaining.lastIndexOf('@');
+      if (at >= 0) {
+        final credentials = remaining.substring(0, at);
+        remaining = remaining.substring(at + 1);
+        if (fillUsername) {
+          final colon = credentials.indexOf(':');
+          if (colon >= 0) {
+            _usernameController.text =
+                Uri.decodeComponent(credentials.substring(0, colon));
+          } else {
+            _usernameController.text = Uri.decodeComponent(credentials);
+          }
+        }
+      }
+
+      final slash = remaining.indexOf('/');
+      final hostPort = slash >= 0 ? remaining.substring(0, slash) : remaining;
+      _streamPathController.text =
+          slash >= 0 ? remaining.substring(slash) : '/stream1';
+
+      final colon = hostPort.lastIndexOf(':');
+      if (colon > 0 && !hostPort.contains(']')) {
+        _hostController.text = hostPort.substring(0, colon);
+        if (fillPort) {
+          _portController.text = hostPort.substring(colon + 1);
+        }
+      } else {
+        _hostController.text = hostPort;
+        if (fillPort) {
+          _portController.text = '554';
+        }
+      }
+    } catch (_) {
+      if (fillPort) _portController.text = '554';
+      if (_streamPathController.text.isEmpty) {
+        _streamPathController.text = '/stream1';
+      }
     }
   }
 

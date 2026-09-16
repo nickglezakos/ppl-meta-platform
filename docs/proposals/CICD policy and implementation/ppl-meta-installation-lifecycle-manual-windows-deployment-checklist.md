@@ -59,7 +59,7 @@ This means authority decides approved state, but the Windows host performs the a
 
 ### Release Inputs
 
-- platform release version from repository root `VERSION` (current pin `2.25.79` unless intentionally overridden)
+- platform release version from repository root `VERSION` (current pin `2.25.80` unless intentionally overridden)
 - exact image list and tags under `ghcr.io/nickglezakos/ppl-meta-platform`
 - compose / env / installer assets from `deployment/windows-installer/`
 

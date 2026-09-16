@@ -484,14 +484,23 @@ class AuthenticationService {
         print('✅ [PLATFORM_SERVICES] Platform services data fetched successfully');
         print('📊 [PLATFORM_SERVICES] Data keys: ${platformData.keys.toList()}');
         
-        // Detect if we're using Tailscale and need IP translation
+        // Rewrite unreachable advertised hosts to the host we already reached
+        // for login (LAN or Tailscale). Node inside Docker often reports a
+        // bridge IP (172.18.x) that phones cannot dial.
         final serverUri = Uri.parse(_serverUrl);
         final serverHost = serverUri.host;
-        final isTailscale = serverHost.startsWith('100.');
-        
-        if (isTailscale) {
-          print('🔒 [PLATFORM_SERVICES] Tailscale detected - translating local IPs to $serverHost');
-          _translateLocalIPsToTailscale(platformData, serverHost);
+        final advertisedLocal =
+            platformData['connectivity']?['local_ip']?.toString() ?? '';
+        final needsRewrite = serverHost.isNotEmpty &&
+            advertisedLocal.isNotEmpty &&
+            advertisedLocal != serverHost &&
+            _isUnreachablePlatformIp(advertisedLocal);
+        if (needsRewrite || serverHost.startsWith('100.')) {
+          print(
+            '🔒 [PLATFORM_SERVICES] Rewriting advertised IPs '
+            '($advertisedLocal) → $serverHost',
+          );
+          _rewritePlatformServiceHosts(platformData, serverHost);
         }
         
         // Store platform services data
@@ -885,83 +894,62 @@ class AuthenticationService {
     }
   }
   
-  /// Translate local IPs in platform services data to Tailscale IP
-  void _translateLocalIPsToTailscale(Map<String, dynamic> platformData, String tailscaleIP) {
-    print('🔄 [IP_TRANSLATION] Starting IP translation to Tailscale IP: $tailscaleIP');
-    
-    // Helper function to check if an IP is local
-    bool isLocalIP(String ip) {
-      return ip.startsWith('192.168.') ||
-             ip.startsWith('10.') ||
-             ip.startsWith('172.16.') ||
-             ip.startsWith('172.17.') ||
-             ip.startsWith('172.18.') ||
-             ip.startsWith('172.19.') ||
-             ip.startsWith('172.20.') ||
-             ip.startsWith('172.21.') ||
-             ip.startsWith('172.22.') ||
-             ip.startsWith('172.23.') ||
-             ip.startsWith('172.24.') ||
-             ip.startsWith('172.25.') ||
-             ip.startsWith('172.26.') ||
-             ip.startsWith('172.27.') ||
-             ip.startsWith('172.28.') ||
-             ip.startsWith('172.29.') ||
-             ip.startsWith('172.30.') ||
-             ip.startsWith('172.31.') ||
-             ip.startsWith('127.') ||
-             ip == 'localhost';
+  /// Docker bridge / loopback hosts that phones cannot reach.
+  bool _isUnreachablePlatformIp(String ip) {
+    if (ip == 'localhost' || ip.startsWith('127.')) return true;
+    final parts = ip.split('.');
+    if (parts.length != 4) return false;
+    final a = int.tryParse(parts[0]);
+    final b = int.tryParse(parts[1]);
+    if (a == null || b == null) return false;
+    // Docker / Lima / WSL bridge ranges (172.16.0.0/12)
+    return a == 172 && b >= 16 && b <= 31;
+  }
+
+  /// Rewrite advertised service hosts to [reachableHost] (LAN or Tailscale).
+  void _rewritePlatformServiceHosts(
+    Map<String, dynamic> platformData,
+    String reachableHost,
+  ) {
+    print('🔄 [IP_TRANSLATION] Rewriting unreachable hosts → $reachableHost');
+
+    bool shouldRewriteHost(String host) {
+      return host != reachableHost &&
+          (_isUnreachablePlatformIp(host) ||
+              host.startsWith('192.168.') ||
+              host.startsWith('10.') ||
+              host == 'localhost' ||
+              host.startsWith('127.'));
     }
-    
-    // Helper function to replace local IPs in URLs
+
     String translateURL(String url) {
       try {
         final uri = Uri.parse(url);
-        if (isLocalIP(uri.host)) {
-          final translatedURL = url.replaceFirst(
-            RegExp('${uri.host}'),
-            tailscaleIP,
-          );
+        if (shouldRewriteHost(uri.host)) {
+          final translatedURL = url.replaceFirst(uri.host, reachableHost);
           print('  🔄 Translated: $url -> $translatedURL');
           return translatedURL;
         }
-      } catch (e) {
-        // Not a valid URL, return as-is
-      }
+      } catch (_) {}
       return url;
     }
-    
-    // Translate microservices endpoints
-    if (platformData.containsKey('microservices')) {
-      final microservices = platformData['microservices'] as Map<String, dynamic>;
-      microservices.forEach((serviceName, serviceData) {
-        if (serviceData is Map<String, dynamic>) {
-          // Translate main endpoint
-          if (serviceData.containsKey('endpoint')) {
-            serviceData['endpoint'] = translateURL(serviceData['endpoint'] as String);
+
+    void rewriteMapStrings(Map<String, dynamic> map) {
+      for (final key in map.keys.toList()) {
+        final value = map[key];
+        if (value is String) {
+          if (value.contains('://')) {
+            map[key] = translateURL(value);
+          } else if (shouldRewriteHost(value)) {
+            map[key] = reachableHost;
           }
-          
-          // Translate nested endpoints (local, tailscale, etc.)
-          if (serviceData.containsKey('endpoints')) {
-            final endpoints = serviceData['endpoints'] as Map<String, dynamic>;
-            endpoints.forEach((key, value) {
-              if (value is String) {
-                endpoints[key] = translateURL(value);
-              }
-            });
-          }
+        } else if (value is Map<String, dynamic>) {
+          rewriteMapStrings(value);
         }
-      });
-    }
-    
-    // Translate mobile camera config
-    if (platformData.containsKey('mobile_camera_config')) {
-      final config = platformData['mobile_camera_config'] as Map<String, dynamic>;
-      if (config.containsKey('recommended_endpoint')) {
-        config['recommended_endpoint'] = translateURL(config['recommended_endpoint'] as String);
       }
     }
-    
-    print('✅ [IP_TRANSLATION] IP translation complete');
+
+    rewriteMapStrings(platformData);
+    print('✅ [IP_TRANSLATION] Host rewrite complete');
   }
 }

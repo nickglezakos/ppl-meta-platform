@@ -51,6 +51,15 @@ class SessionManager:
         """Get current timestamp in UTC."""
         return datetime.now(timezone.utc)
 
+    @staticmethod
+    def _ensure_aware(dt: Optional[datetime]) -> Optional[datetime]:
+        """Normalize DB/naive timestamps so duration math never mixes tz awareness."""
+        if dt is None:
+            return None
+        if getattr(dt, "tzinfo", None) is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+
     def _validate_session_uuid(self, session_uuid: str) -> bool:
         """Validate session UUID format."""
         try:
@@ -84,11 +93,16 @@ class SessionManager:
                     details={"field": "media_uuid"},
                 )
 
-            if request.session_type not in ["streaming", "upload", "batch"]:
+            # Align with DB chk_session_type + api_models: streaming | bulk_processing.
+            # Older callers still send upload/batch — map those to bulk_processing.
+            session_type = request.session_type
+            if session_type in ("upload", "batch"):
+                session_type = "bulk_processing"
+            if session_type not in ("streaming", "bulk_processing"):
                 return SessionErrorResponse(
                     error="INVALID_SESSION_TYPE",
                     message=f"Invalid session_type: {request.session_type}",
-                    details={"valid_types": ["streaming", "upload", "batch"]},
+                    details={"valid_types": ["streaming", "bulk_processing", "upload", "batch"]},
                 )
 
             # Prepare session data
@@ -96,7 +110,7 @@ class SessionManager:
                 "session_uuid": session_uuid,
                 "media_uuid": request.media_uuid,
                 "camera_device_uuid": request.camera_device_uuid,
-                "session_type": request.session_type,
+                "session_type": session_type,
                 "started_at": current_time,
                 "processing_status": "initializing",
                 "total_faces_detected": 0,
@@ -289,26 +303,10 @@ class SessionManager:
                 )
 
                 return SessionStatusResponse(
+                    success=True,
+                    status=session_data.get("processing_status", "unknown"),
+                    message="Session status retrieved",
                     session=session_model,
-                    processing_stats={
-                        "total_faces_detected": session_data.get(
-                            "total_faces_detected", 0
-                        ),
-                        "processing_status": session_data.get(
-                            "processing_status", "unknown"
-                        ),
-                        "session_duration_seconds": (
-                            (
-                                (
-                                    session_data.get("ended_at")
-                                    or self._get_current_timestamp()
-                                )
-                                - session_data["started_at"]
-                            ).total_seconds()
-                            if session_data.get("started_at")
-                            else 0
-                        ),
-                    },
                 )
 
             # If not in memory, try database
@@ -363,26 +361,12 @@ class SessionManager:
                             )
 
                             return SessionStatusResponse(
+                                success=True,
+                                status=session_data.get(
+                                    "processing_status", "unknown"
+                                ),
+                                message="Session status retrieved",
                                 session=session_model,
-                                processing_stats={
-                                    "total_faces_detected": session_data.get(
-                                        "current_face_count", 0
-                                    ),
-                                    "processing_status": session_data.get(
-                                        "processing_status", "unknown"
-                                    ),
-                                    "session_duration_seconds": (
-                                        (
-                                            (
-                                                session_data.get("ended_at")
-                                                or self._get_current_timestamp()
-                                            )
-                                            - session_data["started_at"]
-                                        ).total_seconds()
-                                        if session_data.get("started_at")
-                                        else 0
-                                    ),
-                                },
                             )
                         else:
                             return SessionErrorResponse(
@@ -448,53 +432,73 @@ class SessionManager:
             if self.db and self.db.connection:
                 try:
                     with self.db.connection.cursor() as cursor:
-                        # Update session end time and status
                         cursor.execute(
                             """
-                            UPDATE face_detection_sessions 
-                            SET 
+                            SELECT 1
+                            FROM information_schema.columns
+                            WHERE table_name = 'face_detections'
+                              AND column_name = 'session_uuid'
+                            """
+                        )
+                        has_face_session_col = cursor.fetchone() is not None
+                        if has_face_session_col:
+                            count_sql = (
+                                "SELECT COUNT(*)::integer FROM face_detections "
+                                "WHERE session_uuid = %s"
+                            )
+                            frames_sql = (
+                                "SELECT COUNT(*) as total_faces, "
+                                "COUNT(DISTINCT frame_number) as total_frames "
+                                "FROM face_detections WHERE session_uuid = %s"
+                            )
+                            count_params = (session_uuid,)
+                        else:
+                            count_sql = (
+                                "SELECT COUNT(*)::integer FROM face_detections fd "
+                                "JOIN face_detection_sessions s "
+                                "ON fd.media_id = s.media_uuid "
+                                "WHERE s.session_uuid = %s"
+                            )
+                            frames_sql = (
+                                "SELECT COUNT(*) as total_faces, "
+                                "COUNT(DISTINCT frame_number) as total_frames "
+                                "FROM face_detections fd "
+                                "JOIN face_detection_sessions s "
+                                "ON fd.media_id = s.media_uuid "
+                                "WHERE s.session_uuid = %s"
+                            )
+                            count_params = (session_uuid,)
+
+                        # Update session end time and status
+                        cursor.execute(
+                            f"""
+                            UPDATE face_detection_sessions
+                            SET
                                 ended_at = %s,
                                 processing_status = %s,
-                                total_faces_detected = (
-                                    SELECT COUNT(*)::integer 
-                                    FROM face_detections 
-                                    WHERE session_uuid = %s
-                                ),
+                                total_faces_detected = ({count_sql}),
                                 updated_at = CURRENT_TIMESTAMP
                             WHERE session_uuid = %s
                         """,
-                            (current_time, "completed", session_uuid, session_uuid),
+                            (current_time, "completed") + count_params + (session_uuid,),
                         )
 
                         # Update media processing status
                         cursor.execute(
-                            """
-                            UPDATE media_processing_status 
-                            SET 
+                            f"""
+                            UPDATE media_processing_status
+                            SET
                                 face_detection_processed = %s,
                                 processing_completed_at = %s,
-                                total_faces_detected = (
-                                    SELECT COUNT(*)::integer 
-                                    FROM face_detections 
-                                    WHERE session_uuid = %s
-                                ),
+                                total_faces_detected = ({count_sql}),
                                 last_updated = CURRENT_TIMESTAMP
                             WHERE face_detection_session_uuid = %s
                         """,
-                            (True, current_time, session_uuid, session_uuid),
+                            (True, current_time) + count_params + (session_uuid,),
                         )
 
                         # Get final session stats
-                        cursor.execute(
-                            """
-                            SELECT 
-                                COUNT(*) as total_faces,
-                                COUNT(DISTINCT frame_number) as total_frames
-                            FROM face_detections 
-                            WHERE session_uuid = %s
-                        """,
-                            (session_uuid,),
-                        )
+                        cursor.execute(frames_sql, count_params)
 
                         stats_result = cursor.fetchone()
                         total_faces = stats_result[0] if stats_result else 0
@@ -527,9 +531,8 @@ class SessionManager:
                 )
 
             # Create final session summary
-            session_duration = (
-                current_time - current_session.started_at
-            ).total_seconds()
+            started = self._ensure_aware(current_session.started_at) or current_time
+            session_duration = (current_time - started).total_seconds()
 
             return SessionCompleteResponse(
                 session_uuid=session_uuid,
@@ -586,33 +589,53 @@ class SessionManager:
                     with self.db.connection.cursor() as cursor:
                         cursor.execute(
                             """
-                            UPDATE face_detection_sessions 
-                            SET 
-                                total_faces_detected = (
-                                    SELECT COUNT(*)::integer 
-                                    FROM face_detections 
-                                    WHERE session_uuid = %s
-                                ),
+                            SELECT 1
+                            FROM information_schema.columns
+                            WHERE table_name = 'face_detections'
+                              AND column_name = 'session_uuid'
+                            """
+                        )
+                        has_face_session_col = cursor.fetchone() is not None
+
+                        if has_face_session_col:
+                            face_count_sql = """
+                                SELECT COUNT(*)::integer
+                                FROM face_detections
+                                WHERE session_uuid = %s
+                            """
+                            face_count_params = (session_uuid,)
+                        else:
+                            # Minimal schemas store faces by media_id only.
+                            face_count_sql = """
+                                SELECT COUNT(*)::integer
+                                FROM face_detections fd
+                                JOIN face_detection_sessions s
+                                  ON fd.media_id = s.media_uuid
+                                WHERE s.session_uuid = %s
+                            """
+                            face_count_params = (session_uuid,)
+
+                        cursor.execute(
+                            f"""
+                            UPDATE face_detection_sessions
+                            SET
+                                total_faces_detected = ({face_count_sql}),
                                 updated_at = CURRENT_TIMESTAMP
                             WHERE session_uuid = %s
-                        """,
-                            (session_uuid, session_uuid),
+                            """,
+                            face_count_params + (session_uuid,),
                         )
 
                         # Also update media processing status
                         cursor.execute(
-                            """
-                            UPDATE media_processing_status 
-                            SET 
-                                total_faces_detected = (
-                                    SELECT COUNT(*)::integer 
-                                    FROM face_detections 
-                                    WHERE session_uuid = %s
-                                ),
+                            f"""
+                            UPDATE media_processing_status
+                            SET
+                                total_faces_detected = ({face_count_sql}),
                                 last_updated = CURRENT_TIMESTAMP
                             WHERE face_detection_session_uuid = %s
-                        """,
-                            (session_uuid, session_uuid),
+                            """,
+                            face_count_params + (session_uuid,),
                         )
 
                 except Exception as e:
@@ -788,7 +811,8 @@ class SessionManager:
                 ) == "completed" and session_data.get("ended_at"):
 
                     age_hours = (
-                        current_time - session_data["ended_at"]
+                        current_time
+                        - self._ensure_aware(session_data["ended_at"])
                     ).total_seconds() / 3600
                     if age_hours > max_age_hours:
                         sessions_to_remove.append(session_uuid)

@@ -1,6 +1,6 @@
 # EyeNet Platform Manager
 # Autonomous Windows installer & management console
-# Version: 2.25.80
+# Version: 2.25.81
 # Repository: https://github.com/nickglezakos/ppl-meta-platform
 
 param(
@@ -18,7 +18,7 @@ $script:TargetWslMemoryGb = 12
 $script:TargetWslProcessors = 6
 $script:GitHubRawBase = "https://raw.githubusercontent.com/nickglezakos/ppl-meta-platform/main/deployment/windows-installer"
 $script:InstallDir = $null
-$script:ReleaseTag = "2.25.80"
+$script:ReleaseTag = "2.25.81"
 $script:ComposeProjectName = "pplmeta"
 $script:WslDistro = "eyenet"
 $script:UseWslDocker = $false
@@ -212,7 +212,7 @@ function Test-WslDockerEngine {
         if ($distros -notcontains $script:WslDistro) {
             return $false
         }
-        wsl -d $script:WslDistro --user root -- docker info *>$null 2>&1
+        wsl -d $script:WslDistro --user root -- bash -lc "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; /usr/bin/docker info >/dev/null 2>&1"
         return ($LASTEXITCODE -eq 0)
     } catch {
         return $false
@@ -229,7 +229,7 @@ function Invoke-EyeNetDocker {
             "'$safe'"
         }
         $joined = $escaped -join ' '
-        wsl -d $script:WslDistro --user root -- bash -lc "cd '$cwd' && docker $joined"
+        wsl -d $script:WslDistro --user root -- bash -lc "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; cd '$cwd' && docker $joined"
         return $LASTEXITCODE
     }
 
@@ -292,7 +292,8 @@ function Test-HostMemory {
         return $true
     }
 
-    if ($totalGb -lt $script:MinimumHostRamGb) {
+    # Windows often reports ~15.x GB for a 16 GB machine (hardware reserved).
+    if ($totalGb -lt ($script:MinimumHostRamGb - 1)) {
         Write-Host "  FAIL (${totalGb} GB, need $($script:MinimumHostRamGb) GB)" -ForegroundColor $script:Red
         Write-ErrorMsg "EyeNet requires at least $($script:MinimumHostRamGb) GB physical RAM on the Windows host."
         Pause-ForUser
@@ -399,13 +400,21 @@ function Download-InstallerFiles {
         @{Name = $script:ComposeFile; Url = "$script:GitHubRawBase/$script:ComposeFile"},
         @{Name = $script:EnvTemplateFile; Url = "$script:GitHubRawBase/$script:EnvTemplateFile"},
         @{Name = "install-eyenet-wsl.ps1"; Url = "$script:GitHubRawBase/install-eyenet-wsl.ps1"},
-        @{Name = "install-eyenet-wsl.bat"; Url = "$script:GitHubRawBase/install-eyenet-wsl.bat"}
+        @{Name = "install-eyenet-wsl.bat"; Url = "$script:GitHubRawBase/install-eyenet-wsl.bat"},
+        @{Name = "schema/apply.sh"; Url = "$script:GitHubRawBase/schema/apply.sh"},
+        @{Name = "schema/verify.sh"; Url = "$script:GitHubRawBase/schema/verify.sh"},
+        @{Name = "schema/pack.tar.gz"; Url = "$script:GitHubRawBase/schema/pack.tar.gz"}
     )
 
     foreach ($file in $files) {
         try {
+            $outPath = $file.Name
+            $outDir = Split-Path $outPath -Parent
+            if ($outDir -and -not (Test-Path $outDir)) {
+                New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+            }
             Write-Host "`r    Downloading $($file.Name)..." -NoNewline -ForegroundColor $script:Gray
-            Invoke-WebRequest -Uri $file.Url -OutFile $file.Name -UseBasicParsing -ErrorAction Stop
+            Invoke-WebRequest -Uri $file.Url -OutFile $outPath -UseBasicParsing -ErrorAction Stop
             Write-Host "`r    $($file.Name)  " -NoNewline -ForegroundColor $script:White
             Write-Host "OK" -ForegroundColor $script:Green
         } catch {
@@ -415,6 +424,22 @@ function Download-InstallerFiles {
             return $false
         }
     }
+
+    # Expand pack.tar.gz into schema/pack if needed
+    $packDir = Join-Path $script:InstallDir "schema\pack"
+    $packTar = Join-Path $script:InstallDir "schema\pack.tar.gz"
+    if ((Test-Path $packTar) -and -not (Test-Path (Join-Path $packDir "000_preflight_extensions_and_stub_reconcile.sql"))) {
+        New-Item -ItemType Directory -Path $packDir -Force | Out-Null
+        $drive = $script:InstallDir.Substring(0, 1).ToLower()
+        $rest = ($script:InstallDir.Substring(2) -replace '\\', '/')
+        $wslSchema = "/mnt/$drive$rest/schema"
+        if ($script:UseWslDocker) {
+            wsl -d $script:WslDistro --user root -- bash -lc "mkdir -p '$wslSchema/pack' && tar -xzf '$wslSchema/pack.tar.gz' -C '$wslSchema/pack'"
+        } else {
+            tar -xzf $packTar -C $packDir 2>$null
+        }
+    }
+
     Write-Success "All files downloaded to $script:InstallDir"
     return $true
 }
@@ -463,6 +488,33 @@ function New-EnvWindows {
     Set-EnvValue -Path $script:EnvFile -Key "POSTGRES_PASSWORD" -Value $pgPassword
     Set-EnvValue -Path $script:EnvFile -Key "RELEASE_TAG" -Value $script:ReleaseTag
     Set-EnvValue -Path $script:EnvFile -Key "REGISTRY" -Value "ghcr.io/nickglezakos/ppl-meta-platform"
+
+    # Prefer an existing ADVERTISE_HOST; otherwise detect a non-loopback IPv4 for
+    # mobile discovery (LAN phones cannot use Docker 172.x addresses).
+    $advertiseHost = $currentValues['ADVERTISE_HOST']
+    if ([string]::IsNullOrWhiteSpace($advertiseHost)) {
+        try {
+            $advertiseHost = Get-NetIPAddress -AddressFamily IPv4 |
+                Where-Object {
+                    $_.IPAddress -notlike '127.*' -and
+                    $_.IPAddress -notlike '169.254.*' -and
+                    $_.IPAddress -notlike '172.1[6-9].*' -and
+                    $_.IPAddress -notlike '172.2[0-9].*' -and
+                    $_.IPAddress -notlike '172.3[0-1].*' -and
+                    $_.PrefixOrigin -ne 'WellKnown'
+                } |
+                Sort-Object -Property InterfaceMetric |
+                Select-Object -ExpandProperty IPAddress -First 1
+        } catch {
+            $advertiseHost = $null
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($advertiseHost)) {
+        Set-EnvValue -Path $script:EnvFile -Key "ADVERTISE_HOST" -Value $advertiseHost
+        Write-Host "  ADVERTISE_HOST=$advertiseHost (mobile discovery)" -ForegroundColor $script:Green
+    } else {
+        Write-WarningMsg "ADVERTISE_HOST unset — set the Windows LAN IP in .env.windows for mobile onboarding"
+    }
 
     # Ensure COMPOSE_PROJECT_NAME is set in env for this session
     $env:COMPOSE_PROJECT_NAME = $script:ComposeProjectName
@@ -539,6 +591,75 @@ function Get-ContainerHealthStatus {
     return ($status -replace "`0|`n|`r", "").Trim()
 }
 
+function Invoke-ApplyCodebaseSchema {
+    Write-Step "Applying codebase database schema (must match repo)..." ""
+    $schemaDir = Join-Path $script:InstallDir "schema"
+    $applySh = Join-Path $schemaDir "apply.sh"
+    $packDir = Join-Path $schemaDir "pack"
+    $packTar = Join-Path $schemaDir "pack.tar.gz"
+
+    # Prefer files shipped next to this script (full installer folder / Lima sync)
+    $srcSchema = Join-Path $PSScriptRoot "schema"
+    if (Test-Path $srcSchema) {
+        if (-not (Test-Path $schemaDir)) {
+            New-Item -ItemType Directory -Path $schemaDir -Force | Out-Null
+        }
+        Copy-Item -Path (Join-Path $srcSchema "*") -Destination $schemaDir -Recurse -Force
+    }
+
+    if ((Test-Path $packTar) -and -not (Test-Path (Join-Path $packDir "000_preflight_extensions_and_stub_reconcile.sql"))) {
+        New-Item -ItemType Directory -Path $packDir -Force | Out-Null
+        if ($script:UseWslDocker) {
+            $wslSchema = ($schemaDir -replace '\\', '/') -replace '^([A-Za-z]):', { "/mnt/$($args[0].Groups[1].Value.ToLower())" }
+            # Fallback path conversion for C:\...
+            $drive = $schemaDir.Substring(0, 1).ToLower()
+            $rest = ($schemaDir.Substring(2) -replace '\\', '/')
+            $wslSchema = "/mnt/$drive$rest"
+            wsl -d $script:WslDistro --user root -- bash -lc "mkdir -p '$wslSchema/pack' && tar -xzf '$wslSchema/pack.tar.gz' -C '$wslSchema/pack'"
+        } else {
+            tar -xzf $packTar -C $packDir
+        }
+    }
+
+    if (-not (Test-Path $applySh)) {
+        Write-ErrorMsg "schema/apply.sh missing under $script:InstallDir — re-run sync-schema-pack.sh and ship schema/ with the installer"
+        return $false
+    }
+
+    Start-Sleep -Seconds 5
+    $cwd = ($script:InstallDir -replace '\\', '/')
+    $drive = $script:InstallDir.Substring(0, 1).ToLower()
+    $rest = ($script:InstallDir.Substring(2) -replace '\\', '/')
+    $wslCwd = "/mnt/$drive$rest"
+
+    if ($script:UseWslDocker) {
+        $code = wsl -d $script:WslDistro --user root -- bash -lc "cd '$wslCwd' && INSTALL_DIR='$wslCwd' SCHEMA_PACK_DIR='$wslCwd/schema/pack' bash schema/apply.sh"
+        if ($LASTEXITCODE -ne 0) {
+            Write-ErrorMsg "Schema apply/verify failed (exit $LASTEXITCODE). Installer will not continue with a mismatched DB."
+            return $false
+        }
+    } else {
+        # Docker Desktop path: need bash (Git Bash / WSL)
+        $bash = Get-Command bash -ErrorAction SilentlyContinue
+        if (-not $bash) {
+            Write-ErrorMsg "bash required to apply schema pack (install Git for Windows or use WSL eyenet path)"
+            return $false
+        }
+        Push-Location $script:InstallDir
+        try {
+            & bash schema/apply.sh
+            if ($LASTEXITCODE -ne 0) {
+                Write-ErrorMsg "Schema apply/verify failed"
+                return $false
+            }
+        } finally {
+            Pop-Location
+        }
+    }
+    Write-Success "Database schema matches codebase invariants"
+    return $true
+}
+
 function Invoke-PullImages {
     Write-Step "Pulling Docker images (this may take several minutes)..." ""
     Write-Host ""
@@ -591,6 +712,11 @@ function Invoke-StartStack {
     if (-not $pgHealthy) {
         Write-Host ""
         Write-WarningMsg "PostgreSQL is not yet healthy. Containers may restart until it is ready."
+    } else {
+        # Installer always matches repo: apply vendored schema pack + verify invariants.
+        if (-not (Invoke-ApplyCodebaseSchema)) {
+            return $false
+        }
     }
 
     Write-Step "Waiting for Redis..." ""

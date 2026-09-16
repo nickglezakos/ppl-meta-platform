@@ -285,22 +285,48 @@ async def get_platform_services(
         import socket
         import subprocess
 
-        # Detect actual network IP for registration
+        def _is_docker_bridge_ip(ip: str) -> bool:
+            """True for typical Docker/Lima bridge addresses phones cannot reach."""
+            parts = ip.split(".")
+            if len(parts) != 4 or not all(p.isdigit() for p in parts):
+                return False
+            a, b = int(parts[0]), int(parts[1])
+            return a == 172 and 16 <= b <= 31
+
+        # Prefer installer-provided LAN/Tailscale IP. Inside Docker, UDP
+        # "local IP" detection returns a bridge address (e.g. 172.18.0.x)
+        # that mobile clients cannot reach.
+        advertise_host = (os.getenv("ADVERTISE_HOST") or "").strip().split(":")[0]
+        detected_ip = None
         try:
-            # Connect to a remote address to determine local IP
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
-            local_ip = s.getsockname()[0]
+            detected_ip = s.getsockname()[0]
             s.close()
         except OSError:
-            # Fallback to hostname resolution
-            local_ip = socket.gethostbyname(socket.gethostname())
+            try:
+                detected_ip = socket.gethostbyname(socket.gethostname())
+            except OSError:
+                detected_ip = None
+
+        if advertise_host:
+            local_ip = advertise_host
+        elif detected_ip and not _is_docker_bridge_ip(detected_ip):
+            local_ip = detected_ip
+        else:
+            local_ip = detected_ip or "127.0.0.1"
+            if _is_docker_bridge_ip(local_ip):
+                logger.warning(
+                    "platform/services local_ip=%s looks like a Docker bridge; "
+                    "set ADVERTISE_HOST to the LAN/Tailscale IP phones should use",
+                    local_ip,
+                )
 
         hostname = socket.gethostname()
 
-        # If mobile IP is provided, use it for streaming endpoints
-        # so the platform can connect to the mobile device
-        streaming_ip = mobile_ip if mobile_ip else local_ip
+        # Platform service URLs must use the host phones can reach (local_ip).
+        # mobile_ip is the phone's address (for platform→device callbacks only).
+        platform_ip = local_ip
 
         # Check for Tailscale IP (100.x.x.x range)
         tailscale_ip = None
@@ -333,6 +359,7 @@ async def get_platform_services(
                 "local_ip": local_ip,
                 "tailscale_ip": tailscale_ip,
                 "hostname": hostname,
+                "mobile_ip": mobile_ip,
                 "networks": (["local", "tailscale"] if tailscale_ip else ["local"]),
             },
             "microservices": {
@@ -340,7 +367,7 @@ async def get_platform_services(
                     "name": "User Management Service",
                     "port": 8001,
                     "endpoints": {
-                        "local": f"http://{local_ip}:8001",
+                        "local": f"http://{platform_ip}:8001",
                         "tailscale": (
                             f"http://{tailscale_ip}:8001" if tailscale_ip else None
                         ),
@@ -352,7 +379,7 @@ async def get_platform_services(
                     "name": "Media Processing Service",
                     "port": 8000,
                     "endpoints": {
-                        "local": f"http://{local_ip}:8000",
+                        "local": f"http://{platform_ip}:8000",
                         "tailscale": (
                             f"http://{tailscale_ip}:8000" if tailscale_ip else None
                         ),
@@ -369,7 +396,7 @@ async def get_platform_services(
                     "name": "Camera Management Service",
                     "port": 8005,
                     "endpoints": {
-                        "local": f"http://{local_ip}:8005",
+                        "local": f"http://{platform_ip}:8005",
                         "tailscale": (
                             f"http://{tailscale_ip}:8005" if tailscale_ip else None
                         ),
@@ -386,7 +413,7 @@ async def get_platform_services(
                     "name": "API Gateway Service",
                     "port": 8080,
                     "endpoints": {
-                        "local": f"http://{local_ip}:8080",
+                        "local": f"http://{platform_ip}:8080",
                         "tailscale": (
                             f"http://{tailscale_ip}:8080" if tailscale_ip else None
                         ),
@@ -398,7 +425,7 @@ async def get_platform_services(
                     "name": "Workflow Orchestration Service",
                     "port": 8002,
                     "endpoints": {
-                        "local": f"http://{local_ip}:8002",
+                        "local": f"http://{platform_ip}:8002",
                         "tailscale": (
                             f"http://{tailscale_ip}:8002" if tailscale_ip else None
                         ),
@@ -410,7 +437,7 @@ async def get_platform_services(
                     "name": "Computer Vision Service",
                     "port": 8003,
                     "endpoints": {
-                        "local": f"http://{local_ip}:8003",
+                        "local": f"http://{platform_ip}:8003",
                         "tailscale": (
                             f"http://{tailscale_ip}:8003" if tailscale_ip else None
                         ),
@@ -421,33 +448,38 @@ async def get_platform_services(
             },
             "mobile_camera_config": {
                 "recommended_service": "cameras",
-                "recommended_endpoint": f"http://{streaming_ip}:8005",
+                # Prefer gateway (:8080) — NAT/hotspot friendlier than :8005 direct.
+                "recommended_endpoint": f"http://{platform_ip}:8080",
                 "fallback_service": "media",
-                "fallback_endpoint": f"http://{streaming_ip}:8000",
+                "fallback_endpoint": f"http://{platform_ip}:8000",
                 "streaming_format": "mjpeg",
                 "registration_required": True,
                 "authentication": "bearer_token",
             },
             "streaming_endpoints": {
-                "mjpeg": f"http://{streaming_ip}:8000/mjpeg",
+                "mjpeg": f"http://{platform_ip}:8000/mjpeg",
                 "websocket": (
-                    f"ws://{streaming_ip}:8005/api/v1/cameras/" f"{{device_id}}/stream"
+                    f"ws://{platform_ip}:8005/api/v1/cameras/" f"{{device_id}}/stream"
                 ),
-                "upload": f"http://{streaming_ip}:8000/upload",
-                "stream": f"http://{streaming_ip}:8000/stream",
+                "upload": f"http://{platform_ip}:8000/upload",
+                "stream": f"http://{platform_ip}:8000/stream",
             },
             "camera_endpoints": {
-                "register": (f"http://{streaming_ip}:8005/api/v1/cameras/" f"mobile"),
-                "status": f"http://{streaming_ip}:8005/api/v1/cameras/status",
+                # Registration/status hit the platform (via gateway preferred).
+                "register": f"http://{platform_ip}:8080/api/v1/cameras/mobile",
+                "status": f"http://{platform_ip}:8080/api/v1/cameras/status",
                 "config": (
-                    f"http://{streaming_ip}:8005/api/v1/cameras/" f"stream-config"
+                    f"http://{platform_ip}:8080/api/v1/cameras/" f"stream-config"
                 ),
                 "websocket_stream": (
-                    f"ws://{streaming_ip}:8005/api/v1/cameras/" f"{{device_id}}/stream"
+                    f"ws://{platform_ip}:8080/api/v1/cameras/" f"{{device_id}}/stream"
+                ),
+                "direct_register": (
+                    f"http://{platform_ip}:8005/api/v1/cameras/mobile"
                 ),
             },
             "server_info": {
-                "host": streaming_ip,
+                "host": platform_ip,
                 "node_port": 8001,
                 "media_port": 8000,
                 "gateway_port": 8080,

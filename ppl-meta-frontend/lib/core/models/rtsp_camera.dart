@@ -33,9 +33,12 @@ class RTSPCamera {
 
   /// Generate RTSP URL from configuration
   String get rtspUrl {
-    final auth = '$username:$password';
-    final portStr = port != 554 ? ':$port' : '';
-    return 'rtsp://$auth@$host$portStr$streamPath';
+    final user = Uri.encodeComponent(username);
+    final pass = Uri.encodeComponent(password);
+    final auth = password.isNotEmpty ? '$user:$pass' : user;
+    final portStr = ':$port';
+    final path = streamPath.startsWith('/') ? streamPath : '/$streamPath';
+    return 'rtsp://$auth@$host$portStr$path';
   }
 
   /// Generate camera device ID for RTSP cameras

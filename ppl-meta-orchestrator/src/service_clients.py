@@ -49,7 +49,7 @@ class TraceabilityContext(BaseModel):
 class CameraServiceClient:
     """HTTP client for Camera Service integration with traceability."""
 
-    def __init__(self, base_url: str = "http://localhost:8005", timeout: int = 30):
+    def __init__(self, base_url: str = "http://ppl-meta-cameras:8005", timeout: int = 30):
         self.base_url = base_url.rstrip("/")
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self.service_name = "camera"
@@ -229,7 +229,7 @@ class CameraServiceClient:
 class MediaServiceClient:
     """HTTP client for Media Service integration with traceability."""
 
-    def __init__(self, base_url: str = "http://localhost:8000", timeout: int = 30):
+    def __init__(self, base_url: str = "http://ppl-meta-media:8000", timeout: int = 30):
         self.base_url = base_url.rstrip("/")
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self.service_name = "media"
@@ -514,7 +514,7 @@ class MediaServiceClient:
 class VisionServiceClient:
     """HTTP client for Vision Service integration with method-specific lifecycle tracking."""
 
-    def __init__(self, base_url: str = "http://localhost:8003", timeout: int = 120):
+    def __init__(self, base_url: str = "http://ppl-meta-vision:8003", timeout: int = 120):
         self.base_url = base_url.rstrip("/")
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self.service_name = "vision"
@@ -1377,7 +1377,7 @@ class VisionServiceClient:
             # Use injected client or create a new one
             if not media_client:
                 media_client = MediaServiceClient(
-                    base_url="http://localhost:8000",  # Media service URL
+                    base_url="http://ppl-meta-media:8000",  # Media service URL
                     timeout=30,
                 )
 
@@ -1712,9 +1712,9 @@ class ServiceClientManager:
 
     def __init__(
         self,
-        camera_base_url: str = "http://localhost:8005",
-        media_base_url: str = "http://localhost:8000",
-        vision_base_url: str = "http://localhost:8003",
+        camera_base_url: str = "http://ppl-meta-cameras:8005",
+        media_base_url: str = "http://ppl-meta-media:8000",
+        vision_base_url: str = "http://ppl-meta-vision:8003",
         default_timeout: int = 30,
     ):
         self.camera = CameraServiceClient(camera_base_url, default_timeout)

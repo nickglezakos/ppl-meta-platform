@@ -14,6 +14,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source code
 COPY src/ ./src/
 
+# Imports in main.py are top-level (api.*, config, …); make /app/src importable
+# both for `uvicorn src.main:app` and `uvicorn main:app`.
+ENV PYTHONPATH=/app/src
+
 # Create non-root user
 RUN useradd -m -u 1000 discovery && chown -R discovery:discovery /app
 USER discovery

@@ -809,8 +809,13 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
             onPressed: () {
               if (context.canPop()) {
                 context.pop();
+              } else if (widget.collectionId != null &&
+                  widget.collectionId!.isNotEmpty) {
+                context.go(
+                  '/collections?initialCollectionId=${widget.collectionId}',
+                );
               } else {
-                context.go('/gallery');
+                context.go('/collections');
               }
             },
             child: const Text('Go Back'),
@@ -1856,16 +1861,19 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
     return DarkCustomAppBar(
       title: widget.mediaItem.originalFilename ?? widget.mediaItem.filename ?? 'Media Preview',
       onBackPressed: () {
-        // If we have a collection ID, navigate back to that specific collection
-        if (widget.collectionId != null) {
-          context.go('/collections?initialCollectionId=${widget.collectionId}');
-          return;
-        }
+        // Prefer stack pop — avoids jumping to a hardcoded /gallery route.
         if (context.canPop()) {
           context.pop();
-        } else {
-          context.go('/gallery');
+          return;
         }
+        // Restore the originating collection when we know it.
+        if (widget.collectionId != null && widget.collectionId!.isNotEmpty) {
+          context.go(
+            '/collections?initialCollectionId=${widget.collectionId}',
+          );
+          return;
+        }
+        context.go('/collections');
       },
       actions: [
         // Compute action: re-runs continuous pipeline + MVR materialization
@@ -1926,11 +1934,19 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
               );
             },
           ),
-        // Gallery button
+        // Collections button (primary media library surface)
         IconButton(
           icon: const Icon(Icons.photo_library),
-          onPressed: () => context.go('/gallery'),
-          tooltip: 'Go to Gallery',
+          onPressed: () {
+            if (widget.collectionId != null && widget.collectionId!.isNotEmpty) {
+              context.go(
+                '/collections?initialCollectionId=${widget.collectionId}',
+              );
+            } else {
+              context.go('/collections');
+            }
+          },
+          tooltip: 'Go to Collections',
         ),
       ],
     );

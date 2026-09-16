@@ -19,16 +19,36 @@ class AutoCameraRegistrationService {
   /// Get cameras service URL, preferring the gateway (port 8080) to ensure
   /// connectivity on mobile hotspots where port 8005 may not be reachable.
   Future<String?> _getCamerasServiceUrl() async {
+    bool isUnreachableHost(String host) {
+      if (host == 'localhost' || host.startsWith('127.')) return true;
+      final parts = host.split('.');
+      if (parts.length != 4) return false;
+      final a = int.tryParse(parts[0]);
+      final b = int.tryParse(parts[1]);
+      return a == 172 && b != null && b >= 16 && b <= 31;
+    }
+
     try {
-      // VPN-mesh aware (WP4): when enrolled, the gateway lives on the resolved
-      // platform host (LAN by default, mesh when remote). Prefer it so the
-      // camera can register against the platform discovered from the token.
+      // Prefer gateway URL derived from the node server URL the user connected to.
+      // The gateway proxies /api/v1/cameras/* routes to the cameras service.
+      final prefs = await SharedPreferences.getInstance();
+      final serverConfig = prefs.getString('ppl_meta_server_config');
+      if (serverConfig != null) {
+        final uri = Uri.tryParse(serverConfig);
+        if (uri != null && uri.host.isNotEmpty && !isUnreachableHost(uri.host)) {
+          final gatewayUrl = 'http://${uri.host}:8080';
+          AutoRegistrationLogger.debug('Using gateway URL for cameras: $gatewayUrl');
+          return gatewayUrl;
+        }
+      }
+
+      // VPN-mesh aware: enrolled platform host (LAN or mesh).
       try {
         final platform = await PlatformConfigService.getInstance();
-        final mesh = platform.vpnPlatformTailscaleIp;
-        final platformLocal = platform.platformLocalIp;
-        if ((mesh != null && mesh.isNotEmpty) ||
-            (platformLocal != null && platformLocal.isNotEmpty)) {
+        final host = platform.platformHost;
+        if (host.isNotEmpty &&
+            host != 'localhost' &&
+            !isUnreachableHost(host)) {
           final gatewayUrl = platform.gatewayUrl;
           AutoRegistrationLogger.debug('Using platform-host gateway for cameras: $gatewayUrl');
           return gatewayUrl;
@@ -37,24 +57,18 @@ class AutoCameraRegistrationService {
         // Fall through to legacy resolution below.
       }
 
-      // Prefer gateway URL derived from the node server URL the user connected to.
-      // The gateway proxies /api/v1/cameras/* routes to the cameras service.
-      final prefs = await SharedPreferences.getInstance();
-      final serverConfig = prefs.getString('ppl_meta_server_config');
-      if (serverConfig != null) {
-        final uri = Uri.tryParse(serverConfig);
-        if (uri != null) {
-          final gatewayUrl = 'http://${uri.host}:8080';
-          AutoRegistrationLogger.debug('Using gateway URL for cameras: $gatewayUrl');
-          return gatewayUrl;
-        }
-      }
-
       // Fallback: try discovery service
       final camerasService = await _discoveryConfig.findService('ppl-meta-cameras');
       if (camerasService != null) {
-        AutoRegistrationLogger.debug('Found cameras service at: ${camerasService.baseUrl}');
-        return camerasService.baseUrl;
+        final base = camerasService.baseUrl;
+        final host = Uri.tryParse(base)?.host ?? '';
+        if (!isUnreachableHost(host)) {
+          AutoRegistrationLogger.debug('Found cameras service at: $base');
+          return base;
+        }
+        AutoRegistrationLogger.warning(
+          'Ignoring unreachable cameras host from discovery: $base',
+        );
       }
       
       AutoRegistrationLogger.warning('Cameras service not found in discovery service - trying fallback');
@@ -65,12 +79,13 @@ class AutoCameraRegistrationService {
         final platformData = json.decode(servicesJson);
         final cameraEndpoints = platformData['camera_endpoints'] as Map<String, dynamic>?;
         if (cameraEndpoints != null && cameraEndpoints['register'] != null) {
-          // Extract base URL from register endpoint
           final registerUrl = cameraEndpoints['register'] as String;
           final regUri = Uri.parse(registerUrl);
-          final baseUrl = '${regUri.scheme}://${regUri.host}:${regUri.port}';
-          AutoRegistrationLogger.debug('Using fallback cameras service URL: $baseUrl');
-          return baseUrl;
+          if (!isUnreachableHost(regUri.host)) {
+            final baseUrl = '${regUri.scheme}://${regUri.host}:${regUri.port}';
+            AutoRegistrationLogger.debug('Using fallback cameras service URL: $baseUrl');
+            return baseUrl;
+          }
         }
       }
       
@@ -88,9 +103,11 @@ class AutoCameraRegistrationService {
           final connectivity = platformData['connectivity'] as Map<String, dynamic>?;
           if (connectivity != null && connectivity['local_ip'] != null) {
             final platformIP = connectivity['local_ip'] as String;
-            final fallbackUrl = 'http://$platformIP:8005';
-            AutoRegistrationLogger.debug('Using constructed fallback URL: $fallbackUrl');
-            return fallbackUrl;
+            if (!isUnreachableHost(platformIP)) {
+              final fallbackUrl = 'http://$platformIP:8080';
+              AutoRegistrationLogger.debug('Using constructed fallback URL: $fallbackUrl');
+              return fallbackUrl;
+            }
           }
         }
       } catch (fallbackError) {

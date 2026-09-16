@@ -18,7 +18,10 @@ from uuid import UUID
 logger = logging.getLogger(__name__)
 
 # Media service configuration
-MEDIA_BASE_URL = os.getenv("PPL_MEDIA_URL", "http://localhost:8000")
+MEDIA_BASE_URL = os.getenv(
+    "MEDIA_SERVICE_URL",
+    os.getenv("PPL_MEDIA_URL", "http://ppl-meta-media:8000"),
+).rstrip("/")
 MEDIA_TIMEOUT = 30.0  # seconds
 
 

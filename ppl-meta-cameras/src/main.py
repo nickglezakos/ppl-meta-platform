@@ -221,7 +221,10 @@ async def lifespan(_app: FastAPI):
                 pass
 
             # Create discovery client
-            discovery_client = DiscoveryClient("http://localhost:8006")
+            discovery_url = os.getenv(
+                "DISCOVERY_SERVICE_URL", "http://ppl-meta-discovery:8006"
+            ).rstrip("/")
+            discovery_client = DiscoveryClient(discovery_url)
 
             # Create service configuration
             service_config = ServiceConfig(

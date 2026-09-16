@@ -115,7 +115,9 @@ async def get_individuals_quality_metrics(
         collection_video_uuids = []
         
         try:
-            MEDIA_SERVICE_URL = "http://localhost:8000"
+            MEDIA_SERVICE_URL = os.getenv(
+                "MEDIA_SERVICE_URL", "http://ppl-meta-media:8000"
+            )
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # Query videos in batches
                 for video_uuid in video_uuids:

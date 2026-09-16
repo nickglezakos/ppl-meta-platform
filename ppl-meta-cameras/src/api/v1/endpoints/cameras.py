@@ -442,6 +442,8 @@ async def list_cameras(
                 "supports_streaming": camera.supports_streaming,
                 "supports_recording": camera.supports_recording,
                 "connection_string": camera.connection_string,  # Include for mobile cameras
+                "username": camera.username,
+                "port": camera.port,
                 "last_seen": camera.last_seen.isoformat() if camera.last_seen else None,
                 "created_at": (
                     camera.created_at.isoformat() if camera.created_at else None
@@ -599,11 +601,21 @@ async def connect_camera(
 
     try:
         # Clean up stale recording sessions for this camera before connecting
-        from src.services.recording_session_service import RecordingSessionService
-        session_service = RecordingSessionService(db)
-        cleaned = session_service.cleanup_stale_sessions(max_age_hours=1)
-        if cleaned > 0:
-            logger.info(f"Cleaned up {cleaned} stale recording sessions before connecting {device_id}")
+        try:
+            from src.services.recording_session_service import RecordingSessionService
+            session_service = RecordingSessionService(db)
+            cleaned = session_service.cleanup_stale_sessions(max_age_hours=1)
+            if cleaned > 0:
+                logger.info(f"Cleaned up {cleaned} stale recording sessions before connecting {device_id}")
+        except Exception as cleanup_err:
+            # Schema drift between orchestrator/cameras recording_sessions must not block connect
+            logger.warning(
+                f"Skipping stale recording-session cleanup before connect of {device_id}: {cleanup_err}"
+            )
+            try:
+                db.rollback()
+            except Exception:
+                pass
 
         # Check if camera exists in database
         camera = db.query(Camera).filter(Camera.device_id == device_id).first()
@@ -1121,15 +1133,17 @@ async def add_rtsp_camera(
             # Auto-generate unique name if not provided
             name = generate_auto_camera_name(db, CameraType.RTSP)
 
-        # Build RTSP URL
-        credentials = ""
-        if username:
-            if password:
-                credentials = f"{username}:{password}@"
-            else:
-                credentials = f"{username}@"
+        # Build RTSP URL — quote user/pass so emails (user@domain) do not
+        # break authority parsing; unquote first to avoid %2540 double-encoding.
+        from src.services.rtsp_url import build_rtsp_url
 
-        rtsp_url = f"rtsp://{credentials}{host}:{port}{path}"
+        rtsp_url = build_rtsp_url(
+            host=host,
+            port=int(port),
+            path=path,
+            username=username,
+            password=password,
+        )
 
         # Check if camera already exists
         existing_camera = db.query(Camera).filter(Camera.device_id == device_id).first()
@@ -1156,6 +1170,11 @@ async def add_rtsp_camera(
             supports_recording=True,  # Enable RTSP camera recording
             supports_audio=False,
             supports_ptz=False,
+            # Match mobile defaults so Connect → Instant Detection actually runs
+            # face/body paths (Celery skips when auto_face_detection is False).
+            auto_face_detection=True,
+            instant_detection_enabled=True,
+            processing_options={"auto_body_detection": True},
         )
 
         db.add(new_camera)
@@ -1379,21 +1398,30 @@ async def update_rtsp_camera(
         # Update camera fields
         camera.name = new_name
 
-        # Build RTSP URL with credentials (keep UUID device_id intact)
-        credentials = ""
-        if camera_update.username:
-            if camera_update.password:
-                credentials = f"{camera_update.username}:{camera_update.password}@"
-            else:
-                credentials = f"{camera_update.username}@"
+        # Build RTSP URL with credentials (keep UUID device_id intact).
+        # Preserve existing password when the form sends an empty password
+        # (common on edit — password field left blank).
+        from src.services.rtsp_url import build_rtsp_url, normalize_credential
 
-        rtsp_url = f"rtsp://{credentials}{camera_update.host}:{camera_update.port}{camera_update.path}"
+        effective_username = camera_update.username
+        effective_password = camera_update.password
+        if not effective_password:
+            effective_password = camera.password
+
+        rtsp_url = build_rtsp_url(
+            host=camera_update.host,
+            port=int(camera_update.port),
+            path=camera_update.path,
+            username=effective_username,
+            password=effective_password,
+        )
 
         # Update camera fields (keep device_id as UUID - don't change it!)
         camera.connection_string = rtsp_url
         camera.port = camera_update.port
-        camera.username = camera_update.username
-        camera.password = camera_update.password
+        camera.username = normalize_credential(effective_username) or effective_username
+        if camera_update.password:
+            camera.password = normalize_credential(camera_update.password)
         camera.supports_recording = True  # Enable RTSP camera recording
         camera.last_seen = datetime.utcnow()
 
@@ -1537,6 +1565,12 @@ async def register_mobile_camera(
             existing_camera.port = mobile_data.port
             existing_camera.last_seen = datetime.utcnow()
             existing_camera.status = CameraStatus.AVAILABLE
+            # Mobile onboarding expects live + post-record people pipelines.
+            existing_camera.auto_face_detection = True
+            existing_camera.instant_detection_enabled = True
+            opts = dict(existing_camera.processing_options or {})
+            opts.setdefault("auto_body_detection", True)
+            existing_camera.processing_options = opts
 
             # Update technical specs if changed
             if mobile_data.resolution_width:
@@ -1601,6 +1635,11 @@ async def register_mobile_camera(
             supports_recording=True,
             supports_audio=mobile_data.supports_audio,
             supports_ptz=False,
+            # Defaults kept False for RTSP/admin cameras; mobile expects
+            # instant + post-record face/MVR people without a separate toggle.
+            auto_face_detection=True,
+            instant_detection_enabled=True,
+            processing_options={"auto_body_detection": True},
         )
 
         db.add(new_camera)
@@ -3015,14 +3054,48 @@ async def update_pipeline_settings(
         camera.segment_duration_seconds = segment_duration_seconds
         camera.storage_multiple = storage_multiple
         camera.tracking_session_duration_minutes = tracking_session_duration_minutes
+        # Recording pipeline = continuous segment → Enhanced V2 → individuals/MVR.
+        # Keep auto_face_detection aligned so a separate workflow save cannot leave
+        # recording ON while post-segment face/MVR stays permanently skipped.
+        if recording_pipeline_enabled and not bool(
+            getattr(camera, "auto_face_detection", False)
+        ):
+            camera.auto_face_detection = True
+            logger.info(
+                f"📹 Enabling auto_face_detection for {device_id} "
+                f"(required by recording_pipeline_enabled)"
+            )
         
         db.commit()
         db.refresh(camera)
+
+        # Hot-apply interval to a running sampler so Save takes effect immediately
+        try:
+            from src.api.v1.endpoints.instant_detection import get_instant_detection_manager
+
+            manager = get_instant_detection_manager()
+            applied = manager.update_sampling_interval(
+                device_id, instant_detection_interval_seconds
+            )
+            if applied:
+                logger.info(
+                    "⏱️ Live instant-detection interval updated for %s → %ss",
+                    device_id,
+                    instant_detection_interval_seconds,
+                )
+        except Exception as live_exc:
+            logger.debug(
+                "Could not hot-update live interval for %s: %s",
+                device_id,
+                live_exc,
+            )
         
         logger.info(
             f"📹 Updated pipeline settings for {device_id}: "
             f"instant_detection={instant_detection_enabled}, "
-            f"recording_pipeline={recording_pipeline_enabled}"
+            f"recording_pipeline={recording_pipeline_enabled}, "
+            f"interval={instant_detection_interval_seconds}s, "
+            f"auto_face_detection={camera.auto_face_detection}"
         )
         
         return {
@@ -3205,6 +3278,17 @@ async def update_workflow_settings(
         
         # Update settings (only if provided)
         if auto_face_detection is not None:
+            # Do not allow turning face/MVR off while recording pipeline is ON —
+            # that combination is what made live segments upload with no faces.
+            if (
+                auto_face_detection is False
+                and bool(getattr(camera, "recording_pipeline_enabled", False))
+            ):
+                logger.warning(
+                    f"📹 Ignoring auto_face_detection=false for {device_id}: "
+                    f"recording_pipeline_enabled is ON"
+                )
+                auto_face_detection = True
             camera.auto_face_detection = auto_face_detection
         if detection_methods is not None:
             camera.detection_methods = detection_methods
@@ -3246,10 +3330,14 @@ async def update_workflow_settings(
         else:
             assigned_opts = pipeline_opts
 
+        # Always import before use — previously imported only inside
+        # `if tolerance_percent is not None`, which raised UnboundLocalError
+        # after db.commit() and left clients thinking the save failed while
+        # auto_face_detection (and other fields) were already persisted.
+        from src.models.camera_settings import CameraSettings
+
         # Update tolerance_percent in camera_settings table
         if tolerance_percent is not None:
-            from src.models.camera_settings import CameraSettings
-            
             # Get or create camera settings for the current user
             settings = (
                 db.query(CameraSettings)
@@ -3313,11 +3401,11 @@ async def update_workflow_settings(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating pipeline settings for {device_id}: {e}")
+        logger.error(f"Error updating workflow settings for {device_id}: {e}")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update pipeline settings: {str(e)}",
+            detail=f"Failed to update workflow settings: {str(e)}",
         )
 
 

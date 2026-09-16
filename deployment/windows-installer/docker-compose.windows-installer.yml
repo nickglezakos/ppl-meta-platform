@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    # pgvector required — matches codebase MVR/face migrations (VECTOR(512)).
+    # Do not use plain postgres:*-alpine; CREATE EXTENSION vector will fail.
+    image: pgvector/pgvector:pg15
     platform: linux/amd64
     container_name: ppl-postgres
     environment:
@@ -41,7 +43,8 @@ services:
     image: ${REGISTRY}/ppl-meta-node:${RELEASE_TAG}
     platform: linux/amd64
     ports:
-      - "${NODE_PORT}:8001"
+      # Bind all interfaces so LAN phones can reach Node through the VM/host publish.
+      - "0.0.0.0:${NODE_PORT}:8001"
     environment:
       HOST: 0.0.0.0
       PORT: 8001
@@ -58,6 +61,12 @@ services:
       EYENET_HEADSCALE_URL: ${EYENET_HEADSCALE_URL:-https://vpn.eyenet-vision.com}
       EYENET_TS_SOCKET: /var/run/tailscale/tailscaled.sock
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      SECRET_KEY: ${JWT_SECRET_KEY:-ppl-meta-secret-key-change-in-production}
+      SERVICE_SECRET: ${SERVICE_SECRET:-ppl-meta-secret-key-change-in-production}
+      DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
+      # LAN/Tailscale IP phones use; required for TrustedHostMiddleware inside Docker.
+      ADVERTISE_HOST: ${ADVERTISE_HOST:-}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
     volumes:
       - ${EYENET_TS_SOCKET_HOST:-/var/run/tailscale/tailscaled.sock}:/var/run/tailscale/tailscaled.sock
       - tailscale_state:/var/lib/tailscale
@@ -77,6 +86,12 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       ENVIRONMENT: production
       USER_SERVICE_URL: http://ppl-meta-node:8001
+      GATEWAY_SERVICE_URL: http://ppl-meta-gateway:8080
+      SECRET_KEY: ${JWT_SECRET_KEY:-ppl-meta-secret-key-change-in-production}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-ppl-meta-internal-service-secret-key-change-in-production}
+      DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
+    volumes:
+      - media_data:/app/media
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,6 +118,8 @@ services:
       PRESENCE_SERVICE_URL: http://ppl-meta-presence:8011
       MODELS_SERVICE_URL: http://ppl-meta-models:8013
       REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${JWT_SECRET_KEY:-ppl-meta-secret-key-change-in-production}
+      SERVICE_SECRET: ${SERVICE_SECRET:-ppl-meta-secret-key-change-in-production}
     depends_on:
       ppl-meta-node:
         condition: service_started
@@ -126,6 +143,11 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
+      MEDIA_SERVICE_URL: http://ppl-meta-media:8000
+      VISION_SERVICE_URL: http://ppl-meta-vision:8003
+      VMETA_SERVICE_URL: http://ppl-meta-vmeta:8008
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-ppl-meta-internal-service-secret-key-change-in-production}
+      DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
     depends_on:
       postgres:
         condition: service_healthy
@@ -141,7 +163,14 @@ services:
     image: ${REGISTRY}/ppl-meta-discovery:${RELEASE_TAG}
     platform: linux/amd64
     ports:
-      - "${DISCOVERY_PORT}:8006"
+      # Bind all interfaces so LAN phones can reach discovery through the
+      # VM/WSL/host port publish (not only 127.0.0.1).
+      - "0.0.0.0:${DISCOVERY_PORT}:8006"
+    environment:
+      # Host LAN or Tailscale IP that mobile clients should use. Without this,
+      # discovery advertises Docker-bridge addresses (172.18.x) that phones
+      # cannot route to.
+      ADVERTISE_HOST: ${ADVERTISE_HOST:-}
     restart: unless-stopped
     mem_limit: 256m
     mem_reservation: 128m
@@ -155,6 +184,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       REDIS_ENABLED: "true"
+      DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
     depends_on:
       postgres:
         condition: service_healthy
@@ -178,10 +208,25 @@ services:
       SECRET_KEY: ${JWT_SECRET_KEY:-ppl-meta-secret-key-change-in-production}
       STREAM_STATE_REDIS_HOST: redis
       STREAM_STATE_REDIS_PORT: "6379"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_URL: redis://redis:6379/0
       MODELS_SERVICE_URL: http://ppl-meta-models:8013
+      MEDIA_SERVICE_URL: http://ppl-meta-media:8000
+      NODE_SERVICE_URL: http://ppl-meta-node:8001
+      VISION_SERVICE_URL: http://ppl-meta-vision:8003
+      ORCHESTRATOR_SERVICE_URL: http://ppl-meta-orchestrator:8002
+      VMETA_SERVICE_URL: http://ppl-meta-vmeta:8008
+      VMETA_URL: http://ppl-meta-vmeta:8008
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-ppl-meta-internal-service-secret-key-change-in-production}
+      VMETA_AGE_GENDER_TIMEOUT: ${VMETA_AGE_GENDER_TIMEOUT:-45}
+      VMETA_IDENTITY_TIMEOUT: ${VMETA_IDENTITY_TIMEOUT:-8}
       AUTHORITY_URL: ${AUTHORITY_URL}
       INSTALLATION_UUID: ${INSTALLATION_UUID}
       APPLICATION_KEY: ${APPLICATION_KEY}
+      DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
+    volumes:
+      - cameras_recordings:/app/recordings
     depends_on:
       postgres:
         condition: service_healthy
@@ -207,6 +252,8 @@ services:
       CAMERAS_SERVICE_URL: http://ppl-meta-cameras:8005
       PRESENCE_PREFERRED_CAMERA_TYPES: MOBILE,RTSP,EDGE
       SERVICE_SECRET: ${SERVICE_SECRET:-ppl-meta-secret-key-change-in-production}
+      SECRET_KEY: ${JWT_SECRET_KEY:-ppl-meta-secret-key-change-in-production}
+      DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
     depends_on:
       postgres:
         condition: service_healthy
@@ -232,6 +279,7 @@ services:
       VISION_SERVICE_URL: http://ppl-meta-vision:8003
       SERVICE_SECRET: ${SERVICE_SECRET:-ppl-meta-secret-key-change-in-production}
       MODELS_REQUIRE_LICENCE: "false"
+      DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
     depends_on:
       postgres:
         condition: service_healthy
@@ -248,7 +296,17 @@ services:
       - "${VISION_PORT}:8003"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      LOG_DIR: /app/logs
       ORCHESTRATOR_URL: http://ppl-meta-orchestrator:8002
+      MEDIA_SERVICE_URL: http://ppl-meta-media:8000
+      GATEWAY_SERVICE_URL: http://ppl-meta-gateway:8080
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-ppl-meta-internal-service-secret-key-change-in-production}
+      DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
     depends_on:
       postgres:
         condition: service_healthy
@@ -271,14 +329,28 @@ services:
       DB_HOST: postgres
       DB_PORT: "5432"
       DB_NAME: ${POSTGRES_DB}
+      # Must match Node JWT signing secret. Without this, vmeta defaults to a
+      # different key, MVR calls 401 on video preview, and the frontend clears auth.
+      SECRET_KEY: ${JWT_SECRET_KEY:-ppl-meta-secret-key-change-in-production}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-ppl-meta-secret-key-change-in-production}
+      REDIS_URL: redis://redis:6379/0
+      REDIS_HOST: redis
+      MEDIA_SERVICE_URL: http://ppl-meta-media:8000
+      ORCHESTRATOR_SERVICE_URL: http://ppl-meta-orchestrator:8002
+      VISION_SERVICE_URL: http://ppl-meta-vision:8003
+      NODE_SERVICE_URL: http://ppl-meta-node:8001
+      GATEWAY_SERVICE_URL: http://ppl-meta-gateway:8080
+      CAMERAS_SERVICE_URL: http://ppl-meta-cameras:8005
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-ppl-meta-internal-service-secret-key-change-in-production}
+      DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
-    mem_limit: 2g
-    mem_reservation: 1g
+    mem_limit: 3g
+    mem_reservation: 2g
 
   ppl-meta-frontend:
     image: ${REGISTRY}/ppl-meta-frontend:${RELEASE_TAG}
@@ -296,3 +368,5 @@ volumes:
   postgres_data:
   redis_data:
   tailscale_state:
+  media_data:
+  cameras_recordings:

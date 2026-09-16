@@ -57,7 +57,9 @@ class User {
       capabilities.contains('users.accounts.update') ||
       capabilities.contains('users.accounts.disable') ||
       capabilities.contains('users.accounts.delete');
-  bool get canViewMedia => capabilities.contains('media:view');
+  bool get canViewMedia =>
+      capabilities.contains('media:view') ||
+      capabilities.contains('media.view');
   bool get canManageModels =>
       isOwner ||
       isAdmin ||

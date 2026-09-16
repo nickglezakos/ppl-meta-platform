@@ -947,7 +947,11 @@ class _CameraPipelineSettingsScreenState
                       activeColor: AppColors.primary,
                     ),
                     Text(
-                      'How often to detect people (1-60 seconds)',
+                      'How often to start a new detection cycle (1–60 seconds). '
+                      'Each cycle samples 3 frames; if the previous Celery job is '
+                      'still running, the next submit is skipped until this interval elapses. '
+                      'Does not change Vision time per frame. Higher values reduce load '
+                      '(recommended 15–30s for high-res RTSP on Lima).',
                       style: OfflineFonts.inter(
                         fontSize: 12,
                         color: AppColors.textSecondary,

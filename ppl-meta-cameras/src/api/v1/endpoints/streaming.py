@@ -43,8 +43,8 @@ async def start_stream(
         # ✅ Use queue-based camera service
         queue_service = get_camera_service()
         
-        # Check if camera is already connected
-        worker = queue_service.get_camera_stream(device_id)
+        # Check if camera is already connected (must await — get_camera_stream is async)
+        worker = await queue_service.get_camera_stream(device_id)
         logger.info(f"🔍 [START_STREAM] Worker found: {worker is not None}")
         
         # ✅ Check if worker exists and is connected
@@ -763,7 +763,7 @@ async def notify_vmeta_recording_start(
         
         async with httpx.AsyncClient(timeout=2.0) as client:
             response = await client.post(
-                "http://localhost:8008/api/v1/recording/started",
+                f"{__import__('os').getenv('VMETA_SERVICE_URL', __import__('os').getenv('VMETA_URL', 'http://localhost:8008')).rstrip('/')}/api/v1/recording/started",
                 json={
                     "collection_id": collection_id,  # Use UUID when available
                     "session_uuid": session_uuid,

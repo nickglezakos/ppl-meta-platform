@@ -137,4 +137,7 @@ for service in "${SERVICES[@]}"; do
     build_service "$service"
 done
 
+echo "Syncing installer DB schema pack from repo migrations..."
+bash "$PROJECT_ROOT/deployment/mac-lima/sync-schema-pack.sh"
+
 echo "Completed Windows installer image builds"

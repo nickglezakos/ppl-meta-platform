@@ -38,6 +38,11 @@ class PresenceRepository:
 
     def load_sessions(self) -> Dict[str, PresenceSession]:
         with SessionLocal() as db:
+            if not self._table_exists(db, PresenceSessionRecord.__tablename__):
+                logger.warning(
+                    "Presence sessions table is missing; starting with empty sessions until tables are created"
+                )
+                return {}
             rows = db.execute(select(PresenceSessionRecord)).scalars().all()
             return {
                 row.session_uuid: PresenceSession.model_validate(json.loads(row.payload_json))
