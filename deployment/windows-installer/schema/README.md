@@ -13,9 +13,12 @@ bash deployment/mac-lima/sync-schema-pack.sh
 
    Writes:
    - `schema/pack/*.sql` (ordered)
-   - `schema/pack.tar.gz` (for Windows download)
+   - `schema/pack.tar.gz` (for Windows download — **tracked in git**; root `*.tar.gz` ignore has an exception)
    - `schema/verify.sh`
    - `MANIFEST.txt` (audit trail)
+
+   After sync, commit `schema/pack.tar.gz` (and any new `pack/*.sql`) so
+   `raw.githubusercontent.com/.../schema/pack.tar.gz` is not 404 for the installer.
 
 3. **Install** always runs `schema/apply.sh` after Postgres is healthy, then **`verify.sh`** (exit 1 on mismatch).
 

@@ -313,6 +313,8 @@ reports/
 *.zip
 *.rar
 *.7z
+# Windows installer must ship schema/pack.tar.gz via GitHub raw download
+!deployment/windows-installer/schema/pack.tar.gz
 
 # =============================================
 # GIT & VERSION CONTROL

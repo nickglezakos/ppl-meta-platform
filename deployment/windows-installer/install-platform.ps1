@@ -413,11 +413,37 @@ function Download-InstallerFiles {
             if ($outDir -and -not (Test-Path $outDir)) {
                 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
             }
+            # Prefer already-present install-dir file or copy shipped next to this script
+            if (Test-Path $outPath) {
+                Write-Host "`r    $($file.Name)  " -NoNewline -ForegroundColor $script:White
+                Write-Host "OK (local)" -ForegroundColor $script:Green
+                continue
+            }
+            $bundled = Join-Path $PSScriptRoot $file.Name
+            if (Test-Path $bundled) {
+                Copy-Item $bundled $outPath -Force
+                Write-Host "`r    $($file.Name)  " -NoNewline -ForegroundColor $script:White
+                Write-Host "OK (bundled)" -ForegroundColor $script:Green
+                continue
+            }
             Write-Host "`r    Downloading $($file.Name)..." -NoNewline -ForegroundColor $script:Gray
             Invoke-WebRequest -Uri $file.Url -OutFile $outPath -UseBasicParsing -ErrorAction Stop
             Write-Host "`r    $($file.Name)  " -NoNewline -ForegroundColor $script:White
             Write-Host "OK" -ForegroundColor $script:Green
         } catch {
+            $bundled = Join-Path $PSScriptRoot $file.Name
+            if (Test-Path $bundled) {
+                $outPath = $file.Name
+                $outDir = Split-Path $outPath -Parent
+                if ($outDir -and -not (Test-Path $outDir)) {
+                    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+                }
+                Copy-Item $bundled $outPath -Force
+                Write-Host ""
+                Write-Host "    $($file.Name)  " -NoNewline -ForegroundColor $script:White
+                Write-Host "OK (bundled fallback)" -ForegroundColor $script:Green
+                continue
+            }
             Write-Host ""
             Write-ErrorMsg "Failed to download $($file.Name) from $($file.Url)"
             Write-ErrorMsg "Error: $_"
@@ -475,7 +501,11 @@ function New-EnvWindows {
     Write-Host "EyeNet Configuration" -ForegroundColor $script:White
     Write-Divider $script:Cyan
 
-    # Prompt for required values
+    # Prompt for required values (lab / first-boot only).
+    # PRODUCTION TODO: do NOT ask the end-user for INSTALLATION_UUID or APPLICATION_KEY.
+    # In production these must come from Authority entitlement / first-owner bootstrap
+    # (pre-provisioned .env, claim token, or /bootstrap after start) — never typed by hand
+    # during install. Keep POSTGRES_PASSWORD local-secret generation or secure prompt.
     $installUuid = Prompt-Value -Label "INSTALLATION_UUID" -Current $currentValues['INSTALLATION_UUID'] -Required
     $appKey = Prompt-Value -Label "APPLICATION_KEY" -Current $currentValues['APPLICATION_KEY'] -Required
     $pgPassword = Prompt-ValueSecure -Label "POSTGRES_PASSWORD" -Current $currentValues['POSTGRES_PASSWORD'] -Required
