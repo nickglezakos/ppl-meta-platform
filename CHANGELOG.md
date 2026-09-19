@@ -15,7 +15,20 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
----
+### Changed
+
+- Authority admin UI rebuilt as a laconic mobile-first shell (Home / People / Licences / Me); retired the dual Workspace vs Data Console surface (`/admin/console` redirects to `/admin`).
+
+### Added
+
+- Lab machines inventory: `docs/deployment/lab-machines.md` (`lab-home-win-nickg`, `lab-work-u24-mini-8g`, `lab-work-dual-64g`); linked from platform-release-cicd Stage 2.
+- Stage 2 SSH-safe modes: one-by-one `scripts/stage2_one.sh` with `REPORT OK`, selective rebuild via `scripts/stage2_changed_services.sh`, optional `:VERSION-<sha>` sub-tags; documented in `platform-release-cicd.md`.
+- **Release manifest (Mode D):** digest coherence for the twelve GHCR images — `scripts/write_release_manifest.sh`, `verify_release_manifest.sh`, `stage2_finalize_manifest.sh`, `stage2_retag_forward.sh`; artifact path `deployment/windows-installer/release-manifest.yml`; documented in `platform-release-cicd.md`.
+- Operator CI/CD guide (for-dummies intro + full steps + terminology appendix): `docs/deployment/eyenet-cicd-operator-guide.md`.
+
+### Notes
+
+- Installers still pull by `:VERSION`; digests are the audit / future pin-by-digest contract. Run `stage2_finalize_manifest.sh` after Stage 2 completes a pin, then Stage 1-commit the manifest.
 
 ## [2.25.82] — 2026-09-19
 

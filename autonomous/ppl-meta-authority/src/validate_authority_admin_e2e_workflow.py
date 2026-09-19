@@ -11,14 +11,14 @@ client = TestClient(app)
 admin_page = client.get('/admin')
 assert admin_page.status_code == 200
 admin_html = admin_page.text
-assert 'id="distributorInviteButton"' in admin_html
-assert 'id="loadDistributorResellersButton"' in admin_html
-assert 'id="loadDistributorOwnersButton"' in admin_html
-assert 'id="distributorAssignButton"' in admin_html
+assert 'id="bottomTabs"' in admin_html
+assert 'id="inviteForm"' in admin_html
+assert 'id="peopleList"' in admin_html
+assert 'id="licenceWizard"' in admin_html
 
-console_page = client.get('/admin/console')
-assert console_page.status_code == 200
-assert 'data-console-filter="hierarchy"' in console_page.text
+console_redirect = client.get('/admin/console', follow_redirects=False)
+assert console_redirect.status_code == 307
+assert console_redirect.headers['location'] == '/admin'
 
 assert client.post('/api/v1/auth/bootstrap-admin').status_code == 200
 admin_login = client.post('/api/v1/auth/login', json={

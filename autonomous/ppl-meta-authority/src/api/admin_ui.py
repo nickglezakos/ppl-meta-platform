@@ -1,13 +1,12 @@
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, HTTPException, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 router = APIRouter(tags=["admin-ui"])
 
 UI_ROOT = Path(__file__).resolve().parent.parent / "ui"
 TEMPLATE_PATH = UI_ROOT / "templates" / "admin.html"
-CONSOLE_TEMPLATE_PATH = UI_ROOT / "templates" / "console.html"
 ASSETS_ROOT = UI_ROOT / "assets"
 FAVICON_PATH = ASSETS_ROOT / "eyenet-dark.svg"
 ASSET_CONTENT_TYPES = {
@@ -18,22 +17,16 @@ ASSET_CONTENT_TYPES = {
 
 
 @router.get("/admin", response_class=HTMLResponse)
-async def admin_ui(request: Request) -> Response:
+async def admin_ui() -> HTMLResponse:
     if not TEMPLATE_PATH.exists():
         raise HTTPException(status_code=500, detail="Authority admin template is missing")
-
-    if not request.query_params:
-        return RedirectResponse(url="/admin/console", status_code=307)
 
     return HTMLResponse(TEMPLATE_PATH.read_text(encoding="utf-8"))
 
 
 @router.get("/admin/console", response_class=HTMLResponse)
-async def admin_console_ui() -> HTMLResponse:
-    if not CONSOLE_TEMPLATE_PATH.exists():
-        raise HTTPException(status_code=500, detail="Authority console template is missing")
-
-    return HTMLResponse(CONSOLE_TEMPLATE_PATH.read_text(encoding="utf-8"))
+async def admin_console_ui() -> Response:
+    return RedirectResponse(url="/admin", status_code=307)
 
 
 @router.get("/admin/assets/{asset_name}")

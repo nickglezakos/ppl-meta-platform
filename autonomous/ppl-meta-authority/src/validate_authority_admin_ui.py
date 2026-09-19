@@ -8,15 +8,14 @@ from main import app
 
 client = TestClient(app)
 
-admin_page = client.get('/admin', follow_redirects=False)
-assert admin_page.status_code == 307
-assert admin_page.headers['location'] == '/admin/console'
-admin_view_page = client.get('/admin?view=admin')
-assert admin_view_page.status_code == 200
-admin_html = admin_view_page.text
-assert 'id="viewMenuToggle"' in admin_html
-assert 'data-view="distributor"' in admin_html
-assert 'id="sessionOpenConsoleButton"' in admin_html
+admin_page = client.get('/admin')
+assert admin_page.status_code == 200
+admin_html = admin_page.text
+assert 'id="bottomTabs"' in admin_html
+assert 'data-tab="home"' in admin_html
+assert 'data-tab="people"' in admin_html
+assert 'data-tab="licences"' in admin_html
+assert 'data-tab="me"' in admin_html
 assert 'id="logoutButton"' in admin_html
 assert 'id="loadSessionButton"' in admin_html
 assert 'id="openChangePasswordButton"' in admin_html
@@ -32,147 +31,76 @@ assert 'class="menu-toggle-icon"' in admin_html
 assert 'class="view-navigation-user-email" id="currentEmail"' in admin_html
 assert 'Role: <span id="currentRole">' in admin_html
 assert 'data-view="session"' not in admin_html
-assert 'id="bootstrapButton"' not in admin_html
-assert 'id="distributorInviteButton"' in admin_html
-assert 'id="distributor_invite_role_name"' in admin_html
-assert 'id="distributorInviteEmailLabel"' in admin_html
-assert 'id="distributor_invite_reseller_uuid"' not in admin_html
-assert 'id="loadDistributorResellersButton"' in admin_html
-assert 'id="loadDistributorOwnersButton"' in admin_html
-assert 'id="distributorAssignButton"' in admin_html
+assert 'id="bootstrapButton"' in admin_html
+assert 'id="inviteForm"' in admin_html
+assert 'id="invite_role_name"' in admin_html
+assert 'id="invite_email"' in admin_html
+assert 'id="invite_distributor_uuid"' in admin_html
+assert 'id="invite_reseller_uuid"' in admin_html
 assert 'id="acceptInvitationCard"' in admin_html
 assert 'data-public-view="login"' in admin_html
 assert 'data-public-view="invitation"' in admin_html
-assert 'id="acceptInvitationForm" class="compact-invitation-form invitation-view-form"' in admin_html
+assert 'id="acceptInvitationForm"' in admin_html
 assert 'id="backToLoginButton"' in admin_html
-assert 'id="invite_distributor_uuid"' in admin_html
-assert 'id="startOwnerOnboardingButton"' in admin_html
-assert 'id="owner_onboarding_email"' in admin_html
-assert 'id="owner_onboarding_distributor_uuid"' in admin_html
-assert 'id="owner_onboarding_reseller_uuid"' in admin_html
-assert 'Advanced Licensing' in admin_html
-assert 'id="toggleAdminSectionsButton"' in admin_html
-assert 'id="toggleAdminSectionsLabel"' in admin_html
-assert 'Create Entitlement' in admin_html
-assert 'Update Licence Details' in admin_html
-assert 'id="createEntitlementButton"' in admin_html
-assert 'id="updateEntitlementDetailsButton"' in admin_html
-assert 'id="edit_entitlement_uuid"' in admin_html
+assert 'id="openInviteSheetButton"' in admin_html
+assert 'id="openLicenceWizardButton"' in admin_html
+assert 'id="licenceWizard"' in admin_html
+assert 'id="peopleList"' in admin_html
+assert 'id="licencesList"' in admin_html
 assert 'id="toastRegion" class="toast-region"' in admin_html
-assert 'id="updateUserStatusButton"' in admin_html
 assert 'id="reassignUserScopeButton"' in admin_html
-assert 'id="updateEntitlementStatusButton"' in admin_html
+assert 'id="updateEntitlementDetailsButton"' in admin_html
 assert 'id="loadAuditEventsButton"' in admin_html
 assert 'id="loadMoreAuditEventsButton"' in admin_html
 assert 'id="adminAuditEvents"' in admin_html
 assert 'id="supportReinstateUserButton"' in admin_html
-assert 'id="adminUserDirectory"' in admin_html
-assert 'id="admin_user_directory_search"' in admin_html
-assert 'id="adminUserDirectoryPagination"' in admin_html
-assert 'id="distributorResellerPagination"' in admin_html
-assert 'id="distributorOwnerPagination"' in admin_html
 assert 'id="audit_target_entity_type"' in admin_html
 assert 'id="audit_target_entity_uuid"' in admin_html
 assert 'id="audit_action"' in admin_html
 assert 'id="audit_actor_role_name"' in admin_html
+assert 'id="toolsSection"' in admin_html
+assert 'id="homePrimaryCta"' in admin_html
 
-console_page = client.get('/admin/console')
-assert console_page.status_code == 200
-console_html = console_page.text
-assert 'data-console-filter="hierarchy"' in console_html
-assert 'data-console-filter="audit"' in console_html
-assert 'data-console-filter="users"' in console_html
-assert 'id="consoleSearchInput"' in console_html
-assert '<th>Actions</th>' in console_html
-assert 'colspan="7"' in console_html
-assert 'id="openChangePasswordButton"' in console_html
-assert 'id="changePasswordModal"' in console_html
-assert 'class="menu-toggle-icon"' in console_html
-assert 'class="view-navigation-user-email" id="currentEmail"' in console_html
-assert 'Role: <span id="currentRole">' in console_html
-assert 'data-view="session"' not in console_html
-assert 'id="toastRegion" class="toast-region"' in console_html
-assert 'href="/admin/console">Data Console</a>' in console_html
-assert 'data-view="distributor" href="/admin?view=distributor"' in console_html
-assert 'data-view="reseller" href="/admin?view=reseller"' in console_html
+console_redirect = client.get('/admin/console', follow_redirects=False)
+assert console_redirect.status_code == 307
+assert console_redirect.headers['location'] == '/admin'
 
 assets_js = client.get('/admin/assets/admin.js')
 assert assets_js.status_code == 200
 js_text = assets_js.text
-assert 'loadDistributorSummary' in js_text
-assert 'loadAdminUsers' in js_text
+assert 'activateTab' in js_text
+assert 'loadPeople' in js_text
+assert 'loadLicences' in js_text
 assert 'loadAuditEvents' in js_text
-assert 'updateUserStatus' in js_text
 assert 'reassignUserScope' in js_text
-assert 'updateEntitlementStatus' in js_text
 assert 'supportReinstateUser' in js_text
-assert 'adminUserActivityItems' in js_text
-assert 'renderUserLookupResults' in js_text
-assert 'matchingUsers' in js_text
-assert 'renderAdminUserDirectory' in js_text
-assert 'filteredAdminUsers' in js_text
-assert 'adminUserDirectoryPage' in js_text
-assert 'buildUserActionButtons' in js_text
-assert 'renderScopedUserList' in js_text
-assert 'scopedUserDirectoryPages' in js_text
+assert 'updateEntitlementDetails' in js_text
 assert 'setEntityPickerOpen' in js_text
 assert 'openEntityPickerForInput' in js_text
 assert 'bindUuidPickerInputs' in js_text
 assert 'matchingEntitlements' in js_text
 assert 'data-uuid-picker-kind' in js_text
-assert 'data-picker-distributor-uuid' in js_text
-assert 'user_email' in js_text
-assert 'owner_onboarding_reseller_uuid' in js_text
 assert 'invite_reseller_uuid' in js_text
 assert 'reassign_reseller_uuid' in js_text
-assert 'userRows' in js_text
-assert 'data-user-quick-status' in js_text
-assert 'data-prepare-reassign' in js_text
-assert 'data-select-user-lookup' in js_text
-assert 'data-entitlement-status' in js_text
-assert 'data-open-audit' in js_text
-assert 'data-support-reinstate-user' in js_text
-assert 'buildUserConsoleActions' in js_text
-assert 'buildEntitlementConsoleActions' in js_text
-assert 'viewerCanManageEntitlements' in js_text
-assert 'viewerCanEmergencyReinstate' in js_text
-assert 'target_entity_uuid' in js_text
-assert 'target_entity_type' in js_text
-assert 'actor_role_name' in js_text
-assert 'actor_email' in js_text
-assert 'auditTransitionSummary' in js_text
-assert 'loadMoreAuditEvents' in js_text
-assert 'applyAuditFiltersToInputs' in js_text
-assert 'loadDistributorScopedUsers' in js_text
 assert 'function showToast(message, tone = ' in js_text
-assert 'function resolvedRequestedView(roleName)' in js_text
-assert "nextSearch.set('view', viewId)" in js_text
-assert 'function syncDistributorInviteForm()' in js_text
-assert 'async function startOwnerOnboarding()' in js_text
-assert 'Owner onboarding started for' in js_text
-assert "if (pageName === 'admin' && requestedInvitationToken)" in js_text
-assert "owner: ['owner', 'support']" in js_text
-assert 'requestedPublicView' in js_text
+assert "next.set('tab', tabId)" in js_text
+assert '/api/v1/auth/change-password' in js_text
+assert 'function confirmLicenceWizard()' in js_text
+assert 'TAB_ROLES' in js_text
+assert "owner: ['platform_admin', 'distributor', 'reseller', 'owner']" in js_text or "licences: ['platform_admin', 'distributor', 'reseller', 'owner']" in js_text
+assert 'requestedInvitationToken' in js_text
 assert "window.location.href = '/admin';" in js_text
 assert 'login_email=' in js_text
 assert 'setChangePasswordModalOpen' in js_text
-assert '/api/v1/auth/change-password' in js_text
-assert 'function createEntitlement()' in js_text
-assert 'function updateEntitlementDetails()' in js_text
-assert 'function makeAdminSectionsCollapsible()' in js_text
-assert 'function setAllAdminSectionsOpen(isOpen)' in js_text
-assert 'data-console-filter="hierarchy"' not in js_text
+assert 'loadMoreAuditEvents' in js_text
 
 assets_css = client.get('/admin/assets/admin.css')
 assert assets_css.status_code == 200
 css_text = assets_css.text
-assert '.console-action-menu' in css_text
+assert '.bottom-tabs' in css_text
 assert '.wizard-steps' in css_text
 assert '.advanced-card summary' in css_text
 assert '.entity-picker-card' in css_text
-assert '.console-actions-cell' in css_text
-assert 'td::before {' in css_text
-assert 'content: attr(data-label);' in css_text
-assert 'thead {' in css_text
-assert 'display: none;' in css_text
+assert '--primary: #1976d2' in css_text
+assert '--secondary: #22d3ee' in css_text
 print('Authority admin UI validation passed.')

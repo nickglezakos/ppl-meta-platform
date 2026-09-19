@@ -2,615 +2,341 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PPL Meta Authority Control</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>EyeNet Authority</title>
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" href="/admin/assets/eyenet-dark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css">
 </head>
 <body data-page="admin">
   <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="false"></div>
+  <div id="statusBar" class="status-bar" role="status" aria-live="polite"></div>
+
   <div class="shell">
     <section class="hero logo-header" data-auth-visibility="logged-out">
-      <img class="brand-logo" src="/admin/assets/eyenet-dark.svg" alt="Eyent">
+      <img class="brand-logo" src="/admin/assets/eyenet-dark.svg" alt="EyeNet">
     </section>
 
     <section id="loggedOutPanel" class="card auth-card" data-public-view="login">
-      <h2>Login</h2>
-      <p class="small auth-copy">Sign in to manage authority users, invitations, installations, and distributor, reseller, or owner workflows. The data console is available as a separate page after login.</p>
+      <h2>Sign in</h2>
       <form id="loginForm">
         <label>Email<input id="login_email" type="email" autocomplete="email" placeholder="admin@authority.local"></label>
         <label>Password<input id="login_password" type="password" autocomplete="current-password" placeholder="Enter password"></label>
         <label class="inline-toggle"><input id="show_login_password" type="checkbox">Show password</label>
         <div class="actions">
-          <button type="submit" id="loginButton">Login</button>
+          <button type="submit" id="loginButton">Sign in</button>
+          <button type="button" class="secondary" id="bootstrapButton">Bootstrap admin</button>
         </div>
       </form>
     </section>
 
     <section class="card auth-card invitation-view-card hidden" id="acceptInvitationCard" data-public-view="invitation">
-      <div class="merged-bar-title-row">
-        <h2>Accept Invitation</h2>
-        <label class="inline-toggle compact-toggle"><input id="show_accept_password" type="checkbox">Show password</label>
-      </div>
-      <p class="small auth-copy">Use the invitation link from your email to finish registration and activate your authority access.</p>
+      <h2>Accept invitation</h2>
       <form id="acceptInvitationForm" class="compact-invitation-form invitation-view-form">
-        <label>Token<input id="accept_invitation_token" type="text" autocomplete="one-time-code" placeholder="Paste invitation token"></label>
-        <label>Display name<input id="accept_display_name" type="text" autocomplete="name" placeholder="Optional display name"></label>
+        <label>Token<input id="accept_invitation_token" type="text" autocomplete="one-time-code" placeholder="Invitation token"></label>
+        <label>Display name<input id="accept_display_name" type="text" autocomplete="name" placeholder="Optional"></label>
         <label>Password<input id="accept_password" type="password" autocomplete="new-password" placeholder="Set a password"></label>
-        <div class="compact-invitation-action">
-          <button type="submit" id="acceptInvitationButton">Accept invitation</button>
+        <label class="inline-toggle compact-toggle"><input id="show_accept_password" type="checkbox">Show password</label>
+        <div class="actions">
+          <button type="submit" id="acceptInvitationButton">Accept</button>
+          <button type="button" class="secondary" id="backToLoginButton">Back</button>
         </div>
       </form>
-      <div class="actions">
-        <button type="button" class="secondary" id="backToLoginButton">Back to login</button>
-      </div>
     </section>
 
-    <section id="authenticatedShell" class="authority-layout hidden">
-      <div class="card body-card navigation-shell">
-        <div class="view-topbar">
-          <img class="brand-logo topbar-logo" src="/admin/assets/eyenet-dark.svg" alt="Eyent">
-          <h2 id="currentViewTitle" class="view-title">Overview</h2>
-          <button type="button" class="menu-toggle" id="viewMenuToggle" aria-expanded="false" aria-controls="viewNavigation" aria-label="Open navigation menu">
-            <span class="menu-toggle-icon" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-            </span>
-          </button>
+    <section id="authenticatedShell" class="app-shell hidden">
+      <header class="app-topbar">
+        <img class="brand-logo topbar-logo" src="/admin/assets/eyenet-dark.svg" alt="EyeNet">
+        <div class="topbar-meta">
+          <div class="view-navigation-user-email" id="currentEmail">-</div>
+          <div class="topbar-role">Role: <span id="currentRole">Unauthenticated</span></div>
         </div>
-        <div class="view-layout" id="viewShell">
-          <div class="view-drawer-overlay" id="viewDrawerOverlay" aria-hidden="true"></div>
-          <aside class="view-navigation" id="viewNavigation" aria-label="Authority navigation" tabindex="-1">
-            <div class="view-navigation-header">
-              <div>
-                <div class="eyebrow view-eyebrow">Workspace Menu</div>
-                <div class="view-navigation-title">Authority navigation</div>
-              </div>
-              <button type="button" class="drawer-close" id="viewDrawerClose" aria-label="Close navigation">Close</button>
-            </div>
-            <div class="view-navigation-section">
-              <div class="view-navigation-label">Signed in</div>
-              <div class="view-navigation-user">
-                <div class="view-navigation-user-email" id="currentEmail">-</div>
-                <div class="view-navigation-user-role">Role: <span id="currentRole">Unauthenticated</span></div>
-              </div>
-            </div>
-            <div class="view-navigation-section">
-              <div class="view-navigation-label">Workspace views</div>
-              <button type="button" class="view-link view-link-plain" id="sessionOpenConsoleButton">Data Console</button>
-              <button type="button" class="view-link view-link-plain" data-view="admin">Admin</button>
-              <button type="button" class="view-link view-link-plain" data-view="overview">Overview</button>
-              <button type="button" class="view-link view-link-plain" data-view="distributor">Distributor</button>
-              <button type="button" class="view-link view-link-plain" data-view="reseller">Reseller</button>
-              <button type="button" class="view-link view-link-plain" data-view="owner">Owner Dashboard</button>
-            </div>
-            <div class="view-navigation-section">
-              <div class="view-navigation-label">Actions</div>
-              <button type="button" class="view-link view-link-plain" id="loadSessionButton">Refresh session</button>
-              <button type="button" class="view-link view-link-plain" id="openChangePasswordButton">Change password</button>
-              <button type="button" class="view-link view-link-plain view-link-danger" id="logoutButton">Logout</button>
-            </div>
-          </aside>
+        <button type="button" class="menu-toggle" id="overflowMenuToggle" aria-expanded="false" aria-controls="overflowMenu" aria-label="Open menu">
+          <span class="menu-toggle-icon" aria-hidden="true"><span></span><span></span><span></span></span>
+        </button>
+      </header>
 
-          <div class="view-content">
-        <div id="session" class="view-panel active">
-          <div class="stack session-view-stack">
-            <div class="feature-card">
-              <h3>Session Workspace</h3>
-              <div class="summary-columns">
-                <div>
-                  <div class="small">Session menu</div>
-                  <div class="activity-list">
-                    <div class="activity-item"><div class="activity-title">Use the menu button for navigation and account actions</div><div class="activity-meta">The persistent header menu now carries navigation, logout, and your signed-in identity.</div></div>
-                    <div class="activity-item"><div class="activity-title">Refresh the current authority session from the menu</div><div class="activity-meta">Use Refresh Session after role or scope changes.</div></div>
-                  </div>
-                </div>
-                <div>
-                  <div class="small">Navigation</div>
-                  <div class="activity-list">
-                    <div class="activity-item"><div class="activity-title">Use the menu button to open views</div><div class="activity-meta">Desktop and mobile both use the same persistent top bar and drawer menu.</div></div>
-                    <div class="activity-item"><div class="activity-title">Owner dashboard is a dedicated view</div><div class="activity-meta">Use the menu to switch directly to owner lifecycle and installation status.</div></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+      <div class="overflow-drawer-overlay" id="overflowDrawerOverlay" aria-hidden="true"></div>
+      <aside class="overflow-menu" id="overflowMenu" aria-label="Overflow" tabindex="-1">
+        <div class="overflow-menu-header">
+          <div class="eyebrow">Menu</div>
+          <button type="button" class="drawer-close" id="overflowMenuClose" aria-label="Close">Close</button>
         </div>
+        <button type="button" class="view-link view-link-plain" id="loadSessionButton">Refresh session</button>
+        <button type="button" class="view-link view-link-plain" id="openChangePasswordButton">Change password</button>
+        <button type="button" class="view-link view-link-plain view-link-danger" id="logoutButton">Logout</button>
+      </aside>
 
-        <div id="overview" class="view-panel">
-          <div class="metric-grid">
-            <div class="metric"><div class="label">Role</div><div id="metricRole" class="value">-</div></div>
-            <div class="metric"><div class="label">Distributor Scope</div><div id="metricDistributorScope" class="value">-</div></div>
-            <div class="metric"><div class="label">Reseller Scope</div><div id="metricScope" class="value">-</div></div>
-            <div class="metric"><div class="label">Owner Installations</div><div id="metricOwnerCount" class="value">0</div></div>
-            <div class="metric"><div class="label">Reseller Installations</div><div id="metricResellerCount" class="value">0</div></div>
+      <main class="app-main">
+        <section id="view-home" class="tab-panel active" data-tab="home">
+          <h1 class="screen-title" id="homeTitle">Home</h1>
+          <p class="screen-sub" id="homeSub">Status and next action</p>
+          <div class="pulse-strip" id="homePulse"></div>
+          <button type="button" class="primary-cta" id="homePrimaryCta">Continue</button>
+          <h2 class="section-label">Recent</h2>
+          <div class="list-stack" id="homeRecent"></div>
+        </section>
+
+        <section id="view-people" class="tab-panel" data-tab="people">
+          <div class="screen-header-row">
+            <div>
+              <h1 class="screen-title">People</h1>
+              <p class="screen-sub">Invite and manage users in scope</p>
+            </div>
+            <button type="button" class="fab-button" id="openInviteSheetButton" aria-label="Invite">+</button>
           </div>
-          <div class="metric-grid role-section" data-role-scope="platform_admin,distributor,reseller">
-            <div class="metric"><div class="label">Pending Invitations</div><div id="metricPendingInvitations" class="value">0</div></div>
-            <div class="metric"><div class="label">Recent Assignments</div><div id="metricRecentAssignments" class="value">0</div></div>
+          <input id="peopleSearch" class="search-input" type="search" placeholder="Search name or email" autocomplete="off">
+          <div class="segmented" id="peopleStatusFilter" role="tablist">
+            <button type="button" class="segment active" data-people-status="">All</button>
+            <button type="button" class="segment" data-people-status="pending">Pending</button>
+            <button type="button" class="segment" data-people-status="active">Active</button>
+            <button type="button" class="segment" data-people-status="suspended">Suspended</button>
           </div>
-          <div class="stack role-section" data-role-scope="distributor">
-            <div class="feature-card">
-              <h3>Distributor Snapshot</h3>
-              <div id="distributorSummaryCards" class="summary-grid"></div>
-              <div>
-                <div class="small">Recent distributor assignments</div>
-                <div id="distributorRecentAssignments" class="activity-list empty-list">No distributor assignment activity yet.</div>
-              </div>
-              <div>
-                <div class="small">Recent health reports</div>
-                <div id="distributorRecentHealth" class="activity-list empty-list">No distributor health activity yet.</div>
-              </div>
+          <div class="list-stack" id="peopleList"></div>
+        </section>
+
+        <section id="view-person" class="tab-panel detail-panel" data-tab="person">
+          <button type="button" class="back-link" id="personBackButton">← People</button>
+          <h1 class="screen-title" id="personTitle">Person</h1>
+          <p class="screen-sub" id="personSub"></p>
+          <div class="detail-meta" id="personMeta"></div>
+          <div class="action-row" id="personActions"></div>
+          <div id="personReassignCard" class="sheet-card hidden">
+            <h2 class="section-label">Reassign scope</h2>
+            <label>Distributor UUID<input id="reassign_distributor_uuid" type="text" data-uuid-picker-kind="distributor" placeholder="Search or paste"></label>
+            <label>Reseller UUID<input id="reassign_reseller_uuid" type="text" data-uuid-picker-kind="reseller" data-picker-distributor-uuid="reassign_distributor_uuid" placeholder="Search or paste"></label>
+            <label>Reason<input id="reassign_reason_code" type="text" value="ui_reassign"></label>
+            <button type="button" id="reassignUserScopeButton">Save scope</button>
+          </div>
+          <h2 class="section-label">Licences</h2>
+          <div class="list-stack" id="personLicences"></div>
+        </section>
+
+        <section id="view-licences" class="tab-panel" data-tab="licences">
+          <div class="screen-header-row">
+            <div>
+              <h1 class="screen-title" id="licencesTitle">Licences</h1>
+              <p class="screen-sub" id="licencesSub">Issue, assign, and review</p>
+            </div>
+            <button type="button" class="fab-button" id="openLicenceWizardButton" aria-label="Issue licence">+</button>
+          </div>
+          <input id="licencesSearch" class="search-input" type="search" placeholder="Search licence or owner" autocomplete="off">
+          <div class="segmented" id="licencesStatusFilter" role="tablist">
+            <button type="button" class="segment active" data-licence-status="">All</button>
+            <button type="button" class="segment" data-licence-status="active">Active</button>
+            <button type="button" class="segment" data-licence-status="pending_activation">Pending</button>
+            <button type="button" class="segment" data-licence-status="suspended">Suspended</button>
+          </div>
+          <div class="list-stack" id="licencesList"></div>
+        </section>
+
+        <section id="view-licence" class="tab-panel detail-panel" data-tab="licence">
+          <button type="button" class="back-link" id="licenceBackButton">← Licences</button>
+          <h1 class="screen-title" id="licenceTitle">Licence</h1>
+          <p class="screen-sub" id="licenceSub"></p>
+          <div class="detail-meta" id="licenceMeta"></div>
+          <div class="action-row" id="licenceActions"></div>
+          <details class="advanced-card sheet-card" id="licenceEditCard">
+            <summary><span>More</span></summary>
+            <div class="advanced-card-body">
+              <label>Approved owner email<input id="edit_approved_owner_email" type="email"></label>
+              <label>Licence status
+                <select id="edit_licence_status">
+                  <option value="active">active</option>
+                  <option value="grace">grace</option>
+                  <option value="suspended">suspended</option>
+                  <option value="revoked">revoked</option>
+                </select>
+              </label>
+              <label>Owner enabled
+                <select id="edit_owner_enabled">
+                  <option value="true">true</option>
+                  <option value="false">false</option>
+                </select>
+              </label>
+              <label>Warning days<input id="edit_warning_period_days" type="number" min="0" value="0"></label>
+              <label>Offline grace days<input id="edit_offline_grace_days" type="number" min="0" value="0"></label>
+              <label>Tenant / licence name<input id="edit_tenant_name" type="text"></label>
+              <label>Notes<input id="edit_notes" type="text"></label>
+              <input type="hidden" id="edit_entitlement_uuid">
+              <button type="button" id="updateEntitlementDetailsButton">Update licence details</button>
+            </div>
+          </details>
+        </section>
+
+        <section id="view-me" class="tab-panel" data-tab="me">
+          <h1 class="screen-title">Me</h1>
+          <p class="screen-sub">Account and tools</p>
+          <div class="sheet-card">
+            <div class="detail-meta">
+              <div><span class="muted">Email</span><div id="meEmail">-</div></div>
+              <div><span class="muted">Role</span><div id="meRole">-</div></div>
+            </div>
+            <div class="actions stacked-actions">
+              <button type="button" id="meChangePasswordButton">Change password</button>
+              <button type="button" class="secondary" id="meRefreshButton">Refresh session</button>
+              <button type="button" class="danger" id="meLogoutButton">Logout</button>
             </div>
           </div>
-          <div class="stack role-section" data-role-scope="platform_admin">
-            <div class="feature-card">
-              <h3>Admin Snapshot</h3>
-              <div id="adminSummaryCards" class="summary-grid"></div>
-              <div class="summary-columns">
-                <div>
-                  <div class="small">Recent invitations</div>
-                  <div id="adminRecentInvitations" class="activity-list empty-list">No invitation activity yet.</div>
+          <details class="advanced-card sheet-card" id="toolsSection">
+            <summary><span>Tools</span></summary>
+            <div class="advanced-card-body tools-body">
+              <div class="tool-block" data-tool="vpn">
+                <h3>VPN mesh</h3>
+                <label>Entitlement UUID<input id="vpn_entitlement_uuid" type="text" data-uuid-picker-kind="entitlement" placeholder="Search entitlement"></label>
+                <button type="button" id="vpnEnrollButton">Enroll installation</button>
+                <div class="list-stack compact" id="vpnResult"></div>
+              </div>
+              <div class="tool-block" data-tool="audit">
+                <h3>Audit</h3>
+                <label>Entity type<input id="audit_target_entity_type" type="text" placeholder="user / entitlement"></label>
+                <label>Entity UUID<input id="audit_target_entity_uuid" type="text"></label>
+                <label>Action<input id="audit_action" type="text"></label>
+                <label>Actor role<input id="audit_actor_role_name" type="text"></label>
+                <label>Limit<input id="audit_limit" type="number" min="1" max="500" value="50"></label>
+                <div class="actions">
+                  <button type="button" id="loadAuditEventsButton">Load audit</button>
+                  <button type="button" class="secondary" id="loadMoreAuditEventsButton" disabled>Load more</button>
                 </div>
-                <div>
-                  <div class="small">Recent assignments</div>
-                  <div id="adminRecentAssignments" class="activity-list empty-list">No assignment activity yet.</div>
-                </div>
-                <div>
-                  <div class="small">Recent health reports</div>
-                  <div id="adminRecentHealth" class="activity-list empty-list">No health activity yet.</div>
-                </div>
+                <div class="list-stack compact" id="adminAuditEvents"></div>
+              </div>
+              <div class="tool-block" data-tool="emergency">
+                <h3>Emergency reinstate</h3>
+                <label>User UUID<input id="support_user_uuid" type="text" data-uuid-picker-kind="user" placeholder="Search owner"></label>
+                <label>Reason<input id="support_reason_code" type="text" value="ui_emergency_reinstate"></label>
+                <label>Note<input id="support_operator_note" type="text"></label>
+                <button type="button" id="supportReinstateUserButton">Reinstate</button>
               </div>
             </div>
-          </div>
-          <div class="stack role-section" data-role-scope="reseller,platform_admin">
-            <div class="feature-card">
-              <h3>Reseller Snapshot</h3>
-              <div id="resellerSummaryCards" class="summary-grid"></div>
-              <div>
-                <div class="small">Recent reseller assignments</div>
-                <div id="resellerRecentAssignments" class="activity-list empty-list">No reseller assignment activity yet.</div>
-              </div>
-              <div>
-                <div class="small">Recent health reports</div>
-                <div id="resellerRecentHealth" class="activity-list empty-list">No reseller health activity yet.</div>
-              </div>
-            </div>
-          </div>
-          <div class="stack role-section" data-role-scope="owner,support,platform_admin">
-            <div class="feature-card">
-              <h3>Owner Snapshot</h3>
-              <div id="ownerSummaryCards" class="summary-grid"></div>
-              <div>
-                <div class="small">Recent lifecycle updates</div>
-                <div id="ownerRecentUpdates" class="activity-list empty-list">No lifecycle activity yet.</div>
-              </div>
-              <div>
-                <div class="small">Recent health reports</div>
-                <div id="ownerRecentHealth" class="activity-list empty-list">No owner health activity yet.</div>
-              </div>
-            </div>
-          </div>
-          <div class="empty">Opening a workspace refreshes its summary cards automatically. Use the remaining load buttons for large lists such as entitlements, users, and audit history.</div>
-        </div>
+          </details>
+        </section>
+      </main>
 
-        <div id="admin" class="view-panel">
-          <div class="section-toolbar role-section" data-role-scope="platform_admin">
-            <button type="button" id="toggleAdminSectionsButton" class="secondary section-toggle-button" aria-expanded="false">
-              <span class="section-toggle-icon" aria-hidden="true"><span></span><span></span></span>
-              <span id="toggleAdminSectionsLabel">Expand all</span>
-            </button>
-          </div>
-          <div class="stack role-section" data-role-scope="platform_admin">
-            <div class="feature-card">
-              <h3>Owner Onboarding</h3>
-              <div class="small">Use this guided flow as the default way to onboard owners. Authority sends the invitation first, then creates the entitlement automatically when the owner accepts.</div>
-              <div class="wizard-steps" id="ownerOnboardingWizard">
-                <section class="wizard-step">
-                  <div class="wizard-step-number">1</div>
-                  <div>
-                    <h4>Owner identity</h4>
-                    <div class="row">
-                      <label>Owner email<input id="owner_onboarding_email" type="email" placeholder="owner@example.com"></label>
-                      <label>Display name<input id="owner_onboarding_display_name" type="text" placeholder="Optional display name"></label>
-                    </div>
-                  </div>
-                </section>
-                <section class="wizard-step">
-                  <div class="wizard-step-number">2</div>
-                  <div>
-                    <h4>Hierarchy placement</h4>
-                    <div class="row">
-                      <label>Distributor UUID<input id="owner_onboarding_distributor_uuid" data-uuid-picker-kind="distributor_scope" placeholder="Click to search distributor scope"></label>
-                      <label>Reseller UUID<input id="owner_onboarding_reseller_uuid" data-uuid-picker-kind="reseller_scope" placeholder="Click to search reseller scope"></label>
-                      <label>Expiry days<input id="owner_onboarding_expires_in_days" type="number" min="1" max="30" value="7"></label>
-                    </div>
-                    <div class="hint">Use reseller scope when the owner belongs under a specific reseller branch. Search or type a distributor UUID; the picker lists every known scope UUID, not only the first few distributor accounts.</div>
-                  </div>
-                </section>
-                <section class="wizard-step">
-                  <div class="wizard-step-number">3</div>
-                  <div>
-                    <h4>Send and monitor</h4>
-                    <div class="hint">When the owner accepts, authority creates a new unbound licence if they do not already have one that can still be activated. Installation binding happens later on the Windows/Node bootstrap, not at invite time. Re-inviting an existing owner issues a new key when the previous licence is already bound.</div>
-                    <div class="actions">
-                      <button type="button" id="startOwnerOnboardingButton">Start owner onboarding</button>
-                    </div>
-                  </div>
-                </section>
-              </div>
-            </div>
-
-            <div class="feature-card">
-              <h3>Role Invitation</h3>
-              <div class="small">Use this for non-owner roles or exceptional admin invitations. Owner onboarding should normally go through the guided flow above.</div>
-              <div class="hint">For owner invites created here, the entitlement is still created automatically on acceptance.</div>
-              <div class="row">
-                <label>Invite email<input id="invite_email" type="email" placeholder="owner@example.com"></label>
-                <label>Role
-                  <select id="invite_role_name">
-                    <option value="owner">owner</option>
-                    <option value="reseller">reseller</option>
-                    <option value="distributor">distributor</option>
-                    <option value="support">support</option>
-                  </select>
-                </label>
-              </div>
-              <div class="row">
-                <label>Distributor UUID<input id="invite_distributor_uuid" data-uuid-picker-kind="distributor_scope" placeholder="Click to search distributor scope"></label>
-                <label>Reseller UUID<input id="invite_reseller_uuid" data-uuid-picker-kind="reseller_scope" placeholder="Click to search reseller scope"></label>
-                <label>Expiry days<input id="invite_expires_in_days" type="number" min="1" max="30" value="7"></label>
-              </div>
-              <div class="actions">
-                <button type="button" id="createInvitation">Create invitation</button>
-              </div>
-            </div>
-
-            <details class="feature-card advanced-card">
-              <summary>
-                <span>Advanced Licensing</span>
-                <span class="small">Separate manual entitlement creation from existing licence-detail updates.</span>
-              </summary>
-              <div class="advanced-card-body">
-                <div class="stack">
-                  <section>
-                    <h4>Create Entitlement</h4>
-                    <div class="small">Use this for pre-provisioning or exception cases where you need to create a brand-new entitlement record manually.</div>
-                    <div class="row">
-                      <label>Application key<input id="application_key" placeholder="Leave blank to auto-generate"></label>
-                      <label>Installation UUID<input id="installation_uuid" data-uuid-picker-kind="installation" placeholder="Click to search installation"></label>
-                    </div>
-                    <div class="row">
-                      <label>Approved owner email<input id="approved_owner_email" data-uuid-picker-kind="user_email" type="email" placeholder="Click to search owner by email or name"></label>
-                      <label>Licence status
-                        <select id="licence_status">
-                          <option value="active">active</option>
-                          <option value="grace">grace</option>
-                          <option value="expired">expired</option>
-                          <option value="suspended">suspended</option>
-                        </select>
-                      </label>
-                    </div>
-                    <div class="row">
-                      <label>Warning period days<input id="warning_period_days" type="number" min="0" value="0"></label>
-                      <label>Offline grace days<input id="offline_grace_days" type="number" min="0" value="14"></label>
-                      <label>Owner enabled
-                        <select id="owner_enabled">
-                          <option value="true">true</option>
-                          <option value="false">false</option>
-                        </select>
-                      </label>
-                    </div>
-                    <label>Tenant name<input id="tenant_name" value="New Tenant"></label>
-                    <label>Installation name<input id="installation_name_admin" placeholder="e.g. Athens HQ Gateway"></label>
-                    <label>Notes<textarea id="notes">Created from the authority control shell.</textarea></label>
-                    <div class="actions">
-                      <button type="button" id="createEntitlementButton">Create entitlement</button>
-                    </div>
-                  </section>
-
-                  <section>
-                    <h4>Update Licence Details</h4>
-                    <div class="small">Use this for an existing entitlement when you need to change licence details without rotating the application key.</div>
-                    <div class="hint">Activation status changes are handled in the separate entitlement status card below.</div>
-                    <div class="row">
-                      <label>Entitlement UUID<input id="edit_entitlement_uuid" data-uuid-picker-kind="entitlement" placeholder="Click to search entitlement"></label>
-                      <label>Approved owner email<input id="edit_approved_owner_email" data-uuid-picker-kind="user_email" type="email" placeholder="Click to search owner by email or name"></label>
-                    </div>
-                    <div class="row">
-                      <label>Licence status
-                        <select id="edit_licence_status">
-                          <option value="active">active</option>
-                          <option value="grace">grace</option>
-                          <option value="expired">expired</option>
-                          <option value="suspended">suspended</option>
-                        </select>
-                      </label>
-                      <label>Warning period days<input id="edit_warning_period_days" type="number" min="0" value="0"></label>
-                      <label>Offline grace days<input id="edit_offline_grace_days" type="number" min="0" value="14"></label>
-                    </div>
-                    <div class="row">
-                      <label>Owner enabled
-                        <select id="edit_owner_enabled">
-                          <option value="true">true</option>
-                          <option value="false">false</option>
-                        </select>
-                      </label>
-                      <label>Tenant name<input id="edit_tenant_name" value="New Tenant"></label>
-                    </div>
-                    <label>Notes<textarea id="edit_notes">Updated from the authority control shell.</textarea></label>
-                    <div class="actions">
-                      <button type="button" id="updateEntitlementDetailsButton">Update licence details</button>
-                    </div>
-                  </section>
-                </div>
-              </div>
-            </details>
-
-            <div class="feature-card">
-              <h3>Assign Installation</h3>
-              <div class="row">
-                <label>Entitlement UUID<input id="assignment_entitlement_uuid" data-uuid-picker-kind="entitlement" placeholder="Click to search entitlement"></label>
-                <label>User email<input id="assignment_user_email" data-uuid-picker-kind="user_email" type="email" placeholder="Click to search user by email or name"></label>
-              </div>
-              <div class="actions">
-                <button type="button" id="assignInstallation">Assign entitlement</button>
-              </div>
-            </div>
-
-            <div class="feature-card">
-              <h3>User Lifecycle</h3>
-              <div class="small">Suspend, reinstate, and remove users with explicit reasons. Use reassignment below to recover orphaned users.</div>
-              <div class="row">
-                <label>User UUID<input id="admin_user_uuid" data-uuid-picker-kind="user" placeholder="Click to search user"></label>
-                <label>Status
-                  <select id="admin_user_status">
-                    <option value="active">active</option>
-                    <option value="suspended">suspended</option>
-                    <option value="removed">removed</option>
-                    <option value="orphaned">orphaned</option>
-                  </select>
-                </label>
-              </div>
-              <div class="row">
-                <label>Reason code<input id="admin_user_reason_code" placeholder="policy_enforcement"></label>
-                <label>Operator note<input id="admin_user_operator_note" placeholder="Optional note"></label>
-              </div>
-              <div class="actions">
-                <button type="button" id="updateUserStatusButton">Update user status</button>
-              </div>
-            </div>
-
-            <div class="feature-card">
-              <h3>User Reassignment</h3>
-              <div class="small">Clear orphan state by assigning the user back into distributor or reseller scope.</div>
-              <div class="row">
-                <label>User UUID<input id="reassign_user_uuid" data-uuid-picker-kind="user" placeholder="Click to search user"></label>
-                <label>Distributor UUID<input id="reassign_distributor_uuid" data-uuid-picker-kind="distributor_scope" placeholder="Click to search distributor scope"></label>
-              </div>
-              <div class="row">
-                <label>Reseller UUID<input id="reassign_reseller_uuid" data-uuid-picker-kind="reseller_scope" placeholder="Click to search reseller scope"></label>
-                <label>Reason code<input id="reassign_reason_code" placeholder="manual_reassignment"></label>
-              </div>
-              <div class="row">
-                <label>Operator note<input id="reassign_operator_note" placeholder="Optional note"></label>
-              </div>
-              <div class="actions">
-                <button type="button" id="reassignUserScopeButton">Reassign user scope</button>
-              </div>
-            </div>
-
-            <div class="feature-card">
-              <h3>Entitlement Lifecycle</h3>
-              <div class="small">Change entitlement activation state without deleting the underlying record.</div>
-              <div class="row">
-                <label>Entitlement UUID<input id="admin_entitlement_uuid" data-uuid-picker-kind="entitlement" placeholder="Click to search entitlement"></label>
-                <label>Activation status
-                  <select id="admin_entitlement_status">
-                    <option value="active">active</option>
-                    <option value="suspended">suspended</option>
-                    <option value="revoked">revoked</option>
-                    <option value="pending_activation">pending_activation</option>
-                    <option value="expired">expired</option>
-                    <option value="orphaned">orphaned</option>
-                  </select>
-                </label>
-              </div>
-              <div class="row">
-                <label>Reason code<input id="admin_entitlement_reason_code" placeholder="commercial_stop"></label>
-                <label>Operator note<input id="admin_entitlement_operator_note" placeholder="Optional note"></label>
-              </div>
-              <div class="actions">
-                <button type="button" id="updateEntitlementStatusButton">Update entitlement status</button>
-              </div>
-            </div>
-
-            <div class="feature-card">
-              <h3>VPN Mesh</h3>
-              <div class="small">Each entitlement is linked to a Matrix group (VPN mesh). Devices enrolled under the same entitlement can communicate peer-to-peer via Tailscale/WireGuard.</div>
-              <div class="actions" style="margin-bottom:0.5rem;">
-                <button type="button" id="loadVpnEntitlementsButton">Load entitlements with VPN status</button>
-              </div>
-              <div id="vpnEntitlementsList" class="activity-list empty-list">No entitlements loaded yet. Click the button above to load.</div>
-            </div>
-
-            <div class="feature-card">
-              <h3>Audit History</h3>
-              <div class="row">
-                <label>Entity type<input id="audit_target_entity_type" placeholder="authority_user or entitlement"></label>
-                <label>Entity UUID<input id="audit_target_entity_uuid" data-uuid-picker-kind="audit_entity" placeholder="Click to search audit target"></label>
-              </div>
-              <div class="row">
-                <label>Action<input id="audit_action" placeholder="user_status_changed"></label>
-                <label>Actor role<input id="audit_actor_role_name" placeholder="platform_admin or support"></label>
-                <label>Limit<input id="audit_limit" type="number" min="1" max="500" value="100"></label>
-              </div>
-              <div class="actions">
-                <button type="button" id="loadAuditEventsButton">Load audit events</button>
-                <button type="button" class="secondary" id="loadMoreAuditEventsButton">Load more</button>
-              </div>
-              <div id="adminAuditEvents" class="activity-list empty-list">No audit events loaded yet.</div>
-            </div>
-
-            <div class="feature-card">
-              <h3>User Directory</h3>
-              <div class="small">Direct lifecycle actions for common user operations. Suspend, reinstate, or prepare reassignment without copying UUIDs manually.</div>
-              <div class="row">
-                <label>Search users<input id="admin_user_directory_search" placeholder="Search by email, name, role, status, or scope"></label>
-              </div>
-              <div id="adminUserDirectory" class="activity-list empty-list">No users loaded yet.</div>
-              <div id="adminUserDirectoryPagination" class="actions hidden"></div>
-            </div>
-          </div>
-        </div>
-
-        <div id="distributor" class="view-panel">
-          <div class="stack role-section" data-role-scope="distributor">
-            <div class="feature-card">
-              <h3>Distributor Invitation</h3>
-              <div class="small">Creates an invitation token and sends the same email-link onboarding flow used across authority roles.</div>
-              <div class="hint" id="distributorInviteHint">Owner onboarding now creates the entitlement automatically after invitation acceptance. Reseller invitations remain identity-only.</div>
-              <div class="row">
-                <label><span id="distributorInviteEmailLabel">Invite email</span><input id="distributor_invite_email" type="email" placeholder="person@example.com"></label>
-                <label>Role
-                  <select id="distributor_invite_role_name">
-                    <option value="reseller">reseller</option>
-                    <option value="owner">owner</option>
-                  </select>
-                </label>
-              </div>
-              <div class="actions">
-                <button type="button" id="distributorInviteButton">Send invitation email</button>
-                <button type="button" class="secondary" id="loadDistributorSummaryTab">Load distributor summary</button>
-              </div>
-            </div>
-            <div class="feature-card">
-              <h3>Distributor Directory</h3>
-              <div class="actions">
-                <button type="button" id="loadDistributorResellersButton">Load resellers</button>
-                <button type="button" class="secondary" id="loadDistributorOwnersButton">Load owners</button>
-              </div>
-              <div class="summary-columns">
-                <div>
-                  <div class="small">Scoped resellers</div>
-                  <div id="distributorResellerList" class="activity-list empty-list">No reseller users loaded yet.</div>
-                  <div id="distributorResellerPagination" class="actions hidden"></div>
-                </div>
-                <div>
-                  <div class="small">Scoped owners</div>
-                  <div id="distributorOwnerList" class="activity-list empty-list">No owner users loaded yet.</div>
-                  <div id="distributorOwnerPagination" class="actions hidden"></div>
-                </div>
-              </div>
-            </div>
-            <div class="feature-card">
-              <h3>Distributor Assignment</h3>
-              <div class="row">
-                <label>Entitlement UUID<input id="distributor_assignment_entitlement_uuid" data-uuid-picker-kind="entitlement" placeholder="Click to search entitlement"></label>
-                <label>Owner email<input id="distributor_assignment_user_email" data-uuid-picker-kind="user_email" type="email" placeholder="Click to search owner by email or name"></label>
-              </div>
-              <div class="actions">
-                <button type="button" id="distributorAssignButton">Assign entitlement</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div id="reseller" class="view-panel">
-          <div class="stack role-section" data-role-scope="reseller,platform_admin">
-            <div class="feature-card">
-              <h3>Reseller Owner Invitation</h3>
-              <div class="small">Creates an owner invitation token and attempts SMTP email delivery when authority mail settings are configured.</div>
-              <div class="hint">When the invited owner accepts, authority creates a new unbound licence unless they already have one that can still be activated. Already-bound licences are left in place.</div>
-              <div class="row">
-                <label>Owner email<input id="reseller_invite_email" type="email" placeholder="owner@example.com"></label>
-                <label>Expiry days<input id="reseller_invite_expires" type="number" min="1" max="30" value="7"></label>
-              </div>
-              <div class="actions">
-                <button type="button" id="resellerInviteButton">Issue owner invitation</button>
-                <button type="button" class="secondary" id="loadResellerSummary">Load reseller summary</button>
-              </div>
-            </div>
-            <div class="feature-card">
-              <h3>Reseller Assignment</h3>
-              <div class="row">
-                <label>Entitlement UUID<input id="reseller_assignment_entitlement_uuid" data-uuid-picker-kind="entitlement" placeholder="Click to search entitlement"></label>
-                <label>Owner email<input id="reseller_assignment_user_email" data-uuid-picker-kind="user_email" type="email" placeholder="Click to search owner by email or name"></label>
-              </div>
-              <div class="actions">
-                <button type="button" id="resellerAssignButton">Assign entitlement</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div id="owner" class="view-panel">
-          <div class="role-section" data-role-scope="owner,support,platform_admin,reseller">
-            <h3>Owner Dashboard</h3>
-            <div class="actions">
-              <button type="button" id="loadOwnerInstallations">Load my installations</button>
-            </div>
-          </div>
-          <div class="stack role-section" data-role-scope="support">
-            <div class="feature-card">
-              <h3>Emergency Recovery</h3>
-              <div class="small">Support may reinstate suspended owner or reseller users only. Scope reassignment and entitlement changes remain admin-only.</div>
-              <div class="row">
-                <label>User UUID<input id="support_user_uuid" data-uuid-picker-kind="user" placeholder="Click to search user"></label>
-                <label>Reason code<input id="support_reason_code" placeholder="emergency_recovery"></label>
-              </div>
-              <div class="row">
-                <label>Operator note<input id="support_operator_note" placeholder="Optional note"></label>
-              </div>
-              <div class="actions">
-                <button type="button" id="supportReinstateUserButton">Emergency reinstate user</button>
-              </div>
-            </div>
-          </div>
-        </div>
-          </div>
-        </div>
-      </div>
+      <nav class="bottom-tabs" id="bottomTabs" aria-label="Primary">
+        <button type="button" class="tab-button active" data-tab="home">
+          <span class="tab-icon" aria-hidden="true">⌂</span>
+          <span>Home</span>
+        </button>
+        <button type="button" class="tab-button" data-tab="people" data-role-tabs="platform_admin,distributor,reseller,support">
+          <span class="tab-icon" aria-hidden="true">◎</span>
+          <span>People</span>
+        </button>
+        <button type="button" class="tab-button" data-tab="licences" data-role-tabs="platform_admin,distributor,reseller,owner">
+          <span class="tab-icon" aria-hidden="true">▣</span>
+          <span>Licences</span>
+        </button>
+        <button type="button" class="tab-button" data-tab="me">
+          <span class="tab-icon" aria-hidden="true">☺</span>
+          <span>Me</span>
+        </button>
+      </nav>
     </section>
+  </div>
 
-    <div class="modal-shell hidden" id="changePasswordModal" aria-hidden="true">
-      <div class="modal-backdrop" id="changePasswordBackdrop"></div>
-      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="changePasswordTitle">
-        <div class="merged-bar-title-row">
-          <h2 id="changePasswordTitle">Change Password</h2>
-          <button type="button" class="drawer-close" id="closeChangePasswordButton" aria-label="Close change password dialog">Close</button>
-        </div>
-        <p class="small auth-copy">Update your authority password by confirming your current password and choosing a new one.</p>
-        <form id="changePasswordForm">
-          <label>Current password<input id="change_password_current" type="password" autocomplete="current-password" placeholder="Enter current password"></label>
-          <label>New password<input id="change_password_new" type="password" autocomplete="new-password" placeholder="Minimum 8 characters"></label>
-          <label>Confirm new password<input id="change_password_confirm" type="password" autocomplete="new-password" placeholder="Repeat new password"></label>
-          <div class="actions">
-            <button type="submit" id="submitChangePasswordButton">Update password</button>
-            <button type="button" class="secondary" id="cancelChangePasswordButton">Cancel</button>
-          </div>
-        </form>
-      </section>
-    </div>
-
-    <div class="modal-shell hidden" id="entityPickerModal" aria-hidden="true">
-      <div class="modal-backdrop" id="entityPickerBackdrop"></div>
-      <section class="modal-card entity-picker-card" role="dialog" aria-modal="true" aria-labelledby="entityPickerTitle">
-        <div class="merged-bar-title-row">
-          <div>
-            <h2 id="entityPickerTitle">Search record</h2>
-            <div class="small" id="entityPickerHint">Search by human-friendly identifiers and use the matching record.</div>
-          </div>
-          <button type="button" class="drawer-close" id="closeEntityPickerButton" aria-label="Close entity picker dialog">Close</button>
-        </div>
-        <label>Search<input id="entityPickerSearchInput" type="text" autocomplete="off" placeholder="Search by email, name, tenant, or identifier"></label>
-        <div id="entityPickerResults" class="activity-list empty-list">Choose a UUID field to open search.</div>
+  <div id="inviteSheet" class="sheet-overlay hidden" aria-hidden="true">
+    <div class="sheet" role="dialog" aria-labelledby="inviteSheetTitle">
+      <div class="sheet-handle"></div>
+      <h2 id="inviteSheetTitle">Invite</h2>
+      <form id="inviteForm">
+        <label>Role
+          <select id="invite_role_name">
+            <option value="distributor">distributor</option>
+            <option value="reseller">reseller</option>
+            <option value="owner">owner</option>
+            <option value="support">support</option>
+          </select>
+        </label>
+        <label>Email<input id="invite_email" type="email" required autocomplete="email"></label>
+        <label id="inviteDistributorField">Distributor UUID<input id="invite_distributor_uuid" type="text" data-uuid-picker-kind="distributor" placeholder="Required for distributor / owner"></label>
+        <label id="inviteResellerField">Reseller UUID<input id="invite_reseller_uuid" type="text" data-uuid-picker-kind="reseller" data-picker-distributor-uuid="invite_distributor_uuid" placeholder="Optional"></label>
+        <label>Expires (days)<input id="invite_expires_in_days" type="number" min="1" max="30" value="7"></label>
         <div class="actions">
-          <button type="button" class="secondary" id="cancelEntityPickerButton">Cancel</button>
+          <button type="submit" id="inviteSubmitButton">Send invite</button>
+          <button type="button" class="secondary" id="closeInviteSheetButton">Cancel</button>
         </div>
-      </section>
+      </form>
+    </div>
+  </div>
+
+  <div id="licenceWizard" class="sheet-overlay hidden" aria-hidden="true">
+    <div class="sheet" role="dialog" aria-labelledby="licenceWizardTitle">
+      <div class="sheet-handle"></div>
+      <h2 id="licenceWizardTitle">Issue / assign</h2>
+      <div class="wizard-steps">
+        <div class="wizard-step">
+          <div class="wizard-step-number">1</div>
+          <div>
+            <h4>Person</h4>
+            <label>Owner email<input id="licence_wizard_owner_email" type="email" placeholder="owner@example.com"></label>
+          </div>
+        </div>
+        <div class="wizard-step">
+          <div class="wizard-step-number">2</div>
+          <div>
+            <h4>Licence</h4>
+            <label>Mode
+              <select id="licence_wizard_mode">
+                <option value="issue">Issue new</option>
+                <option value="assign">Assign existing</option>
+              </select>
+            </label>
+            <div id="licenceWizardIssueFields">
+              <label>Tenant / licence name<input id="licence_wizard_tenant_name" type="text"></label>
+              <label>Installation name<input id="licence_wizard_installation_name" type="text"></label>
+              <details class="advanced-card">
+                <summary><span>More</span></summary>
+                <div class="advanced-card-body">
+                  <label>Application key<input id="licence_wizard_application_key" type="text" placeholder="Auto if empty"></label>
+                  <label>Warning days<input id="licence_wizard_warning_days" type="number" min="0" value="0"></label>
+                  <label>Offline grace days<input id="licence_wizard_grace_days" type="number" min="0" value="7"></label>
+                  <label>Notes<input id="licence_wizard_notes" type="text"></label>
+                </div>
+              </details>
+            </div>
+            <div id="licenceWizardAssignFields" class="hidden">
+              <label>Entitlement UUID<input id="licence_wizard_entitlement_uuid" type="text" data-uuid-picker-kind="entitlement" placeholder="Search entitlement"></label>
+            </div>
+          </div>
+        </div>
+        <div class="wizard-step">
+          <div class="wizard-step-number">3</div>
+          <div>
+            <h4>Confirm</h4>
+            <p class="small" id="licenceWizardSummary">Choose person and mode, then confirm.</p>
+          </div>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" id="licenceWizardConfirmButton">Confirm</button>
+        <button type="button" class="secondary" id="closeLicenceWizardButton">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="changePasswordModal" class="modal-overlay hidden" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-labelledby="changePasswordTitle">
+      <h2 id="changePasswordTitle">Change password</h2>
+      <form id="changePasswordForm">
+        <label>Current<input id="change_password_current" type="password" autocomplete="current-password"></label>
+        <label>New<input id="change_password_new" type="password" autocomplete="new-password"></label>
+        <label>Confirm<input id="change_password_confirm" type="password" autocomplete="new-password"></label>
+        <div class="actions">
+          <button type="submit">Save</button>
+          <button type="button" class="secondary" id="closeChangePasswordButton">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="entityPickerModal" class="modal-overlay hidden" aria-hidden="true">
+    <div class="modal-card entity-picker-card" role="dialog" aria-labelledby="entityPickerTitle">
+      <h2 id="entityPickerTitle">Search record</h2>
+      <p class="small" id="entityPickerHint"></p>
+      <input id="entityPickerSearchInput" class="search-input" type="search" placeholder="Search" autocomplete="off">
+      <div class="list-stack compact" id="entityPickerResults"></div>
+      <div class="actions">
+        <button type="button" class="secondary" id="closeEntityPickerButton">Close</button>
+      </div>
     </div>
   </div>
 
