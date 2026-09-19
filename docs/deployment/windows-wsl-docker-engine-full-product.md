@@ -3,7 +3,7 @@
 **Status:** Implementation spec  
 **Date:** 2026-09-14  
 **Release pin:** matches repository root `VERSION` (currently `2.25.81`)  
-**Related:** [deployment/windows-installer/](../../deployment/windows-installer/), [first-windows-release-2.25.81.md](../guides/first-windows-release-2.25.81.md), [headscaleVPN guide](../guides/headscaleVPN/headscaleVPN%20guide.md)
+**Related:** [platform-release-cicd.md](./platform-release-cicd.md) (canonical CI/CD), [deployment/windows-installer/](../../deployment/windows-installer/), [first-windows-release-2.25.81.md](../guides/first-windows-release-2.25.81.md), [headscaleVPN guide](../guides/headscaleVPN/headscaleVPN%20guide.md)
 
 ---
 
@@ -148,7 +148,7 @@ Extend:
 
 - [scripts/build_windows_installer_images.sh](../../scripts/build_windows_installer_images.sh)
 - [scripts/push_protected_service_images.sh](../../scripts/push_protected_service_images.sh)
-- [.github/workflows/platform-release.yml](../../.github/workflows/platform-release.yml)
+- [.github/workflows/platform-release.yml](../../.github/workflows/platform-release.yml) (draft — local publish is current; see [platform-release-cicd.md](./platform-release-cicd.md))
 
 New matrix keys: `cameras`, `presence`, `models`. Default service list includes them.
 

@@ -403,7 +403,8 @@ function Download-InstallerFiles {
         @{Name = "install-eyenet-wsl.bat"; Url = "$script:GitHubRawBase/install-eyenet-wsl.bat"},
         @{Name = "schema/apply.sh"; Url = "$script:GitHubRawBase/schema/apply.sh"},
         @{Name = "schema/verify.sh"; Url = "$script:GitHubRawBase/schema/verify.sh"},
-        @{Name = "schema/pack.tar.gz"; Url = "$script:GitHubRawBase/schema/pack.tar.gz"}
+        @{Name = "schema/pack.tar.gz"; Url = "$script:GitHubRawBase/schema/pack.tar.gz"},
+        @{Name = "reregister-discovery-services.sh"; Url = "$script:GitHubRawBase/reregister-discovery-services.sh"}
     )
 
     foreach ($file in $files) {
@@ -690,6 +691,45 @@ function Invoke-ApplyCodebaseSchema {
     return $true
 }
 
+function Invoke-ReregisterDiscovery {
+    Write-Step "Re-registering services with discovery..." ""
+    $rereg = Join-Path $script:InstallDir "reregister-discovery-services.sh"
+    $bundled = Join-Path $PSScriptRoot "reregister-discovery-services.sh"
+    if (-not (Test-Path $rereg) -and (Test-Path $bundled)) {
+        Copy-Item $bundled $rereg -Force
+    }
+    if (-not (Test-Path $rereg)) {
+        Write-WarningMsg "reregister-discovery-services.sh missing — skip (mobile discovery may be incomplete)"
+        return $true
+    }
+
+    $drive = $script:InstallDir.Substring(0, 1).ToLower()
+    $rest = ($script:InstallDir.Substring(2) -replace '\\', '/')
+    $wslCwd = "/mnt/$drive$rest"
+
+    try {
+        if ($script:UseWslDocker) {
+            wsl -d $script:WslDistro --user root -- bash -lc "cd '$wslCwd' && bash reregister-discovery-services.sh" | Out-Host
+        } else {
+            $bash = Get-Command bash -ErrorAction SilentlyContinue
+            if (-not $bash) {
+                Write-WarningMsg "bash required for discovery reregister — skip"
+                return $true
+            }
+            Push-Location $script:InstallDir
+            try {
+                & bash reregister-discovery-services.sh | Out-Host
+            } finally {
+                Pop-Location
+            }
+        }
+        Write-Success "Discovery registry refreshed"
+    } catch {
+        Write-WarningMsg "Discovery reregister failed (non-fatal): $_"
+    }
+    return $true
+}
+
 function Invoke-PullImages {
     Write-Step "Pulling Docker images (this may take several minutes)..." ""
     Write-Host ""
@@ -761,7 +801,14 @@ function Invoke-StartStack {
         Write-Host "`r    Waiting... ($($i*2)s)" -NoNewline -ForegroundColor $script:Gray
     }
     Write-Host ""
+
+    # Same post-up as Ubuntu installer: refresh in-memory discovery registry.
+    Invoke-ReregisterDiscovery | Out-Null
+
     Write-Success "Platform started. Open http://localhost:3000"
+    Write-Host "    Gateway:   http://localhost:8080" -ForegroundColor $script:Gray
+    Write-Host "    Discovery: http://localhost:8006" -ForegroundColor $script:Gray
+    Write-Host "    Bootstrap: http://localhost:3000/bootstrap" -ForegroundColor $script:Gray
     if ($script:UseWslDocker) {
         Write-Host "    VPN: Node enrolls via WSL Tailscale → https://vpn.eyenet-vision.com" -ForegroundColor $script:Gray
         Write-Host "    Check: wsl -d $($script:WslDistro) -- tailscale status" -ForegroundColor $script:Gray

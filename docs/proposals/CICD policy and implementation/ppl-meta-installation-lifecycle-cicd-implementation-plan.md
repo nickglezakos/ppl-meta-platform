@@ -34,22 +34,33 @@ Authority CI/release/deploy workflows remain unchanged for the control-plane ser
 
 ## Phase 1 — Publish + First Install
 
-### Platform release workflow
+### Platform release (two stages — current)
 
-Add `.github/workflows/platform-release.yml` modeled on `.github/workflows/authority-release.yml`:
+**Day-to-day:** [`docs/deployment/platform-release-cicd.md`](../../deployment/platform-release-cicd.md)
 
-- Trigger: `workflow_dispatch` and optional `v*` tags
-- Read version from root `VERSION` (or dispatch input override)
-- Build/push `linux/amd64` images to `ghcr.io/nickglezakos/ppl-meta-platform/<service>:<VERSION>`
-- Services: node, media, gateway, orchestrator, discovery, communications, frontend, vision-protected, vmeta-protected
-- Reuse existing Dockerfiles and the mapping in `scripts/build_windows_installer_images.sh`
+- **Stage 1 (frequent):** commit + push to GitHub (pins / schema pack when needed). No image build.
+- **Stage 2 (when ready):** connect the Mac to a **Windows or Linux** amd64 host; there run:
+
+```bash
+./scripts/check_installer_pins.sh
+# flutter build web --release in ppl-meta-frontend
+RELEASE_TAG=<VERSION> ./scripts/build_windows_installer_images.sh
+RELEASE_TAG=<VERSION> ./scripts/push_protected_service_images.sh
+./scripts/verify_platform_release.sh <VERSION>
+```
+
+**Later:** `.github/workflows/platform-release.yml` may automate Stage 2 only. Until then it is draft-only.
 
 ### Installer alignment
 
 - `deployment/windows-installer/` `RELEASE_TAG` / version pins track root `VERSION`
+- `deployment/ubuntu/install-eyenet-ubuntu.sh` default `RELEASE_TAG` tracks the same `VERSION`
 - WSL defaults: `memory=12GB`, `processors=6`, `swap=2GB`
 - Host RAM gate: ≥16GB
 - Compose declares per-service `mem_limit` / `mem_reservation` per policy budget
+- Both installers: schema apply/verify + `reregister-discovery-services.sh` after `up -d`
+- Gate: `./scripts/check_installer_pins.sh`
+- Process doc: [`docs/deployment/platform-release-cicd.md`](../../deployment/platform-release-cicd.md)
 
 ### First-install handoff
 
@@ -127,11 +138,15 @@ Docker Hub is not the default publication target.
 
 ## Version Propagation
 
-1. Update root `VERSION`
-2. Platform release workflow tags images with that value
-3. Windows installer pins the same value
+**Day-to-day process truth:** [`docs/deployment/platform-release-cicd.md`](../../deployment/platform-release-cicd.md)  
+(`deployment/` = scripts; `docs/deployment/` = CI/CD docs.)
+
+1. Update root `VERSION` (**Stage 1**)
+2. Local build/push on Windows/Linux host tags images with that value (**Stage 2**)
+3. **Both** installer pins match that value (Windows + Ubuntu) — `./scripts/check_installer_pins.sh`
 4. Authority release eligibility records reference that value
 5. Wiki `software_ref.platform_version` references that value after promotion evidence is ready
+6. Lab upgrade on Windows/WSL **and** native Ubuntu 24 via `compose pull` of the same tag (after Stage 2)
 
 ---
 
@@ -139,7 +154,7 @@ Docker Hub is not the default publication target.
 
 1. Revamp policy + this plan + checklist (docs)
 2. Windows installer resource gates + compose limits + VERSION pin sync
-3. `platform-release.yml`
+3. Local platform publish scripts (`build` / `push` / `verify`) + pin check — Actions later
 4. Wiki source tree + docs CI validate workflows
 5. Authority `release_channel` storage/API/UI (follow-up engineering)
 6. Automated local updater polling (follow-up; operator-driven updates acceptable under same rules until then)
@@ -148,7 +163,7 @@ Docker Hub is not the default publication target.
 
 ## Success Criteria
 
-- Platform images publish via Actions to GHCR for `linux/amd64`
+- Platform images publish to GHCR for `linux/amd64` via **local** build/push scripts (Actions optional later)
 - Installer enforces 16GB host / 12GB WSL and bounded compose memory
 - Policy and checklist encode pilot soak and channel promotion
 - Docs CI validates two separate wikis with `software_ref`

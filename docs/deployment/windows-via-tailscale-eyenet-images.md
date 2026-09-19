@@ -1,9 +1,10 @@
 # EyeNet on Windows via Tailscale — Image Publish + Install Walkthrough
 
-**Date:** 2026-09-11  
+**Date:** 2026-09-11 (notes); publish process updated 2026-09-19  
 **Audience:** Developer on Mac reaching Windows lab PC over Tailscale  
 **Goal:** Get GHCR platform images available, then install EyeNet on the Windows machine  
-**Related:** `docs/guides/first-windows-release-2.25.80.md`, `deployment/windows-installer/`
+**Canonical CI/CD:** [platform-release-cicd.md](./platform-release-cicd.md) — **local build/push** (GitHub Actions not used for platform images yet)  
+**Related:** `docs/guides/first-windows-release-2.25.81.md`, `deployment/windows-installer/`
 
 ---
 
@@ -11,11 +12,12 @@
 
 | Role | Machine | Job |
 |------|---------|-----|
-| **Operator Mac** | your MacBook (Tailscale mesh) | RDP to Windows; later verify GHCR manifests |
-| **Windows lab PC** | `kvalvis-pc` → Tailscale IP **`100.64.0.23`** | **This session:** native `linux/amd64` image build + GHCR push, then install by pull |
-| **Image builder (product)** | GitHub Actions (`platform-release.yml`) | Preferred later; currently **billing-locked** (runs die in ~4s with no runner) |
+| **Operator Mac** | your MacBook (Tailscale mesh) | RDP to Windows; verify GHCR manifests; or build/push from any amd64-capable Docker host |
+| **Windows lab PC** | e.g. Tailscale IP for RDP | Install by **pull**; may also build/push if that host has Docker + disk |
+| **Image builder (current)** | Local Docker (`scripts/build_*.sh` + `scripts/push_*.sh`) | Seed GHCR with `linux/amd64` tags matching `VERSION` |
+| **Image builder (future)** | GitHub Actions (`platform-release.yml`) | Optional later — same images, not a second product |
 
-Customer Windows boxes still **pull** pinned images. Building on this lab PC is how we seed GHCR until Actions is unlocked.
+Customer Windows boxes still **pull** pinned images.
 
 ---
 
@@ -36,26 +38,29 @@ If Mac UI Network settings still shows “not connected” while CLI works: that
 
 ## 1. Get images into GHCR
 
-**Current lab path (2026-09-11):** GitHub Actions is billing-locked, so **build on `kvalvis-pc`** (Path B below). Path A stays the product path once billing is unlocked.
+**Current path:** local Docker build/push (see [platform-release-cicd.md §A](./platform-release-cicd.md)). Do not wait on GitHub Actions.
 
-### Path A — GitHub Actions (from Mac) — blocked today
+### Path A — Local build/push (from Mac or any Docker host) — use this
 
 Registry: `ghcr.io/nickglezakos/ppl-meta-platform`  
-Tag: match root `VERSION` (**`2.25.80`**) and installer `RELEASE_TAG` / `VERSION` pins.
+Tag: match root `VERSION` and installer `RELEASE_TAG` / `VERSION` pins.
 
 ```bash
 cd /path/to/ppl-meta-code
-gh auth status
-# if needed: gh auth login -h github.com
-
-# Confirm platform-release.yml is on the branch you dispatch against (usually main)
-gh workflow run platform-release.yml -f platform_version=$(tr -d '[:space:]' < VERSION)
-gh run watch
-
-./scripts/verify_platform_release.sh "$(tr -d '[:space:]' < VERSION)"
+./scripts/check_installer_pins.sh
+echo "$GHCR_TOKEN" | docker login ghcr.io -u nickglezakos --password-stdin
+cd ppl-meta-frontend && flutter pub get && flutter build web --release && cd ..
+RELEASE_TAG="$(tr -d '[:space:]' < VERSION)"
+./scripts/build_windows_installer_images.sh
+./scripts/push_protected_service_images.sh
+./scripts/verify_platform_release.sh "$RELEASE_TAG"
 ```
 
-Nine → twelve images that must exist:
+### Path B — GitHub Actions — not used yet
+
+`.github/workflows/platform-release.yml` is draft-only until Actions is enabled.
+
+Twelve images that must exist after a local publish:
 
 - `ppl-meta-node`
 - `ppl-meta-media`
@@ -70,13 +75,11 @@ Nine → twelve images that must exist:
 - `ppl-meta-presence`
 - `ppl-meta-models`
 
-### Path B — Lab: build on Windows (native amd64) — **do this now**
+### Path C — Alternate: build on Windows lab (native amd64)
 
-Use only if Actions/auth is broken and you need images today.
+Same local scripts as Path A; useful if the Mac cannot build `linux/amd64` comfortably. On Windows (WSL2 Ubuntu recommended; scripts are bash):
 
-On Windows (WSL2 Ubuntu recommended; scripts are bash):
-
-1. Install Docker Desktop (WSL2 backend), Git, and (for frontend image) Flutter for `flutter build web --release`.
+1. Install Docker (WSL Engine preferred), Git, and Flutter for `flutter build web --release`.
 2. Clone `ppl-meta-code` to a fast disk with **≥12 GB free**.
 3. Login to GHCR (PAT with `write:packages`):
 
@@ -88,7 +91,7 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u nickglezakos --password-stdin
 
 ```bash
 cd /path/to/ppl-meta-code
-TAG=$(tr -d '[:space:]' < VERSION)   # 2.25.80
+TAG=$(tr -d '[:space:]' < VERSION)
 
 cd ppl-meta-frontend && flutter pub get && flutter build web --release && cd ..
 
@@ -156,7 +159,7 @@ curl -s http://100.64.0.23:3000/   # may be blocked by Windows firewall — RDP 
 | Symptom | Check |
 |---------|--------|
 | Can’t see Windows on mesh | Mac Tailscale app + `tailscaled`; `tailscale up`; ping `.23` |
-| Actions run fails in ~4s, empty steps | GitHub account billing lock — unlock at https://github.com/settings/billing then re-dispatch `platform-release.yml` |
+| Actions run fails / no runner | Expected today — do **not** use Actions; publish with local `build`/`push` scripts ([platform-release-cicd.md](./platform-release-cicd.md)) |
 | `manifest unknown` | Publish Path A or B; re-run `verify_platform_release.sh` |
 | Installer pulls wrong tag | Sync bat/`VERSION`/`.env.windows` (pin is **2.25.80**) |
 | Bootstrap fails | Authority approved email + valid `lic_…` key |

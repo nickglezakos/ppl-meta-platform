@@ -13,9 +13,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ ./src/
-COPY logs/ ./logs/
 
 RUN useradd -m -u 1000 communications \
+    && mkdir -p /app/logs \
     && chown -R communications:communications /app
 
 USER communications

@@ -721,6 +721,25 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
       debugPrint('🔌 [ConnectionButton] Toggle check: deviceId=${widget.camera.deviceId}, type=${widget.camera.type}, isConnected=$isConnected');
       
       if (isConnected) {
+        // Stop instant detection first so disconnect is not a no-op while ID runs.
+        try {
+          final detectionNotifier = ref.read(
+            cameraInstantDetectionProvider(widget.camera.deviceId).notifier,
+          );
+          final detectionState =
+              ref.read(cameraInstantDetectionProvider(widget.camera.deviceId));
+          if (detectionState.isDetecting) {
+            debugPrint(
+              '🛑 [ConnectionButton] Stopping instant detection before disconnect',
+            );
+            await detectionNotifier.stopDetection();
+          }
+        } catch (e) {
+          debugPrint(
+            '⚠️ [ConnectionButton] Instant detection stop before disconnect: $e',
+          );
+        }
+
         // Disconnect
         debugPrint('🔌 [ConnectionButton] Starting disconnect for ${widget.camera.deviceId}');
         await cameraService.disconnectCamera(widget.camera.deviceId);

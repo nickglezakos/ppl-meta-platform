@@ -4,6 +4,7 @@
 **Status**: Active (revamp)  
 **Scope**: Onboarding, first Windows Docker deploy, bootstrap, staged updates, rollback, audit, and decoupled online wiki documentation  
 **Related Documents**:
+- **Day-to-day CI/CD truth:** [docs/deployment/platform-release-cicd.md](../../deployment/platform-release-cicd.md) (`deployment/` = scripts; `docs/deployment/` = CI/CD docs)
 - [ppl-meta-installation-lifecycle-cicd-implementation-plan.md](./ppl-meta-installation-lifecycle-cicd-implementation-plan.md)
 - [ppl-meta-installation-lifecycle-manual-windows-deployment-checklist.md](./ppl-meta-installation-lifecycle-manual-windows-deployment-checklist.md)
 - [updating-installations.md](../installation%20and%20onboarding/updating-installations.md)
@@ -17,7 +18,7 @@
 
 This policy is the governing layer for how EyeNet / PPL Meta installations are published, first-deployed, activated, updated, and documented.
 
-It treats Authority as the online control plane and the local Windows Docker stack as the first delivery execution path. Docker images, Windows installer assets, and online wikis must comply with these rules.
+It treats Authority as the online control plane and the local Windows Docker stack as the first delivery execution path. Native Ubuntu 24 uses the **same** GHCR images and shared compose/schema; see [platform-release-cicd.md](../../deployment/platform-release-cicd.md). Docker images, installer assets, and online wikis must comply with these rules.
 
 GitHub Container Registry (`ghcr.io/nickglezakos/ppl-meta-platform`) is the default and only primary registry for platform images. Docker Hub is not a primary publication target.
 
@@ -27,7 +28,7 @@ GitHub Container Registry (`ghcr.io/nickglezakos/ppl-meta-platform`) is the defa
 
 1. **First delivery path:** Windows amd64 + Docker Desktop prerequisite (not ARM).
 2. **Registry:** GHCR only for platform images.
-3. **Pipeline model:** Extend the existing Authority Actions pattern for platform image publish; keep Authority CI/deploy as-is.
+3. **Pipeline model:** Local Docker build/push scripts to GHCR for platform images (GitHub Actions later); keep Authority CI/deploy as-is when that path is active.
 4. **First-owner handoff:** Installer brings the stack up; Node/frontend bootstrap activates the owner.
 5. **Host standard:** ≥16GB physical RAM; Docker Desktop / WSL2 memory **12GB**.
 6. **Update promotion:** `dev → sandbox → pilot → stable`.

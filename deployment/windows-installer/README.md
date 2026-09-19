@@ -1,17 +1,29 @@
 # Windows Installer Bundle
 
-This directory contains the first MVP installer bundle for Windows deployments.
+This directory contains the first MVP installer bundle for Windows deployments
+and the **shared** compose + schema pack + discovery reregister used by the
+native Ubuntu installer as well.
+
+**CI/CD truth (one GHCR product, two installers):**  
+[`docs/deployment/platform-release-cicd.md`](../../docs/deployment/platform-release-cicd.md)
 
 Current release pin (tracks repository root `VERSION`):
 
 - `2.25.81`
 - registry: `ghcr.io/nickglezakos/ppl-meta-platform`
-- architecture: **`linux/amd64`** (Intel/AMD Windows PCs via Docker Desktop)
+- architecture: **`linux/amd64`** (Intel/AMD Windows PCs via WSL Docker Engine)
 - host standard: **≥16 GB physical RAM**
 - WSL / Docker Desktop memory: **12 GB** (`processors=6`, `swap=2GB`)
 - compose: per-service `mem_limit` / `mem_reservation` per CI/CD policy
 
 Release verification:
+
+```bash
+./scripts/check_installer_pins.sh
+./scripts/verify_platform_release.sh 2.25.81
+```
+
+Or inspect manifests:
 
 ```bash
 docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.25.81
@@ -46,6 +58,7 @@ Verify that each manifest shows `"architecture": "amd64"` and `"os": "linux"`.
 - `docker-compose.windows-installer.yml`: pinned-image compose with memory budgets (`pgvector/pgvector:pg15`)
 - `.env.windows.template`: environment template (`RELEASE_TAG` must match `VERSION`)
 - `schema/`: **vendored DB migrations** (synced from the monorepo) — installer always applies + verifies
+- `reregister-discovery-services.sh`: post-up discovery refresh (also used by Ubuntu installer)
 
 ## Database schema (installer always matches repo)
 
@@ -55,16 +68,21 @@ Before releasing or testing installs, refresh the pack from the monorepo:
 bash deployment/mac-lima/sync-schema-pack.sh
 ```
 
-`install-platform.ps1` runs `schema/apply.sh` after Postgres is healthy and **fails the install** if `schema/verify.sh` invariants do not pass. Do not use `deployment/mac-lima/sql/archive-stubs`.
+`install-platform.ps1` runs `schema/apply.sh` after Postgres is healthy and **fails the install** if `schema/verify.sh` invariants do not pass, then runs `reregister-discovery-services.sh`. Do not use `deployment/mac-lima/sql/archive-stubs`.
 
-## Build And Push
+## Build And Push (Stage 2 — Windows/Linux host)
+
+Stage 1 is git push only. Stage 2 refreshes GHCR (run on an amd64 Windows or Linux builder, not the Mac by default):
 
 ```bash
+./scripts/check_installer_pins.sh
+# flutter build web --release in ppl-meta-frontend first
 ./scripts/build_windows_installer_images.sh
 ./scripts/push_protected_service_images.sh
+./scripts/verify_platform_release.sh
 ```
 
-Or use `.github/workflows/platform-release.yml` (`workflow_dispatch`).
+See [`docs/deployment/platform-release-cicd.md`](../../docs/deployment/platform-release-cicd.md). GitHub Actions is future Stage 2 automation only.
 
 ## First-Time Owner Activation
 
@@ -75,6 +93,10 @@ After the platform starts:
 3. Activate with the Authority-approved owner email and `lic_…` application key
 
 For the current release pin, generated `.env.windows` should keep `RELEASE_TAG=2.25.81` unless you intentionally deploy another published tag.
+
+### Production note (INSTALLATION_UUID / APPLICATION_KEY)
+
+Lab installs may prompt for `INSTALLATION_UUID` and `APPLICATION_KEY` in `install-platform.ps1` for convenience. **Production must not.** Those values should be issued by Authority (entitlement / claim / first-owner `/bootstrap`), pre-seeded into `.env.windows`, or collected only through the product bootstrap UI—not typed as free-form installer fields by the customer.
 
 ## Preferred runtime (full-product demo)
 

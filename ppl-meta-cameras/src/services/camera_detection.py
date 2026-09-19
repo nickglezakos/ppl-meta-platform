@@ -539,19 +539,24 @@ class CameraDetectionService:
             logger.warning(f"Camera {device_id} not connected")
             return False
 
-        # Check if instant detection is active for this camera (unless force=True)
+        # If instant detection is active for THIS camera, stop it (unless caller
+        # already did). Previously a global is_sampling check blocked all
+        # disconnects while any camera had ID running.
         if not force:
             try:
                 from src.api.v1.endpoints.instant_detection import get_instant_detection_manager
                 manager = get_instant_detection_manager()
-                if manager and manager.is_sampling:
-                    logger.warning(
-                        f"⚠️ Cannot disconnect camera {device_id}: instant detection is active. "
-                        f"Stop instant detection first or use force=True"
-                    )
-                    return False
+                if manager is not None:
+                    with manager._lock:
+                        state = manager._samplers.get(device_id)
+                        active_here = bool(state and state.running)
+                    if active_here:
+                        logger.info(
+                            f"🛑 Stopping instant detection for {device_id} during disconnect"
+                        )
+                        manager.stop_sampling(device_id)
             except Exception as e:
-                logger.debug(f"Could not check instant detection status: {e}")
+                logger.debug(f"Could not stop instant detection on disconnect: {e}")
 
         try:
             cap = self.active_connections[device_id]

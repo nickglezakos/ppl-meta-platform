@@ -32,8 +32,25 @@ jobs:
           echo "version=$VERSION_VALUE" >> "$GITHUB_OUTPUT"
           echo "Publishing platform version: $VERSION_VALUE"
 
-  build-frontend-web:
+  check-installer-pins:
     needs: resolve-version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify Windows + Ubuntu installer pins match VERSION
+        run: |
+          EXPECTED='${{ needs.resolve-version.outputs.version }}'
+          ACTUAL="$(tr -d '[:space:]' < VERSION)"
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "Workflow version ($EXPECTED) differs from VERSION file ($ACTUAL)."
+            echo "Pin check still validates files against VERSION; ensure intentional override."
+          fi
+          bash scripts/check_installer_pins.sh
+
+  build-frontend-web:
+    needs: [resolve-version, check-installer-pins]
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -59,7 +76,7 @@ jobs:
           retention-days: 1
 
   publish-service:
-    needs: [resolve-version, build-frontend-web]
+    needs: [resolve-version, check-installer-pins, build-frontend-web]
     runs-on: ubuntu-latest
     permissions:
       contents: read

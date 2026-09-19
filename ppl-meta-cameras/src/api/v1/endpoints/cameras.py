@@ -733,11 +733,82 @@ async def disconnect_camera(
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
 ) -> Dict:
-    """Disconnect from a specific camera."""
+    """Disconnect from a specific camera.
+
+    Always stops instant detection for this camera first. Leaving ID running
+    made the disconnect button appear broken (stream/ID kept going, UI stayed
+    "live") even when the queue worker reported success.
+    """
 
     try:
+        # Stop instant detection for this camera before tearing down the worker.
+        try:
+            from src.api.v1.endpoints.instant_detection import get_instant_detection_manager
+
+            id_manager = get_instant_detection_manager()
+            if id_manager is not None:
+                with id_manager._lock:
+                    sampler_state = id_manager._samplers.get(device_id)
+                    id_active = bool(sampler_state and sampler_state.running)
+                if id_active:
+                    logger.info(
+                        "🛑 [DISCONNECT] Stopping instant detection for %s before disconnect",
+                        device_id,
+                    )
+                    id_manager.stop_sampling(device_id)
+        except Exception as id_err:
+            logger.warning(
+                "⚠️ [DISCONNECT] Could not stop instant detection for %s: %s",
+                device_id,
+                id_err,
+            )
+
         # Clean up any active streaming sessions for this device
         cleaned_sessions = session_manager.cleanup_sessions_for_device(device_id)
+
+        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+
+        # Mobile: mirror connect() — mark DB status and stop mobile worker/stream.
+        # Queue workers alone do not fully stop phone upload / ID sampling.
+        if camera and camera.camera_type == CameraType.MOBILE:
+            try:
+                from src.services.mobile_streaming import mobile_streaming_service
+
+                await mobile_streaming_service.stop_mobile_camera_stream(device_id)
+                await mobile_streaming_service.stop_mobile_worker(device_id)
+            except Exception as mobile_err:
+                logger.warning(
+                    "⚠️ [DISCONNECT] Mobile stream/worker cleanup for %s: %s",
+                    device_id,
+                    mobile_err,
+                )
+
+            camera.status = CameraStatus.DISCONNECTED
+            camera.last_seen = datetime.utcnow()
+            db.commit()
+            db.refresh(camera)
+
+            # Best-effort queue disconnect if a worker exists
+            queue_service = get_camera_service()
+            try:
+                await queue_service.disconnect_camera(device_id)
+            except Exception:
+                pass
+
+            logger.info(
+                "User %s disconnected mobile camera %s, cleaned %d sessions",
+                current_user.get("sub"),
+                device_id,
+                cleaned_sessions,
+            )
+            return {
+                "device_id": device_id,
+                "status": "disconnected",
+                "message": f"Successfully disconnected from camera {device_id}",
+                "sessions_cleaned": cleaned_sessions,
+                "camera_type": "mobile",
+                "success": True,
+            }
 
         # Disconnect from camera using queue service (if currently connected)
         queue_service = get_camera_service()
@@ -745,18 +816,17 @@ async def disconnect_camera(
 
         # Update camera status in database regardless of current connection state
         # This fixes state inconsistencies where DB shows "connected" but no active connection exists
-        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
         if camera:
-            if camera.status == CameraStatus.CONNECTED:
-                camera.status = CameraStatus.AVAILABLE
+            if camera.status in (CameraStatus.CONNECTED, CameraStatus.IN_USE):
+                camera.status = CameraStatus.DISCONNECTED
                 db.commit()
                 logger.info(
-                    "Updated camera %s status from connected to available (was in inconsistent state: %s)",
+                    "Updated camera %s status to disconnected (connection_was_active=%s)",
                     device_id,
-                    "active connection" if success else "no active connection",
+                    success,
                 )
             elif not success:
-                # Camera was already available, but user tried to disconnect
+                # Camera was already available/disconnected, but user tried to disconnect
                 logger.warning(
                     "User %s attempted to disconnect camera %s which was already available",
                     current_user.get("sub"),
@@ -782,6 +852,7 @@ async def disconnect_camera(
             "status": "disconnected",
             "message": f"Successfully disconnected from camera {device_id}",
             "sessions_cleaned": cleaned_sessions,
+            "success": True,
         }
 
     except HTTPException:
