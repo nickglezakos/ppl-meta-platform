@@ -4,7 +4,7 @@
 **Audience:** Developer on Mac reaching Windows lab PC over Tailscale  
 **Goal:** Get GHCR platform images available, then install EyeNet on the Windows machine  
 **Canonical CI/CD:** [platform-release-cicd.md](./platform-release-cicd.md) — **local build/push** (GitHub Actions not used for platform images yet)  
-**Related:** `docs/guides/first-windows-release-2.25.81.md`, `deployment/windows-installer/`
+**Related:** `docs/guides/first-windows-release-2.25.82.md`, `deployment/windows-installer/`
 
 ---
 

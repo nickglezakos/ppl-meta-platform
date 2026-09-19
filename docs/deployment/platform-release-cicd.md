@@ -2,7 +2,7 @@
 
 **Status:** Active  
 **Last updated:** 2026-09-19  
-**Current pin:** root [`VERSION`](../../VERSION) (today `2.25.81`)  
+**Current pin:** root [`VERSION`](../../VERSION) (today `2.25.82`)  
 **Registry:** `ghcr.io/nickglezakos/ppl-meta-platform`  
 **Architecture:** `linux/amd64` only for customer/lab installs  
 **How we publish today:** **two stages** — (1) git push often, (2) build/push images when ready (no GitHub Actions for platform images yet)
@@ -19,7 +19,7 @@ Tell the agent (or yourself) which stage you want. Do **not** assume both happen
 
 | Stage | What it updates | Say this |
 |---|---|---|
-| **1 — Code** | GitHub repo only (source, installers, docs, pins) | *“Stage 1: push code to GitHub per platform-release-cicd.md”* or *“Commit and push to GitHub (no images)”* |
+| **1 — Code** | GitHub repo only (source, installers, docs, pins, **CHANGELOG**) | *“Stage 1: push code to GitHub per platform-release-cicd.md”* or *“Commit and push to GitHub (no images)”* |
 | **2 — Images** | GHCR container tags for the current `VERSION` | *“Stage 2: build and push images for VERSION X.Y.Z per platform-release-cicd.md”* or *“Publish GHCR images from latest main”* |
 
 Optional extras (always name them explicitly):
@@ -28,6 +28,8 @@ Optional extras (always name them explicitly):
 - *“Also upgrade the Windows lab”* / *“Also upgrade the Ubuntu lab”* (after Stage 2)
 
 **Important:** Stage 1 does **not** change what labs pull. Installers keep serving whatever is already on GHCR until Stage 2 runs. Stage 2 does **not** replace Stage 1 — images are built from the git revision you checked out on the build host (usually latest `main` after Stage 1).
+
+**Release notes:** Root [`CHANGELOG.md`](../../CHANGELOG.md) is part of this process. Any Stage 1 that lands user-visible or installer-relevant work **must** update `CHANGELOG.md` in the same commit set. Agents and operators do **not** need a separate “update the changelog” instruction — it is implied by Stage 1 (and by a version bump). Do not use `docs/notes.txt` for release notes.
 
 ---
 
@@ -50,6 +52,7 @@ Do **not**:
 - Publish Ubuntu-only or Windows-only service image tags
 - Treat a lab `docker cp` / compose override as a release
 - Bump only one installer’s `RELEASE_TAG`
+- Skip [`CHANGELOG.md`](../../CHANGELOG.md) on a meaningful Stage 1 (it is required by this process)
 - Wait on GitHub Actions — platform image CI is **manual Stage 2** until Actions is enabled
 - Run Stage 2 on the Apple Silicon Mac alone as the default (see Stage 2 build host)
 
@@ -61,6 +64,7 @@ Do **not**:
 |---|---|
 | `deployment/` | Scripts, compose, schema pack, installers (executable truth) |
 | `docs/deployment/` | CI/CD and operator documentation (this file = process truth) |
+| [`CHANGELOG.md`](../../CHANGELOG.md) | Product release notes (required in Stage 1) |
 | `scripts/build_windows_installer_images.sh` | Stage 2: build all twelve `linux/amd64` images |
 | `scripts/push_protected_service_images.sh` | Stage 2: push those images to GHCR |
 | `scripts/verify_platform_release.sh` | Stage 2: post-publish GHCR gate |
@@ -73,21 +77,34 @@ Do **not**:
 
 **Goal:** Land fixes, docs, and installer changes on GitHub so both labs (and future builds) can pull the repo. Do this often.
 
-**Does:** `git` commit + push (and pin bumps / schema pack sync when part of the change).  
+**Does:** `git` commit + push (pin bumps / schema pack sync when needed) **and** update [`CHANGELOG.md`](../../CHANGELOG.md).  
 **Does not:** rebuild or push Docker images to GHCR.
+
+### CHANGELOG is mandatory (do not wait to be asked)
+
+Every Stage 1 that includes product, installer, schema, or operator-facing doc changes must update root `CHANGELOG.md` in the same push:
+
+1. Prefer editing under `## [Unreleased]` while iterating on `main` without a pin bump.  
+2. When cutting or reinforcing a pin, move/add bullets under `## [X.Y.Z] — YYYY-MM-DD` matching root `VERSION`.  
+3. Use sections: **Added** / **Changed** / **Fixed** / **Notes** (omit empty ones).  
+4. No secrets. Keep bullets short and glanceable.  
+5. If Stage 1 is docs-only with no user/installer impact, a one-line **Notes** bullet is enough (or skip only when the commit is pure typo/chore with zero release meaning — default is to update).
+
+Saying *“Stage 1 … per platform-release-cicd.md”* already means: update `CHANGELOG.md`, then commit and push.
 
 Typical steps:
 
 1. Land service / installer / doc fixes (no lasting lab hotfixes).  
 2. If cutting a new product pin: set root `VERSION` and **all** installer pins to the same value.  
 3. If schema changed: `bash deployment/mac-lima/sync-schema-pack.sh` and include `schema/pack.tar.gz` in the commit.  
-4. `./scripts/check_installer_pins.sh`  
-5. Commit and **push to GitHub**.
+4. Update [`CHANGELOG.md`](../../CHANGELOG.md) for this Stage 1 (Unreleased and/or `[VERSION]`).  
+5. `./scripts/check_installer_pins.sh`  
+6. Commit and **push to GitHub** (include `CHANGELOG.md` in the commit).
 
 Agent wording examples:
 
-- *“Stage 1: commit these fixes and push to GitHub (no image build).”*  
-- *“Bump VERSION to 2.25.82, update installer pins, commit and push — Stage 1 only.”*
+- *“Stage 1: push code to GitHub per platform-release-cicd.md”* ← includes changelog  
+- *“Bump VERSION to 2.25.82 and Stage 1 push”* ← includes moving Unreleased into `[2.25.82]` and pushing  
 
 After Stage 1, Ubuntu/Windows can `git pull` installer scripts, but containers stay on the previous GHCR tag until Stage 2.
 
@@ -99,6 +116,12 @@ After Stage 1, Ubuntu/Windows can `git pull` installer scripts, but containers s
 
 **Does:** Flutter web build (frontend image) + Docker build/push of all twelve services + verify.  
 **Does not:** replace Stage 1; does not upgrade lab hosts unless you also ask for that.
+
+After a successful Stage 2, if you are already doing a follow-up Stage 1 (or an immediate small Stage 1), add under the matching `CHANGELOG.md` version:
+
+- **Notes:** `GHCR images published for X.Y.Z` (date optional).
+
+Do not block Stage 2 on a changelog edit; Stage 1 owns the narrative. A post-publish Notes line is optional hygiene.
 
 ### Build host (required note)
 
@@ -135,10 +158,10 @@ Services published (all required):
 
 Agent wording examples:
 
-- *“Stage 2: build and push GHCR images for 2.25.81 from latest main (use the Windows/Linux build host).”*  
+- *“Stage 2: build and push GHCR images for 2.25.82 from latest main (use the Windows/Linux build host).”*  
 - *“Publish images only — code already on GitHub.”*
 
-Version-specific notes: [first-windows-release-2.25.81.md](../guides/first-windows-release-2.25.81.md).
+Version-specific notes: [first-windows-release-2.25.82.md](../guides/first-windows-release-2.25.81.md).
 
 ### Future: GitHub Actions
 
@@ -242,14 +265,14 @@ If only the **installer script** changed (Stage 1 only), `git pull` and re-run t
 
 When you want a new pin end-to-end (e.g. `2.25.82`):
 
-1. **Stage 1:** bump `VERSION` + all pins, schema pack if needed, pin check, commit, push.  
+1. **Stage 1:** bump `VERSION` + all pins, schema pack if needed, **update `CHANGELOG.md` under `[2.25.82]`**, pin check, commit, push.  
 2. **Stage 2:** on the **Windows or Linux** build host, build/push/verify that tag.  
 3. Upgrade Windows/WSL lab and/or Ubuntu 24 lab (say so explicitly).  
 4. Only then treat the tag as the current product; update wiki `software_ref` after promotion evidence.
 
 Wording:
 
-- *“Full release to 2.25.82 per platform-release-cicd.md (Stage 1 + Stage 2; then upgrade both labs).”*
+- *“Full release to 2.25.82 per platform-release-cicd.md (Stage 1 + Stage 2; then upgrade both labs).”* ← Stage 1 already includes changelog
 
 ---
 
@@ -272,7 +295,7 @@ A **product** release is complete only when Stage 2 has updated GHCR **and** lab
 
 | Stage | Where | Frequency |
 |---|---|---|
-| 1 — git push | Mac (or any clone) → GitHub | Often |
+| 1 — git push + **CHANGELOG** | Mac (or any clone) → GitHub | Often |
 | 2 — build/push images | Connected **Windows or Linux** amd64 host → GHCR | When you want labs/customers on new containers |
 | Lab upgrade | Each lab host | After Stage 2, when asked |
 
@@ -285,6 +308,7 @@ A **product** release is complete only when Stage 2 has updated GHCR **and** lab
 
 ## Related
 
+- Release notes: [`CHANGELOG.md`](../../CHANGELOG.md)  
 - Index: [README.md](./README.md)  
 - Ubuntu lab bug list: [`deployment/ubuntu/UBUNTU-LAB-FOLLOWUPS.md`](../../deployment/ubuntu/UBUNTU-LAB-FOLLOWUPS.md)  
 - Windows installer scripts README: [`deployment/windows-installer/README.md`](../../deployment/windows-installer/README.md)  

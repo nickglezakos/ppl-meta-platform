@@ -39,7 +39,7 @@ for pair in "${SERVICES[@]}"; do
     echo "skip ${name} (port ${port} not ready)"
     continue
   fi
-  body=$(printf '{"name":"%s","service_type":"backend","version":"2.25.81","host":"%s","port":%s,"health_endpoint":"/health","capabilities":[],"metadata":{}}' \
+  body=$(printf '{"name":"%s","service_type":"backend","version":"2.25.82","host":"%s","port":%s,"health_endpoint":"/health","capabilities":[],"metadata":{}}' \
     "$name" "$name" "$port")
   if curl -sf -X POST "${DISCOVERY_URL}/api/v1/services/register" \
     -H "Content-Type: application/json" \

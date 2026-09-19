@@ -5,6 +5,8 @@ This tree holds **installers, compose, schema pack, and helpers**.
 **CI/CD documentation (single source of truth):**  
 [`docs/deployment/platform-release-cicd.md`](../docs/deployment/platform-release-cicd.md)
 
+**Release notes:** [`CHANGELOG.md`](../CHANGELOG.md) (updated automatically as part of Stage 1)
+
 Index of deployment docs: [`docs/deployment/README.md`](../docs/deployment/README.md)
 
 | Path | Role |

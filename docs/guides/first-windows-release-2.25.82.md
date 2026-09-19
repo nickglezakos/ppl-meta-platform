@@ -1,12 +1,10 @@
-> **Superseded pin.** Current repository `VERSION` is **2.25.82**. Use [first-windows-release-2.25.82.md](./first-windows-release-2.25.82.md).
-
-# First Windows Release — 2.25.81
+# First Windows Release — 2.25.82
 
 **Canonical CI/CD (one GHCR product, two installers):**  
 [`docs/deployment/platform-release-cicd.md`](../deployment/platform-release-cicd.md)  
 **Release notes:** [`CHANGELOG.md`](../../CHANGELOG.md) (updated as part of every Stage 1)
 
-This page is a **version-specific walkthrough** for `2.25.81`. Prefer the truth doc for ongoing process; keep this file for the exact commands used for this pin.
+This page is a **version-specific walkthrough** for `2.25.82`. Prefer the truth doc for ongoing process; keep this file for the exact commands used for this pin.
 
 **Publish method today (two stages):**  
 1. Push code to GitHub often.  
@@ -15,7 +13,7 @@ See [`docs/deployment/platform-release-cicd.md`](../deployment/platform-release-
 
 **Goal:** Publish platform images to GHCR and install them on Windows/WSL **and** native Ubuntu 24.
 
-**Release tag:** `2.25.81` (root `VERSION`)  
+**Release tag:** `2.25.82` (root `VERSION`)  
 **Registry:** `ghcr.io/nickglezakos/ppl-meta-platform`  
 **Host requirement:** ≥16 GB RAM, WSL memory 12 GB (Windows path)  
 **Preferred Windows runtime:** Docker Engine CE in WSL distro `eyenet` (no Docker Desktop) — see [windows-wsl-docker-engine-full-product.md](../deployment/windows-wsl-docker-engine-full-product.md). Docker Desktop remains a legacy bootstrap-only path.
@@ -47,14 +45,14 @@ cd ppl-meta-frontend && flutter pub get && flutter build web --release && cd ..
 4. Build and push all twelve `linux/amd64` images:
 
 ```bash
-RELEASE_TAG=2.25.81 ./scripts/build_windows_installer_images.sh
-RELEASE_TAG=2.25.81 ./scripts/push_protected_service_images.sh
+RELEASE_TAG=2.25.82 ./scripts/build_windows_installer_images.sh
+RELEASE_TAG=2.25.82 ./scripts/push_protected_service_images.sh
 ```
 
 5. Verify manifests:
 
 ```bash
-./scripts/verify_platform_release.sh 2.25.81
+./scripts/verify_platform_release.sh 2.25.82
 ```
 
 Or manually:
@@ -62,9 +60,9 @@ Or manually:
 ```bash
 for s in node media gateway orchestrator discovery communications frontend \
          vision-protected vmeta-protected cameras presence models; do
-  docker manifest inspect "ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-$s:2.25.81" >/dev/null \
-    && echo "OK ppl-meta-$s:2.25.81" \
-    || echo "MISSING ppl-meta-$s:2.25.81"
+  docker manifest inspect "ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-$s:2.25.82" >/dev/null \
+    && echo "OK ppl-meta-$s:2.25.82" \
+    || echo "MISSING ppl-meta-$s:2.25.82"
 done
 ```
 
@@ -93,7 +91,7 @@ done
 4. Confirm host RAM check passes (≥16 GB).
 5. Allow installer to set `.wslconfig` to `memory=12GB`, `processors=6`, `swap=2GB`.
 6. When prompted for registry login, authenticate to `ghcr.io` **inside WSL** (`wsl -d eyenet -- docker login ghcr.io`).
-7. Confirm generated `.env.windows` has `RELEASE_TAG=2.25.81` and `DISCOVERY_PORT=8006`.
+7. Confirm generated `.env.windows` has `RELEASE_TAG=2.25.82` and `DISCOVERY_PORT=8006`.
 8. Let images pull and stack start (includes cameras, presence, models). Schema apply/verify + discovery reregister run automatically.
 9. Open http://localhost:3000
 10. If bootstrap pending → `/bootstrap` with approved owner email + application key.
@@ -118,7 +116,7 @@ Uses the **same** compose file and images as Windows. Script: `deployment/ubuntu
 # on Ubuntu 24 host
 git clone --depth 1 https://github.com/nickglezakos/ppl-meta-platform.git ~/ppl-meta-platform
 cd ~/ppl-meta-platform
-ADVERTISE_HOST=<lan-ip> RELEASE_TAG=2.25.81 bash deployment/ubuntu/install-eyenet-ubuntu.sh
+ADVERTISE_HOST=<lan-ip> RELEASE_TAG=2.25.82 bash deployment/ubuntu/install-eyenet-ubuntu.sh
 # verify LAN IP: ip -4 addr show scope global
 ```
 
@@ -144,8 +142,8 @@ Full process: [platform-release-cicd.md §C](../deployment/platform-release-cicd
 ## E. Blockers checklist
 
 - [ ] `./scripts/check_installer_pins.sh` passes
-- [ ] Local build + push of all twelve images for `2.25.81`
-- [ ] All twelve manifests exist (`./scripts/verify_platform_release.sh 2.25.81`)
+- [ ] Local build + push of all twelve images for `2.25.82`
+- [ ] All twelve manifests exist (`./scripts/verify_platform_release.sh 2.25.82`)
 - [ ] Windows host meets 16 GB / 12 GB WSL; `install-eyenet-wsl.bat` completed
 - [ ] Ubuntu 24 lab can pull the same tag via `install-eyenet-ubuntu.sh`
 - [ ] Authority test entitlement exists for bootstrap
@@ -160,7 +158,7 @@ Full process: [platform-release-cicd.md §C](../deployment/platform-release-cicd
 ./scripts/check_installer_pins.sh
 echo "$GHCR_TOKEN" | docker login ghcr.io -u nickglezakos --password-stdin
 cd ppl-meta-frontend && flutter pub get && flutter build web --release && cd ..
-RELEASE_TAG=2.25.81 ./scripts/build_windows_installer_images.sh
-RELEASE_TAG=2.25.81 ./scripts/push_protected_service_images.sh
-./scripts/verify_platform_release.sh 2.25.81
+RELEASE_TAG=2.25.82 ./scripts/build_windows_installer_images.sh
+RELEASE_TAG=2.25.82 ./scripts/push_protected_service_images.sh
+./scripts/verify_platform_release.sh 2.25.82
 ```

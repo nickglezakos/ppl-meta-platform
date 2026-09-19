@@ -2,7 +2,7 @@
 
 > **CI/CD truth (two stages):**  
 > [`docs/deployment/platform-release-cicd.md`](../../docs/deployment/platform-release-cicd.md)  
-> **Stage 1** — push code to GitHub (frequent). **Stage 2** — build/push GHCR images from a Windows or Linux host (when ready).  
+> **Stage 1** — push code to GitHub **and update [`CHANGELOG.md`](../../CHANGELOG.md)** (frequent). **Stage 2** — build/push GHCR images from a Windows or Linux host (when ready).  
 > Lab `docker cp` / compose overrides are **not** a release. GitHub Actions is not used for platform images yet.
 
 Issues found while bringing up EyeNet `2.25.81` on native Ubuntu 24.04

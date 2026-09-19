@@ -7,7 +7,8 @@
 
 | Document | Role |
 |---|---|
-| **[platform-release-cicd.md](./platform-release-cicd.md)** | **Canonical CI/CD:** Stage 1 = git push (frequent); Stage 2 = build/push GHCR images on a Windows/Linux host; one product, two installers |
+| **[platform-release-cicd.md](./platform-release-cicd.md)** | **Canonical CI/CD:** Stage 1 = git push + CHANGELOG (frequent); Stage 2 = build/push GHCR images on a Windows/Linux host; one product, two installers |
+| **[`CHANGELOG.md`](../../CHANGELOG.md)** | Product release notes (required on every meaningful Stage 1) |
 | [windows-wsl-docker-engine-full-product.md](./windows-wsl-docker-engine-full-product.md) | Windows preferred runtime (Docker Engine CE in WSL `eyenet`) |
 | [windows-via-tailscale-eyenet-images.md](./windows-via-tailscale-eyenet-images.md) | GHCR pull + Tailscale/mesh notes for Windows |
 | [STAGING_DEPLOYMENT.md](./STAGING_DEPLOYMENT.md) | Staging notes (legacy / environment-specific) |

@@ -1,7 +1,7 @@
 ﻿# EyeNet WSL Runtime Bootstrap
 # Creates/configures the `eyenet` WSL2 distro with Docker Engine CE + Tailscale
 # (open-source client). Does NOT require Docker Desktop.
-# Version: 2.25.81
+# Version: 2.25.82
 
 param(
     [string]$DistroName = "eyenet",

@@ -5,11 +5,12 @@ and the **shared** compose + schema pack + discovery reregister used by the
 native Ubuntu installer as well.
 
 **CI/CD truth (one GHCR product, two installers):**  
-[`docs/deployment/platform-release-cicd.md`](../../docs/deployment/platform-release-cicd.md)
+[`docs/deployment/platform-release-cicd.md`](../../docs/deployment/platform-release-cicd.md)  
+**Release notes:** [`CHANGELOG.md`](../../CHANGELOG.md)
 
 Current release pin (tracks repository root `VERSION`):
 
-- `2.25.81`
+- `2.25.82`
 - registry: `ghcr.io/nickglezakos/ppl-meta-platform`
 - architecture: **`linux/amd64`** (Intel/AMD Windows PCs via WSL Docker Engine)
 - host standard: **≥16 GB physical RAM**
@@ -20,21 +21,21 @@ Release verification:
 
 ```bash
 ./scripts/check_installer_pins.sh
-./scripts/verify_platform_release.sh 2.25.81
+./scripts/verify_platform_release.sh 2.25.82
 ```
 
 Or inspect manifests:
 
 ```bash
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.25.81
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-media:2.25.81
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-gateway:2.25.81
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-orchestrator:2.25.81
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-discovery:2.25.81
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-communications:2.25.81
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-frontend:2.25.81
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vision-protected:2.25.81
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vmeta-protected:2.25.81
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.25.82
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-media:2.25.82
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-gateway:2.25.82
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-orchestrator:2.25.82
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-discovery:2.25.82
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-communications:2.25.82
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-frontend:2.25.82
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vision-protected:2.25.82
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vmeta-protected:2.25.82
 ```
 
 Verify that each manifest shows `"architecture": "amd64"` and `"os": "linux"`.
@@ -92,7 +93,7 @@ After the platform starts:
 2. When bootstrap is pending, the app routes to `/bootstrap`
 3. Activate with the Authority-approved owner email and `lic_…` application key
 
-For the current release pin, generated `.env.windows` should keep `RELEASE_TAG=2.25.81` unless you intentionally deploy another published tag.
+For the current release pin, generated `.env.windows` should keep `RELEASE_TAG=2.25.82` unless you intentionally deploy another published tag.
 
 ### Production note (INSTALLATION_UUID / APPLICATION_KEY)
 
@@ -120,7 +121,7 @@ Or GitHub → Packages → each `ppl-meta-*` → Package settings → Change vis
 Customers then only need network access:
 
 ```bash
-docker pull ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.25.81
+docker pull ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.25.82
 ```
 
 ## Related Policy

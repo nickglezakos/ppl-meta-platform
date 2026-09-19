@@ -38,7 +38,7 @@ Authority CI/release/deploy workflows remain unchanged for the control-plane ser
 
 **Day-to-day:** [`docs/deployment/platform-release-cicd.md`](../../deployment/platform-release-cicd.md)
 
-- **Stage 1 (frequent):** commit + push to GitHub (pins / schema pack when needed). No image build.
+- **Stage 1 (frequent):** commit + push to GitHub, including required [`CHANGELOG.md`](../../../CHANGELOG.md) update (pins / schema pack when needed). No image build.
 - **Stage 2 (when ready):** connect the Mac to a **Windows or Linux** amd64 host; there run:
 
 ```bash

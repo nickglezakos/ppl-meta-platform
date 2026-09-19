@@ -1,6 +1,6 @@
 # EyeNet Platform Manager
 # Autonomous Windows installer & management console
-# Version: 2.25.81
+# Version: 2.25.82
 # Repository: https://github.com/nickglezakos/ppl-meta-platform
 
 param(
@@ -18,7 +18,7 @@ $script:TargetWslMemoryGb = 12
 $script:TargetWslProcessors = 6
 $script:GitHubRawBase = "https://raw.githubusercontent.com/nickglezakos/ppl-meta-platform/main/deployment/windows-installer"
 $script:InstallDir = $null
-$script:ReleaseTag = "2.25.81"
+$script:ReleaseTag = "2.25.82"
 $script:ComposeProjectName = "pplmeta"
 $script:WslDistro = "eyenet"
 $script:UseWslDocker = $false
