@@ -13,9 +13,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-# Configure logging FIRST
-workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-log_dir = os.path.join(workspace_root, "logs")
+# Configure logging FIRST (container WORKDIR is /app; src lives in /app/src)
+log_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, "ppl-meta-communications.log")
 
