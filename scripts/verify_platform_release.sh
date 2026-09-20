@@ -1,31 +1,21 @@
 #!/bin/bash
 # Verify that all Windows installer platform images exist on GHCR for a release tag.
+# Tag presence only — for digest coherence see verify_release_manifest.sh (Mode D).
 
 set -euo pipefail
 
-RELEASE_TAG="${1:-$(tr -d '[:space:]' < "$(dirname "$0")/../VERSION")}"
-REGISTRY="${REGISTRY:-ghcr.io/nickglezakos/ppl-meta-platform}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=platform_release_images.sh
+source "$SCRIPT_DIR/platform_release_images.sh"
 
-IMAGES=(
-  ppl-meta-node
-  ppl-meta-media
-  ppl-meta-gateway
-  ppl-meta-orchestrator
-  ppl-meta-discovery
-  ppl-meta-communications
-  ppl-meta-frontend
-  ppl-meta-vision-protected
-  ppl-meta-vmeta-protected
-  ppl-meta-cameras
-  ppl-meta-presence
-  ppl-meta-models
-)
+RELEASE_TAG="${1:-$(tr -d '[:space:]' < "$SCRIPT_DIR/../VERSION")}"
+REGISTRY="${REGISTRY:-$PLATFORM_REGISTRY_DEFAULT}"
 
 echo "Verifying platform release ${RELEASE_TAG} at ${REGISTRY}"
 echo
 
 missing=0
-for image in "${IMAGES[@]}"; do
+for image in "${PLATFORM_IMAGE_NAMES[@]}"; do
   ref="${REGISTRY}/${image}:${RELEASE_TAG}"
   if docker manifest inspect "$ref" >/dev/null 2>&1; then
     echo "OK      ${ref}"
@@ -41,4 +31,5 @@ if (( missing > 0 )); then
   exit 1
 fi
 
-echo "PASSED: all ${#IMAGES[@]} images present for ${RELEASE_TAG}"
+echo "PASSED: all ${#PLATFORM_IMAGE_NAMES[@]} images present for ${RELEASE_TAG}"
+echo "Tip: ./scripts/stage2_finalize_manifest.sh  # write+verify digest release-manifest.yml"

@@ -1,60 +1,95 @@
 # Platform release CI/CD (single source of truth)
 
 **Status:** Active  
-**Last updated:** 2026-09-19  
+**Last updated:** 2026-09-20  
 **Current pin:** root [`VERSION`](../../VERSION) (today `2.25.82`)  
 **Registry:** `ghcr.io/nickglezakos/ppl-meta-platform`  
 **Architecture:** `linux/amd64` only for customer/lab installs  
-**How we publish today:** **two stages** — (1) git push often, (2) build/push images when ready (no GitHub Actions for platform images yet)
+
+**How we ship (memorize this):**
+
+1. **Push code** to GitHub  
+2. **Build images** on a remote lab PC → GHCR  
+3. **Install** on labs (images **+** tray)
 
 This is the **canonical** EyeNet platform release contract.  
+For a plain-language walkthrough + glossary, see [`eyenet-cicd-operator-guide.md`](./eyenet-cicd-operator-guide.md).  
 Runnable installers and compose live under [`deployment/`](../../deployment/).  
-Background policy proposals live under `docs/proposals/CICD policy and implementation/` and must follow this document.
+Background proposals under `docs/proposals/CICD policy and implementation/` must follow this document.
 
 ---
 
-## Two-stage release (use this wording)
+## Three steps — use this wording
 
-Tell the agent (or yourself) which stage you want. Do **not** assume both happen together.
+Tell the agent (or yourself) which step you want. Do **not** assume they happen together.
 
-| Stage | What it updates | Say this |
+| Step | What it updates | Say this |
 |---|---|---|
-| **1 — Code** | GitHub repo only (source, installers, docs, pins, **CHANGELOG**) | *“Stage 1: push code to GitHub per platform-release-cicd.md”* or *“Commit and push to GitHub (no images)”* |
-| **2 — Images** | GHCR container tags for the current `VERSION` | *“Stage 2: build and push images for VERSION X.Y.Z per platform-release-cicd.md”* or *“Publish GHCR images from latest main”* |
+| **1 — Code** | GitHub repo (source, installers, docs, pins, **CHANGELOG**) | *“Stage 1: push code to GitHub per platform-release-cicd.md”* |
+| **2 — Images** | GHCR container tags for the current `VERSION` (build on a named lab PC) | *“Stage 2: build and push images for VERSION on lab-work-dual-64g”* |
+| **3 — Install** | Running stack on a named lab (compose pull + tray install via installer) | *“Upgrade lab-home-win-nickg”* / *“Upgrade Ubuntu on lab-work-dual-64g”* |
 
 Optional extras (always name them explicitly):
 
-- *“Also bump VERSION to X.Y.Z”* (can be Stage 1 only, or Stage 1 then Stage 2)
-- *“Also upgrade the Windows lab”* / *“Also upgrade the Ubuntu lab”* (after Stage 2)
+- *“Also bump VERSION to X.Y.Z”* (Stage 1; then Stage 2 when you want new containers)
+- *“Also publish tray for X.Y.Z”* (manual build + GitHub Release — see [Tray publish](#tray-publish-part-of-stage-1))
 
-**Important:** Stage 1 does **not** change what labs pull. Installers keep serving whatever is already on GHCR until Stage 2 runs. Stage 2 does **not** replace Stage 1 — images are built from the git revision you checked out on the build host (usually latest `main` after Stage 1).
+**Critical separations:**
 
-**Release notes:** Root [`CHANGELOG.md`](../../CHANGELOG.md) is part of this process. Any Stage 1 that lands user-visible or installer-relevant work **must** update `CHANGELOG.md` in the same commit set. Agents and operators do **not** need a separate “update the changelog” instruction — it is implied by Stage 1 (and by a version bump). Do not use `docs/notes.txt` for release notes.
+- Stage 1 does **not** change what labs pull from GHCR.  
+- Stage 2 does **not** upgrade lab hosts unless you also ask for Stage 3.  
+- Stage 3 installs **both** container images and the host tray (when Release assets exist, or when you copy a locally built tray onto the lab).  
+- Images are built from the git revision checked out on the build host (usually latest `main` after Stage 1).
 
+**Release notes:** Root [`CHANGELOG.md`](../../CHANGELOG.md) is required on meaningful Stage 1. Saying *“Stage 1 … per platform-release-cicd.md”* already means: update the changelog, then commit and push. Do not use `docs/notes.txt` for release notes.
+
+```text
+  Mac (you)                 GitHub / Releases              Lab PC (amd64)               GHCR
+     │                            │                              │                        │
+     │  1. Code: commit+push      │                              │                        │
+     │  (+ CHANGELOG, pins) ─────►│                              │                        │
+     │                            │                              │                        │
+     │  Tray (manual today) ──────┼── build on Win + Ubuntu ─────►│  upload Release assets │
+     │                            │                              │                        │
+     │  2. Images: SSH/RDP ───────┼─────────────────────────────►│  build + push ─────────►│
+     │                            │                              │                        │
+     │  Mode D finalize ──────────┼── release-manifest.yml ─────►│  (commit in Stage 1)    │
+     │                            │                              │                        │
+     │  3. Install / upgrade ─────┼─────────────────────────────►│  installer (images+tray)│
+```
+
+**GitHub Actions:** not used for platform images or tray **today**. Workflow YAML under `.github/workflows/` for those paths is **draft / future** only — see [Future automation](#future-automation-not-used-today). Do not wait on Actions to ship.
 ---
 
 ## Core rule
 
-**One product on GHCR. Two installers in the same release process.**
+**One product on GHCR. Two installers. One tray pin on GitHub Releases.**
 
 | Layer | Count | Location |
 |---|---|---|
-| Service images | **One** set of tags per `VERSION` | GHCR via Stage 2 scripts |
+| Service images | **One** set of tags per `VERSION` | GHCR via Stage 2 |
 | Compose + schema pack | **One** shared bundle | `deployment/windows-installer/` |
-| Windows/WSL installer | Host bootstrap for Windows | `deployment/windows-installer/install-*.bat|ps1` |
-| Ubuntu 24 installer | Host bootstrap for native Linux | `deployment/ubuntu/install-eyenet-ubuntu.sh` |
+| Windows/WSL installer | Host bootstrap | `deployment/windows-installer/install-*.bat\|ps1` |
+| Ubuntu 24 installer | Host bootstrap | `deployment/ubuntu/install-eyenet-ubuntu.sh` |
+| Host tray binaries | **One** pin, two OS assets | GitHub Releases `v${VERSION}` (**manual** build/upload today) |
 
-WSL Ubuntu and native Ubuntu 24 both pull the **same** `linux/amd64` images.  
-They are not two products. Host/installer bugs are fixed in the matching script; product bugs are fixed in git (Stage 1) → rebuild/push images (Stage 2) → both installers `compose pull`.
+WSL Ubuntu and native Ubuntu 24 pull the **same** `linux/amd64` images. They are not two products.
+
+| Kind of change | Fix in | Then |
+|---|---|---|
+| Product / service bug | Monorepo service | Stage 1 → Stage 2 → Stage 3 |
+| Installer / host path | Matching installer script | Stage 1 → Stage 3 (no Stage 2) |
+| Tray UI / start-stop | `deployment/tray/` | Stage 1 → [manual tray publish](#tray-publish-part-of-stage-1) → Stage 3 |
 
 Do **not**:
 
-- Publish Ubuntu-only or Windows-only service image tags
-- Treat a lab `docker cp` / compose override as a release
-- Bump only one installer’s `RELEASE_TAG`
-- Skip [`CHANGELOG.md`](../../CHANGELOG.md) on a meaningful Stage 1 (it is required by this process)
-- Wait on GitHub Actions — platform image CI is **manual Stage 2** until Actions is enabled
-- Run Stage 2 on the Apple Silicon Mac alone as the default (see Stage 2 build host)
+- Publish Ubuntu-only or Windows-only service image tags  
+- Treat a lab `docker cp` / compose override as a release  
+- Bump only one installer’s `RELEASE_TAG`  
+- Skip [`CHANGELOG.md`](../../CHANGELOG.md) on a meaningful Stage 1  
+- Wait on GitHub Actions for images or tray — both are **manual** until this doc says otherwise  
+- Use the Apple Silicon Mac as the default Stage 2 builder  
+- Put tray binaries into GHCR or the twelve-image verify gate  
 
 ---
 
@@ -64,49 +99,107 @@ Do **not**:
 |---|---|
 | `deployment/` | Scripts, compose, schema pack, installers (executable truth) |
 | `docs/deployment/` | CI/CD and operator documentation (this file = process truth) |
+| [`lab-machines.md`](./lab-machines.md) | Named lab inventory + Stage 2 / Stage 3 access |
+| [`eyenet-cicd-operator-guide.md`](./eyenet-cicd-operator-guide.md) | Operator guide; follows this contract |
 | [`CHANGELOG.md`](../../CHANGELOG.md) | Product release notes (required in Stage 1) |
-| `scripts/build_windows_installer_images.sh` | Stage 2: build all twelve `linux/amd64` images |
-| `scripts/push_protected_service_images.sh` | Stage 2: push those images to GHCR |
-| `scripts/verify_platform_release.sh` | Stage 2: post-publish GHCR gate |
-| `scripts/check_installer_pins.sh` | Pin gate for both installers (Stage 1 and before Stage 2) |
-| `.github/workflows/platform-release.yml` | **Future** automation of Stage 2 only — not used yet |
+| `deployment/tray/` | Host tray source (Go systray) |
+| [`tray-stage-1.5-publish.md`](./tray-stage-1.5-publish.md) | Checklist: manual tray build + GitHub Release upload |
+| `.github/workflows/tray-release.yml` | **Future** tray automation — draft; **not used today** |
+| `scripts/build_windows_installer_images.sh` | Stage 2: build `linux/amd64` images |
+| `scripts/push_protected_service_images.sh` | Stage 2: push to GHCR |
+| `scripts/stage2_one.sh` | Stage 2: one-service build+push + `REPORT OK` |
+| `scripts/stage2_changed_services.sh` | Stage 2: map git range → services (`ALL` / `NONE` / list) |
+| `scripts/stage2_retag_forward.sh` | Stage 2 Mode D: retag unchanged images to a new pin |
+| `scripts/write_release_manifest.sh` | Stage 2: write digest manifest from GHCR |
+| `scripts/verify_release_manifest.sh` | Stage 2: verify manifest digests match GHCR |
+| `scripts/stage2_finalize_manifest.sh` | Stage 2: tag verify → write manifest → digest verify |
+| `scripts/platform_release_images.sh` | Shared twelve-image names / digest helper |
+| `deployment/windows-installer/release-manifest.yml` | Digest coherence for current `VERSION` |
+| `scripts/verify_platform_release.sh` | Stage 2: post-publish GHCR tag gate |
+| `scripts/check_installer_pins.sh` | Pin gate (Stage 1 and before Stage 2) |
+| `.github/workflows/platform-release.yml` | **Future** Stage 2 automation — draft; **not used today** |
 
 ---
 
 ## Stage 1 — Push code to GitHub (frequent)
 
-**Goal:** Land fixes, docs, and installer changes on GitHub so both labs (and future builds) can pull the repo. Do this often.
+**Goal:** Land fixes, docs, and installer changes on GitHub. Do this often.
 
-**Does:** `git` commit + push (pin bumps / schema pack sync when needed) **and** update [`CHANGELOG.md`](../../CHANGELOG.md).  
-**Does not:** rebuild or push Docker images to GHCR.
+**Does:** `git` commit + push (+ pin bumps / schema pack when needed) **and** update [`CHANGELOG.md`](../../CHANGELOG.md).  
+**Does not:** rebuild or push Docker images to GHCR; does not upgrade labs; does not auto-publish tray (tray is manual — see below).
 
 ### CHANGELOG is mandatory (do not wait to be asked)
 
-Every Stage 1 that includes product, installer, schema, or operator-facing doc changes must update root `CHANGELOG.md` in the same push:
+Every Stage 1 with product, installer, schema, tray, or operator-facing doc changes must update root `CHANGELOG.md` in the same push:
 
-1. Prefer editing under `## [Unreleased]` while iterating on `main` without a pin bump.  
-2. When cutting or reinforcing a pin, move/add bullets under `## [X.Y.Z] — YYYY-MM-DD` matching root `VERSION`.  
-3. Use sections: **Added** / **Changed** / **Fixed** / **Notes** (omit empty ones).  
-4. No secrets. Keep bullets short and glanceable.  
-5. If Stage 1 is docs-only with no user/installer impact, a one-line **Notes** bullet is enough (or skip only when the commit is pure typo/chore with zero release meaning — default is to update).
+1. Prefer `## [Unreleased]` while iterating on `main` without a pin bump.  
+2. When cutting or reinforcing a pin, use `## [X.Y.Z] — YYYY-MM-DD` matching root `VERSION`.  
+3. Sections: **Added** / **Changed** / **Fixed** / **Notes** (omit empty ones).  
+4. No secrets. Keep bullets short.  
+5. Docs-only with no user/installer impact: one-line **Notes** is enough (skip only pure typo/chore).
 
-Saying *“Stage 1 … per platform-release-cicd.md”* already means: update `CHANGELOG.md`, then commit and push.
+### Typical steps
 
-Typical steps:
-
-1. Land service / installer / doc fixes (no lasting lab hotfixes).  
+1. Land service / installer / tray / doc fixes (no lasting lab hotfixes).  
 2. If cutting a new product pin: set root `VERSION` and **all** installer pins to the same value.  
-3. If schema changed: `bash deployment/mac-lima/sync-schema-pack.sh` and include `schema/pack.tar.gz` in the commit.  
-4. Update [`CHANGELOG.md`](../../CHANGELOG.md) for this Stage 1 (Unreleased and/or `[VERSION]`).  
+3. If schema changed: `bash deployment/mac-lima/sync-schema-pack.sh` and include `schema/pack.tar.gz`.  
+4. Update [`CHANGELOG.md`](../../CHANGELOG.md).  
 5. `./scripts/check_installer_pins.sh`  
-6. Commit and **push to GitHub** (include `CHANGELOG.md` in the commit).
+6. Commit and **push to GitHub**.  
+7. **If tray binaries should refresh for this pin:** [publish tray manually](#tray-publish-part-of-stage-1) (lab builds + GitHub Release).
 
-Agent wording examples:
+Agent wording:
 
 - *“Stage 1: push code to GitHub per platform-release-cicd.md”* ← includes changelog  
-- *“Bump VERSION to 2.25.82 and Stage 1 push”* ← includes moving Unreleased into `[2.25.82]` and pushing  
+- *“Bump VERSION to 2.25.82 and Stage 1 push”*  
+- *“Publish tray for 2.25.82”* ← manual build/upload, not Actions
 
-After Stage 1, Ubuntu/Windows can `git pull` installer scripts, but containers stay on the previous GHCR tag until Stage 2.
+After Stage 1 alone: labs can `git pull` installer scripts; containers stay on the previous GHCR tag until Stage 2; tray binaries update only after you upload Release assets (or copy a binary onto the lab).
+
+### Tray publish (part of Stage 1)
+
+Tray is a **host binary**, not a container. **Today you build and upload it by hand** on Windows and Ubuntu labs (or any amd64 host with Go). That is optional Stage 1 follow-through so Stage 3 installers can download the remote.
+
+GitHub Actions for tray (`tray-release.yml`) is **not available / not used** yet — treat that workflow as a future draft only.
+
+| Asset | Build on |
+|---|---|
+| `eyenet-tray-windows-amd64-${VERSION}.exe` | Windows lab (`windows-latest` not required) |
+| `eyenet-tray-linux-amd64-${VERSION}.tar.gz` | Ubuntu lab (needs GTK/AppIndicator headers for systray) |
+| `SHA256SUMS` | either host after both assets exist |
+
+```bash
+# After Stage 1 push lands tray source on main — on each OS lab:
+git fetch origin && git checkout main && git pull --ff-only
+VERSION="$(tr -d '[:space:]' < VERSION)"
+cd deployment/tray
+
+# Windows (PowerShell / Git Bash):
+go build -ldflags "-X main.version=${VERSION}" -o "eyenet-tray-windows-amd64-${VERSION}.exe" ./cmd/eyenet-tray
+
+# Ubuntu:
+sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev   # once
+go build -ldflags "-X main.version=${VERSION}" -o eyenet-tray ./cmd/eyenet-tray
+tar -czf "eyenet-tray-linux-amd64-${VERSION}.tar.gz" eyenet-tray
+
+# From Mac or any host with gh + both artifacts:
+gh release create "v${VERSION}" \
+  --title "EyeNet platform ${VERSION}" \
+  --notes "Host tray binaries for EyeNet ${VERSION}. Service images remain on GHCR via Stage 2." \
+  eyenet-tray-windows-amd64-${VERSION}.exe \
+  eyenet-tray-linux-amd64-${VERSION}.tar.gz \
+  SHA256SUMS
+# If the release already exists: gh release upload "v${VERSION}" … --clobber
+```
+
+You may create git tag `v${VERSION}` when cutting the Release; that is for labeling assets, **not** to trigger Actions.
+
+Checklist: [`tray-stage-1.5-publish.md`](./tray-stage-1.5-publish.md).  
+Source: [`deployment/tray/`](../../deployment/tray/).
+
+Installers **soft-fail** if the asset is missing (compose install still succeeds). For lab soak before a Release exists, copy the binary onto the host and write `tray.json` locally (see tray README / SMOKE).
+
+Tray-only path changes make `scripts/stage2_changed_services.sh` print **`NONE`** (skip Stage 2).
 
 ---
 
@@ -114,106 +207,242 @@ After Stage 1, Ubuntu/Windows can `git pull` installer scripts, but containers s
 
 **Goal:** Refresh GHCR so both installers `compose pull` the latest product for the pinned `VERSION`.
 
-**Does:** Flutter web build (frontend image) + Docker build/push of all twelve services + verify.  
-**Does not:** replace Stage 1; does not upgrade lab hosts unless you also ask for that.
+**Does:** Flutter web build (when needed) + Docker build/push of changed or all services + verify (+ Mode D manifest).  
+**Does not:** replace Stage 1; does not upgrade lab hosts (that is Stage 3).
 
-After a successful Stage 2, if you are already doing a follow-up Stage 1 (or an immediate small Stage 1), add under the matching `CHANGELOG.md` version:
+After a successful Stage 2, on the next Stage 1 (manifest commit), add under the matching CHANGELOG version:
 
-- **Notes:** `GHCR images published for X.Y.Z` (date optional).
+- **Notes:** `GHCR images published for X.Y.Z` (optional hygiene; do not block Stage 2 on it).
 
-Do not block Stage 2 on a changelog edit; Stage 1 owns the narrative. A post-publish Notes line is optional hygiene.
+### Build host
 
-### Build host (required note)
+**Connect this Mac to a named lab machine and run the build there.**  
+Inventory: **[lab-machines.md](./lab-machines.md)**.
 
-**Step 4 of the Stage 2 loop is connecting this Mac to a Windows or Linux amd64 machine and running the build there.**
+| Preference | Lab ID | When |
+|---|---|---|
+| **Preferred** | `lab-work-dual-64g` | Work dual-boot 64 GB (Windows/WSL or Ubuntu) |
+| Optional | `lab-home-win-nickg` | Home Windows if disk and RAM allow |
+| Not for Stage 2 | `lab-work-u24-mini-8g` | 8 GB soak only |
 
 - Customer/lab images are **`linux/amd64`**.  
-- The development Mac (especially Apple Silicon) is **not** the default Stage 2 builder.  
-- Connect over LAN or Tailscale (RDP / SSH) to a **Windows** PC (WSL2 / Docker Engine) or a **native Linux** box with Docker, ≥12 GB free disk, and GHCR write access.  
-- On that host: `git pull` (or clone) the revision from Stage 1, then run the build/push scripts below.  
-- The Mac remains the operator console (edit, Stage 1 push, verify manifests, RDP/SSH into the builder).
+- The development Mac (especially Apple Silicon) is **not** the default builder.  
+- Connect over **LAN** or **Tailscale**, then SSH / Windows App (RDP).  
+- On the host: `git pull` the Stage 1 revision, then run the scripts below.  
+- Mac = operator console (edit, Stage 1, manifests, remote into builder).
 
-### Commands (on the Windows or Linux build host)
+Agent wording must name the lab: *“Stage 2 on lab-work-dual-64g (Ubuntu boot).”*
+
+### SSH timeouts (required practice)
+
+Long builds drop idle SSH (especially Tailscale DERP). Do **not** rely on one interactive SSH for hours.
+
+1. **`tmux` / `screen` on the builder**, or  
+2. **One image per short SSH** (`stage2_one.sh` → `REPORT OK`) — a timeout only loses the current service.
 
 ```bash
-# from repo root — after git pull of the Stage 1 commit
-./scripts/check_installer_pins.sh
+mkdir -p /tmp/eyenet-stage2
+# inside tmux:
+RELEASE_TAG=2.25.82 ./scripts/stage2_one.sh cameras 2>&1 | tee /tmp/eyenet-stage2/cameras.log
+```
 
+### Tags: product pin vs trace
+
+| Tag | Example | Who uses it |
+|---|---|---|
+| **Product pin** | `2.25.82` | Installers (`RELEASE_TAG` / `VERSION`) |
+| **Trace sub-tag** | `2.25.82-92ea2d5` | Optional audit (`EXTRA_SHA_TAG=1`) |
+
+- Installers **must** keep pulling `:VERSION`.  
+- Selective Stage 2 may leave some services on an older digest under the same `:VERSION` until rebuilt — intentional.  
+- **Release manifest** records digests for the pin (coherence / audit; installers still pull by tag today).
+
+### Mode A — Full Stage 2 (all twelve)
+
+Use after a version cut, shared/schema changes, or when `stage2_changed_services.sh` prints `ALL`.
+
+```bash
+# on build host — prefer inside tmux
+cd /path/to/ppl-meta-platform
+git fetch origin && git checkout main && git pull --ff-only
+
+./scripts/check_installer_pins.sh
 echo "$GHCR_TOKEN" | docker login ghcr.io -u nickglezakos --password-stdin
-# or: gh auth token | docker login ghcr.io -u nickglezakos --password-stdin
 
 cd ppl-meta-frontend && flutter pub get && flutter build web --release && cd ..
 
 RELEASE_TAG="$(tr -d '[:space:]' < VERSION)"
 export RELEASE_TAG
 
-./scripts/build_windows_installer_images.sh
-./scripts/push_protected_service_images.sh
-./scripts/verify_platform_release.sh "$RELEASE_TAG"
+for s in node media gateway orchestrator discovery communications frontend vision vmeta cameras presence models; do
+  EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh "$s" || { echo "REPORT FAIL service=$s"; break; }
+done
+
+./scripts/stage2_finalize_manifest.sh
+# Then Stage 1: commit deployment/windows-installer/release-manifest.yml (+ CHANGELOG Notes)
 ```
 
-Services published (all required):
-
-`node`, `media`, `gateway`, `orchestrator`, `discovery`, `communications`, `frontend`, `vision-protected`, `vmeta-protected`, `cameras`, `presence`, `models`
-
-Agent wording examples:
-
-- *“Stage 2: build and push GHCR images for 2.25.82 from latest main (use the Windows/Linux build host).”*  
-- *“Publish images only — code already on GitHub.”*
-
-Version-specific notes: [first-windows-release-2.25.82.md](../guides/first-windows-release-2.25.81.md).
-
-### Future: GitHub Actions
-
-`.github/workflows/platform-release.yml` is a draft of Stage 2. **Do not depend on it** until Actions is available and this doc is updated. Until then Stage 2 is manual on a Windows/Linux builder.
-
----
-
-## Shared post-install steps (both installers)
-
-After `compose up -d`, **both** paths must:
-
-1. Wait for Postgres healthy  
-2. Run `schema/apply.sh` then `schema/verify.sh` (fail install if verify fails)  
-3. Run `reregister-discovery-services.sh` (canonical copy: `deployment/windows-installer/`)  
-4. Print UI / gateway / discovery / bootstrap URLs  
-5. Remind operators that `ADVERTISE_HOST` must be the LAN IP phones will use  
-
-Host-only work stays installer-specific:
-
-- **Windows:** WSL distro `eyenet`, host RAM ≥16 GB, `.wslconfig` 12 GB / 6 CPUs / 2 GB swap, `docker login` inside WSL  
-- **Ubuntu:** Docker CE, docker group, optional daemon DNS, `ADVERTISE_HOST` from `ip -4 addr`
-
----
-
-## Version identity
-
-One release identity must agree everywhere:
-
-1. Root `VERSION`
-2. GHCR tags `…/<service>:${VERSION}` (updated only by **Stage 2**)
-3. Windows pins: `install-platform.bat` `VERSION=`, `install-platform.ps1` `$script:ReleaseTag`, `.env.windows.template` `RELEASE_TAG=`
-4. Ubuntu pin: `install-eyenet-ubuntu.sh` default `RELEASE_TAG=`
-5. After promotion: wiki `software_ref.platform_version` and Authority release eligibility
-
-Check pins any time:
+Classic all-at-once (only inside **tmux**):
 
 ```bash
-./scripts/check_installer_pins.sh
+./scripts/build_windows_installer_images.sh
+./scripts/push_protected_service_images.sh
+./scripts/stage2_finalize_manifest.sh
 ```
+
+### Mode B — One-by-one with report-back (SSH-safe default)
+
+```bash
+# Windows/WSL builder example
+ssh lab-home-win-nickg "wsl -d eyenet -- bash -lc 'cd /mnt/c/path/to/repo && RELEASE_TAG=2.25.82 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras'"
+
+# Native Linux builder
+ssh lab-work-dual-64g "cd ~/ppl-meta-platform && git pull && RELEASE_TAG=2.25.82 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras"
+```
+
+Expect:
+
+```text
+REPORT OK service=cameras tag=2.25.82 sha_tag=2.25.82-<shortsha> ref=ghcr.io/.../ppl-meta-cameras:2.25.82
+```
+
+Loop: next service only after `REPORT OK`; on fail or SSH drop, retry **that** service. When the intended set is done:
+
+```bash
+./scripts/stage2_finalize_manifest.sh
+```
+
+Service keys:  
+`node` `media` `gateway` `orchestrator` `discovery` `communications` `frontend` `vision` `vmeta` `cameras` `presence` `models`  
+(GHCR: `ppl-meta-vision-protected` / `ppl-meta-vmeta-protected` for vision/vmeta.)
+
+### Mode C — Selective Stage 2 from latest Stage 1
+
+**When:** Stage 1 fixed a few services; skip a full twelve-image rebuild.
+
+```bash
+git fetch origin
+./scripts/stage2_changed_services.sh HEAD~1..HEAD
+# or: ./scripts/stage2_changed_services.sh <before_sha> <after_sha>
+```
+
+| Output | Action |
+|---|---|
+| `NONE` | Docs/installer/tray-only — **skip Stage 2** |
+| `ALL` | Mode A full Stage 2 |
+| `cameras frontend` | Mode B only those keys |
+
+```bash
+SERVICES=$(./scripts/stage2_changed_services.sh HEAD~1..HEAD)
+RELEASE_TAG="$(tr -d '[:space:]' < VERSION)"
+for s in $SERVICES; do
+  EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh "$s"
+done
+./scripts/stage2_finalize_manifest.sh
+```
+
+Then Stage 1: commit `release-manifest.yml` + CHANGELOG Notes (which services, git SHA).
+
+**Agent wording:**
+
+- *“Stage 2 full on lab-work-dual-64g for 2.25.82 (tmux / one-by-one).”*  
+- *“Stage 2 selective on lab-home-win-nickg from latest Stage 1.”*  
+- *“Stage 2 one: cameras then frontend on lab-home-win-nickg.”*
+
+### Mode D — Release manifest + retag-forward (coherence)
+
+**Goal:** Every pin has a complete twelve-image digest identity without rebuilding unchanged heavy services.
+
+| Layer | Role |
+|---|---|
+| Root `VERSION` / `RELEASE_TAG` | Customer-facing platform pin |
+| `:VERSION` on GHCR | What installers pull **today** |
+| `:VERSION-<sha>` | Optional audit sub-tag |
+| `release-manifest.yml` | Digest source of truth for the pin |
+
+**Artifact:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml)
+
+```yaml
+schema_version: 1
+platform_version: "2.25.82"
+git_sha: "92ea2d5"
+created_at: "2026-09-19T…"
+registry: "ghcr.io/nickglezakos/ppl-meta-platform"
+images:
+  ppl-meta-node:
+    tag: "2.25.82"
+    digest: "sha256:…"
+  # …all twelve
+```
+
+**Rules**
+
+1. After every Stage 2 that completes a pin, run `./scripts/stage2_finalize_manifest.sh`.  
+2. **Stage 1 commit** the updated manifest (+ CHANGELOG Notes). Do not hand-edit digests.  
+3. Selective rebuild on an existing pin: rebuild changed → finalize.  
+4. **New pin** with only some services changed:
+
+```bash
+RELEASE_TAG=2.25.83 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras
+FROM_TAG=2.25.82 TO_TAG=2.25.83 EXCLUDE="cameras" ./scripts/stage2_retag_forward.sh
+RELEASE_TAG=2.25.83 ./scripts/stage2_finalize_manifest.sh
+# Stage 1: commit release-manifest.yml + Notes
+```
+
+5. `./scripts/verify_release_manifest.sh` must pass before treating the pin as coherent.  
+6. Installers still pull by `:VERSION` in v1.
+
+**Agent wording:**
+
+- *“Stage 2 Mode D: finalize release manifest for 2.25.82.”*  
+- *“Stage 2 pin bump 2.25.82→2.25.83: rebuild cameras, retag-forward the rest, finalize manifest.”*
+
+Version-specific notes: [first-windows-release-2.25.82.md](../guides/first-windows-release-2.25.82.md).
+
+### Future automation (not used today)
+
+Do **not** depend on GitHub Actions for platform shipping:
+
+| Workflow | Intent | Status today |
+|---|---|---|
+| `.github/workflows/platform-release.yml` | Automate Stage 2 image matrix | **Draft** — Stage 2 stays manual (Modes A–D) |
+| `.github/workflows/tray-release.yml` | Automate tray build/upload on tag `v*` | **Draft** — tray stays **manual** lab build + `gh release` |
+
+This doc will say when either path is enabled. Until then: manual Stage 2 on a lab PC; manual tray publish.
 
 ---
 
-## Lab upgrade after Stage 2 (optional third ask)
+## Stage 3 — Install on labs (images + tray)
+
+**Goal:** Put the published product onto a named lab host. Always say which lab ([lab-machines.md](./lab-machines.md)).
+
+**Does:** Installer (or manual compose pull) + schema apply/verify + discovery reregister + **tray download/autostart** when Release assets exist.  
+**Does not:** publish GHCR or rebuild tray binaries.
+
+### Shared post-install (both installers)
+
+After `compose up -d`:
+
+1. Wait for Postgres healthy  
+2. `schema/apply.sh` then `schema/verify.sh` (fail install if verify fails)  
+3. `reregister-discovery-services.sh` (canonical: `deployment/windows-installer/`)  
+4. Print UI / gateway / discovery / bootstrap URLs  
+5. Remind: `ADVERTISE_HOST` must be the LAN IP phones use  
+6. Install/launch host tray from GitHub Releases `v${VERSION}` (soft-fail if missing)
+
+Host-only:
+
+- **Windows:** WSL `eyenet`, host RAM ≥16 GB, `.wslconfig` 12 GB / 6 CPUs / 2 GB swap  
+- **Ubuntu:** Docker CE, docker group, optional DNS, `ADVERTISE_HOST` from `ip -4 addr`
 
 ### Windows / WSL
 
-Runtime: Docker Engine CE in WSL distro `eyenet` (see [windows-wsl-docker-engine-full-product.md](./windows-wsl-docker-engine-full-product.md)).
+Runtime: [windows-wsl-docker-engine-full-product.md](./windows-wsl-docker-engine-full-product.md).
 
-1. Ensure installer files match git (clone or copy `deployment/windows-installer/`).  
-2. First time only: `install-eyenet-wsl.bat`.  
-3. Install/upgrade: `install-platform.bat` (or `.ps1`) — pulls `${RELEASE_TAG}`, starts stack, schema apply/verify, discovery reregister.  
-4. Open `http://localhost:3000` (bootstrap if needed).  
+1. Ensure installer files match git.  
+2. First time: `install-eyenet-wsl.bat`.  
+3. `install-platform.bat` (or `.ps1`) — pulls `${RELEASE_TAG}`, starts stack, schema, reregister, tray.  
+4. Open `http://localhost:3000`. Confirm tray icon (Active/Inactive).  
 5. Health:
 
 ```powershell
@@ -221,7 +450,7 @@ curl http://localhost:8006/api/v1/services
 curl http://localhost:8080/api/v1/licensing/bootstrap/status
 ```
 
-Manual pull (existing install dir):
+Manual pull (existing install):
 
 ```powershell
 wsl -d eyenet -- bash -lc "cd /mnt/c/path/to/install && docker compose --project-name pplmeta --env-file .env.windows -f docker-compose.windows-installer.yml pull && docker compose --project-name pplmeta --env-file .env.windows -f docker-compose.windows-installer.yml up -d && bash schema/apply.sh && bash reregister-discovery-services.sh"
@@ -229,27 +458,22 @@ wsl -d eyenet -- bash -lc "cd /mnt/c/path/to/install && docker compose --project
 
 ### Native Ubuntu 24
 
-1. Clone/update monorepo on the Ubuntu host (`~/ppl-meta-platform` by default).  
-2. Run:
-
 ```bash
 bash deployment/ubuntu/install-eyenet-ubuntu.sh
 # or: ADVERTISE_HOST=<lan-ip> RELEASE_TAG=<VERSION> bash deployment/ubuntu/install-eyenet-ubuntu.sh
 ```
 
-3. Confirm `ADVERTISE_HOST` with `ip -4 addr show scope global`.  
-4. Health:
+Confirm `ADVERTISE_HOST` with `ip -4 addr show scope global`. Confirm tray / AppIndicator. Health:
 
 ```bash
 curl -s http://127.0.0.1:8006/api/v1/services
 # UI: http://<ADVERTISE_HOST>:3000/network
 ```
 
-Manual upgrade of an existing `~/eyenet-platform`:
+Manual upgrade of existing `~/eyenet-platform`:
 
 ```bash
 cd ~/eyenet-platform
-# ensure RELEASE_TAG in .env matches published VERSION
 docker compose --project-name pplmeta --env-file .env -f docker-compose.yml pull
 docker compose --project-name pplmeta --env-file .env -f docker-compose.yml up -d
 bash ~/ppl-meta-platform/deployment/windows-installer/schema/apply.sh
@@ -257,59 +481,86 @@ bash ~/ppl-meta-platform/deployment/windows-installer/schema/verify.sh
 bash ~/ppl-meta-platform/deployment/windows-installer/reregister-discovery-services.sh
 ```
 
-If only the **installer script** changed (Stage 1 only), `git pull` and re-run the installer — image pull alone does not update scripts.
+If only installer/tray scripts changed (Stage 1 only), `git pull` and re-run the installer — image pull alone does not update scripts or tray.
+
+Tray smoke: [`deployment/tray/SMOKE.md`](../../deployment/tray/SMOKE.md).
 
 ---
 
-## Full version cut (Stage 1 + Stage 2 + labs)
+## Version identity
+
+One release identity must agree everywhere:
+
+1. Root `VERSION`  
+2. GHCR tags `…/<service>:${VERSION}` (**Stage 2 only**)  
+3. Release manifest digests for that `platform_version`  
+4. Windows pins: `install-platform.bat` / `.ps1` / `.env.windows.template`  
+5. Ubuntu pin: `install-eyenet-ubuntu.sh` default `RELEASE_TAG=`  
+6. GitHub Release tag `v${VERSION}` (tray assets)  
+7. After promotion: wiki `software_ref.platform_version` and Authority eligibility  
+
+```bash
+./scripts/check_installer_pins.sh
+./scripts/verify_platform_release.sh          # tags exist
+./scripts/verify_release_manifest.sh          # digests match GHCR + VERSION
+```
+
+---
+
+## Full version cut (all three steps)
 
 When you want a new pin end-to-end (e.g. `2.25.82`):
 
-1. **Stage 1:** bump `VERSION` + all pins, schema pack if needed, **update `CHANGELOG.md` under `[2.25.82]`**, pin check, commit, push.  
-2. **Stage 2:** on the **Windows or Linux** build host, build/push/verify that tag.  
-3. Upgrade Windows/WSL lab and/or Ubuntu 24 lab (say so explicitly).  
-4. Only then treat the tag as the current product; update wiki `software_ref` after promotion evidence.
+1. **Stage 1:** bump `VERSION` + all pins, schema pack if needed, CHANGELOG under `[2.25.82]`, pin check, commit, push. If tray should ship: [publish tray manually](#tray-publish-part-of-stage-1) and confirm Release assets.  
+2. **Stage 2:** on preferred builder (`lab-work-dual-64g`), build/push changed images; Mode D retag-forward unchanged services on a pin bump; `stage2_finalize_manifest.sh`.  
+3. **Stage 1 (manifest):** commit `release-manifest.yml` + CHANGELOG Notes.  
+4. **Stage 3:** upgrade named labs — installers pull images **and** download tray (or use a locally copied tray binary).  
+5. Update wiki `software_ref` after promotion evidence.
 
 Wording:
 
-- *“Full release to 2.25.82 per platform-release-cicd.md (Stage 1 + Stage 2; then upgrade both labs).”* ← Stage 1 already includes changelog
+- *“Full release to 2.25.82 per platform-release-cicd.md (Stage 1 + publish tray + Stage 2 + upgrade both labs).”*
 
 ---
 
-## Bug triage: images vs installers
+## Bug triage
 
-| Kind of bug | Fix in | Stage 1? | Stage 2? | Roll out |
+| Kind of bug | Fix in | Stage 1? | Stage 2? | Stage 3? |
 |---|---|---|---|---|
-| Service code, Dockerfile, compose memory, schema pack | Monorepo service / pack | **Yes** | **Yes** (when ready) | Both installers `compose pull` |
-| WSL RAM gate, Windows download list | `deployment/windows-installer/` | **Yes** | No | Re-run Windows installer |
-| Ubuntu Docker CE, DNS, `ADVERTISE_HOST` | `deployment/ubuntu/` | **Yes** | No | `git pull` + re-run Ubuntu installer |
+| Service code, Dockerfile, compose memory, schema pack | Monorepo / pack | **Yes** | **Yes** (when ready) | Pull on labs |
+| WSL / Windows installer | `deployment/windows-installer/` | **Yes** | No | Re-run Windows installer |
+| Ubuntu host path | `deployment/ubuntu/` | **Yes** | No | Re-run Ubuntu installer |
 | Shared post-up (reregister, schema verify) | Prefer `deployment/windows-installer/` | **Yes** | No | Both installers |
+| Tray UI / start-stop / status | `deployment/tray/` | **Yes** + manual tray publish | No | Re-run installer / replace binary |
 
-A **product** release is complete only when Stage 2 has updated GHCR **and** labs have pulled that tag. A **code** release is complete after Stage 1 alone.
+A **code** release is complete after Stage 1.  
+A **tray** release is complete after GitHub Release assets for `v${VERSION}` exist (or labs have a locally installed binary).  
+A **product** release is complete when Stage 2 has updated GHCR **and** Stage 3 has pulled that pin.
 
 ---
 
-## CI/CD today vs later
+## Today vs later
 
-**Today**
-
-| Stage | Where | Frequency |
+| Step | Where | Frequency |
 |---|---|---|
-| 1 — git push + **CHANGELOG** | Mac (or any clone) → GitHub | Often |
-| 2 — build/push images | Connected **Windows or Linux** amd64 host → GHCR | When you want labs/customers on new containers |
-| Lab upgrade | Each lab host | After Stage 2, when asked |
+| 1 — Code | Mac → GitHub | Often |
+| Tray publish | Windows + Ubuntu labs → `gh release` (manual) | When tray changes or a pin needs tray assets |
+| 2 — Images | Named lab → GHCR (manual) | When you want new containers |
+| 2b — Manifest | Mac or builder → `release-manifest.yml` → Stage 1 commit | After Stage 2 completes a pin |
+| 3 — Install | Each lab host | When asked |
 
-**Later (optional)**
-
-- Automate Stage 2 with GitHub Actions (`platform-release.yml`)  
-- Keep real OS smoke on lab hardware  
+**Later (optional):** enable `tray-release.yml` and/or `platform-release.yml` only after this doc is updated to say they are active. Keep real OS smoke on lab hardware either way.
 
 ---
 
 ## Related
 
+- Operator guide: [eyenet-cicd-operator-guide.md](./eyenet-cicd-operator-guide.md)  
+- Lab machines: [lab-machines.md](./lab-machines.md)  
+- Tray tag checklist: [tray-stage-1.5-publish.md](./tray-stage-1.5-publish.md)  
 - Release notes: [`CHANGELOG.md`](../../CHANGELOG.md)  
 - Index: [README.md](./README.md)  
-- Ubuntu lab bug list: [`deployment/ubuntu/UBUNTU-LAB-FOLLOWUPS.md`](../../deployment/ubuntu/UBUNTU-LAB-FOLLOWUPS.md)  
-- Windows installer scripts README: [`deployment/windows-installer/README.md`](../../deployment/windows-installer/README.md)  
-- Lifecycle policy (proposals): [`docs/proposals/CICD policy and implementation/`](../proposals/CICD%20policy%20and%20implementation/)
+- Ubuntu follow-ups: [`deployment/ubuntu/UBUNTU-LAB-FOLLOWUPS.md`](../../deployment/ubuntu/UBUNTU-LAB-FOLLOWUPS.md)  
+- Windows installer README: [`deployment/windows-installer/README.md`](../../deployment/windows-installer/README.md)  
+- Tray README: [`deployment/tray/README.md`](../../deployment/tray/README.md)  
+- Lifecycle proposals: [`docs/proposals/CICD policy and implementation/`](../proposals/CICD%20policy%20and%20implementation/)

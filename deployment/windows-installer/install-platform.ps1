@@ -1094,6 +1094,9 @@ function Invoke-FullInstall {
     Show-Status
     Write-Host ""
 
+    # Step 11: Host tray (soft-fail if GitHub Release asset missing)
+    Invoke-InstallTray
+
     Draw-Box -Title "" -BoxColor $script:Green
     Write-Host "  ║" -NoNewline -ForegroundColor $script:Green
     Write-Host "    Platform is running!" -NoNewline -ForegroundColor $script:Green
@@ -1106,6 +1109,64 @@ function Invoke-FullInstall {
     Draw-BoxFooter -BoxColor $script:Green
 
     return $true
+}
+
+function Invoke-InstallTray {
+    Write-Step "Installing EyeNet tray (host control)..."
+    $tag = "v$($script:ReleaseTag)"
+    $asset = "eyenet-tray-windows-amd64-$($script:ReleaseTag).exe"
+    $url = "https://github.com/nickglezakos/ppl-meta-platform/releases/download/$tag/$asset"
+    $trayDir = Join-Path $script:InstallDir "tray"
+    $trayExe = Join-Path $trayDir "eyenet-tray.exe"
+    $programData = $env:ProgramData
+    if ([string]::IsNullOrWhiteSpace($programData)) { $programData = "C:\ProgramData" }
+    $cfgDir = Join-Path $programData "EyeNet"
+    $cfgPath = Join-Path $cfgDir "tray.json"
+
+    try {
+        New-Item -ItemType Directory -Path $trayDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $cfgDir -Force | Out-Null
+        Write-Host "  Downloading $url" -ForegroundColor $script:Gray
+        Invoke-WebRequest -Uri $url -OutFile $trayExe -UseBasicParsing -ErrorAction Stop
+    } catch {
+        Write-WarningMsg "Tray download skipped (Release asset may not exist yet): $($_.Exception.Message)"
+        return
+    }
+
+    $cfg = @{
+        install_dir   = $script:InstallDir
+        mode          = "wsl"
+        wsl_distro    = $script:WslDistro
+        project       = $script:ComposeProjectName
+        compose_file  = $script:ComposeFile
+        env_file      = $script:EnvFile
+        ui_url        = "http://127.0.0.1:3000"
+        version       = $script:ReleaseTag
+    } | ConvertTo-Json
+    Set-Content -Path $cfgPath -Value $cfg -Encoding UTF8
+
+    $startup = [Environment]::GetFolderPath("Startup")
+    $shortcutPath = Join-Path $startup "EyeNet Tray.lnk"
+    try {
+        $wsh = New-Object -ComObject WScript.Shell
+        $sc = $wsh.CreateShortcut($shortcutPath)
+        $sc.TargetPath = $trayExe
+        $sc.Arguments = "`"$cfgPath`""
+        $sc.WorkingDirectory = $trayDir
+        $sc.WindowStyle = 7
+        $sc.Description = "EyeNet platform tray"
+        $sc.Save()
+        Write-Success "Tray Startup shortcut: $shortcutPath"
+    } catch {
+        Write-WarningMsg "Could not create Startup shortcut: $($_.Exception.Message)"
+    }
+
+    try {
+        Start-Process -FilePath $trayExe -ArgumentList "`"$cfgPath`"" -WindowStyle Hidden
+        Write-Success "EyeNet tray launched"
+    } catch {
+        Write-WarningMsg "Tray launch failed: $($_.Exception.Message)"
+    }
 }
 
 function Show-MainMenu {

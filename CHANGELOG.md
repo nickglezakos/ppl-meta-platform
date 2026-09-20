@@ -18,9 +18,12 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Changed
 
 - Authority admin UI rebuilt as a laconic mobile-first shell (Home / People / Licences / Me); retired the dual Workspace vs Data Console surface (`/admin/console` redirects to `/admin`).
+- CI/CD contract: **three steps** (code → images → install); tray publish is **manual** lab build + `gh release` (GitHub Actions for tray/images are draft/future only).
 
 ### Added
 
+- **EyeNet host tray** (`deployment/tray/`): Go systray for Windows (WSL) and Ubuntu — Active/Inactive/Degraded status, Open UI, Start/Stop/Restart; installers download from GitHub Releases tag `v${VERSION}` (soft-fail if missing).
+- Tray publish via manual lab builds + `gh release` (`.github/workflows/tray-release.yml` is draft/future); documented in `platform-release-cicd.md`.
 - Lab machines inventory: `docs/deployment/lab-machines.md` (`lab-home-win-nickg`, `lab-work-u24-mini-8g`, `lab-work-dual-64g`); linked from platform-release-cicd Stage 2.
 - Stage 2 SSH-safe modes: one-by-one `scripts/stage2_one.sh` with `REPORT OK`, selective rebuild via `scripts/stage2_changed_services.sh`, optional `:VERSION-<sha>` sub-tags; documented in `platform-release-cicd.md`.
 - **Release manifest (Mode D):** digest coherence for the twelve GHCR images — `scripts/write_release_manifest.sh`, `verify_release_manifest.sh`, `stage2_finalize_manifest.sh`, `stage2_retag_forward.sh`; artifact path `deployment/windows-installer/release-manifest.yml`; documented in `platform-release-cicd.md`.
@@ -29,6 +32,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Notes
 
 - Installers still pull by `:VERSION`; digests are the audit / future pin-by-digest contract. Run `stage2_finalize_manifest.sh` after Stage 2 completes a pin, then Stage 1-commit the manifest.
+- First tray ship for pin `2.25.82`: after Stage 1 push, build tray on Windows + Ubuntu labs, `gh release create v2.25.82 …`, then Stage 3 lab soak.
 
 ## [2.25.82] — 2026-09-19
 

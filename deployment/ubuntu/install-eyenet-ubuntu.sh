@@ -141,6 +141,63 @@ else
 fi
 
 compose_ --project-name pplmeta --env-file .env -f docker-compose.yml ps
+
+# --- Host tray (soft-fail if GitHub Release asset missing) ---
+echo "==> Installing EyeNet tray (host control)..."
+TRAY_DIR="$INSTALL_DIR/tray"
+mkdir -p "$TRAY_DIR"
+TRAY_TAG="v${RELEASE_TAG}"
+TRAY_ASSET="eyenet-tray-linux-amd64-${RELEASE_TAG}.tar.gz"
+TRAY_URL="https://github.com/nickglezakos/ppl-meta-platform/releases/download/${TRAY_TAG}/${TRAY_ASSET}"
+TRAY_CFG="$TRAY_DIR/tray.json"
+if curl -fsSL "$TRAY_URL" -o "$TRAY_DIR/$TRAY_ASSET"; then
+  tar -xzf "$TRAY_DIR/$TRAY_ASSET" -C "$TRAY_DIR"
+  TRAY_BIN="$TRAY_DIR/eyenet-tray"
+  chmod +x "$TRAY_BIN" 2>/dev/null || true
+  # Prefer binary named eyenet-tray; accept versioned name from tarball
+  if [[ ! -x "$TRAY_BIN" ]]; then
+    found="$(find "$TRAY_DIR" -maxdepth 1 -type f -name 'eyenet-tray*' ! -name '*.tar.gz' | head -1 || true)"
+    if [[ -n "$found" ]]; then
+      mv -f "$found" "$TRAY_BIN"
+      chmod +x "$TRAY_BIN"
+    fi
+  fi
+  cat >"$TRAY_CFG" <<EOF
+{
+  "install_dir": "${INSTALL_DIR}",
+  "mode": "native",
+  "wsl_distro": "eyenet",
+  "project": "pplmeta",
+  "compose_file": "docker-compose.yml",
+  "env_file": ".env",
+  "ui_url": "http://127.0.0.1:3000",
+  "version": "${RELEASE_TAG}",
+  "reregister_script": "${REPO_DIR}/deployment/windows-installer/reregister-discovery-services.sh"
+}
+EOF
+  if [[ -x "$TRAY_BIN" ]]; then
+    if [[ -f "$REPO_DIR/deployment/tray/scripts/install-autostart-ubuntu.sh" ]]; then
+      bash "$REPO_DIR/deployment/tray/scripts/install-autostart-ubuntu.sh" "$TRAY_BIN" "$TRAY_CFG" || true
+    else
+      mkdir -p "$HOME/.config/autostart"
+      cat >"$HOME/.config/autostart/eyenet-tray.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=EyeNet Tray
+Exec=${TRAY_BIN} ${TRAY_CFG}
+Terminal=false
+X-GNOME-Autostart-enabled=true
+EOF
+      nohup "$TRAY_BIN" "$TRAY_CFG" >/dev/null 2>&1 &
+    fi
+    echo "Tray installed under $TRAY_DIR"
+  else
+    echo "WARN: tray binary missing after extract"
+  fi
+else
+  echo "WARN: tray download skipped (Release asset may not exist yet): $TRAY_URL"
+fi
+
 echo
 echo "Verify ADVERTISE_HOST is this machine's LAN IP (phones use it):"
 echo "  ip -4 addr show scope global"

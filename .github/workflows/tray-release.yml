@@ -1,0 +1,165 @@
+name: Tray Release
+
+# Publish EyeNet host tray binaries to GitHub Releases.
+# STATUS: draft / future — not used today. Operators build tray manually on
+# Windows + Ubuntu labs and upload with `gh release` (see docs/deployment/platform-release-cicd.md).
+# Trigger when enabled: push tag v* (e.g. v2.25.82) or workflow_dispatch.
+# Does not build or push GHCR service images (Stage 2).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Platform VERSION (no v prefix). Defaults to root VERSION file.'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION_VALUE='${{ github.event.inputs.version }}'
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            VERSION_VALUE="${GITHUB_REF_NAME#v}"
+          else
+            VERSION_VALUE="$(tr -d '[:space:]' < VERSION)"
+          fi
+          echo "version=$VERSION_VALUE" >> "$GITHUB_OUTPUT"
+          echo "Resolved VERSION=$VERSION_VALUE"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: deployment/tray/go.sum
+
+      - name: Build Windows tray
+        shell: bash
+        working-directory: deployment/tray
+        run: |
+          VERSION='${{ steps.version.outputs.version }}'
+          OUT="eyenet-tray-windows-amd64-${VERSION}.exe"
+          go build -ldflags "-X main.version=${VERSION}" -o "$OUT" ./cmd/eyenet-tray
+          ls -la "$OUT"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tray-windows
+          path: deployment/tray/eyenet-tray-windows-amd64-*.exe
+          if-no-files-found: error
+
+  build-linux:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION_VALUE='${{ github.event.inputs.version }}'
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            VERSION_VALUE="${GITHUB_REF_NAME#v}"
+          else
+            VERSION_VALUE="$(tr -d '[:space:]' < VERSION)"
+          fi
+          echo "version=$VERSION_VALUE" >> "$GITHUB_OUTPUT"
+          echo "Resolved VERSION=$VERSION_VALUE"
+
+      - name: Install AppIndicator / GTK deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: deployment/tray/go.sum
+
+      - name: Build and pack Linux tray
+        working-directory: deployment/tray
+        run: |
+          VERSION='${{ steps.version.outputs.version }}'
+          BIN="eyenet-tray"
+          TAR="eyenet-tray-linux-amd64-${VERSION}.tar.gz"
+          go build -ldflags "-X main.version=${VERSION}" -o "$BIN" ./cmd/eyenet-tray
+          tar -czf "$TAR" "$BIN"
+          ls -la "$TAR" "$BIN"
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tray-linux
+          path: deployment/tray/eyenet-tray-linux-amd64-*.tar.gz
+          if-no-files-found: error
+
+  publish-release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve version and tag
+        id: meta
+        run: |
+          VERSION='${{ needs.build-windows.outputs.version }}'
+          if [ -z "$VERSION" ]; then
+            VERSION='${{ needs.build-linux.outputs.version }}'
+          fi
+          TAG="v${VERSION}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten assets and checksums
+        working-directory: dist
+        run: |
+          mkdir -p release
+          find . -type f \( -name '*.exe' -o -name '*.tar.gz' \) -exec cp -v {} release/ \;
+          cd release
+          sha256sum * > SHA256SUMS
+          ls -la
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists — uploading assets"
+          else
+            # Bind release to this workflow's commit (tag push or dispatch SHA)
+            gh release create "$TAG" \
+              --target "${GITHUB_SHA}" \
+              --title "EyeNet platform ${VERSION}" \
+              --notes "Host tray binaries for EyeNet ${VERSION} (Stage 1 tag). Service images remain on GHCR via Stage 2."
+          fi
+          gh release upload "$TAG" dist/release/* --clobber
+          echo "Published tray assets on $TAG"

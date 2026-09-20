@@ -60,6 +60,7 @@ Verify that each manifest shows `"architecture": "amd64"` and `"os": "linux"`.
 - `.env.windows.template`: environment template (`RELEASE_TAG` must match `VERSION`)
 - `schema/`: **vendored DB migrations** (synced from the monorepo) — installer always applies + verifies
 - `reregister-discovery-services.sh`: post-up discovery refresh (also used by Ubuntu installer)
+- Host tray (separate Stage 1.5): after install, downloads `eyenet-tray-windows-amd64-${VERSION}.exe` from GitHub Releases tag `v${VERSION}`, writes `%ProgramData%\EyeNet\tray.json`, registers Startup — see [`deployment/tray/`](../tray/)
 
 ## Database schema (installer always matches repo)
 
@@ -80,10 +81,13 @@ Stage 1 is git push only. Stage 2 refreshes GHCR (run on an amd64 Windows or Lin
 # flutter build web --release in ppl-meta-frontend first
 ./scripts/build_windows_installer_images.sh
 ./scripts/push_protected_service_images.sh
-./scripts/verify_platform_release.sh
+./scripts/stage2_finalize_manifest.sh   # tags + write/verify release-manifest.yml
+# Stage 1: commit deployment/windows-installer/release-manifest.yml
 ```
 
-See [`docs/deployment/platform-release-cicd.md`](../../docs/deployment/platform-release-cicd.md). GitHub Actions is future Stage 2 automation only.
+Prefer one-by-one / selective / retag-forward (Modes B–D) per [`docs/deployment/platform-release-cicd.md`](../../docs/deployment/platform-release-cicd.md). GitHub Actions is future Stage 2 automation only.
+
+**Release manifest:** `release-manifest.yml` in this directory records digests for the twelve images at the current `VERSION`. Installers still pull by tag; the manifest is the coherence artifact.
 
 ## First-Time Owner Activation
 
