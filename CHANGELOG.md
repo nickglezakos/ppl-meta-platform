@@ -19,7 +19,8 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 - Node Alpine image: install `linux-headers` and allow `netifaces` to compile on GCC 14 (`-Wno-error=int-conversion`).
 - Communications / orchestrator / vmeta: write file logs under `/app/logs` so non-root containers can start.
-- vmeta protected image: install `httpx` required by analytics.
+- vmeta protected image: install `httpx` and `asyncpg` required at import time.
+- Communications image: install `email-validator` for Pydantic `EmailStr`.
 
 ### Changed
 
