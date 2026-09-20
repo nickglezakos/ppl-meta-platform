@@ -15,6 +15,10 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+### Fixed
+
+- Node Alpine image: install `linux-headers` so `netifaces` can compile during Stage 2.
+
 ### Changed
 
 - Authority admin UI rebuilt as a laconic mobile-first shell (Home / People / Licences / Me); retired the dual Workspace vs Data Console surface (`/admin/console` redirects to `/admin`).

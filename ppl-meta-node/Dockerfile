@@ -12,6 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apk add --no-cache \
     gcc \
     musl-dev \
+    linux-headers \
     postgresql-dev \
     python3-dev \
     libffi-dev \
