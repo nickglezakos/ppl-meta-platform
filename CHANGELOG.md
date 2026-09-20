@@ -17,7 +17,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Fixed
 
-- Node Alpine image: install `linux-headers` so `netifaces` can compile during Stage 2.
+- Node Alpine image: install `linux-headers` and allow `netifaces` to compile on GCC 14 (`-Wno-error=int-conversion`).
 
 ### Changed
 

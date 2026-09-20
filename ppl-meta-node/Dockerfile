@@ -25,7 +25,7 @@ WORKDIR /app
 
 # Copy and install Python dependencies
 COPY requirements.txt .
-RUN pip install --user --no-warn-script-location -r requirements.txt
+RUN CFLAGS="-Wno-error=int-conversion" pip install --user --no-warn-script-location -r requirements.txt
 
 # Stage 2: Runtime stage with minimal footprint
 FROM python:3.11-alpine AS runtime
