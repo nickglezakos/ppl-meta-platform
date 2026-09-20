@@ -2,6 +2,7 @@
 import asyncio
 from datetime import datetime, time
 import logging
+import os
 from typing import List
 import httpx
 
@@ -10,10 +11,10 @@ from core.redis_client import cache_client
 logger = logging.getLogger(__name__)
 
 
-# Service URLs
-CAMERAS_SERVICE_URL = "http://localhost:8005"
-MEDIA_SERVICE_URL = "http://localhost:8000"
-VMETA_SERVICE_URL = "http://localhost:8008"
+# Service URLs from environment (compose DNS; not localhost)
+CAMERAS_SERVICE_URL = (os.getenv("CAMERAS_SERVICE_URL") or "http://ppl-meta-cameras:8005").rstrip("/")
+MEDIA_SERVICE_URL = (os.getenv("MEDIA_SERVICE_URL") or "http://ppl-meta-media:8000").rstrip("/")
+VMETA_SERVICE_URL = (os.getenv("VMETA_SERVICE_URL") or "http://ppl-meta-vmeta:8008").rstrip("/")
 
 
 class MVRCounterWorker:

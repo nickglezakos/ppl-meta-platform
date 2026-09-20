@@ -31,6 +31,11 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 - Node VPN enrollment reads UUID/key from `app_settings` after bootstrap when `.env` keys are empty (§10).
 - Node prefers `ADVERTISE_HOST` for platform local IP (not container `172.18.x`).
 - `start-eyenet-platform.bat` runs discovery reregister after compose up.
+- Gateway analytics / camera counters called vmeta at `localhost:8008` inside the
+  container (always fail). Now use compose `VMETA_SERVICE_URL` / `MEDIA_SERVICE_URL`
+  / `CAMERAS_SERVICE_URL` (same as the rest of the gateway router).
+- Schema pack: add `047_orchestrator_workflow_settings.sql` so people-counters
+  status stops 500ing when `workflow_settings` was never created.
 
 ### Changed
 

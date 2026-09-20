@@ -5,6 +5,7 @@ Aggregates camera MVR count data to provide analytics dashboard metrics.
 """
 
 import logging
+import os
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -19,10 +20,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Service URLs
-CAMERAS_SERVICE_URL = "http://localhost:8005"
-MEDIA_SERVICE_URL = "http://localhost:8000"
-VMETA_SERVICE_URL = "http://localhost:8008"
+# Service URLs (compose sets these; localhost only works in host-network/dev)
+CAMERAS_SERVICE_URL = (os.getenv("CAMERAS_SERVICE_URL") or "http://ppl-meta-cameras:8005").rstrip("/")
+MEDIA_SERVICE_URL = (os.getenv("MEDIA_SERVICE_URL") or "http://ppl-meta-media:8000").rstrip("/")
+VMETA_SERVICE_URL = (os.getenv("VMETA_SERVICE_URL") or "http://ppl-meta-vmeta:8008").rstrip("/")
 
 
 def _normalize_source_type(source_type: Optional[str]) -> str:
@@ -2154,8 +2155,6 @@ async def get_quality_metrics(
         total_individuals = 0
         overall_quality_sum = 0.0
         overall_quality_count = 0
-        
-        VMETA_SERVICE_URL = "http://localhost:8008"
         
         for idx, camera in enumerate(all_cameras, 1):
             collection_name = camera.get("collection_name") or camera.get("name")

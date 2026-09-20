@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from datetime import datetime, time, timedelta
 from typing import Optional, Dict, Any, Tuple
 import logging
+import os
 import httpx
 
 from core.redis_client import cache_client
@@ -12,9 +13,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# Service URLs from environment
-MEDIA_SERVICE_URL = "http://localhost:8000"
-VMETA_SERVICE_URL = "http://localhost:8008"
+# Service URLs from environment (compose DNS; not localhost)
+MEDIA_SERVICE_URL = (os.getenv("MEDIA_SERVICE_URL") or "http://ppl-meta-media:8000").rstrip("/")
+VMETA_SERVICE_URL = (os.getenv("VMETA_SERVICE_URL") or "http://ppl-meta-vmeta:8008").rstrip("/")
 
 
 def _parse_time_filter(
