@@ -22,6 +22,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 - vmeta protected image: install `httpx`/`asyncpg` and `libgl1` so DeepFace/OpenCV can start.
 - vmeta protected image: compile Cython modules as `services.*` so `.so` files land under `src/services/`; fail the build if they are missing, and smoke-import `MVRService` after deleting the `.py` sources.
 - vmeta protected image: install `PyJWT` so `utils.auth` can import `jwt`.
+- Discovery reregister: health-check and register from inside the discovery container (compose DNS). WSL loopback checks were skipping every service except gateway, so `/network` showed only gateway healthy after a cold start.
 - Communications image: install `email-validator` for Pydantic `EmailStr`.
 
 ### Changed
