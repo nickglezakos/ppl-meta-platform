@@ -5,7 +5,7 @@ $wslConfig = @"
 memory=12GB
 processors=6
 swap=2GB
-networkingMode=mirrored
+localhostForwarding=true
 vmIdleTimeout=-1
 "@
 Set-Content -Path "$env:USERPROFILE\.wslconfig" -Value $wslConfig -Encoding ascii
