@@ -44,6 +44,7 @@ FROM python:3.11.11-slim-bookworm AS runtime
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
+    libgl1 \
     libgl1-mesa-dri \
     libglx-mesa0 \
     libglx0 \
