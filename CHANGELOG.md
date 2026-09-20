@@ -34,6 +34,8 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 - Gateway analytics / camera counters called vmeta at `localhost:8008` inside the
   container (always fail). Now use compose `VMETA_SERVICE_URL` / `MEDIA_SERVICE_URL`
   / `CAMERAS_SERVICE_URL` (same as the rest of the gateway router).
+- `/analytics/mvr-quality-metrics` 500 when no quality samples (`average_quality` is
+  `None` but logged with `:.3f`).
 - Schema pack: add `047_orchestrator_workflow_settings.sql` so people-counters
   status stops 500ing when `workflow_settings` was never created.
 

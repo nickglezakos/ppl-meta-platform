@@ -2241,6 +2241,9 @@ async def get_quality_metrics(
 
 def _get_quality_grade(quality: float) -> str:
     """Get quality grade label based on quality score (0-1 scale)."""
+    if quality is None:
+        quality = 0.0
+    quality = float(quality)
     if quality >= 0.8:
         return "Excellent"
     elif quality >= 0.6:
@@ -2464,19 +2467,28 @@ async def get_mvr_quality_metrics(
                 }
         else:
             metrics = await _fetch_vmeta_quality(collection_name)
-        
-        logger.info(f"✅ MVR Quality Metrics: {metrics.get('total_individuals')} individuals, "
-                   f"{metrics.get('total_mvr_people')} MVR people, "
-                   f"quality: {metrics.get('average_quality', 0):.3f}")
-        
+
+        # average_quality can be present-but-None when no MVR quality samples exist;
+        # dict.get(key, 0) does not replace None, so guard before :.3f / grade.
+        avg_quality = metrics.get("average_quality")
+        if avg_quality is None:
+            avg_quality = 0.0
+
+        logger.info(
+            "✅ MVR Quality Metrics: %s individuals, %s MVR people, quality: %.3f",
+            metrics.get("total_individuals"),
+            metrics.get("total_mvr_people"),
+            float(avg_quality),
+        )
+
         # Add quality grade and timestamp
-        metrics["quality_grade"] = _get_quality_grade(metrics.get("average_quality", 0))
+        metrics["quality_grade"] = _get_quality_grade(float(avg_quality))
         metrics["time_filter"] = time_filter
         metrics["generated_at"] = datetime.now(timezone.utc).isoformat()
         metrics["data_source"] = "MVR -> Individual tree (recommended)"
-        
+
         return metrics
-    
+
     except Exception as e:
         logger.error(f"Error in get_mvr_quality_metrics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch MVR quality metrics: {str(e)}")
