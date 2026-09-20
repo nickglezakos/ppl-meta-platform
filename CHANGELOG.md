@@ -35,6 +35,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
+- GHCR images published for **2.25.82** from `lab-home-win-nickg` (git `cb066ae`); Windows tray asset on GitHub Release `v2.25.82`.
 - Installers still pull by `:VERSION`; digests are the audit / future pin-by-digest contract. Run `stage2_finalize_manifest.sh` after Stage 2 completes a pin, then Stage 1-commit the manifest.
 - First tray ship for pin `2.25.82`: after Stage 1 push, build tray on Windows + Ubuntu labs, `gh release create v2.25.82 …`, then Stage 3 lab soak.
 
