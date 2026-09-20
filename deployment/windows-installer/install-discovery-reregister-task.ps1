@@ -13,28 +13,29 @@ param(
 $ErrorActionPreference = "Stop"
 $scriptPath = Join-Path $InstallDir "reregister-discovery-services.sh"
 if (-not (Test-Path $scriptPath)) {
-    Write-Error "Missing $scriptPath — copy reregister-discovery-services.sh into the install dir first."
+    Write-Error "Missing $scriptPath - copy reregister-discovery-services.sh into the install dir first."
     exit 1
 }
 
 $drive = $InstallDir.Substring(0, 1).ToLower()
 $rest = ($InstallDir.Substring(2) -replace '\\', '/')
 $wslCwd = "/mnt/$drive$rest"
-$bash = "cd '$wslCwd' && bash reregister-discovery-services.sh"
-$tr = "wsl.exe -d $DistroName -u root -- bash -lc `"$bash`""
+# Prefer semicolon over double-ampersand for Windows PowerShell 5.1 safety.
+$bash = "cd '$wslCwd'; bash reregister-discovery-services.sh"
+$argList = "-d $DistroName -u root -- bash -lc `"$bash`""
 
-# ONLOGON with delay, plus periodic trigger
-$action = New-ScheduledTaskAction -Execute "wsl.exe" -Argument "-d $DistroName -u root -- bash -lc `"$bash`""
+$action = New-ScheduledTaskAction -Execute "wsl.exe" -Argument $argList
 $triggerLogon = New-ScheduledTaskTrigger -AtLogOn
 $triggerLogon.Delay = "PT2M"
+# TimeSpan.MaxValue is rejected by Task Scheduler XML; use a long finite window.
 $triggerPeriodic = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
     -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) `
-    -RepetitionDuration ([TimeSpan]::MaxValue)
+    -RepetitionDuration (New-TimeSpan -Days 3650)
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
 
 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger @($triggerLogon, $triggerPeriodic) -Settings $settings -Principal $principal -Force | Out-Null
-Write-Host "Scheduled task $TaskName installed (logon+2m, every ${IntervalMinutes}m)"
-Write-Host "  $tr"
+Write-Host ("Scheduled task {0} installed - logon+2m, every {1}m" -f $TaskName, $IntervalMinutes)
+Write-Host ("  wsl.exe {0}" -f $argList)
 exit 0
