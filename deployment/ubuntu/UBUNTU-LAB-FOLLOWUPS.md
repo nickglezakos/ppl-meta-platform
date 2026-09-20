@@ -327,12 +327,22 @@ Until step 2–3, other installs and a fresh Ubuntu pull still have the old bug.
 
 ## Suggested work order (pin 2.25.83)
 
-1. Discovery Redis persist + **required** re-register timers (Windows + Ubuntu).
-2. Windows LAN publish + host Tailscale enroll; Node VPN reads `app_settings` (§10).
-3. Login installation UUID + clean-volume Stage 3 docs (§14).
-4. Mobile camera: clear UUID on new host + stop fake registration success (§12) — APK track.
-5. Verify packaging / disconnect (§2–4, §13) on clean pull; republish gaps under 2.25.83.
+1. Discovery Redis persist + **required** re-register timers (Windows + Ubuntu). **Done.**
+2. Windows LAN publish + host Tailscale enroll; Node VPN reads `app_settings` (§10). **Done.**
+3. Login installation UUID + clean-volume Stage 3 docs (§14). **Done.**
+4. Mobile camera: clear UUID on new host + stop fake registration success (§12) — APK track. **Source + APK** at `artifacts/eyenet-mobile-camera-2.25.83.apk`.
+5. Verify packaging / disconnect (§2–4, §13) on clean pull; republish gaps under 2.25.83. **No new gaps** (Mode D from 2.25.82).
 6. Stage 1 → Stage 2 → Stage 3 per platform-release-cicd.md.
+
+### Stage gates (2026-09-20)
+
+| Gate | Result |
+|------|--------|
+| Stage 1 | Pushed `2.25.83` (+ manifest finalize + reregister-task fix). |
+| Stage 2 | Rebuilt `discovery` / `node` / `frontend` on `lab-home-win-nickg` (`lab-work-dual-64g` unreachable); Mode D retag-forward for the rest; all 12 GHCR tags verified. |
+| Stage 3 `lab-home-win-nickg` | Stack on `:2.25.83`; Redis reload 11/11 after discovery recreate; LAN `192.168.1.71`; VPN reports LAN IP; `EyeNetDiscoveryReregister` + `EyeNetLanPublish` installed. |
+| Stage 3 Ubuntu (`eyenet-server`) | **Deferred** — work LAN `192.168.9.14` unreachable from operator console. |
+| Mobile APK soak | Install APK on phone; prove `POST /cameras/mobile` against nickg. |
 
 ---
 
