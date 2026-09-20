@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import '../models/auth_result.dart';
+import '../../services/device_identifier_service.dart';
 
 /// Authentication service for PPL Meta platform integration
 class AuthenticationService {
@@ -312,6 +313,26 @@ class AuthenticationService {
           final error = 'Authentication successful but no token received';
           print('❌ $error');
           return AuthResult.failure(error);
+        }
+
+        // If logging into a different host, drop sticky camera UUID so we re-register.
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final previousHost = prefs.getString('ppl_meta_last_login_host') ?? '';
+          final newHost = Uri.parse(targetServerUrl).host;
+          if (previousHost.isNotEmpty &&
+              newHost.isNotEmpty &&
+              previousHost != newHost) {
+            print(
+              '🔄 [LOGIN] Host changed ($previousHost → $newHost); clearing camera UUID',
+            );
+            await DeviceIdentifierService().clearCameraUuid();
+          }
+          if (newHost.isNotEmpty) {
+            await prefs.setString('ppl_meta_last_login_host', newHost);
+          }
+        } catch (e) {
+          print('⚠️ [LOGIN] Could not reconcile camera UUID on host change: $e');
         }
 
         // Store authentication data

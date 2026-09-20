@@ -17,6 +17,7 @@ from models import (
     ServiceList,
     ServiceStatus,
 )
+from services.registry_redis import RegistryRedisStore
 
 logger = logging.getLogger(__name__)
 
@@ -24,19 +25,33 @@ logger = logging.getLogger(__name__)
 class ServiceRegistry:
     """Registry for managing backend services."""
 
-    def __init__(self, heartbeat_timeout: int = 90):
+    def __init__(
+        self,
+        heartbeat_timeout: int = 90,
+        redis_url: str = "",
+    ):
         """Initialize the service registry.
 
         Args:
             heartbeat_timeout: Seconds after which service is stale
+            redis_url: Optional Redis URL for persistence across restarts
         """
         self._services: Dict[str, ServiceInfo] = {}
         self._heartbeat_timeout = heartbeat_timeout
         self._cleanup_task: Optional[asyncio.Task] = None
+        self._store = RegistryRedisStore(
+            redis_url,
+            ttl_seconds=max(300, heartbeat_timeout * 4),
+        )
 
     async def start(self):
-        """Start the service registry background tasks."""
+        """Start the service registry background tasks and load Redis snapshot."""
         logger.info("Starting service registry")
+        if self._store.enabled:
+            await self._store.connect()
+            loaded = await self._store.load_all()
+            if loaded:
+                self._services.update(loaded)
         self._cleanup_task = asyncio.create_task(self._cleanup_stale_services())
 
     async def stop(self):
@@ -48,6 +63,7 @@ class ServiceRegistry:
                 await self._cleanup_task
             except asyncio.CancelledError:
                 pass
+        await self._store.close()
 
     async def register_service(
         self, request: RegistrationRequest
@@ -97,6 +113,7 @@ class ServiceRegistry:
         # Perform initial health check
         health_status = await self._check_service_health(service_info)
         service_info.status = health_status
+        await self._store.save_service(service_info)
 
         logger.info(
             f"Registered service {request.name} "
@@ -147,6 +164,8 @@ class ServiceRegistry:
                 service.tailscale_port = service.tailscale_port or service.port
             service.metadata.update(request.metadata)
 
+        await self._store.save_service(service)
+
         logger.info(
             f"💓 Updated heartbeat for service {service.name} ({request.service_id}): "
             f"old_last_seen={old_last_seen}, new_last_seen={service.last_seen}, "
@@ -178,6 +197,7 @@ class ServiceRegistry:
         # Remove after short delay to allow for cleanup
         await asyncio.sleep(1)
         del self._services[service_id]
+        await self._store.delete_service(service_id)
 
         logger.info(f"Deregistered service {service.name} ({service_id})")
 
@@ -406,6 +426,7 @@ class ServiceRegistry:
                     # Remove the stale service
                     try:
                         del self._services[service_id]
+                        await self._store.delete_service(service_id)
                         logger.info(
                             f"Removed stale service {service.name} ({service_id})"
                         )
@@ -445,6 +466,7 @@ class ServiceRegistry:
         if service_id in self._services:
             service = self._services[service_id]
             del self._services[service_id]
+            await self._store.delete_service(service_id)
             logger.info(f"Force removed service {service.name} ({service_id})")
             return True
         return False
@@ -468,6 +490,7 @@ class ServiceRegistry:
         for service_id, service in services_to_remove:
             try:
                 del self._services[service_id]
+                await self._store.delete_service(service_id)
                 logger.info(f"Removed {status} service {service.name} ({service_id})")
                 count += 1
             except KeyError:
@@ -506,6 +529,7 @@ class ServiceRegistry:
                 if time_since_last_seen > self._heartbeat_timeout * 2:
                     # Remove very stale services immediately
                     del self._services[service_id]
+                    await self._store.delete_service(service_id)
                     results["removed"] += 1
                     results["services"][service_id] = {
                         "name": service.name,

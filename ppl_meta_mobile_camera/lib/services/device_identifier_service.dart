@@ -189,6 +189,20 @@ class DeviceIdentifierService {
     print('🔄 All device identifier caches cleared');
   }
   
+  /// Clears stored camera UUID (SharedPreferences + memory cache).
+  /// Call when logging into a different host/installation so the app re-registers.
+  Future<void> clearCameraUuid() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_cameraUuidKey);
+      _cachedCameraUuid = null;
+      print('🔄 Cleared stored camera UUID for re-registration');
+    } catch (e) {
+      _cachedCameraUuid = null;
+      print('⚠️ Error clearing camera UUID: $e');
+    }
+  }
+
   /// Stores server-generated camera UUID
   /// This UUID is returned by the backend during registration and must be used for all API calls
   Future<void> storeCameraUuid(String uuid) async {

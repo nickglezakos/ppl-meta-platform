@@ -15,35 +15,32 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
-### Fixed
-
-- Node Alpine image: install `linux-headers` and allow `netifaces` to compile on GCC 14 (`-Wno-error=int-conversion`).
-- Communications / orchestrator / vmeta: write file logs under `/app/logs` so non-root containers can start.
-- vmeta protected image: install `httpx`/`asyncpg` and `libgl1` so DeepFace/OpenCV can start.
-- vmeta protected image: compile Cython modules as `services.*` so `.so` files land under `src/services/`; fail the build if they are missing, and smoke-import `MVRService` after deleting the `.py` sources.
-- vmeta protected image: install `PyJWT` so `utils.auth` can import `jwt`.
-- Discovery reregister: health-check and register from inside the discovery container (compose DNS). WSL loopback checks were skipping every service except gateway, so `/network` showed only gateway healthy after a cold start.
-- Communications image: install `email-validator` for Pydantic `EmailStr`.
-
-### Changed
-
-- Authority admin UI rebuilt as a laconic mobile-first shell (Home / People / Licences / Me); retired the dual Workspace vs Data Console surface (`/admin/console` redirects to `/admin`).
-- CI/CD contract: **three steps** (code → images → install); tray publish is **manual** lab build + `gh release` (GitHub Actions for tray/images are draft/future only).
+## [2.25.83] — 2026-09-20
 
 ### Added
 
-- **EyeNet host tray** (`deployment/tray/`): Go systray for Windows (WSL) and Ubuntu — Active/Inactive/Degraded status, Open UI, Start/Stop/Restart; installers download from GitHub Releases tag `v${VERSION}` (soft-fail if missing).
-- Tray publish via manual lab builds + `gh release` (`.github/workflows/tray-release.yml` is draft/future); documented in `platform-release-cicd.md`.
-- Lab machines inventory: `docs/deployment/lab-machines.md` (`lab-home-win-nickg`, `lab-work-u24-mini-8g`, `lab-work-dual-64g`); linked from platform-release-cicd Stage 2.
-- Stage 2 SSH-safe modes: one-by-one `scripts/stage2_one.sh` with `REPORT OK`, selective rebuild via `scripts/stage2_changed_services.sh`, optional `:VERSION-<sha>` sub-tags; documented in `platform-release-cicd.md`.
-- **Release manifest (Mode D):** digest coherence for the twelve GHCR images — `scripts/write_release_manifest.sh`, `verify_release_manifest.sh`, `stage2_finalize_manifest.sh`, `stage2_retag_forward.sh`; artifact path `deployment/windows-installer/release-manifest.yml`; documented in `platform-release-cicd.md`.
-- Operator CI/CD guide (for-dummies intro + full steps + terminology appendix): `docs/deployment/eyenet-cicd-operator-guide.md`.
+- Discovery service registry persistence in Redis (reload on restart) plus compose `REDIS_URL`.
+- Required discovery re-register timers: Windows `EyeNetDiscoveryReregister` scheduled task; Ubuntu `eyenet-discovery-reregister.timer`.
+- Windows LAN publish (`publish-lan-ports.ps1`) and host Tailscale enroll (`enroll-host-tailscale.sh`) wired into the installer.
+- Login screen shows installation UUID and per-machine password hint (cross-lab confusion).
+- Mobile camera: clear sticky UUID on host change / 404; registration failure no longer fakes `cameraId: 0`.
+
+### Fixed
+
+- Discovery refused to advertise Docker/WSL bridge IPs without `ADVERTISE_HOST`.
+- Node VPN enrollment reads UUID/key from `app_settings` after bootstrap when `.env` keys are empty (§10).
+- Node prefers `ADVERTISE_HOST` for platform local IP (not container `172.18.x`).
+- `start-eyenet-platform.bat` runs discovery reregister after compose up.
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.82 → 2.25.83**.
+- Lab follow-ups: §9 Authority admin UX marked resolved; §1 persist+timer required; §14 nickg bootstrap/login documented.
 
 ### Notes
 
-- GHCR images published for **2.25.82** from `lab-home-win-nickg` (git `cb066ae`); Windows tray asset on GitHub Release `v2.25.82`.
-- Installers still pull by `:VERSION`; digests are the audit / future pin-by-digest contract. Run `stage2_finalize_manifest.sh` after Stage 2 completes a pin, then Stage 1-commit the manifest.
-- First tray ship for pin `2.25.82`: after Stage 1 push, build tray on Windows + Ubuntu labs, `gh release create v2.25.82 …`, then Stage 3 lab soak.
+- Stage 2 must rebuild at least: `ppl-meta-discovery`, `ppl-meta-node`, `ppl-meta-frontend` (login UUID). Republish cameras/frontend if Stage 3 still shows §13 disconnect gaps.
+- Mobile §12 needs a new APK build (not GHCR). Stage 3: re-run elevated `publish-lan-ports.ps1` on existing Windows installs; wipe volumes to test `/bootstrap`.
 
 ## [2.25.82] — 2026-09-19
 
@@ -51,16 +48,23 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 - Root `CHANGELOG.md` as the product release-notes source of truth; Stage 1 always updates it (no separate ask).
 - Links from deployment CI/CD docs, installer READMEs, and Ubuntu lab follow-ups to the changelog.
+- **EyeNet host tray** (`deployment/tray/`): Go systray for Windows (WSL) and Ubuntu; installers download from GitHub Releases tag `v${VERSION}`.
+- Lab machines inventory: `docs/deployment/lab-machines.md`; Stage 2 SSH-safe scripts; release manifest Mode D; operator CI/CD guide.
 
 ### Changed
 
 - Platform pin `VERSION` / installer `RELEASE_TAG` defaults: **2.25.81 → 2.25.82**.
-- `docs/deployment/platform-release-cicd.md`: changelog is mandatory on meaningful Stage 1; two-stage wording clarified.
+- `docs/deployment/platform-release-cicd.md`: changelog is mandatory on meaningful Stage 1; three-step wording (code → images → install); tray publish manual.
+- Authority admin UI rebuilt as laconic mobile-first shell (Home / People / Licences / Me).
+
+### Fixed
+
+- Node Alpine `netifaces` build; communications/orchestrator/vmeta `/app/logs`; vmeta protected deps (`httpx`/`asyncpg`/`PyJWT`/`libgl1`); discovery reregister via compose DNS; communications `email-validator`.
 
 ### Notes
 
-- Product fixes from the `2.25.81` Stage 1 push (cameras disconnect, frontend disconnect UX, communications/vmeta packaging, shared reregister) ship under this pin once **Stage 2** publishes GHCR tags for `2.25.82`.
-- Until Stage 2 runs, labs still pull whatever older images are already on GHCR.
+- GHCR images published for **2.25.82**; Windows tray on Release `v2.25.82`.
+- Product fixes from the `2.25.81` Stage 1 push (cameras disconnect, frontend disconnect UX, communications/vmeta packaging, shared reregister) ship under this pin once Stage 2 published GHCR tags for `2.25.82`.
 
 ---
 

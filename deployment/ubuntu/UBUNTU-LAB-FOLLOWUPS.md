@@ -24,36 +24,36 @@ Lab host paths (reference):
 
 ### 1. Discovery registry nearly empty after install
 
+**Status (2.25.83):** **Required** product fix — Redis-backed service registry +
+**required** host re-register timer (Windows scheduled task / Ubuntu systemd).
+Installer still runs `reregister-discovery-services.sh` after every `compose up`.
+
 **Symptom:** `/network` shows only gateway. Mobile camera finds communications
 (multicast) but reports **node service cannot be found**. Login still works
 (gateway path).
 
 **Cause:**
 
-- Discovery keeps an **in-memory** registry.
+- Discovery previously kept an **in-memory** registry only.
 - Published `ppl-meta-node` fails self-register:
   `Failed to register with discovery service: No module named 'shared'`.
 - Communications logs: `Service discovery module not available, using fallback mode`.
 - Other services often never register on cold start either.
 
-**Lab workaround:**
-
-```bash
-bash ~/ppl-meta-platform/deployment/mac-lima/reregister-discovery-services.sh
-```
-
-Registers compose DNS hosts; discovery rewrites to `ADVERTISE_HOST` for phones.
-
-**Follow-up actions:**
+**Durable fix (pin 2.25.83+):**
 
 | Where | What |
 |--------|------|
-| `ppl-meta-node` image / Dockerfile | Fix missing `shared` package (or stop importing it) so discovery registration works at startup. |
-| Other service images | Ensure discovery client is packaged and registration is best-effort, not silent skip. |
-| `deployment/ubuntu/install-eyenet-ubuntu.sh` | Always run `reregister-discovery-services.sh` after `up -d` (and after any discovery recreate). |
-| Windows installer / Lima setup | Same: call reregister after stack healthy (Windows `install-platform.ps1` + shared `deployment/windows-installer/reregister-discovery-services.sh`). |
-| Ops | Optional: systemd timer / cron on lab boxes to re-run register after reboot until images are fixed. |
-| Product | Consider persisting discovery registry or having gateway seed peers so a discovery restart is not catastrophic. |
+| `ppl-meta-discovery` | Persist `ServiceRegistry` in Redis; reload on startup. |
+| Compose | `REDIS_URL` + `depends_on: redis` for discovery. |
+| Windows / Ubuntu installers | **Required** periodic re-register timer after up/logon. |
+| `reregister-discovery-services.sh` | Called after every compose up path (install + start scripts). |
+
+**Lab workaround (until images upgraded):**
+
+```bash
+bash ~/ppl-meta-platform/deployment/windows-installer/reregister-discovery-services.sh
+```
 
 ---
 
@@ -191,35 +191,25 @@ Installer already defaults `ADVERTISE_HOST` from `ip -4 addr`; docs should say
 
 ### 9. Old application key → `installation_already_bound_elsewhere`
 
-**Symptom:** Bootstrap activation fails when reusing a `lic_…` key bound to an
-erased install. Same owner email **is** allowed for a **new** key.
+**Status:** **Resolved** (Authority admin UX) — pending/unbound entitlements are
+obvious in Authority admin; no platform Stage 2 required for this item.
 
-**Lab notes:**
+**Symptom (historical):** Bootstrap activation fails when reusing a `lic_…` key
+bound to an erased install. Same owner email **is** allowed for a **new** key.
 
-- Clearing stale local Authority fields was required after failed attempts
-  (`app_settings` + `installation_info.authority_*`).
-- Do not paste entitlement/install UUIDs into the bootstrap key field; only
-  `lic_<32 hex>`.
-- Local install guid (example lab): `2489feec-fb47-40ce-b43a-e8b6014a0ccf` —
-  Node sends this as `installation_uuid` on activate.
-
-**Follow-up actions:**
-
-| Where | What |
-|--------|------|
-| Authority admin UX | Make “pending / unbound” entitlement obvious; warn if `installation_uuid` pre-filled. |
-| Bootstrap UI | Show Authority `reason` clearly (`installation_already_bound_elsewhere`, etc.). |
-| Node | Avoid persisting application key into settings when `approved=false` (today it still persists, which confused later attempts). |
-| Docs / installer README | Lab reset SQL for clearing Authority columns (already done ad hoc on Ubuntu). |
+**Remaining hygiene (optional):** Bootstrap UI should still surface Authority
+`reason` clearly; Node should avoid persisting application key when
+`approved=false`.
 
 ### 10. Env `INSTALLATION_UUID` / `APPLICATION_KEY` intentionally empty
 
 By design for production-like install: values come from Authority claim /
-bootstrap UI, not installer prompts. VPN enrollment stays skipped until set
-(`EYENET_INSTALLATION_UUID` / `EYENET_APPLICATION_KEY`).
+bootstrap UI, not installer prompts.
 
-**Follow-up:** After successful activate, optionally write keys into `.env` and
-recreate node so VPN can enroll without a second manual step.
+**Status (2.25.83):** VPN enrollment reads UUID/key from **env or** Postgres
+`app_settings` (`authority_installation_uuid` / `authority_application_key`)
+so enroll works after bootstrap without a manual `.env` rewrite. Windows also
+runs host-side `enroll-host-tailscale.sh` (Node container is non-root).
 
 ---
 
@@ -254,31 +244,19 @@ schema verify.
 
 ### 12. Android can stream while never registering on the new install
 
+**Status (2.25.83 source):** Fixed in mobile app — clear UUID on host change and
+on GET 404; registration failure no longer returns fake `cameraId: 0`. **Ship a
+new APK** and retest; GHCR Stage 2 alone does not update phones.
+
 **Symptom (lab):** Mobile app shows a live stream; platform `/cameras` empty.
 Postgres `cameras` table had **0 rows**. Cameras service logs showed list/detect
 only — **no** `POST /api/v1/cameras/mobile`.
 
-**Not primarily caused by** reusing the same username/password on a new install
-(JWT is issued by the new Node). Sticky **on-device state** matters more:
+**Cause:** Sticky on-device state (SharedPreferences `ppl_camera_uuid` / service URLs
+from an old install) plus previous fake success (`cameraId: 0`) after register fail.
 
-- SharedPreferences keeps `ppl_camera_uuid` / platform service URLs from the old
-  install.
-- `autoRegisterCamera` → `checkExistingCamera` may skip or confuse re-register.
-- `camera_screen.dart` **swallows registration failure** and continues with a
-  fake success (`cameraId: 0`), so streaming can start without a DB camera.
-
-**Lab workaround:** Clear app storage (or uninstall/reinstall the APK), log in
-again to this platform (`192.168.9.14`), confirm discovery lists cameras/node,
-then open camera. Expect a `POST …/cameras/mobile` and a row on `/cameras`.
-
-**Follow-up actions:**
-
-| Where | What |
-|--------|------|
-| Mobile app | On login to a **different** installation/host, clear stored camera UUID and force re-register. |
-| `camera_screen.dart` | Do not treat registration failure as success; surface error / block stream until registered. |
-| Cameras API | Ensure `GET /cameras/{uuid}` 404 always triggers clean re-register (already intended). |
-| QA | After fresh platform install, verify `/cameras` gains a row when Android streams. |
+**QA after new APK:** Log in to the upgraded lab, open camera, expect
+`POST …/cameras/mobile` and a row on `/cameras`.
 
 ---
 
@@ -320,17 +298,41 @@ Until step 2–3, other installs and a fresh Ubuntu pull still have the old bug.
 
 ---
 
-## Suggested work order
+## P1 — Windows first-boot bootstrap / cross-lab login (lab-home-win-nickg)
 
-1. Fix discovery registration in **node** (+ reregister in all installers).
-2. Fix **communications** / **orchestrator** log paths + `email-validator`.
-3. Fix **vmeta** requirements + protected image smoke test; republish.
-4. Harden schema apply order + `schema_migrations` clash with vision.
-5. Authority activate persistence / admin UX for rebound keys.
-6. Mobile camera: clear UUID on new host + stop fake registration success (§12).
-7. Disconnect + instant detection (§13) — source fixed; **must rebuild/push**
-   cameras + frontend via CI/CD (lab hotfix is ephemeral).
-8. Ubuntu installer polish (DNS retries, post-up verify checklist).
+### 14. No `/bootstrap` after Windows/WSL install; login expects another lab’s password
+
+**Symptom:** Fresh-looking install on `lab-home-win-nickg` opens **login**, not
+`/bootstrap`. Operator tries credentials from the work lab PC.
+
+**Cause:**
+
+- Bootstrap is skipped when Postgres already has an **owner** user for the
+  approved email (`bootstrap_complete`). Reused volumes / prior activate look
+  like a finished install.
+- Tray only opens the UI; Node DB decides bootstrap vs login.
+- Local EyeNet password is **per machine DB**, not shared with other labs;
+  Authority password is separate. Browser password managers often autofill
+  `localhost:3000` from another lab.
+
+**Durable fix (2.25.83+):**
+
+| Where | What |
+|--------|------|
+| Login UI | Show **installation UUID** + hint that local password is per this machine. |
+| Docs / Stage 3 | “Fresh install” = wipe compose volumes (or install dir data) before soak when testing `/bootstrap`. |
+| Installer README | Same clean-volume note for Windows/WSL. |
+
+---
+
+## Suggested work order (pin 2.25.83)
+
+1. Discovery Redis persist + **required** re-register timers (Windows + Ubuntu).
+2. Windows LAN publish + host Tailscale enroll; Node VPN reads `app_settings` (§10).
+3. Login installation UUID + clean-volume Stage 3 docs (§14).
+4. Mobile camera: clear UUID on new host + stop fake registration success (§12) — APK track.
+5. Verify packaging / disconnect (§2–4, §13) on clean pull; republish gaps under 2.25.83.
+6. Stage 1 → Stage 2 → Stage 3 per platform-release-cicd.md.
 
 ---
 

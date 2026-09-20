@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     # get_machine_ip() returns a Docker-bridge address (e.g. 172.18.0.x)
     # that phones cannot reach. Set by installers to the host machine IP.
     ADVERTISE_HOST: str = ""
+
+    # Redis URL for durable service-registry persistence across restarts.
+    # When empty, registry stays in-memory only (tests / local without Redis).
+    REDIS_URL: str = ""
     
     # Logging Configuration  
     LOG_LEVEL: str = "INFO"

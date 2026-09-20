@@ -5,7 +5,7 @@
 set -euo pipefail
 
 ADVERTISE_HOST="${ADVERTISE_HOST:-$(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | head -1)}"
-RELEASE_TAG="${RELEASE_TAG:-2.25.82}"
+RELEASE_TAG="${RELEASE_TAG:-2.25.83}"
 REGISTRY="${REGISTRY:-ghcr.io/nickglezakos/ppl-meta-platform}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/eyenet-platform}"
 REPO_DIR="${REPO_DIR:-$HOME/ppl-meta-platform}"
@@ -135,9 +135,26 @@ REREG="$REPO_DIR/deployment/windows-installer/reregister-discovery-services.sh"
 [[ -f "$REREG" ]] || REREG="$REPO_DIR/deployment/mac-lima/reregister-discovery-services.sh"
 if [[ -f "$REREG" ]]; then
   echo "==> Re-registering services with discovery..."
-  bash "$REREG" || echo "WARN: discovery reregister failed (non-fatal)"
+  cp -f "$REREG" "$INSTALL_DIR/reregister-discovery-services.sh"
+  chmod +x "$INSTALL_DIR/reregister-discovery-services.sh"
+  ( cd "$INSTALL_DIR" && bash reregister-discovery-services.sh ) || echo "WARN: discovery reregister failed (non-fatal)"
 else
   echo "WARN: reregister-discovery-services.sh missing — mobile discovery may be incomplete"
+fi
+
+TIMER_SRC="$REPO_DIR/deployment/ubuntu/install-discovery-reregister-timer.sh"
+if [[ -f "$TIMER_SRC" ]]; then
+  echo "==> Installing required discovery re-register systemd timer..."
+  if command -v systemctl >/dev/null 2>&1; then
+    if [[ "$(id -u)" -eq 0 ]]; then
+      INSTALL_DIR="$INSTALL_DIR" bash "$TIMER_SRC" || echo "WARN: discovery re-register timer install failed"
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo env INSTALL_DIR="$INSTALL_DIR" bash "$TIMER_SRC" || echo "WARN: discovery re-register timer install failed (need sudo)"
+    else
+      echo "WARN: run as root/sudo to install required discovery re-register timer:"
+      echo "  sudo INSTALL_DIR=$INSTALL_DIR bash $TIMER_SRC"
+    fi
+  fi
 fi
 
 compose_ --project-name pplmeta --env-file .env -f docker-compose.yml ps

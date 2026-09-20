@@ -1,6 +1,6 @@
 # EyeNet Platform Manager
 # Autonomous Windows installer & management console
-# Version: 2.25.82
+# Version: 2.25.83
 # Repository: https://github.com/nickglezakos/ppl-meta-platform
 
 param(
@@ -18,7 +18,7 @@ $script:TargetWslMemoryGb = 12
 $script:TargetWslProcessors = 6
 $script:GitHubRawBase = "https://raw.githubusercontent.com/nickglezakos/ppl-meta-platform/main/deployment/windows-installer"
 $script:InstallDir = $null
-$script:ReleaseTag = "2.25.82"
+$script:ReleaseTag = "2.25.83"
 $script:ComposeProjectName = "pplmeta"
 $script:WslDistro = "eyenet"
 $script:UseWslDocker = $false
@@ -349,6 +349,7 @@ function Test-WslConfig {
 memory=$($script:TargetWslMemoryGb)GB
 processors=$($script:TargetWslProcessors)
 swap=2GB
+localhostForwarding=true
 networkingMode=mirrored
 "@
             Set-Content -Path $wslConfigPath -Value $wslContent -Force
@@ -404,7 +405,10 @@ function Download-InstallerFiles {
         @{Name = "schema/apply.sh"; Url = "$script:GitHubRawBase/schema/apply.sh"},
         @{Name = "schema/verify.sh"; Url = "$script:GitHubRawBase/schema/verify.sh"},
         @{Name = "schema/pack.tar.gz"; Url = "$script:GitHubRawBase/schema/pack.tar.gz"},
-        @{Name = "reregister-discovery-services.sh"; Url = "$script:GitHubRawBase/reregister-discovery-services.sh"}
+        @{Name = "reregister-discovery-services.sh"; Url = "$script:GitHubRawBase/reregister-discovery-services.sh"},
+        @{Name = "publish-lan-ports.ps1"; Url = "$script:GitHubRawBase/publish-lan-ports.ps1"},
+        @{Name = "enroll-host-tailscale.sh"; Url = "$script:GitHubRawBase/enroll-host-tailscale.sh"},
+        @{Name = "install-discovery-reregister-task.ps1"; Url = "$script:GitHubRawBase/install-discovery-reregister-task.ps1"}
     )
 
     foreach ($file in $files) {
@@ -520,29 +524,13 @@ function New-EnvWindows {
     Set-EnvValue -Path $script:EnvFile -Key "RELEASE_TAG" -Value $script:ReleaseTag
     Set-EnvValue -Path $script:EnvFile -Key "REGISTRY" -Value "ghcr.io/nickglezakos/ppl-meta-platform"
 
-    # Prefer an existing ADVERTISE_HOST; otherwise detect a non-loopback IPv4 for
-    # mobile discovery (LAN phones cannot use Docker 172.x addresses).
-    $advertiseHost = $currentValues['ADVERTISE_HOST']
-    if ([string]::IsNullOrWhiteSpace($advertiseHost)) {
-        try {
-            $advertiseHost = Get-NetIPAddress -AddressFamily IPv4 |
-                Where-Object {
-                    $_.IPAddress -notlike '127.*' -and
-                    $_.IPAddress -notlike '169.254.*' -and
-                    $_.IPAddress -notlike '172.1[6-9].*' -and
-                    $_.IPAddress -notlike '172.2[0-9].*' -and
-                    $_.IPAddress -notlike '172.3[0-1].*' -and
-                    $_.PrefixOrigin -ne 'WellKnown'
-                } |
-                Sort-Object -Property InterfaceMetric |
-                Select-Object -ExpandProperty IPAddress -First 1
-        } catch {
-            $advertiseHost = $null
-        }
-    }
+    # Always refresh to the current Windows LAN IP (Wi-Fi/Ethernet). Do not
+    # keep a stale Docker/WSL 172.x or Tailscale 100.x value — phones on the
+    # physical LAN cannot use those, and DHCP can change the NIC address.
+    $advertiseHost = Get-EyeNetAdvertiseHost
     if (-not [string]::IsNullOrWhiteSpace($advertiseHost)) {
         Set-EnvValue -Path $script:EnvFile -Key "ADVERTISE_HOST" -Value $advertiseHost
-        Write-Host "  ADVERTISE_HOST=$advertiseHost (mobile discovery)" -ForegroundColor $script:Green
+        Write-Host "  ADVERTISE_HOST=$advertiseHost (Windows LAN — cameras / mobile)" -ForegroundColor $script:Green
     } else {
         Write-WarningMsg "ADVERTISE_HOST unset — set the Windows LAN IP in .env.windows for mobile onboarding"
     }
@@ -592,6 +580,123 @@ function Prompt-ValueSecure {
         return $plainVal
     } finally {
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+}
+
+function Get-EyeNetAdvertiseHost {
+    # Physical Windows LAN IP for phones/cameras. Skip WSL/Hyper-V virtual
+    # NICs (172.19.x vSwitch), loopback, APIPA, and Tailscale CGNAT.
+    try {
+        $candidates = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+            Where-Object {
+                $_.IPAddress -notlike '127.*' -and
+                $_.IPAddress -notlike '169.254.*' -and
+                $_.IPAddress -notlike '100.*' -and
+                $_.InterfaceAlias -notmatch 'vEthernet|WSL|Hyper-V|Bluetooth|Loopback|Default Switch|Virtual'
+            })
+        $preferred = $candidates |
+            Sort-Object @{
+                Expression = {
+                    if ($_.InterfaceAlias -match 'Wi-Fi|WiFi|Ethernet') { 0 } else { 1 }
+                }
+            }, @{
+                Expression = {
+                    if ($_.IPAddress -like '192.168.*') { 0 }
+                    elseif ($_.IPAddress -like '10.*') { 1 }
+                    else { 2 }
+                }
+            }
+        $first = $preferred | Select-Object -First 1
+        if ($first) { return [string]$first.IPAddress }
+    } catch {
+        return $null
+    }
+    return $null
+}
+
+function Invoke-EnrollHostTailscale {
+    if (-not $script:UseWslDocker) { return }
+    Write-Step "Enrolling WSL Tailscale into EyeNet VPN..." ""
+    $scriptPath = Join-Path $script:InstallDir "enroll-host-tailscale.sh"
+    $bundled = Join-Path $PSScriptRoot "enroll-host-tailscale.sh"
+    if (-not (Test-Path $scriptPath) -and (Test-Path $bundled)) {
+        Copy-Item $bundled $scriptPath -Force
+    }
+    if (-not (Test-Path $scriptPath)) {
+        Write-WarningMsg "enroll-host-tailscale.sh missing — Node appuser cannot tailscale up on the host socket"
+        return
+    }
+    $drive = $script:InstallDir.Substring(0, 1).ToLower()
+    $rest = ($script:InstallDir.Substring(2) -replace '\\', '/')
+    $wslCwd = "/mnt/$drive$rest"
+    try {
+        wsl -d $script:WslDistro --user root -- bash -lc "cd '$wslCwd' && bash enroll-host-tailscale.sh" | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            Write-WarningMsg "Host Tailscale enroll skipped or failed (non-fatal). Check: wsl -d $($script:WslDistro) -- tailscale status"
+        } else {
+            Write-Success "WSL Tailscale enroll finished"
+        }
+    } catch {
+        Write-WarningMsg "Host Tailscale enroll failed (non-fatal): $_"
+    }
+}
+
+function Invoke-InstallDiscoveryReregisterTask {
+    Write-Step "Installing required discovery re-register scheduled task..." ""
+    $scriptPath = Join-Path $script:InstallDir "install-discovery-reregister-task.ps1"
+    $bundled = Join-Path $PSScriptRoot "install-discovery-reregister-task.ps1"
+    if (-not (Test-Path $scriptPath) -and (Test-Path $bundled)) {
+        Copy-Item $bundled $scriptPath -Force
+    }
+    $rereg = Join-Path $script:InstallDir "reregister-discovery-services.sh"
+    $reregBundled = Join-Path $PSScriptRoot "reregister-discovery-services.sh"
+    if (-not (Test-Path $rereg) -and (Test-Path $reregBundled)) {
+        Copy-Item $reregBundled $rereg -Force
+    }
+    if (-not (Test-Path $scriptPath)) {
+        Write-WarningMsg "install-discovery-reregister-task.ps1 missing — discovery may empty after reboot"
+        return
+    }
+    try {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath -InstallDir $script:InstallDir -DistroName $script:WslDistro 2>&1 | ForEach-Object {
+            Write-Host "  $_" -ForegroundColor $script:Gray
+        }
+        if ($LASTEXITCODE -ne 0) {
+            Write-WarningMsg "Could not install EyeNetDiscoveryReregister task (re-run elevated if needed)"
+        } else {
+            Write-Success "Discovery re-register task installed (logon + every 10m)"
+        }
+    } catch {
+        Write-WarningMsg "Discovery re-register task install failed: $_"
+    }
+}
+
+function Invoke-PublishLanPorts {
+    Write-Step "Publishing EyeNet ports on the Windows LAN IP..." ""
+    $scriptPath = Join-Path $script:InstallDir "publish-lan-ports.ps1"
+    $bundled = Join-Path $PSScriptRoot "publish-lan-ports.ps1"
+    if (-not (Test-Path $scriptPath) -and (Test-Path $bundled)) {
+        Copy-Item $bundled $scriptPath -Force
+    }
+    if (-not (Test-Path $scriptPath)) {
+        Write-WarningMsg "publish-lan-ports.ps1 missing — LAN phones will not reach WSL NAT ports"
+        return
+    }
+    try {
+        $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath 2>&1
+        $output | ForEach-Object { Write-Host "  $_" -ForegroundColor $script:Gray }
+        if ($LASTEXITCODE -ne 0) {
+            Write-WarningMsg "LAN port publish needs Administrator (netsh portproxy + firewall). Re-run publish-lan-ports.ps1 elevated."
+        } else {
+            $adv = Get-EyeNetAdvertiseHost
+            if ($adv) {
+                Write-Success "LAN publish OK. UI: http://${adv}:3000"
+            } else {
+                Write-Success "LAN publish OK"
+            }
+        }
+    } catch {
+        Write-WarningMsg "LAN port publish failed (non-fatal): $_"
     }
 }
 
@@ -805,10 +910,21 @@ function Invoke-StartStack {
     # Same post-up as Ubuntu installer: refresh in-memory discovery registry.
     Invoke-ReregisterDiscovery | Out-Null
 
-    Write-Success "Platform started. Open http://localhost:3000"
-    Write-Host "    Gateway:   http://localhost:8080" -ForegroundColor $script:Gray
-    Write-Host "    Discovery: http://localhost:8006" -ForegroundColor $script:Gray
-    Write-Host "    Bootstrap: http://localhost:3000/bootstrap" -ForegroundColor $script:Gray
+    if ($script:UseWslDocker) {
+        Invoke-PublishLanPorts
+        Invoke-EnrollHostTailscale
+        Invoke-InstallDiscoveryReregisterTask
+    }
+
+    $adv = Get-EyeNetAdvertiseHost
+    $uiHost = if ($adv) { $adv } else { "localhost" }
+    Write-Success "Platform started. Open http://${uiHost}:3000"
+    Write-Host "    Gateway:   http://${uiHost}:8080" -ForegroundColor $script:Gray
+    Write-Host "    Discovery: http://${uiHost}:8006" -ForegroundColor $script:Gray
+    Write-Host "    Bootstrap: http://${uiHost}:3000/bootstrap" -ForegroundColor $script:Gray
+    if ($adv -and $adv -ne "localhost") {
+        Write-Host "    Cameras/apps on this Wi-Fi use http://${adv}:… (not 172.18.x)" -ForegroundColor $script:Gray
+    }
     if ($script:UseWslDocker) {
         Write-Host "    VPN: Node enrolls via WSL Tailscale → https://vpn.eyenet-vision.com" -ForegroundColor $script:Gray
         Write-Host "    Check: wsl -d $($script:WslDistro) -- tailscale status" -ForegroundColor $script:Gray

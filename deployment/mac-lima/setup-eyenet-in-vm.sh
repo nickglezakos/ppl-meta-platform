@@ -71,7 +71,7 @@ source "$INSTALL_DIR/.env"
 set +a
 
 REGISTRY="${REGISTRY:-ghcr.io/nickglezakos/ppl-meta-platform}"
-RELEASE_TAG="${RELEASE_TAG:-2.25.82}"
+RELEASE_TAG="${RELEASE_TAG:-2.25.83}"
 
 mkdir -p "$INSTALL_DIR/data"
 

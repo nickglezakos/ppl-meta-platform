@@ -151,10 +151,8 @@ class AutoCameraRegistrationService {
         AutoRegistrationLogger.success('Camera exists on server with UUID: $storedUuid');
         return cameraData;
       } else if (response.statusCode == 404) {
-        AutoRegistrationLogger.warning('Camera UUID not found on server - will re-register');
-        // DO NOT clear UUID here - it may be needed for troubleshooting
-        // The new registration will overwrite it with a new UUID if needed
-        AutoRegistrationLogger.debug('UUID preserved for diagnostic purposes');
+        AutoRegistrationLogger.warning('Camera UUID not found on server - clearing and re-registering');
+        await _deviceService.clearCameraUuid();
         return null;
       } else {
         AutoRegistrationLogger.warning('Failed to verify camera: ${response.statusCode}');

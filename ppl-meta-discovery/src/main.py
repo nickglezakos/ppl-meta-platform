@@ -42,8 +42,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global registries and announcer
-service_registry = ServiceRegistry()
-edge_registry = EdgeRegistry(heartbeat_timeout=get_settings().EDGE_DEVICE_TIMEOUT)
+_settings = get_settings()
+service_registry = ServiceRegistry(
+    heartbeat_timeout=90,
+    redis_url=_settings.REDIS_URL,
+)
+edge_registry = EdgeRegistry(heartbeat_timeout=_settings.EDGE_DEVICE_TIMEOUT)
 multicast_announcer = MulticastAnnouncer()
 
 
@@ -128,7 +132,12 @@ def get_advertise_host() -> str:
     if machine_ip and machine_ip not in ("127.0.0.1", "0.0.0.0") and not _is_docker_bridge_ip(machine_ip):
         return machine_ip
 
-    return machine_ip or "127.0.0.1"
+    if machine_ip and _is_docker_bridge_ip(machine_ip):
+        logger.warning(
+            "Refusing to advertise Docker/WSL bridge %s; set ADVERTISE_HOST to the Windows/Ubuntu LAN IP",
+            machine_ip,
+        )
+    return "127.0.0.1"
 
 
 def _needs_host_rewrite(host: str) -> bool:

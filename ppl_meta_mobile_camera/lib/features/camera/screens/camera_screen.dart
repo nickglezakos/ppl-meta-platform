@@ -860,25 +860,9 @@ class _CameraScreenState extends State<CameraScreen>
     
     if (!registrationResult.isSuccess) {
       CameraLogger.error('Camera registration failed: ${registrationResult.error}');
-      // Don't throw exception for existing cameras - just log the error and continue
-      CameraLogger.warning('Registration result indicated failure, but continuing with camera setup');
-      
-      // Try to return a success result if we have camera data despite the flag
-      if (registrationResult.cameraId != null && registrationResult.cameraName != null) {
-        CameraLogger.info('Found camera data despite isSuccess=false, treating as success');
-        return CameraRegistrationResult.success(
-          cameraId: registrationResult.cameraId!,
-          cameraName: registrationResult.cameraName!,
-          deviceId: registrationResult.deviceId ?? 'unknown',
-        );
-      }
-      
-      // Instead of throwing, return a generic success to avoid blocking the UI
-      CameraLogger.warning('No camera data found, returning generic success to continue app flow');
-      return CameraRegistrationResult.success(
-        cameraId: 0,
-        cameraName: 'Mobile Camera',
-        deviceId: 'mobile_device',
+      throw Exception(
+        registrationResult.error ??
+            'Camera registration failed — cannot stream until this device is registered on the platform',
       );
     }
     

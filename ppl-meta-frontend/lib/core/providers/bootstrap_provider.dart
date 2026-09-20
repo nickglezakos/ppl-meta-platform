@@ -28,6 +28,7 @@ class BootstrapStatus {
   final bool complete;
   final bool authorityConfigured;
   final bool applicationKeyConfigured;
+  final String? installationUuid;
   final BootstrapOwnerStatus owner;
 
   const BootstrapStatus({
@@ -36,6 +37,7 @@ class BootstrapStatus {
     required this.authorityConfigured,
     required this.applicationKeyConfigured,
     required this.owner,
+    this.installationUuid,
   });
 
   bool get needsOwnerBootstrap => !complete && state != 'bootstrap_complete';
@@ -51,6 +53,7 @@ class BootstrapStatus {
       complete: bootstrap['complete'] == true,
       authorityConfigured: authority['configured'] == true,
       applicationKeyConfigured: installation['application_key_configured'] == true,
+      installationUuid: installation['installation_uuid']?.toString(),
       owner: BootstrapOwnerStatus.fromJson(owner),
     );
   }

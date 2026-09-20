@@ -2,7 +2,7 @@
 
 **Status:** Active  
 **Last updated:** 2026-09-20  
-**Current pin:** root [`VERSION`](../../VERSION) (today `2.25.82`)  
+**Current pin:** root [`VERSION`](../../VERSION) (today `2.25.83`)  
 **Registry:** `ghcr.io/nickglezakos/ppl-meta-platform`  
 **Architecture:** `linux/amd64` only for customer/lab installs  
 
@@ -151,8 +151,8 @@ Every Stage 1 with product, installer, schema, tray, or operator-facing doc chan
 Agent wording:
 
 - *“Stage 1: push code to GitHub per platform-release-cicd.md”* ← includes changelog  
-- *“Bump VERSION to 2.25.82 and Stage 1 push”*  
-- *“Publish tray for 2.25.82”* ← manual build/upload, not Actions
+- *“Bump VERSION to 2.25.83 and Stage 1 push”*  
+- *“Publish tray for 2.25.83”* ← manual build/upload, not Actions
 
 After Stage 1 alone: labs can `git pull` installer scripts; containers stay on the previous GHCR tag until Stage 2; tray binaries update only after you upload Release assets (or copy a binary onto the lab).
 
@@ -243,15 +243,15 @@ Long builds drop idle SSH (especially Tailscale DERP). Do **not** rely on one in
 ```bash
 mkdir -p /tmp/eyenet-stage2
 # inside tmux:
-RELEASE_TAG=2.25.82 ./scripts/stage2_one.sh cameras 2>&1 | tee /tmp/eyenet-stage2/cameras.log
+RELEASE_TAG=2.25.83 ./scripts/stage2_one.sh cameras 2>&1 | tee /tmp/eyenet-stage2/cameras.log
 ```
 
 ### Tags: product pin vs trace
 
 | Tag | Example | Who uses it |
 |---|---|---|
-| **Product pin** | `2.25.82` | Installers (`RELEASE_TAG` / `VERSION`) |
-| **Trace sub-tag** | `2.25.82-92ea2d5` | Optional audit (`EXTRA_SHA_TAG=1`) |
+| **Product pin** | `2.25.83` | Installers (`RELEASE_TAG` / `VERSION`) |
+| **Trace sub-tag** | `2.25.83-92ea2d5` | Optional audit (`EXTRA_SHA_TAG=1`) |
 
 - Installers **must** keep pulling `:VERSION`.  
 - Selective Stage 2 may leave some services on an older digest under the same `:VERSION` until rebuilt — intentional.  
@@ -294,16 +294,16 @@ Classic all-at-once (only inside **tmux**):
 
 ```bash
 # Windows/WSL builder example
-ssh lab-home-win-nickg "wsl -d eyenet -- bash -lc 'cd /mnt/c/path/to/repo && RELEASE_TAG=2.25.82 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras'"
+ssh lab-home-win-nickg "wsl -d eyenet -- bash -lc 'cd /mnt/c/path/to/repo && RELEASE_TAG=2.25.83 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras'"
 
 # Native Linux builder
-ssh lab-work-dual-64g "cd ~/ppl-meta-platform && git pull && RELEASE_TAG=2.25.82 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras"
+ssh lab-work-dual-64g "cd ~/ppl-meta-platform && git pull && RELEASE_TAG=2.25.83 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras"
 ```
 
 Expect:
 
 ```text
-REPORT OK service=cameras tag=2.25.82 sha_tag=2.25.82-<shortsha> ref=ghcr.io/.../ppl-meta-cameras:2.25.82
+REPORT OK service=cameras tag=2.25.83 sha_tag=2.25.83-<shortsha> ref=ghcr.io/.../ppl-meta-cameras:2.25.83
 ```
 
 Loop: next service only after `REPORT OK`; on fail or SSH drop, retry **that** service. When the intended set is done:
@@ -345,7 +345,7 @@ Then Stage 1: commit `release-manifest.yml` + CHANGELOG Notes (which services, g
 
 **Agent wording:**
 
-- *“Stage 2 full on lab-work-dual-64g for 2.25.82 (tmux / one-by-one).”*  
+- *“Stage 2 full on lab-work-dual-64g for 2.25.83 (tmux / one-by-one).”*  
 - *“Stage 2 selective on lab-home-win-nickg from latest Stage 1.”*  
 - *“Stage 2 one: cameras then frontend on lab-home-win-nickg.”*
 
@@ -364,13 +364,13 @@ Then Stage 1: commit `release-manifest.yml` + CHANGELOG Notes (which services, g
 
 ```yaml
 schema_version: 1
-platform_version: "2.25.82"
+platform_version: "2.25.83"
 git_sha: "92ea2d5"
 created_at: "2026-09-19T…"
 registry: "ghcr.io/nickglezakos/ppl-meta-platform"
 images:
   ppl-meta-node:
-    tag: "2.25.82"
+    tag: "2.25.83"
     digest: "sha256:…"
   # …all twelve
 ```
@@ -384,7 +384,7 @@ images:
 
 ```bash
 RELEASE_TAG=2.25.83 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras
-FROM_TAG=2.25.82 TO_TAG=2.25.83 EXCLUDE="cameras" ./scripts/stage2_retag_forward.sh
+FROM_TAG=2.25.83 TO_TAG=2.25.83 EXCLUDE="cameras" ./scripts/stage2_retag_forward.sh
 RELEASE_TAG=2.25.83 ./scripts/stage2_finalize_manifest.sh
 # Stage 1: commit release-manifest.yml + Notes
 ```
@@ -394,10 +394,10 @@ RELEASE_TAG=2.25.83 ./scripts/stage2_finalize_manifest.sh
 
 **Agent wording:**
 
-- *“Stage 2 Mode D: finalize release manifest for 2.25.82.”*  
-- *“Stage 2 pin bump 2.25.82→2.25.83: rebuild cameras, retag-forward the rest, finalize manifest.”*
+- *“Stage 2 Mode D: finalize release manifest for 2.25.83.”*  
+- *“Stage 2 pin bump 2.25.83→2.25.83: rebuild cameras, retag-forward the rest, finalize manifest.”*
 
-Version-specific notes: [first-windows-release-2.25.82.md](../guides/first-windows-release-2.25.82.md).
+Version-specific notes: [first-windows-release-2.25.83.md](../guides/first-windows-release-2.25.83.md).
 
 ### Future automation (not used today)
 
@@ -509,9 +509,9 @@ One release identity must agree everywhere:
 
 ## Full version cut (all three steps)
 
-When you want a new pin end-to-end (e.g. `2.25.82`):
+When you want a new pin end-to-end (e.g. `2.25.83`):
 
-1. **Stage 1:** bump `VERSION` + all pins, schema pack if needed, CHANGELOG under `[2.25.82]`, pin check, commit, push. If tray should ship: [publish tray manually](#tray-publish-part-of-stage-1) and confirm Release assets.  
+1. **Stage 1:** bump `VERSION` + all pins, schema pack if needed, CHANGELOG under `[2.25.83]`, pin check, commit, push. If tray should ship: [publish tray manually](#tray-publish-part-of-stage-1) and confirm Release assets.  
 2. **Stage 2:** on preferred builder (`lab-work-dual-64g`), build/push changed images; Mode D retag-forward unchanged services on a pin bump; `stage2_finalize_manifest.sh`.  
 3. **Stage 1 (manifest):** commit `release-manifest.yml` + CHANGELOG Notes.  
 4. **Stage 3:** upgrade named labs — installers pull images **and** download tray (or use a locally copied tray binary).  
@@ -519,7 +519,7 @@ When you want a new pin end-to-end (e.g. `2.25.82`):
 
 Wording:
 
-- *“Full release to 2.25.82 per platform-release-cicd.md (Stage 1 + publish tray + Stage 2 + upgrade both labs).”*
+- *“Full release to 2.25.83 per platform-release-cicd.md (Stage 1 + publish tray + Stage 2 + upgrade both labs).”*
 
 ---
 

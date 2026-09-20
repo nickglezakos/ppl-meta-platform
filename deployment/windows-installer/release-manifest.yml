@@ -3,44 +3,44 @@
 # Installers still pull by tag (:platform_version) today; digests are the
 # coherence / audit layer (Mode D). Digest-pinned compose is a later step.
 schema_version: 1
-platform_version: "2.25.82"
+platform_version: "2.25.83"
 git_sha: "cb066ae"
 created_at: "2026-09-20T08:43:19Z"
 registry: "ghcr.io/nickglezakos/ppl-meta-platform"
 images:
   ppl-meta-node:
-    tag: "2.25.82"
+    tag: "2.25.83"
     digest: "sha256:0efa79fad492722501f85c82111fe6fe5a63cd5dad0f646c25cbd8b2823d5732"
   ppl-meta-media:
-    tag: "2.25.82"
+    tag: "2.25.83"
     digest: "sha256:5c8ba7de6ec7a09d5fea4d9bf069e8aad271b728923af7ae28df12f590a46f54"
   ppl-meta-gateway:
-    tag: "2.25.82"
+    tag: "2.25.83"
     digest: "sha256:d36dd244c9e3bbc73ac4ed07fd54b586c58afaf2fa37d62c21bf67aeed7aea1e"
   ppl-meta-orchestrator:
-    tag: "2.25.82"
+    tag: "2.25.83"
     digest: "sha256:899e5b71269ea9e2591924941c915d1be9e0cdad34e5ed7347e9084afd751339"
   ppl-meta-discovery:
-    tag: "2.25.82"
+    tag: "2.25.83"
     digest: "sha256:577bbf92a8b1e071abe0d0fa5fdabea4dc7d4dae8355c5cc77a9cd40cfe9c124"
   ppl-meta-communications:
-    tag: "2.25.82"
+    tag: "2.25.83"
     digest: "sha256:8a48ccced30e6aff7c94f6fedd59969a3558221732147b9e904ed3ce341003b6"
   ppl-meta-frontend:
-    tag: "2.25.82"
+    tag: "2.25.83"
     digest: "sha256:12d2733bb861ce74cc04375b4650c21c06f1cfe0a33687bde87ed91acaa3c234"
   ppl-meta-vision-protected:
-    tag: "2.25.82"
+    tag: "2.25.83"
     digest: "sha256:77d6e0fbc6a9dd3b7489b3a549dc65db4a789785b72fbbc582efc1b8f8405f67"
   ppl-meta-vmeta-protected:
-    tag: "2.25.82"
+    tag: "2.25.83"
     digest: "sha256:c022bcece81cbfbcd67402c737ce3aea89e6af78b9b8e922a0b178b7bf530602"
   ppl-meta-cameras:
-    tag: "2.25.82"
+    tag: "2.25.83"
     digest: "sha256:dba63fbb7e48d081e7ef0040dcb031b6c352a438b742de4bcbce24d1514b07f4"
   ppl-meta-presence:
-    tag: "2.25.82"
+    tag: "2.25.83"
     digest: "sha256:6ad0de2e7d61a69200b6de0bfda1a20436e69d26cf58bbadd63ca80b39d78341"
   ppl-meta-models:
-    tag: "2.25.82"
+    tag: "2.25.83"
     digest: "sha256:2bf505c80f817657af9b15098fcabf4e2ed56b96ee8486d29c3062f360a0c5d4"

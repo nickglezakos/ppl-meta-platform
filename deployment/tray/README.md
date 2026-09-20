@@ -26,7 +26,7 @@ Written by Windows / Ubuntu installers:
   "compose_file": "docker-compose.windows-installer.yml",
   "env_file": ".env.windows",
   "ui_url": "http://127.0.0.1:3000",
-  "version": "2.25.82"
+  "version": "2.25.83"
 }
 ```
 

@@ -35,6 +35,8 @@ AUTHORITY_URL = (
     or "https://authority.eyenet-vision.com"
 )
 # Prefer EYENET_* (VPN mesh); fall back to AUTHORITY_* / installer names.
+# Module-level defaults; enroll_once/report resolve again via _resolve_credentials()
+# so post-bootstrap app_settings keys work without recreating the container .env.
 INSTALLATION_UUID = (
     os.environ.get("EYENET_INSTALLATION_UUID")
     or os.environ.get("AUTHORITY_INSTALLATION_UUID")
@@ -47,6 +49,57 @@ APPLICATION_KEY = (
     or os.environ.get("APPLICATION_KEY")
     or ""
 )
+
+# Same keys AuthorityService persists after bootstrap activate.
+_APP_SETTING_INSTALL_UUID = "authority_installation_uuid"
+_APP_SETTING_APP_KEY = "authority_application_key"
+
+
+def _credentials_from_app_settings() -> tuple[str, str]:
+    """Read installation UUID / application key from Postgres app_settings if present."""
+    try:
+        from src.database import SessionLocal
+        from src.models.app_setting import AppSetting
+
+        db = SessionLocal()
+        try:
+            rows = {
+                row.key: (row.value or "").strip()
+                for row in db.query(AppSetting).filter(
+                    AppSetting.key.in_([_APP_SETTING_INSTALL_UUID, _APP_SETTING_APP_KEY])
+                )
+            }
+            return (
+                rows.get(_APP_SETTING_INSTALL_UUID, ""),
+                rows.get(_APP_SETTING_APP_KEY, ""),
+            )
+        finally:
+            db.close()
+    except Exception as exc:
+        logger.debug("VPN: could not read app_settings credentials: %s", exc)
+        return "", ""
+
+
+def _resolve_credentials() -> tuple[str, str]:
+    """Env first, then bootstrap-persisted app_settings (closes empty-.env after activate)."""
+    uuid = (
+        os.environ.get("EYENET_INSTALLATION_UUID")
+        or os.environ.get("AUTHORITY_INSTALLATION_UUID")
+        or os.environ.get("INSTALLATION_UUID")
+        or INSTALLATION_UUID
+        or ""
+    ).strip()
+    key = (
+        os.environ.get("EYENET_APPLICATION_KEY")
+        or os.environ.get("AUTHORITY_APPLICATION_KEY")
+        or os.environ.get("APPLICATION_KEY")
+        or APPLICATION_KEY
+        or ""
+    ).strip()
+    if uuid and key:
+        return uuid, key
+    db_uuid, db_key = _credentials_from_app_settings()
+    return (uuid or db_uuid), (key or db_key)
 
 # Node role/tag this service enrolls as. The platform compute module (this service,
 # ppl-meta-node) owns its DB/registry/media and participates in the mesh as a
@@ -158,24 +211,49 @@ def _get_tailscale_ip(require_eyenet: bool = True) -> str:
         return ""
 
 
+def _is_docker_bridge_ip(ip: str) -> bool:
+    """True for Docker/WSL/Lima bridge addresses phones cannot route to."""
+    parts = ip.split(".")
+    if len(parts) != 4 or not all(p.isdigit() for p in parts):
+        return False
+    a, b = int(parts[0]), int(parts[1])
+    return a == 172 and 16 <= b <= 31
+
+
 def _get_local_ip() -> str:
     """Detect this host's primary local LAN IP (the platform's LAN address).
 
-    Uses a UDP connect to a public address so the kernel picks the egress
-    interface (the LAN NIC), yielding the private IP leaf devices use to reach
-    the platform on the local network. Excludes loopback and CGNAT (Tailscale
+    Preference: installer ``ADVERTISE_HOST`` (Windows LAN / Ubuntu NIC) so
+    containers do not report their Docker-bridge address (``172.18.0.x``).
+    Fallback: UDP connect to a public address so the kernel picks the egress
+    interface. Excludes loopback, Docker bridges, and CGNAT (Tailscale
     ``100.64.x.x``) addresses.
     """
     import socket
+
+    advertise_host = (os.getenv("ADVERTISE_HOST") or "").strip().split(":")[0]
+    if (
+        advertise_host
+        and not advertise_host.startswith("127.")
+        and not advertise_host.startswith("100.")
+        and not _is_docker_bridge_ip(advertise_host)
+    ):
+        return advertise_host
+
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect(("8.8.8.8", 80))
             ip = s.getsockname()[0]
-            if ip and not ip.startswith("127.") and not ip.startswith("100."):
+            if (
+                ip
+                and not ip.startswith("127.")
+                and not ip.startswith("100.")
+                and not _is_docker_bridge_ip(ip)
+            ):
                 return ip
     except Exception:
         pass
-    return ""
+    return advertise_host if advertise_host and not _is_docker_bridge_ip(advertise_host) else ""
 
 
 def report_platform_local_ip() -> bool:
@@ -185,7 +263,8 @@ def report_platform_local_ip() -> bool:
     devices the platform's current LAN address at *their* enrollment. Non-fatal
     on failure — VPN remains optional.
     """
-    if not INSTALLATION_UUID or not APPLICATION_KEY:
+    install_uuid, application_key = _resolve_credentials()
+    if not install_uuid or not application_key:
         return False
     local_ip = _get_local_ip()
     if not local_ip:
@@ -194,9 +273,9 @@ def report_platform_local_ip() -> bool:
     tailscale_ip = _get_tailscale_ip()
     try:
         resp = httpx.post(
-            f"{AUTHORITY_URL}/api/v1/vpn/installations/{INSTALLATION_UUID}/platform/local-ip",
+            f"{AUTHORITY_URL}/api/v1/vpn/installations/{install_uuid}/platform/local-ip",
             json={
-                "application_key": APPLICATION_KEY,
+                "application_key": application_key,
                 "platform_local_ip": local_ip,
                 "platform_tailscale_ip": tailscale_ip or None,
             },
@@ -226,10 +305,11 @@ def enroll_once() -> bool:
     Returns:
         True if enrollment succeeded or already enrolled, False on error.
     """
-    if not INSTALLATION_UUID or not APPLICATION_KEY:
+    install_uuid, application_key = _resolve_credentials()
+    if not install_uuid or not application_key:
         logger.warning(
-            "VPN: EYENET_INSTALLATION_UUID or EYENET_APPLICATION_KEY not set — "
-            "VPN mesh enrollment skipped. Set these env vars to join the EyeNet VPN."
+            "VPN: installation UUID / application key not set in env or app_settings — "
+            "VPN mesh enrollment skipped. Complete /bootstrap or set EYENET_* env vars."
         )
         return False
 
@@ -242,7 +322,6 @@ def enroll_once() -> bool:
 
     if _is_already_enrolled():
         logger.info("VPN: already enrolled on EyeNet — skipping enrollment")
-        # Still re-report our current local LAN IP in case it changed (router/DHCP).
         report_platform_local_ip()
         return True
 
@@ -260,11 +339,8 @@ def enroll_once() -> bool:
         resp = httpx.post(
             f"{AUTHORITY_URL}/api/v1/vpn/enroll-installation",
             json={
-                "installation_uuid": INSTALLATION_UUID,
-                "application_key": APPLICATION_KEY,
-                # Phase 3: this platform node self-registers as ``tag:platform``.
-                # The Authority gates platform-node counts by ``max_platform_nodes``.
-
+                "installation_uuid": install_uuid,
+                "application_key": application_key,
                 "node_type": VPN_NODE_TYPE,
             },
             timeout=15,
@@ -282,7 +358,7 @@ def enroll_once() -> bool:
                 "--auth-key", auth_key,
                 "--accept-routes=false",
                 "--accept-dns=false",
-                "--hostname", VPN_HOSTNAME or _derive_hostname(INSTALLATION_UUID),
+                "--hostname", VPN_HOSTNAME or _derive_hostname(install_uuid),
             ]),
             capture_output=True,
             text=True,
@@ -295,16 +371,22 @@ def enroll_once() -> bool:
                 matrix_group_id,
                 headscale_server,
             )
-            # Publish our local LAN IP so leaf devices can discover it at enrollment.
             report_platform_local_ip()
             return True
-        else:
+
+        redacted_err = (result.stderr or "").replace(auth_key, "[redacted]")
+        logger.error(
+            "VPN: tailscale up failed (exit=%d): %s",
+            result.returncode,
+            redacted_err.strip(),
+        )
+        if os.geteuid() != 0:
             logger.error(
-                "VPN: tailscale up failed (exit=%d): %s",
-                result.returncode,
-                result.stderr.strip(),
+                "VPN: tailscale CLI is not root (container USER is non-root). "
+                "Host tailscaled requires root or --operator to apply enrollment. "
+                "Use deployment/windows-installer/enroll-host-tailscale.sh on WSL."
             )
-            return False
+        return False
 
     except httpx.HTTPError as e:
         logger.warning("VPN: authority enrollment request failed (non-fatal): %s", e)

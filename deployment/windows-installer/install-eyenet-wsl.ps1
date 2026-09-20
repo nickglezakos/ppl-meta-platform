@@ -1,7 +1,7 @@
 ﻿# EyeNet WSL Runtime Bootstrap
 # Creates/configures the `eyenet` WSL2 distro with Docker Engine CE + Tailscale
 # (open-source client). Does NOT require Docker Desktop.
-# Version: 2.25.82
+# Version: 2.25.83
 
 param(
     [string]$DistroName = "eyenet",
@@ -54,6 +54,7 @@ function Ensure-WslConfig {
 memory=$($script:TargetWslMemoryGb)GB
 processors=$($script:TargetWslProcessors)
 swap=2GB
+localhostForwarding=true
 networkingMode=mirrored
 "@
     $needsWrite = $true

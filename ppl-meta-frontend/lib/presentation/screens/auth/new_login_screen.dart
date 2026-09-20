@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/providers/bootstrap_provider.dart';
 import '../../../providers/whitelabel_provider.dart';
 import '../../../widgets/app_logo.dart';
 
@@ -126,6 +127,45 @@ class _NewLoginScreenState extends ConsumerState<NewLoginScreen> {
                       color: Theme.of(context).textTheme.bodySmall?.color,
                     ),
                     textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final bootstrap = ref.watch(bootstrapStatusProvider);
+                      return bootstrap.when(
+                        data: (status) {
+                          final uuid = status.installationUuid?.trim();
+                          if (uuid == null || uuid.isEmpty) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Column(
+                              children: [
+                                SelectableText(
+                                  'Installation: $uuid',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        fontFamily: 'monospace',
+                                        fontSize: 11,
+                                      ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Local password is for this machine only — not Authority and not another lab PC.',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        loading: () => const SizedBox.shrink(),
+                        error: (_, __) => const SizedBox.shrink(),
+                      );
+                    },
                   ),
                   const SizedBox(height: 16),
 

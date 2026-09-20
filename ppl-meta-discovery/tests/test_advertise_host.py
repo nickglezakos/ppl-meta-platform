@@ -68,3 +68,14 @@ def test_get_advertise_host_prefers_env(monkeypatch):
     )
     monkeypatch.setattr(discovery_main, "get_tailscale_ip", lambda: "100.64.0.2")
     assert discovery_main.get_advertise_host() == "10.0.0.5"
+
+
+def test_get_advertise_host_skips_docker_bridge(monkeypatch):
+    monkeypatch.setattr(
+        discovery_main,
+        "get_settings",
+        lambda: type("S", (), {"ADVERTISE_HOST": ""})(),
+    )
+    monkeypatch.setattr(discovery_main, "get_tailscale_ip", lambda: None)
+    monkeypatch.setattr(discovery_main, "get_machine_ip", lambda: "172.18.0.5")
+    assert discovery_main.get_advertise_host() == "127.0.0.1"

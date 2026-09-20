@@ -4,13 +4,13 @@ setlocal enabledelayedexpansion
 :: ============================================================
 ::  EyeNet Platform Manager
 ::  Windows Batch Installer & Management Console
-::  Version: 2.25.82
+::  Version: 2.25.83
 ::
 ::  Download ONLY this file to any folder on your Windows PC.
 ::  Double-click to run.  No PowerShell, no setup required.
 :: ============================================================
 
-set "VERSION=2.25.82"
+set "VERSION=2.25.83"
 set "ENV_FILE=.env.windows"
 set "COMPOSE_FILE=docker-compose.windows-installer.yml"
 set "ENV_TEMPLATE=.env.windows.template"

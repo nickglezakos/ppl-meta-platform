@@ -10,7 +10,7 @@ native Ubuntu installer as well.
 
 Current release pin (tracks repository root `VERSION`):
 
-- `2.25.82`
+- `2.25.83`
 - registry: `ghcr.io/nickglezakos/ppl-meta-platform`
 - architecture: **`linux/amd64`** (Intel/AMD Windows PCs via WSL Docker Engine)
 - host standard: **≥16 GB physical RAM**
@@ -21,21 +21,21 @@ Release verification:
 
 ```bash
 ./scripts/check_installer_pins.sh
-./scripts/verify_platform_release.sh 2.25.82
+./scripts/verify_platform_release.sh 2.25.83
 ```
 
 Or inspect manifests:
 
 ```bash
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.25.82
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-media:2.25.82
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-gateway:2.25.82
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-orchestrator:2.25.82
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-discovery:2.25.82
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-communications:2.25.82
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-frontend:2.25.82
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vision-protected:2.25.82
-docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vmeta-protected:2.25.82
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.25.83
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-media:2.25.83
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-gateway:2.25.83
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-orchestrator:2.25.83
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-discovery:2.25.83
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-communications:2.25.83
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-frontend:2.25.83
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vision-protected:2.25.83
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vmeta-protected:2.25.83
 ```
 
 Verify that each manifest shows `"architecture": "amd64"` and `"os": "linux"`.
@@ -60,6 +60,16 @@ Verify that each manifest shows `"architecture": "amd64"` and `"os": "linux"`.
 - `.env.windows.template`: environment template (`RELEASE_TAG` must match `VERSION`)
 - `schema/`: **vendored DB migrations** (synced from the monorepo) — installer always applies + verifies
 - `reregister-discovery-services.sh`: post-up discovery refresh (also used by Ubuntu installer)
+- `publish-lan-ports.ps1`: WSL NAT portproxy so the Windows LAN IP (not `172.18.x`) reaches published ports
+- `enroll-host-tailscale.sh`: root `tailscale up` on the WSL distro (Node container is non-root `appuser`)
+- `install-discovery-reregister-task.ps1`: required scheduled task (logon + every 10m) for discovery re-register
+
+## Fresh install / bootstrap soak
+
+When testing **first-owner `/bootstrap`**, wipe compose volumes (or remove the
+install dir data) before Stage 3. Reusing Postgres from a prior activate skips
+bootstrap and opens **login** instead. Local EyeNet passwords are per-machine;
+they are not shared with another lab PC or with Authority.
 - Host tray (separate Stage 1.5): after install, downloads `eyenet-tray-windows-amd64-${VERSION}.exe` from GitHub Releases tag `v${VERSION}`, writes `%ProgramData%\EyeNet\tray.json`, registers Startup — see [`deployment/tray/`](../tray/)
 
 ## Database schema (installer always matches repo)
@@ -97,7 +107,7 @@ After the platform starts:
 2. When bootstrap is pending, the app routes to `/bootstrap`
 3. Activate with the Authority-approved owner email and `lic_…` application key
 
-For the current release pin, generated `.env.windows` should keep `RELEASE_TAG=2.25.82` unless you intentionally deploy another published tag.
+For the current release pin, generated `.env.windows` should keep `RELEASE_TAG=2.25.83` unless you intentionally deploy another published tag.
 
 ### Production note (INSTALLATION_UUID / APPLICATION_KEY)
 
@@ -125,7 +135,7 @@ Or GitHub → Packages → each `ppl-meta-*` → Package settings → Change vis
 Customers then only need network access:
 
 ```bash
-docker pull ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.25.82
+docker pull ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.25.83
 ```
 
 ## Related Policy

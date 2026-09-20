@@ -171,6 +171,10 @@ services:
       # discovery advertises Docker-bridge addresses (172.18.x) that phones
       # cannot route to.
       ADVERTISE_HOST: ${ADVERTISE_HOST:-}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     mem_limit: 256m
     mem_reservation: 128m
