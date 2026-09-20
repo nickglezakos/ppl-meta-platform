@@ -3,6 +3,7 @@ Database configuration and connection management for PPL Meta Cameras.
 """
 
 import asyncio
+import os
 from typing import AsyncGenerator
 
 from sqlalchemy import create_engine, text
@@ -13,12 +14,19 @@ from src.config import get_config
 
 config = get_config()
 
+# Instant detection + mobile frame ingest can hold many concurrent sessions;
+# default pool (5+10) exhausts and freezes mobile streaming (QueuePool timeout).
+_pool_size = int(os.getenv("CAMERAS_DB_POOL_SIZE", "20"))
+_max_overflow = int(os.getenv("CAMERAS_DB_MAX_OVERFLOW", "40"))
+
 # Create the database engine
 engine = create_engine(
     config.DATABASE_URL,
     echo=config.DATABASE_ECHO,
     pool_pre_ping=True,
     pool_recycle=300,
+    pool_size=_pool_size,
+    max_overflow=_max_overflow,
 )
 
 # Create async engine for async operations
@@ -27,6 +35,8 @@ async_engine = create_async_engine(
     echo=config.DATABASE_ECHO,
     pool_pre_ping=True,
     pool_recycle=300,
+    pool_size=_pool_size,
+    max_overflow=_max_overflow,
 )
 
 # Session makers

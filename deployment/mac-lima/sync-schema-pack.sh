@@ -99,6 +99,21 @@ add "$REPO_ROOT/ppl-meta-media/migrations/add_recording_timestamps.sql"
 add "$COMPAT/012_recording_sessions_cameras_compat.sql"
 add "$COMPAT/014_camera_settings_and_enable_detection.sql"
 
+# --- Pack-only installer DDL (fixed names; must survive sync wipe) ---
+# These are not auto-numbered; apply.sh sorts lexicographically after 046.
+for pack_only in \
+  047_orchestrator_workflow_settings.sql \
+  048_individuals_created_by_session.sql
+do
+  src="$COMPAT/$pack_only"
+  if [[ -f "$src" ]]; then
+    cp -f "$src" "$PACK_DIR/$pack_only"
+    echo "$pack_only  <=  ${src#"$REPO_ROOT/"}" | tee -a "$PACK_DIR/MANIFEST.txt"
+  else
+    echo "WARN: missing pack-only $src" >&2
+  fi
+done
+
 # Preflight SQL baked into pack
 cat > "$PACK_DIR/000_preflight_extensions_and_stub_reconcile.sql" <<'SQL'
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

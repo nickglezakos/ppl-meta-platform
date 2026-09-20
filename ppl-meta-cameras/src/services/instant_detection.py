@@ -2128,9 +2128,9 @@ class InstantDetectionSampler:
             
             logger.info(f"🔍 Calling VMeta age/gender endpoint: {url}")
             
-            # DeepFace cold-start on CPU often needs 30–90s; after warmup
-            # inference is usually <2s. Give headroom on 8GB hosts.
-            age_gender_timeout = float(os.getenv("VMETA_AGE_GENDER_TIMEOUT", "45"))
+            # Keep under Celery soft limit so boxes return even if DeepFace is slow.
+            # Override with VMETA_AGE_GENDER_TIMEOUT (Lima/work-lab used 4–8s).
+            age_gender_timeout = float(os.getenv("VMETA_AGE_GENDER_TIMEOUT", "8"))
             timeout = aiohttp.ClientTimeout(total=age_gender_timeout)
             self._vmeta_semaphore.acquire()
             try:
@@ -2169,7 +2169,7 @@ class InstantDetectionSampler:
             self._vmeta_circuit.record_failure()
             logger.warning(
                 "⏱️ VMeta age/gender timeout (>%ss) - returning unknown",
-                os.getenv("VMETA_AGE_GENDER_TIMEOUT", "45"),
+                os.getenv("VMETA_AGE_GENDER_TIMEOUT", "8"),
             )
             return self._default_age_gender()
         except Exception as e:

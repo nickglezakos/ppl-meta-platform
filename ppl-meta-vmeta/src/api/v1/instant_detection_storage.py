@@ -655,16 +655,31 @@ async def _create_individual(
         ),
     ]
 
+    # Each attempt must use a SAVEPOINT: a failed INSERT aborts the outer
+    # transaction in Postgres, so later "schema fallback" attempts would only
+    # raise InFailedSQLTransactionError (breaks instant-detection persist on
+    # thinner installer/ORM individuals tables).
     last_exc: Optional[Exception] = None
-    for sql, params in insert_attempts:
+    for idx, (sql, params) in enumerate(insert_attempts):
+        sp = f"id_indiv_ins_{idx}"
         try:
+            await conn.execute(f"SAVEPOINT {sp}")
             await conn.execute(sql, *params)
+            await conn.execute(f"RELEASE SAVEPOINT {sp}")
             last_exc = None
             break
         except Exception as exc:
             last_exc = exc
+            try:
+                await conn.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+            except Exception:
+                pass
             msg = str(exc).lower()
-            if "does not exist" in msg or "undefinedcolumn" in msg:
+            if (
+                "does not exist" in msg
+                or "undefinedcolumn" in msg
+                or "undefined column" in msg
+            ):
                 continue
             raise
     if last_exc is not None:

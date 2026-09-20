@@ -133,14 +133,39 @@ mostly works; still needed manual fixes for:
 - `individuals.created_by_session`
 - `person_objects` + `representative_faces` (vision created then **rolled back**)
 
-**Cause:**
+**Downstream symptom (easy to mis-attribute):** Mobile/RTSP camera **streams OK**,
+instant detection **start/submit succeed**, UI shows no overlays/results.
+Cameras logs: Celery task stuck `PENDING`. Vmeta logs:
+`POST /api/v1/instant-detection/persist-batch` → 500
+`InFailedSQLTransactionError`.
 
-- Pack migrations assume tables that ORM/vision create at runtime.
-- Vision `person_objects_migrations` expects `schema_migrations(migration_name, …)`
-  while pack creates `schema_migrations(version, …)`. Mark-complete fails →
-  **rollback drops** `person_objects`.
-- `individuals.created_by_session` lives in archive stubs / vmeta migrations but
-  is not reliably in the ordered pack path used by the installer.
+Two stacked causes (work Lima lab + nickg 2026-09-20):
+
+1. **Schema / persist fallbacks:** INSERT tries full-schema columns
+   (`person_objects`, `total_appearances`, …); on thinner ORM tables the first
+   statement fails and aborts the Postgres transaction. Later fallbacks without
+   `SAVEPOINT` only raise `InFailedSQLTransactionError`. Missing
+   `created_by_session` is the same family.
+2. **Stream freeze:** while Celery waits on VMeta age/gender (default was 45s
+   cold DeepFace), cameras SQLAlchemy pool (`5+10`) exhausts → mobile
+   `POST …/frame` hits `QueuePool limit … timeout 30` → preview freezes →
+   stale cleanup after ~90s.
+
+**Lab / install fix:**
+
+```sql
+ALTER TABLE individuals
+  ADD COLUMN IF NOT EXISTS created_by_session UUID REFERENCES tracking_sessions(session_uuid);
+```
+
+Code (must ship in images / hot-patch like Lima):
+
+- `ppl-meta-vmeta` `instant_detection_storage.py` — SAVEPOINT around each INSERT attempt
+- `ppl-meta-cameras` `database.py` — larger pool (`CAMERAS_DB_POOL_SIZE=20`)
+- `VMETA_AGE_GENDER_TIMEOUT=8` (boxes first; demographics optional)
+
+Pack file: `048_individuals_created_by_session.sql`. Restart `ppl-meta-vmeta`
+after schema. First ID run may still download DeepFace weights once.
 
 **Follow-up actions:**
 
@@ -148,8 +173,8 @@ mostly works; still needed manual fixes for:
 |--------|------|
 | Installer (`apply.sh` / Ubuntu / Windows) | Wait for postgres **and** key services (or run a single “bootstrap DDL” before pack). Re-apply + verify as a hard gate. |
 | Vision migrations | Align `schema_migrations` shape with pack **or** detect existing table and skip rollback on mark failure. |
-| Schema pack sync | Ensure `created_by_session` and full `person_objects` CREATE are in `deployment/windows-installer/schema/pack/`. |
-| `verify.sh` | Keep as install gate; document required order. |
+| Schema pack sync | `048_individuals_created_by_session.sql` + ensure full `person_objects` CREATE stay in pack. |
+| `verify.sh` | Keep as install gate; document required order. Fail install if `individuals.created_by_session` missing. |
 
 ---
 

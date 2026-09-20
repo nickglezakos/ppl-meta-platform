@@ -38,17 +38,29 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
   `None` but logged with `:.3f`).
 - Schema pack: add `047_orchestrator_workflow_settings.sql` so people-counters
   status stops 500ing when `workflow_settings` was never created.
+- Instant detection persist: vmeta INSERT schema fallbacks use Postgres `SAVEPOINT`
+  so thinner `individuals` tables no longer abort the transaction
+  (`InFailedSQLTransactionError` / results 404).
+- Mobile stream freeze during instant detection: cameras DB pool sized for concurrent
+  frame ingest (`CAMERAS_DB_POOL_SIZE` / `CAMERAS_DB_MAX_OVERFLOW`); default
+  `VMETA_AGE_GENDER_TIMEOUT` lowered to 8s so Celery does not hold the pool on
+  DeepFace cold-start.
+- Schema pack: `048_individuals_created_by_session.sql` adds missing
+  `individuals.created_by_session` when ORM created a thinner table.
 
 ### Changed
 
 - Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.82 → 2.25.83**.
-- Lab follow-ups: §9 Authority admin UX marked resolved; §1 persist+timer required; §14 nickg bootstrap/login documented.
+- Lab follow-ups: §9 Authority admin UX marked resolved; §1 persist+timer required; §14 nickg bootstrap/login documented; §5 documents instant-detection persist + stream-freeze failure mode.
+- Stage 1 CI contract: hard gate to commit + push source for **all services
+  affected by the fixes** before Stage 2 (`platform-release-cicd.md`).
 
 ### Notes
 
 - Stage 2 must rebuild at least: `ppl-meta-discovery`, `ppl-meta-node`, `ppl-meta-frontend` (login UUID). Republish cameras/frontend if Stage 3 still shows §13 disconnect gaps.
+- **Also rebuild for this Stage 1:** `ppl-meta-cameras`, `ppl-meta-vmeta` (instant detection SAVEPOINT + pool/timeout). Apply schema pack / `048` on existing labs.
 - Mobile §12 needs a new APK build (not GHCR). Stage 3: re-run elevated `publish-lan-ports.ps1` on existing Windows installs; wipe volumes to test `/bootstrap`.
-
+- Lab `docker cp` hotpatches are not a release; Stage 1 hard gate + Stage 2 required.
 ## [2.25.82] — 2026-09-19
 
 ### Added

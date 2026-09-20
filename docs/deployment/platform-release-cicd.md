@@ -8,7 +8,7 @@
 
 **How we ship (memorize this):**
 
-1. **Push code** to GitHub  
+1. **Commit + push source** to GitHub for **every service/path the fixes touched** (Stage 1 hard gate)  
 2. **Build images** on a remote lab PC → GHCR  
 3. **Install** on labs (images **+** tray)
 
@@ -25,7 +25,7 @@ Tell the agent (or yourself) which step you want. Do **not** assume they happen 
 
 | Step | What it updates | Say this |
 |---|---|---|
-| **1 — Code** | GitHub repo (source, installers, docs, pins, **CHANGELOG**) | *“Stage 1: push code to GitHub per platform-release-cicd.md”* |
+| **1 — Code** | GitHub repo: **commit + push source for all services affected by the fixes**, plus installers, docs, pins, **CHANGELOG** | *“Stage 1: push code to GitHub per platform-release-cicd.md”* |
 | **2 — Images** | GHCR container tags for the current `VERSION` (build on a named lab PC) | *“Stage 2: build and push images for VERSION on lab-work-dual-64g”* |
 | **3 — Install** | Running stack on a named lab (compose pull + tray install via installer) | *“Upgrade lab-home-win-nickg”* / *“Upgrade Ubuntu on lab-work-dual-64g”* |
 
@@ -36,12 +36,13 @@ Optional extras (always name them explicitly):
 
 **Critical separations:**
 
+- Stage 1 **hard gate:** every lasting fix must be **committed and pushed** in the monorepo for **all services/paths it touched** before Stage 2. A lab `docker cp` / `.env` edit / DB ALTER that works on one host is **not** Stage 1.  
 - Stage 1 does **not** change what labs pull from GHCR.  
 - Stage 2 does **not** upgrade lab hosts unless you also ask for Stage 3.  
 - Stage 3 installs **both** container images and the host tray (when Release assets exist, or when you copy a locally built tray onto the lab).  
-- Images are built from the git revision checked out on the build host (usually latest `main` after Stage 1).
+- Images are built from the git revision checked out on the build host (usually latest `main` after Stage 1). Stage 2 without that push rebuilds **old** source.
 
-**Release notes:** Root [`CHANGELOG.md`](../../CHANGELOG.md) is required on meaningful Stage 1. Saying *“Stage 1 … per platform-release-cicd.md”* already means: update the changelog, then commit and push. Do not use `docs/notes.txt` for release notes.
+**Release notes:** Root [`CHANGELOG.md`](../../CHANGELOG.md) is required on meaningful Stage 1. Saying *“Stage 1 … per platform-release-cicd.md”* already means: land affected service source, update the changelog, then commit and push. Do not use `docs/notes.txt` for release notes.
 
 ```text
   Mac (you)                 GitHub / Releases              Lab PC (amd64)               GHCR
@@ -84,7 +85,8 @@ WSL Ubuntu and native Ubuntu 24 pull the **same** `linux/amd64` images. They are
 Do **not**:
 
 - Publish Ubuntu-only or Windows-only service image tags  
-- Treat a lab `docker cp` / compose override as a release  
+- Treat a lab `docker cp` / compose override / live DB patch as a release (bring the same change into monorepo source first)  
+- Start Stage 2 while affected service source is still only on a lab or only in an uncommitted working tree  
 - Bump only one installer’s `RELEASE_TAG`  
 - Skip [`CHANGELOG.md`](../../CHANGELOG.md) on a meaningful Stage 1  
 - Wait on GitHub Actions for images or tray — both are **manual** until this doc says otherwise  
@@ -125,8 +127,21 @@ Do **not**:
 
 **Goal:** Land fixes, docs, and installer changes on GitHub. Do this often.
 
-**Does:** `git` commit + push (+ pin bumps / schema pack when needed) **and** update [`CHANGELOG.md`](../../CHANGELOG.md).  
+**Does:** `git` commit + push of **all affected service source** (+ pin bumps / schema pack when needed) **and** update [`CHANGELOG.md`](../../CHANGELOG.md).  
 **Does not:** rebuild or push Docker images to GHCR; does not upgrade labs; does not auto-publish tray (tray is manual — see below).
+
+### Hard gate — commit + push source for every affected service (do this first)
+
+Stage 1 is **not complete** until the monorepo on GitHub contains the lasting code for **every** service or path the fix touched. This is the first gate of CI; Stage 2 and Stage 3 assume it.
+
+Before CHANGELOG / pins / “Stage 1 done”:
+
+1. **List affected paths** — e.g. `ppl-meta-cameras`, `ppl-meta-vmeta`, schema pack, compose/env templates, installers, docs. If you hotfixed more than one container, each matching monorepo tree must be updated.  
+2. **Port lab hotfixes into source** — copy lasting logic from `docker cp` / one-off scripts into the repo files. Lab-only DB row edits stay lab data; durable DDL belongs in `deployment/windows-installer/schema/pack/`.  
+3. **Commit and push those sources to GitHub** (same Stage 1 push as CHANGELOG below, or an earlier push — either way they must be on the remote before Stage 2 starts).  
+4. **Refuse Stage 2** if `git status` still shows uncommitted service fixes, or if the only working copy of the fix is on a lab container.
+
+Example (instant detection / stream freeze): cameras + vmeta source **and** schema `048_…` must be pushed before rebuilding those GHCR images. A nickg `docker cp` that “works” is not a release.
 
 ### CHANGELOG is mandatory (do not wait to be asked)
 
@@ -140,17 +155,17 @@ Every Stage 1 with product, installer, schema, tray, or operator-facing doc chan
 
 ### Typical steps
 
-1. Land service / installer / tray / doc fixes (no lasting lab hotfixes).  
+1. **Hard gate:** land and **commit + push** source for **all services affected by the fixes** (see above). No lasting lab-only hotfixes.  
 2. If cutting a new product pin: set root `VERSION` and **all** installer pins to the same value.  
 3. If schema changed: `bash deployment/mac-lima/sync-schema-pack.sh` and include `schema/pack.tar.gz`.  
 4. Update [`CHANGELOG.md`](../../CHANGELOG.md).  
 5. `./scripts/check_installer_pins.sh`  
-6. Commit and **push to GitHub**.  
+6. Commit and **push to GitHub** (includes any remaining Stage 1 files from steps 2–5).  
 7. **If tray binaries should refresh for this pin:** [publish tray manually](#tray-publish-part-of-stage-1) (lab builds + GitHub Release).
 
 Agent wording:
 
-- *“Stage 1: push code to GitHub per platform-release-cicd.md”* ← includes changelog  
+- *“Stage 1: push code to GitHub per platform-release-cicd.md”* ← includes affected-service source hard gate + changelog  
 - *“Bump VERSION to 2.25.83 and Stage 1 push”*  
 - *“Publish tray for 2.25.83”* ← manual build/upload, not Actions
 
@@ -206,6 +221,8 @@ Tray-only path changes make `scripts/stage2_changed_services.sh` print **`NONE`*
 ## Stage 2 — Build and push images (when ready)
 
 **Goal:** Refresh GHCR so both installers `compose pull` the latest product for the pinned `VERSION`.
+
+**Precondition:** Stage 1 hard gate is done — affected service source is on GitHub. Do not build from a lab hotpatch alone.
 
 **Does:** Flutter web build (when needed) + Docker build/push of changed or all services + verify (+ Mode D manifest).  
 **Does not:** replace Stage 1; does not upgrade lab hosts (that is Stage 3).
