@@ -28,10 +28,8 @@ from services.workflow_service import WorkflowService
 import os
 from logging.handlers import RotatingFileHandler
 
-# Create logs directory if it doesn't exist
-# Use absolute path to workspace root
-workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-log_dir = os.path.join(workspace_root, "logs")
+# Create logs directory if it doesn't exist (/app/logs in the container)
+log_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, "ppl-meta-vmeta.log")
 

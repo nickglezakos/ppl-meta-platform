@@ -18,7 +18,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Fixed
 
 - Node Alpine image: install `linux-headers` and allow `netifaces` to compile on GCC 14 (`-Wno-error=int-conversion`).
-- Communications container: write logs under `/app/logs` (not `/logs`) so the non-root user can start.
+- Communications / orchestrator / vmeta: write file logs under `/app/logs` so non-root containers can start.
 - vmeta protected image: install `httpx` required by analytics.
 
 ### Changed

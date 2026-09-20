@@ -52,7 +52,7 @@ COPY src/ ./
 WORKDIR /app
 
 # Set permissions
-RUN chown -R appuser:appuser /app
+RUN mkdir -p /app/logs && chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser

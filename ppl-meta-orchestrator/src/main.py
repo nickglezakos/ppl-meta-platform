@@ -17,8 +17,8 @@ from config import settings
 import os
 from logging.handlers import RotatingFileHandler
 
-# Create logs directory if it doesn't exist
-log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+# Create logs directory if it doesn't exist (/app/logs in the container)
+log_dir = os.path.join(os.path.dirname(__file__), "logs")
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, "ppl-meta-orchestrator.log")
 
