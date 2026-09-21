@@ -135,6 +135,16 @@ class AuditLogService:
             if source_network:
                 content_parts.append(f"Network: {source_network}")
 
+            # Prefer the real trigger UUID from event_data (Media sends it for
+            # alerts/logs). Falling back to event_type used to store "alert"
+            # here, so /triggers detail panes filtering by trigger UUID saw
+            # empty logs while Analytics (unfiltered) still showed the rows.
+            payload_trigger_id = None
+            if isinstance(event_data, dict):
+                raw = event_data.get("trigger_id")
+                if raw is not None and str(raw).strip():
+                    payload_trigger_id = str(raw).strip()
+
             # Create communication log (audit logs use the same table)
             log = CommunicationLog(
                 type=CommunicationType.AUDIT_LOG,
@@ -146,7 +156,7 @@ class AuditLogService:
 
                 triggered_by=user_id,
                 trigger_type="audit_event",
-                trigger_id=event_type,
+                trigger_id=payload_trigger_id or event_type,
                 attempts=1,
                 delivered_at=datetime.now(timezone.utc),
                 installation_id=self.config.INSTALLATION_ID,

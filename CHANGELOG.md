@@ -17,6 +17,10 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Fixed
 
+- Communications audit logs: store the real trigger UUID in `trigger_id`
+  (from event payload) instead of the event type string `"alert"`, so the
+  Triggers tab detail pane can list on-screen notification logs for that
+  trigger (Analytics already showed them unfiltered).
 - Frontend nginx: stop 1-year `immutable` caching of unfingerprinted
   `main.dart.js` / Flutter bootstrap / service worker so Stage 3 pulls are
   visible without waiting a year (labs kept serving a cached pre-fix UI after
@@ -45,13 +49,11 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Stage 2 must rebuild **`ppl-meta-frontend`**
-  for the nginx cache-header fix (Flutter web assets unchanged; AuthManager JWT
-  fix already in GHCR). After Stage 3, hard-refresh the UI once to drop any
-  previously cached `immutable` `main.dart.js`.
-- Stage 2 rebuilt and finalized `release-manifest.yml` for gateway / discovery /
-  cameras / frontend earlier today; apply schema `049` and recreate Media on
-  existing labs so Redis/comms env takes effect.
+- No `VERSION` bump (still **2.25.83**). Stage 2 must rebuild
+  **`ppl-meta-communications`** for the audit `trigger_id` fix. Optional: backfill
+  existing `communication_logs.trigger_id` from `payload->>'trigger_id'` on labs.
+- Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once
+  if a lab still shows a pre-fix cached `main.dart.js`.
 - Tray publish not required for this Stage 1.
 - Process: do **not** copy container HTML/`docker cp` between labs — Stage 1 →
   Stage 2 GHCR → Stage 3 pull only.
