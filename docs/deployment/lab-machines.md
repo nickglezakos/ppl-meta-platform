@@ -29,8 +29,8 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 
 | Lab ID | Pin | Match GHCR? | Last Stage 3 | Notes |
 |---|---|---|---|---|
-| `lab-home-win-nickg` | `2.25.83` | **Yes** (media `780ea44d…`, comms `2920453c…`, frontend `635127bf…`) | 2026-09-21 | Media volume-perms entrypoint (HOME fix); force-recreated Media. |
-| `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (media `780ea44d…`, comms `2920453c…`, frontend `635127bf…`) | 2026-09-21 | Same; verified entrypoint re-chowns root-owned `media_data` on restart. |
+| `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `46ceeb64…`, vmeta `4a4ff150…`, media `780ea44d…`) | 2026-09-21 | Timer + portrait overlay + VMeta Gateway URL; `PPL_GATEWAY_URL` set. |
+| `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `46ceeb64…`, vmeta `4a4ff150…`, media `780ea44d…`) | 2026-09-21 | Same; hard-refresh UI once for new `main.dart.js`. |
 | `lab-work-dual-64g` | — | — | — | Offline / unreachable from work `192.168.9.x` as of 2026-09-21. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
