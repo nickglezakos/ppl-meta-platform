@@ -30,7 +30,7 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 | Lab ID | Pin | Match GHCR? | Last Stage 3 | Notes |
 |---|---|---|---|---|
 | `lab-home-win-nickg` | `2.25.83` | **Yes** (gateway / discovery / cameras / frontend) | 2026-09-21 | Running index digests match finalized manifest. `ADVERTISE_HOST=192.168.1.71`. |
-| `lab-work-u24-mini-8g` | `2.25.83` | **No** — tag only; digests lag today’s Stage 2 | 2026-09-21 (earlier pull) | Still on pre-finalize layers under `:2.25.83`. Needs Stage 3 re-`pull` + recreate for gateway / discovery / cameras / frontend. `ADVERTISE_HOST=192.168.9.14`. |
+| `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (gateway / discovery / cameras / frontend) | 2026-09-21 | Stage 3 re-pull after finalize; index digests match manifest. Repo `86e5d8a`. `ADVERTISE_HOST=192.168.9.14`. Discovery 11/11 healthy. |
 | `lab-work-dual-64g` | — | — | — | Offline / unreachable from work `192.168.9.x` as of 2026-09-21. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
