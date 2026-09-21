@@ -563,6 +563,12 @@ class EnhancedLogicV2Face {
   final double timestamp;
   @JsonKey(name: 'frame_number')
   final int frameNumber;
+  /// Detection-time frame size. Present on top-level faces; often missing from
+  /// detection_result.faces_by_frame entries — overlay must fall back.
+  @JsonKey(name: 'frame_width')
+  final double? frameWidth;
+  @JsonKey(name: 'frame_height')
+  final double? frameHeight;
 
   EnhancedLogicV2Face({
     required this.bbox,
@@ -570,6 +576,8 @@ class EnhancedLogicV2Face {
     required this.method,
     required this.timestamp,
     required this.frameNumber,
+    this.frameWidth,
+    this.frameHeight,
   });
 
   factory EnhancedLogicV2Face.fromJson(Map<String, dynamic> json) =>

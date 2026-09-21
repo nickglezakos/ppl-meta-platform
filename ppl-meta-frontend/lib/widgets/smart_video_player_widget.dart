@@ -1035,6 +1035,42 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
         }
         
         debugPrint('[LOAD FACES] 🔥 Processing ${allFacesByFrame.keys.length} frames from faces_by_frame');
+
+        // detection_result.faces_by_frame often omits frame_width/height; top-level
+        // faces usually have them (DB/vision). Without a fallback the painter uses
+        // video_player size — landscape for portrait mobile → off-center rects.
+        double? fallbackFrameWidth;
+        double? fallbackFrameHeight;
+        for (final face in enhancedData.faces) {
+          if (face.frameWidth != null &&
+              face.frameHeight != null &&
+              face.frameWidth! > 0 &&
+              face.frameHeight! > 0) {
+            fallbackFrameWidth = face.frameWidth;
+            fallbackFrameHeight = face.frameHeight;
+            break;
+          }
+        }
+        if (fallbackFrameWidth == null) {
+          for (final entry in allFacesByFrame.entries) {
+            for (final faceData in (entry.value as List<dynamic>)) {
+              if (faceData is! Map<String, dynamic>) continue;
+              final fw = (faceData['frame_width'] as num?)?.toDouble();
+              final fh = (faceData['frame_height'] as num?)?.toDouble();
+              if (fw != null && fh != null && fw > 0 && fh > 0) {
+                fallbackFrameWidth = fw;
+                fallbackFrameHeight = fh;
+                break;
+              }
+            }
+            if (fallbackFrameWidth != null) break;
+          }
+        }
+        if (fallbackFrameWidth != null) {
+          debugPrint(
+            '[LOAD FACES] frame dims fallback=${fallbackFrameWidth}x$fallbackFrameHeight',
+          );
+        }
         
         // Flatten faces_by_frame into a single list of ALL faces
         final List<FaceDetection> faces = [];
@@ -1059,8 +1095,10 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
               ),
               confidence: (faceMap['confidence'] as num?)?.toDouble() ?? 0.9,
               method: faceMap['method'] as String? ?? 'unknown',
-              frameWidth: (faceMap['frame_width'] as num?)?.toDouble(),
-              frameHeight: (faceMap['frame_height'] as num?)?.toDouble(),
+              frameWidth: (faceMap['frame_width'] as num?)?.toDouble() ??
+                  fallbackFrameWidth,
+              frameHeight: (faceMap['frame_height'] as num?)?.toDouble() ??
+                  fallbackFrameHeight,
             ));
           }
         }
@@ -1103,8 +1141,10 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
               ),
               confidence: (faceMap['confidence'] as num?)?.toDouble() ?? 0.9,
               method: faceMap['method'] as String? ?? 'unknown',
-              frameWidth: (faceMap['frame_width'] as num?)?.toDouble(),
-              frameHeight: (faceMap['frame_height'] as num?)?.toDouble(),
+              frameWidth: (faceMap['frame_width'] as num?)?.toDouble() ??
+                  fallbackFrameWidth,
+              frameHeight: (faceMap['frame_height'] as num?)?.toDouble() ??
+                  fallbackFrameHeight,
             );
             
             frameFaces.add(faceDetection);

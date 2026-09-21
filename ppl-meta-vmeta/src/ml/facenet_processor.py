@@ -78,32 +78,34 @@ class FaceNetProcessor:
             return None
         
         try:
-            # DeepFace.represent returns list of dicts with embeddings
-            result = DeepFace.represent(
-                img_path=face_image,
-                model_name=self.model_name,
-                enforce_detection=enforce_detection,
-                detector_backend='opencv',
-                align=True
-            )
-
-            if not result:
-                logger.warning("No face detected in image")
-                return None
-
-            # FIX 1: Reject crops that contain more than one detected face.
-            # result[0] is the most prominent/frontal face — not necessarily
-            # the intended subject — causing silent identity contamination in
-            # the stored MVR embedding when two people share a crop.
-            # See: docs/modules/MVR merge/EMBEDDING_CONTAMINATION.md
-            if isinstance(result, list) and len(result) > 1:
-                logger.warning(
-                    f"Multi-face crop: {len(result)} faces detected. "
-                    f"Rejecting embedding to prevent identity contamination."
+            # Prefer skip: callers pass already-cropped face patches. Re-running
+            # OpenCV on a tight crop can emit hundreds of false positives, and
+            # some DeepFace builds return a bare 512-float vector which an older
+            # multi-face guard misread as "512 faces" (blocking all MVR people).
+            try:
+                result = DeepFace.represent(
+                    img_path=face_image,
+                    model_name=self.model_name,
+                    enforce_detection=enforce_detection,
+                    detector_backend='skip',
+                    align=False,
                 )
-                return None
+            except Exception as skip_err:
+                logger.debug(
+                    "detector_backend=skip failed (%s); falling back to opencv",
+                    skip_err,
+                )
+                result = DeepFace.represent(
+                    img_path=face_image,
+                    model_name=self.model_name,
+                    enforce_detection=enforce_detection,
+                    detector_backend='opencv',
+                    align=True,
+                )
 
-            embedding = np.array(result[0]['embedding'])
+            embedding = self._embedding_from_represent_result(result)
+            if embedding is None:
+                return None
 
             # Verify embedding size
             if len(embedding) != self.embedding_size:
@@ -124,6 +126,42 @@ class FaceNetProcessor:
         except Exception as e:
             logger.error(f"Failed to extract embedding: {e}")
             return None
+
+    def _embedding_from_represent_result(self, result: Any) -> Optional[np.ndarray]:
+        """Normalize DeepFace.represent output into a single embedding vector."""
+        if result is None:
+            return None
+
+        # Bare embedding vector (list/ndarray of floats).
+        if isinstance(result, np.ndarray) and result.ndim == 1:
+            return result.astype(float)
+        if (
+            isinstance(result, list)
+            and result
+            and isinstance(result[0], (int, float, np.floating))
+        ):
+            return np.asarray(result, dtype=float)
+
+        if isinstance(result, dict) and "embedding" in result:
+            return np.asarray(result["embedding"], dtype=float)
+
+        if isinstance(result, list) and result and isinstance(result[0], dict):
+            # True multi-face detection result — reject to avoid contamination.
+            if len(result) > 1:
+                logger.warning(
+                    "Multi-face crop: %s faces detected. "
+                    "Rejecting embedding to prevent identity contamination.",
+                    len(result),
+                )
+                return None
+            emb = result[0].get("embedding")
+            if emb is None:
+                logger.warning("No face detected in image")
+                return None
+            return np.asarray(emb, dtype=float)
+
+        logger.warning("Unrecognized DeepFace.represent result type: %s", type(result))
+        return None
     
     def _normalize_embedding(self, embedding: np.ndarray) -> np.ndarray:
         """

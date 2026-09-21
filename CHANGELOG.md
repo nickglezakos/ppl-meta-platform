@@ -21,10 +21,16 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
   nullable fields so stop/start no longer keeps a stale timestamp.
 - Media preview face overlay: scale boxes using detection `frame_width` /
   `frame_height` (with letterbox fit) so mobile portrait recordings are not
-  treated as landscape.
+  treated as landscape. Also fall back to top-level Enhanced V2 face dims when
+  `detection_result.faces_by_frame` omits them (common path — caused lingering
+  off-center rects after the first overlay fix).
 - VMeta MVR materialize: resolve Gateway via `GATEWAY_SERVICE_URL` (not
   in-container `localhost:8080`) so face-crop enrich succeeds and face→MVR
   people are created; compose sets `PPL_GATEWAY_URL` for VMeta.
+- VMeta FaceNet: treat pre-cropped faces with `detector_backend=skip` and
+  correctly parse bare 512-d embedding vectors — the multi-face guard was
+  rejecting every materialize (`Multi-face crop: 512 faces`) so individuals
+  stayed at 0 even after Gateway URL was fixed.
 - Media: entrypoint chowns `/app/media` (uid 1001) then drops privileges so
   fresh Docker `media_data` volumes are writable — Stage 3 / empty volumes no
   longer regress with upload `Permission denied` and skipped face/MEDIA-VERIFY.
@@ -65,11 +71,10 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Stage 2 published **`frontend`**
-  (`46ceeb64…`, timer + portrait overlay) and **`ppl-meta-vmeta-protected`**
-  (`4a4ff150…`, Gateway URL for MVR materialize). Compose `PPL_GATEWAY_URL` for
-  VMeta ships with Stage 3 recreate. Media volume-perms entrypoint already
-  published (`780ea44d…`).
+- No `VERSION` bump (still **2.25.83**). Stage 2 must rebuild **`frontend`**
+  (overlay frame-dim fallback) and **`ppl-meta-vmeta-protected`** (FaceNet
+  skip/coerce for MVR embeddings). Prior digests `46ceeb64…` / `4a4ff150…`
+  shipped Gateway URL + first overlay pass but not these follow-ups.
 - Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once
   if a lab still shows a pre-fix cached `main.dart.js`.
 - Tray publish not required for this Stage 1.

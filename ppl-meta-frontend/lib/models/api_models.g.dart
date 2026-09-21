@@ -431,6 +431,8 @@ EnhancedLogicV2Face _$EnhancedLogicV2FaceFromJson(Map<String, dynamic> json) =>
       method: json['method'] as String,
       timestamp: (json['timestamp'] as num).toDouble(),
       frameNumber: (json['frame_number'] as num).toInt(),
+      frameWidth: (json['frame_width'] as num?)?.toDouble(),
+      frameHeight: (json['frame_height'] as num?)?.toDouble(),
     );
 
 Map<String, dynamic> _$EnhancedLogicV2FaceToJson(
@@ -441,6 +443,8 @@ Map<String, dynamic> _$EnhancedLogicV2FaceToJson(
       'method': instance.method,
       'timestamp': instance.timestamp,
       'frame_number': instance.frameNumber,
+      'frame_width': instance.frameWidth,
+      'frame_height': instance.frameHeight,
     };
 
 WorkflowTemplate _$WorkflowTemplateFromJson(Map<String, dynamic> json) =>

@@ -282,6 +282,34 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
           final facesSource =
               enhancedV2Data.detectionResult!['faces_by_frame'] as Map<String, dynamic>;
           print('✅ ENHANCED V2: Using detection_result.faces_by_frame with ${facesSource.keys.length} frames (ALL faces)');
+
+          double? fallbackFrameWidth;
+          double? fallbackFrameHeight;
+          for (final face in enhancedV2Data.faces) {
+            if (face.frameWidth != null &&
+                face.frameHeight != null &&
+                face.frameWidth! > 0 &&
+                face.frameHeight! > 0) {
+              fallbackFrameWidth = face.frameWidth;
+              fallbackFrameHeight = face.frameHeight;
+              break;
+            }
+          }
+          if (fallbackFrameWidth == null) {
+            for (final entry in facesSource.entries) {
+              for (final faceData in (entry.value as List<dynamic>)) {
+                if (faceData is! Map<String, dynamic>) continue;
+                final fw = (faceData['frame_width'] as num?)?.toDouble();
+                final fh = (faceData['frame_height'] as num?)?.toDouble();
+                if (fw != null && fh != null && fw > 0 && fh > 0) {
+                  fallbackFrameWidth = fw;
+                  fallbackFrameHeight = fh;
+                  break;
+                }
+              }
+              if (fallbackFrameWidth != null) break;
+            }
+          }
           
           // Flatten faces_by_frame into a single list of ALL faces
           int faceIndex = 0;
@@ -314,6 +342,10 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
                 confidence: confidence,
                 timestamp: DateTime.now(),
                 method: method,
+                frameWidth: (faceData['frame_width'] as num?)?.toDouble() ??
+                    fallbackFrameWidth,
+                frameHeight: (faceData['frame_height'] as num?)?.toDouble() ??
+                    fallbackFrameHeight,
                 metadata: {
                   'frame_number': frameNumber,
                   'source': 'enhanced_v2_all_faces',
