@@ -1059,6 +1059,8 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
               ),
               confidence: (faceMap['confidence'] as num?)?.toDouble() ?? 0.9,
               method: faceMap['method'] as String? ?? 'unknown',
+              frameWidth: (faceMap['frame_width'] as num?)?.toDouble(),
+              frameHeight: (faceMap['frame_height'] as num?)?.toDouble(),
             ));
           }
         }
@@ -1101,6 +1103,8 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
               ),
               confidence: (faceMap['confidence'] as num?)?.toDouble() ?? 0.9,
               method: faceMap['method'] as String? ?? 'unknown',
+              frameWidth: (faceMap['frame_width'] as num?)?.toDouble(),
+              frameHeight: (faceMap['frame_height'] as num?)?.toDouble(),
             );
             
             frameFaces.add(faceDetection);
@@ -1740,13 +1744,28 @@ class OptimizedFacePainter extends CustomPainter {
       return;
     }
 
-    // Overlay is already laid out in the video's AspectRatio box (same as
-    // VideoPlayerWidget). Scale uniformly — do not re-apply letterbox offsets
-    // or mobile portrait boxes drift off-center.
-    final scaleX = size.width / videoSize.width;
-    final scaleY = size.height / videoSize.height;
-    const offsetX = 0.0;
-    const offsetY = 0.0;
+    // Prefer detection-time frame size (stored with each bbox). Mobile portrait
+    // recordings are often 480x640 while video_player may report landscape —
+    // scaling against the wrong space puts rects off-center / sideways.
+    var coordW = videoSize.width;
+    var coordH = videoSize.height;
+    for (final face in faces) {
+      final fw = face.frameWidth;
+      final fh = face.frameHeight;
+      if (fw != null && fh != null && fw > 0 && fh > 0) {
+        coordW = fw;
+        coordH = fh;
+        break;
+      }
+    }
+
+    // Fit detection coordinate space into the painted AspectRatio box
+    // (letterbox when aspects differ, e.g. portrait detections on landscape player).
+    final scale = (size.width / coordW < size.height / coordH)
+        ? size.width / coordW
+        : size.height / coordH;
+    final offsetX = (size.width - coordW * scale) / 2.0;
+    final offsetY = (size.height - coordH * scale) / 2.0;
 
     for (int i = 0; i < faces.length; i++) {
       final face = faces[i];
@@ -1757,13 +1776,11 @@ class OptimizedFacePainter extends CustomPainter {
       final distance = _calculateDistanceFromArea(faceArea);
       final distanceColor = DistanceColorService.getDistanceColor(distance);
       
-      // Scale face coordinates to match actual video display area (WORKING LOGIC)
-      // Convert from left,top,width,height to left,top,right,bottom for Rect.fromLTRB
       final rect = Rect.fromLTRB(
-        bbox.left * scaleX + offsetX,
-        bbox.top * scaleY + offsetY,
-        (bbox.left + bbox.width) * scaleX + offsetX,
-        (bbox.top + bbox.height) * scaleY + offsetY,
+        bbox.left * scale + offsetX,
+        bbox.top * scale + offsetY,
+        (bbox.left + bbox.width) * scale + offsetX,
+        (bbox.top + bbox.height) * scale + offsetY,
       );
 
       // Create paint with distance-based color at full opacity (no animations)
@@ -1818,10 +1835,10 @@ class OptimizedFacePainter extends CustomPainter {
     for (final body in bodies) {
       final bbox = body.boundingBox;
       final rect = Rect.fromLTRB(
-        bbox.left * scaleX + offsetX,
-        bbox.top * scaleY + offsetY,
-        (bbox.left + bbox.width) * scaleX + offsetX,
-        (bbox.top + bbox.height) * scaleY + offsetY,
+        bbox.left * scale + offsetX,
+        bbox.top * scale + offsetY,
+        (bbox.left + bbox.width) * scale + offsetX,
+        (bbox.top + bbox.height) * scale + offsetY,
       );
       canvas.drawRect(rect, bodyPaint);
       final label = body.posture ?? 'body';

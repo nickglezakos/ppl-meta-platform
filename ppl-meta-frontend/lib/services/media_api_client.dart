@@ -2288,6 +2288,10 @@ class FaceDetection {
   final String method;
   final DateTime? timestamp;
   final Map<String, dynamic>? metadata;
+  /// Detection-time frame size (pixels). Used by playback overlay so mobile
+  /// portrait boxes scale correctly even if video_player reports a different size.
+  final double? frameWidth;
+  final double? frameHeight;
 
   FaceDetection({
     this.id,
@@ -2297,6 +2301,8 @@ class FaceDetection {
     required this.method,
     this.timestamp,
     this.metadata,
+    this.frameWidth,
+    this.frameHeight,
   });
 
   factory FaceDetection.fromJson(Map<String, dynamic> json) {
@@ -2308,6 +2314,8 @@ class FaceDetection {
       method: json['method'] ?? 'unknown',
       timestamp: json['timestamp'] != null ? DateTime.parse(json['timestamp']) : null,
       metadata: json['metadata'],
+      frameWidth: (json['frame_width'] as num?)?.toDouble(),
+      frameHeight: (json['frame_height'] as num?)?.toDouble(),
     );
   }
 }

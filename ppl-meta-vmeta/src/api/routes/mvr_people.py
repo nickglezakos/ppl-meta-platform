@@ -504,7 +504,13 @@ async def _materialize_single_media_from_persisted_person_objects(
         )
 
     vision_url = os.getenv("VISION_SERVICE_URL", os.getenv("PPL_VISION_URL", "http://ppl-meta-vision:8003"))
-    gateway_url = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080")
+    # Prefer compose GATEWAY_SERVICE_URL. PPL_GATEWAY_URL historically defaulted
+    # to localhost:8080 inside the container → face-crop enrich failed → 0 MVR.
+    gateway_url = (
+        os.getenv("GATEWAY_SERVICE_URL")
+        or os.getenv("PPL_GATEWAY_URL")
+        or "http://ppl-meta-gateway:8080"
+    )
 
     # NOTE on enrichment: the orchestrator hands us a workflow payload with
     # synthetic person identifiers ("person_1") and no `representative_faces`,
@@ -749,7 +755,11 @@ async def get_face_crop_image(
     from io import BytesIO
     from PIL import Image
 
-    gateway_url = os.getenv("GATEWAY_SERVICE_URL", "http://localhost:8080")
+    gateway_url = (
+        os.getenv("GATEWAY_SERVICE_URL")
+        or os.getenv("PPL_GATEWAY_URL")
+        or "http://ppl-meta-gateway:8080"
+    )
     auth_header = request.headers.get("Authorization", "")
 
     frame_url = f"{gateway_url}/api/v1/media/{video_uuid}/frame/{frame_number}?format=jpeg"
@@ -3160,7 +3170,11 @@ async def search_mvr_people_by_videos(
             from utils.media_client import MediaClient
 
             media_client = MediaClient(auth_token=auth_token)
-            gateway_url = os.getenv('PPL_GATEWAY_URL', 'http://localhost:8080').rstrip('/')
+            gateway_url = (
+                os.getenv('GATEWAY_SERVICE_URL')
+                or os.getenv('PPL_GATEWAY_URL')
+                or 'http://ppl-meta-gateway:8080'
+            ).rstrip('/')
             vision_url = os.getenv('VISION_SERVICE_URL', os.getenv('PPL_VISION_URL', 'http://ppl-meta-vision:8003')).rstrip('/')
             materialized = 0
 
@@ -4955,7 +4969,11 @@ async def get_mvr_person_analysis(
             try:
                 import httpx
                 
-                gateway_url = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080")
+                gateway_url = (
+                    os.getenv("GATEWAY_SERVICE_URL")
+                    or os.getenv("PPL_GATEWAY_URL")
+                    or "http://ppl-meta-gateway:8080"
+                )
                 all_route_points = []
                 
                 # Get Authorization header from request
@@ -6015,7 +6033,11 @@ async def process_media_independently(
     # Import httpx for Vision service calls
     import httpx
     vision_url = os.getenv("VISION_SERVICE_URL", os.getenv("PPL_VISION_URL", "http://ppl-meta-vision:8003"))
-    gateway_url = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080")
+    gateway_url = (
+        os.getenv("GATEWAY_SERVICE_URL")
+        or os.getenv("PPL_GATEWAY_URL")
+        or "http://ppl-meta-gateway:8080"
+    )
     
     for media_uuid_str in request.media_uuids:
         try:

@@ -354,6 +354,8 @@ services:
       VISION_SERVICE_URL: http://ppl-meta-vision:8003
       NODE_SERVICE_URL: http://ppl-meta-node:8001
       GATEWAY_SERVICE_URL: http://ppl-meta-gateway:8080
+      # Alias used by older VMeta code paths; must not default to localhost in-container.
+      PPL_GATEWAY_URL: http://ppl-meta-gateway:8080
       CAMERAS_SERVICE_URL: http://ppl-meta-cameras:8005
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-ppl-meta-internal-service-secret-key-change-in-production}
       DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006

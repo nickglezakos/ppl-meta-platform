@@ -606,25 +606,32 @@ class CameraRecordingState {
     this.error,
   });
 
+  /// Sentinel so [copyWith] can clear nullable fields (pass `null` explicitly).
+  static const Object _unset = Object();
+
   CameraRecordingState copyWith({
     String? cameraId,
     bool? isRecording,
     bool? isLoading,
-    String? recordingId,
-    DateTime? startedAt,
+    Object? recordingId = _unset,
+    Object? startedAt = _unset,
     int? durationSeconds,
     int? fileSizeBytes,
-    String? error,
+    Object? error = _unset,
   }) {
     return CameraRecordingState(
       cameraId: cameraId ?? this.cameraId,
       isRecording: isRecording ?? this.isRecording,
       isLoading: isLoading ?? this.isLoading,
-      recordingId: recordingId ?? this.recordingId,
-      startedAt: startedAt ?? this.startedAt,
+      recordingId: identical(recordingId, _unset)
+          ? this.recordingId
+          : recordingId as String?,
+      startedAt: identical(startedAt, _unset)
+          ? this.startedAt
+          : startedAt as DateTime?,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
-      error: error ?? this.error,
+      error: identical(error, _unset) ? this.error : error as String?,
     );
   }
 
@@ -692,7 +699,8 @@ class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
           isLoading: false,
           isRecording: true,
           recordingId: result.recordingId,
-          startedAt: result.startedAt,
+          // Always anchor UI timer to a fresh start (API may omit started_at).
+          startedAt: result.startedAt ?? DateTime.now(),
         );
         
         // NOTE: Periodic status updates disabled to prevent UI polling during recording

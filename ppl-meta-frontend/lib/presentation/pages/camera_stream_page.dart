@@ -199,21 +199,28 @@ class _RecordingTimerState extends State<_RecordingTimer> {
   late Timer _timer;
   Duration _elapsed = Duration.zero;
 
+  void _recompute() {
+    if (!mounted) return;
+    setState(() {
+      _elapsed = widget.startedAt != null
+          ? DateTime.now().difference(widget.startedAt!)
+          : Duration.zero;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
-    if (widget.startedAt != null) {
-      _elapsed = DateTime.now().difference(widget.startedAt!);
+    _recompute();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _recompute());
+  }
+
+  @override
+  void didUpdateWidget(covariant _RecordingTimer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.startedAt != widget.startedAt) {
+      _recompute();
     }
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() {
-          if (widget.startedAt != null) {
-            _elapsed = DateTime.now().difference(widget.startedAt!);
-          }
-        });
-      }
-    });
   }
 
   @override

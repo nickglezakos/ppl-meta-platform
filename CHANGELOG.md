@@ -17,6 +17,14 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Fixed
 
+- Recording timer: reset from `startedAt` each session; `copyWith` can clear
+  nullable fields so stop/start no longer keeps a stale timestamp.
+- Media preview face overlay: scale boxes using detection `frame_width` /
+  `frame_height` (with letterbox fit) so mobile portrait recordings are not
+  treated as landscape.
+- VMeta MVR materialize: resolve Gateway via `GATEWAY_SERVICE_URL` (not
+  in-container `localhost:8080`) so face-crop enrich succeeds and face→MVR
+  people are created; compose sets `PPL_GATEWAY_URL` for VMeta.
 - Media: entrypoint chowns `/app/media` (uid 1001) then drops privileges so
   fresh Docker `media_data` volumes are writable — Stage 3 / empty volumes no
   longer regress with upload `Permission denied` and skipped face/MEDIA-VERIFY.
@@ -57,11 +65,11 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Media volume-perms entrypoint
-  published (`780ea44d…`, includes `HOME=/home/app` before `setpriv`); Stage 3
-  recreate Media done on nickg + work mini. Installers still run
-  `ensure-media-volume-perms.sh` as belt-and-suspenders. Optional: backfill
-  existing `communication_logs.trigger_id` from `payload->>'trigger_id'` on labs.
+- No `VERSION` bump (still **2.25.83**). Stage 2 must rebuild **`frontend`**
+  (timer + overlay) and **`ppl-meta-vmeta-protected`** (Gateway URL for MVR
+  materialize). Compose `PPL_GATEWAY_URL` for VMeta ships with Stage 3 recreate
+  even before the VMeta image rebuild (env-only). Media volume-perms entrypoint
+  already published (`780ea44d…`).
 - Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once
   if a lab still shows a pre-fix cached `main.dart.js`.
 - Tray publish not required for this Stage 1.

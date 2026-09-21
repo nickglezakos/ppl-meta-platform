@@ -1597,7 +1597,11 @@ async def _create_single_mvr_person(
         
         # Construct media URL for frame extraction
         # Use gateway URL to fetch the frame
-        gateway_url = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080").rstrip("/")
+        gateway_url = (
+            os.getenv("GATEWAY_SERVICE_URL")
+            or os.getenv("PPL_GATEWAY_URL")
+            or "http://ppl-meta-gateway:8080"
+        ).rstrip("/")
         media_url = f"{gateway_url}/api/v1/media/{representative_video_uuid}/frame/{frame_number}?format=jpeg"
         
         logger.info(f"[SINGLE MVR] Fetching frame from: {media_url}")

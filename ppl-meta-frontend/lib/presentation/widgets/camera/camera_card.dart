@@ -593,29 +593,37 @@ class _RecordingStatusRow extends ConsumerWidget {
 
 /// Recording timer widget that rebuilds every second independently
 /// This isolation prevents the timer from triggering stream widget rebuilds
-class _RecordingTimer extends StatefulWidget {
+class _RecordingTimer extends ConsumerStatefulWidget {
   final String cameraId;
 
   const _RecordingTimer({required this.cameraId});
 
   @override
-  State<_RecordingTimer> createState() => _RecordingTimerState();
+  ConsumerState<_RecordingTimer> createState() => _RecordingTimerState();
 }
 
-class _RecordingTimerState extends State<_RecordingTimer> {
+class _RecordingTimerState extends ConsumerState<_RecordingTimer> {
   late Timer _timer;
   Duration _elapsed = Duration.zero;
+
+  DateTime? get _startedAt =>
+      ref.read(cameraRecordingProvider(widget.cameraId)).startedAt;
+
+  void _tick() {
+    final startedAt = _startedAt;
+    if (!mounted) return;
+    setState(() {
+      _elapsed = startedAt != null
+          ? DateTime.now().difference(startedAt)
+          : Duration.zero;
+    });
+  }
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() {
-          _elapsed += const Duration(seconds: 1);
-        });
-      }
-    });
+    _tick();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
   }
 
   @override
@@ -626,6 +634,8 @@ class _RecordingTimerState extends State<_RecordingTimer> {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild when recording state changes (new startedAt on each session).
+    ref.watch(cameraRecordingProvider(widget.cameraId).select((s) => s.startedAt));
     final minutes = _elapsed.inMinutes.toString().padLeft(2, '0');
     final seconds = (_elapsed.inSeconds % 60).toString().padLeft(2, '0');
     

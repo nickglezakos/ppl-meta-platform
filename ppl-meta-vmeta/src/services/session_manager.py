@@ -767,7 +767,11 @@ class SessionManager:
         # media items for the specified collections and timeframe.
         results: List[Dict[str, Any]] = []
 
-        gw = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080")
+        gw = (
+            os.getenv("GATEWAY_SERVICE_URL")
+            or os.getenv("PPL_GATEWAY_URL")
+            or "http://ppl-meta-gateway:8080"
+        )
         gateway_url = gw.rstrip("/")
 
         # If collections is a list of collection identifiers, request items
@@ -1028,7 +1032,11 @@ class SessionManager:
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Fetch person objects data for videos."""
         results: Dict[str, List[Dict[str, Any]]] = {}
-        gw = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080")
+        gw = (
+            os.getenv("GATEWAY_SERVICE_URL")
+            or os.getenv("PPL_GATEWAY_URL")
+            or "http://ppl-meta-gateway:8080"
+        )
         gateway_url = gw.rstrip("/")
 
         try:

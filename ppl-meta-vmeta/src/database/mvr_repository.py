@@ -2434,7 +2434,11 @@ class MVRRepository:
             expanded.extend(rows_needing_fetch)
             return expanded
 
-        gateway_url = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080").rstrip("/")
+        gateway_url = (
+            os.getenv("GATEWAY_SERVICE_URL")
+            or os.getenv("PPL_GATEWAY_URL")
+            or "http://ppl-meta-gateway:8080"
+        ).rstrip("/")
         headers = {"Authorization": auth_header}
 
         # Group by video_uuid to limit HTTP requests to one per video.
