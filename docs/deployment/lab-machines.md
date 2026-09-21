@@ -22,6 +22,35 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 
 ---
 
+## Fleet status (vs GHCR)
+
+**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.83`** (Mode D; last finalized **2026-09-21**).  
+**Rule:** After every **Stage 3** on a named lab, update this table (pin, match state, date, short notes). Do not treat a matching *tag* as current — compare running `RepoDigests` (or amd64 child digests) to the manifest.
+
+| Lab ID | Pin | Match GHCR? | Last Stage 3 | Notes |
+|---|---|---|---|---|
+| `lab-home-win-nickg` | `2.25.83` | **Yes** (gateway / discovery / cameras / frontend) | 2026-09-21 | Running index digests match finalized manifest. `ADVERTISE_HOST=192.168.1.71`. |
+| `lab-work-u24-mini-8g` | `2.25.83` | **No** — tag only; digests lag today’s Stage 2 | 2026-09-21 (earlier pull) | Still on pre-finalize layers under `:2.25.83`. Needs Stage 3 re-`pull` + recreate for gateway / discovery / cameras / frontend. `ADVERTISE_HOST=192.168.9.14`. |
+| `lab-work-dual-64g` | — | — | — | Offline / unreachable from work `192.168.9.x` as of 2026-09-21. |
+
+**How to refresh a row after Stage 3** (from the lab, or via SSH):
+
+```bash
+# pin + advertise
+grep -E '^(RELEASE_TAG|ADVERTISE_HOST)=' .env   # or .env.windows
+
+# compare key services to release-manifest.yml digests
+for c in gateway discovery cameras frontend; do
+  id=$(docker ps -q --filter name=ppl-meta-${c}- | head -1)
+  [ -n "$id" ] || { echo "$c MISSING"; continue; }
+  img=$(docker inspect "$id" --format '{{.Config.Image}}')
+  dig=$(docker image inspect "$img" --format '{{index .RepoDigests 0}}')
+  echo "$c  $dig"
+done
+```
+
+---
+
 ## Sites
 
 ### Home

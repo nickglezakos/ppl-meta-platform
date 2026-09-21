@@ -41,13 +41,16 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Stage 2 should rebuild at least
-  `ppl-meta-frontend`, **`ppl-meta-gateway`** (CORS), and **`ppl-meta-cameras`**
-  (mobile disconnect hold). Apply schema `049` and recreate Media (or full
-  compose up) on existing labs so Redis/comms env takes effect.
+- No `VERSION` bump (still **2.25.83**). Stage 2 rebuilt and finalized
+  `release-manifest.yml` for gateway / discovery / cameras / frontend (plus
+  retag/coherence for the full twelve). Apply schema `049` and recreate Media
+  (or full compose up) on existing labs so Redis/comms env takes effect.
 - Tray publish not required for this Stage 1.
 - Process: do **not** copy container HTML/`docker cp` between labs — Stage 1 →
   Stage 2 GHCR → Stage 3 pull only.
+- Fleet tracking: `docs/deployment/lab-machines.md` § Fleet status — update
+  after each Stage 3. As of finalize: nickg matches GHCR; Ubuntu mini still
+  needs a Stage 3 re-pull for today’s digests.
 
 ## [2.25.83] — 2026-09-20
 

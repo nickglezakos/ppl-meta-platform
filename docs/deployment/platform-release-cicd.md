@@ -125,7 +125,7 @@ Stage 3 stays: **compose pull from GHCR only**. If two labs disagree, compare di
 |---|---|
 | `deployment/` | Scripts, compose, schema pack, installers (executable truth) |
 | `docs/deployment/` | CI/CD and operator documentation (this file = process truth) |
-| [`lab-machines.md`](./lab-machines.md) | Named lab inventory + Stage 2 / Stage 3 access |
+| [`lab-machines.md`](./lab-machines.md) | Named lab inventory, Stage 2/3 access, **fleet status vs GHCR** |
 | [`eyenet-cicd-operator-guide.md`](./eyenet-cicd-operator-guide.md) | Operator guide; follows this contract |
 | [`CHANGELOG.md`](../../CHANGELOG.md) | Product release notes (required in Stage 1) |
 | `deployment/tray/` | Host tray source (Go systray) |
@@ -463,6 +463,8 @@ This doc will say when either path is enabled. Until then: manual Stage 2 on a l
 **Does:** Installer (or manual compose pull) + schema apply/verify + discovery reregister + **tray download/autostart** when Release assets exist.  
 **Does not:** publish GHCR or rebuild tray binaries.
 
+**Tracking:** After every Stage 3, update the **Fleet status** table in [lab-machines.md](./lab-machines.md) (pin, match vs `release-manifest.yml`, date, notes). A matching tag is not enough — digests must match.
+
 ### Shared post-install (both installers)
 
 After `compose up -d`:
@@ -472,7 +474,8 @@ After `compose up -d`:
 3. `reregister-discovery-services.sh` (canonical: `deployment/windows-installer/`)  
 4. Print UI / gateway / discovery / bootstrap URLs  
 5. Remind: `ADVERTISE_HOST` must be the LAN IP phones use  
-6. Install/launch host tray from GitHub Releases `v${VERSION}` (soft-fail if missing)
+6. Install/launch host tray from GitHub Releases `v${VERSION}` (soft-fail if missing)  
+7. Update [lab-machines.md](./lab-machines.md) § Fleet status for that lab
 
 Host-only:
 
