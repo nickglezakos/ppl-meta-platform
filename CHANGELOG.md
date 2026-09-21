@@ -55,12 +55,10 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Stage 2 must rebuild
-  **`ppl-meta-media`** for the volume-perms entrypoint (and
-  **`ppl-meta-communications`** for the audit `trigger_id` fix). Optional:
-  backfill existing `communication_logs.trigger_id` from `payload->>'trigger_id'`
-  on labs. Until Media is republished, installers / `ensure-media-volume-perms.sh`
-  still fix volume ownership on install/start.
+- No `VERSION` bump (still **2.25.83**). Media volume-perms entrypoint
+  published (`50c122b5…`); Stage 3 recreate Media on labs. Installers still
+  run `ensure-media-volume-perms.sh` as belt-and-suspenders. Optional: backfill
+  existing `communication_logs.trigger_id` from `payload->>'trigger_id'` on labs.
 - Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once
   if a lab still shows a pre-fix cached `main.dart.js`.
 - Tray publish not required for this Stage 1.
