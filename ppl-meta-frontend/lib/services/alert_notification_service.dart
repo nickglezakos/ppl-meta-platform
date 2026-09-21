@@ -13,12 +13,7 @@ class AlertNotificationService {
   Timer? _pollTimer;
   final StreamController<AlertNotification> _alertController = StreamController.broadcast();
   final Set<String> _processedAlertIds = {};
-  final Set<String> _shownAlertIds = {}; // Track alerts already shown to user
-  // Content-based deduplication: maps a content key to when it was last shown.
-  // Prevents the backend looping the same trigger (new UUID each time) from
-  // spamming the overlay.
-  final Map<String, DateTime> _recentlyShownByContent = {};
-  static const Duration _contentDeduplicationWindow = Duration(seconds: 60);
+  final Set<String> _shownAlertIds = {}; // Track alerts already shown to user (by log UUID)
   final DateTime _serviceStartedAt = DateTime.now().toUtc();
   bool _isInitialized = false;
   bool _isFirstPoll = true; // Flag to skip showing old alerts on first load
@@ -195,17 +190,9 @@ class AlertNotificationService {
               continue;
             }
 
-            final contentKey = '${eventData['trigger_id'] ?? ''}:${eventData['message'] ?? ''}';
-            final lastShown = _recentlyShownByContent[contentKey];
-            if (lastShown != null &&
-                DateTime.now().difference(lastShown) < _contentDeduplicationWindow) {
-              _shownAlertIds.add(log.uuid);
-              print('⏭️ AlertNotificationService: Suppressing duplicate content within cooldown: $contentKey');
-              continue;
-            }
-
+            // Rate limiting belongs on the trigger (cooldown_seconds), not here.
+            // Do not suppress by message content — each new audit log UUID is a fire.
             _shownAlertIds.add(log.uuid);
-            _recentlyShownByContent[contentKey] = DateTime.now();
 
             final alert = AlertNotification(
               id: log.uuid,
@@ -283,12 +270,6 @@ class AlertNotificationService {
         final idsToRemove = _shownAlertIds.take(toRemove).toList();
         _shownAlertIds.removeAll(idsToRemove);
       }
-
-      // Evict expired content-deduplication entries.
-      final now = DateTime.now();
-      _recentlyShownByContent.removeWhere(
-        (_, lastShown) => now.difference(lastShown) >= _contentDeduplicationWindow,
-      );
 
     } catch (e) {
       // Re-attempt auth init on next poll after transient auth/network issues
