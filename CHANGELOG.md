@@ -17,6 +17,12 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Fixed
 
+- Media: entrypoint chowns `/app/media` (uid 1001) then drops privileges so
+  fresh Docker `media_data` volumes are writable — Stage 3 / empty volumes no
+  longer regress with upload `Permission denied` and skipped face/MEDIA-VERIFY.
+- Installers (Windows + Ubuntu): post-`compose up` call
+  `ensure-media-volume-perms.sh` as belt-and-suspenders until labs pull the
+  new Media image.
 - Communications audit logs: store the real trigger UUID in `trigger_id`
   (from event payload) instead of the event type string `"alert"`, so the
   Triggers tab detail pane can list on-screen notification logs for that
@@ -50,8 +56,11 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Notes
 
 - No `VERSION` bump (still **2.25.83**). Stage 2 must rebuild
-  **`ppl-meta-communications`** for the audit `trigger_id` fix. Optional: backfill
-  existing `communication_logs.trigger_id` from `payload->>'trigger_id'` on labs.
+  **`ppl-meta-media`** for the volume-perms entrypoint (and
+  **`ppl-meta-communications`** for the audit `trigger_id` fix). Optional:
+  backfill existing `communication_logs.trigger_id` from `payload->>'trigger_id'`
+  on labs. Until Media is republished, installers / `ensure-media-volume-perms.sh`
+  still fix volume ownership on install/start.
 - Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once
   if a lab still shows a pre-fix cached `main.dart.js`.
 - Tray publish not required for this Stage 1.

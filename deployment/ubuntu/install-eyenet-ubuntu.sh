@@ -114,6 +114,14 @@ compose_ --project-name pplmeta --env-file .env -f docker-compose.yml pull
 echo "==> Starting stack..."
 compose_ --project-name pplmeta --env-file .env -f docker-compose.yml up -d
 
+# Media runs as uid 1001; fresh Docker volumes are root:root (upload Permission denied).
+PERMS_SRC="$REPO_DIR/deployment/windows-installer/ensure-media-volume-perms.sh"
+if [[ -f "$PERMS_SRC" ]]; then
+  bash "$PERMS_SRC" || echo "WARN: media volume perms fix failed (non-fatal)"
+else
+  echo "WARN: ensure-media-volume-perms.sh missing — Media uploads may hit Permission denied"
+fi
+
 echo "==> Waiting for Postgres..."
 for _ in $(seq 1 60); do
   if compose_ --project-name pplmeta --env-file .env -f docker-compose.yml exec -T postgres \

@@ -406,6 +406,7 @@ function Download-InstallerFiles {
         @{Name = "schema/verify.sh"; Url = "$script:GitHubRawBase/schema/verify.sh"},
         @{Name = "schema/pack.tar.gz"; Url = "$script:GitHubRawBase/schema/pack.tar.gz"},
         @{Name = "reregister-discovery-services.sh"; Url = "$script:GitHubRawBase/reregister-discovery-services.sh"},
+        @{Name = "ensure-media-volume-perms.sh"; Url = "$script:GitHubRawBase/ensure-media-volume-perms.sh"},
         @{Name = "publish-lan-ports.ps1"; Url = "$script:GitHubRawBase/publish-lan-ports.ps1"},
         @{Name = "enroll-host-tailscale.sh"; Url = "$script:GitHubRawBase/enroll-host-tailscale.sh"},
         @{Name = "install-discovery-reregister-task.ps1"; Url = "$script:GitHubRawBase/install-discovery-reregister-task.ps1"}
@@ -856,6 +857,35 @@ function Invoke-PullImages {
     return $true
 }
 
+function Invoke-EnsureMediaVolumePerms {
+    # Media runs as uid 1001; fresh Docker volumes are root:root (upload Permission denied).
+    Write-Step "Ensuring Media storage volume permissions (uid 1001)..." ""
+    $scriptPath = Join-Path $PSScriptRoot "ensure-media-volume-perms.sh"
+    if (-not (Test-Path $scriptPath)) {
+        $scriptPath = Join-Path $script:InstallDir "ensure-media-volume-perms.sh"
+    }
+    if (-not (Test-Path $scriptPath)) {
+        Write-WarningMsg "ensure-media-volume-perms.sh missing — Media uploads may hit Permission denied"
+        return
+    }
+    try {
+        if ($script:UseWslDocker) {
+            $wslScript = ConvertTo-WslPath $scriptPath
+            wsl -d $script:WslDistro --user root -- bash -lc "COMPOSE_PROJECT_NAME='$($script:ComposeProjectName)' bash '$wslScript'" | Out-Host
+        } else {
+            $env:COMPOSE_PROJECT_NAME = $script:ComposeProjectName
+            & bash $scriptPath | Out-Host
+        }
+        if ($LASTEXITCODE -ne 0) {
+            Write-WarningMsg "Media volume perms fix exited $LASTEXITCODE (non-fatal)"
+        } else {
+            Write-Success "Media volume owned by uid 1001"
+        }
+    } catch {
+        Write-WarningMsg "Media volume perms fix failed (non-fatal): $_"
+    }
+}
+
 function Invoke-StartStack {
     Write-Step "Starting platform containers..." ""
     Write-Host ""
@@ -872,6 +902,8 @@ function Invoke-StartStack {
         Write-ErrorMsg "Failed to start containers: $_"
         return $false
     }
+
+    Invoke-EnsureMediaVolumePerms
 
     Write-Step "Waiting for PostgreSQL..." ""
     $pgHealthy = $false

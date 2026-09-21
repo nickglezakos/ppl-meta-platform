@@ -560,6 +560,17 @@ if errorlevel 1 (
     exit /b 1
 )
 
+:: Media uid 1001 vs fresh root-owned volume (upload Permission denied)
+echo   --- Ensuring Media volume permissions ---
+if "%USE_WSL_DOCKER%"=="1" (
+    wsl -d %WSL_DISTRO% --user root -- bash -lc "cd '!WSL_CWD!' && if [ -f ensure-media-volume-perms.sh ]; then COMPOSE_PROJECT_NAME=%COMPOSE_PROJECT% bash ensure-media-volume-perms.sh; fi"
+) else (
+    if exist ensure-media-volume-perms.sh (
+        set COMPOSE_PROJECT_NAME=%COMPOSE_PROJECT%
+        bash ensure-media-volume-perms.sh
+    )
+)
+
 :: Wait for postgres
 echo   Waiting for PostgreSQL...
 set "count=0"

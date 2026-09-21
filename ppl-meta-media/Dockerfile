@@ -74,12 +74,15 @@ COPY --from=builder /root/.local /home/app/.local
 # Copy application code
 COPY src/ ./src/
 
-# Set permissions
-RUN mkdir -p /logs /app/logs /tmp/ppl-meta-media-android-compat \
+# Set permissions (volume /app/media is fixed again at runtime by entrypoint)
+RUN mkdir -p /logs /app/logs /app/media /tmp/ppl-meta-media-android-compat \
     && chown -R app:app /app /logs /tmp/ppl-meta-media-android-compat
 
-# Switch to non-root user
-USER app
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod 755 /docker-entrypoint.sh
+
+# Start as root so entrypoint can chown the named volume, then drop to app (1001).
+# Do not set USER app here — entrypoint must run as root first.
 
 # Expose port
 EXPOSE 8000
@@ -88,5 +91,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=5 \
     CMD curl -f http://localhost:8000/health/ || exit 1
 
-# Run the application
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
