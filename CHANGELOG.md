@@ -58,8 +58,9 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Notes
 
 - No `VERSION` bump (still **2.25.83**). Media volume-perms entrypoint
-  published (`50c122b5…`); Stage 3 recreate Media on labs. Installers still
-  run `ensure-media-volume-perms.sh` as belt-and-suspenders. Optional: backfill
+  published (`780ea44d…`, includes `HOME=/home/app` before `setpriv`); Stage 3
+  recreate Media done on nickg + work mini. Installers still run
+  `ensure-media-volume-perms.sh` as belt-and-suspenders. Optional: backfill
   existing `communication_logs.trigger_id` from `payload->>'trigger_id'` on labs.
 - Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once
   if a lab still shows a pre-fix cached `main.dart.js`.
