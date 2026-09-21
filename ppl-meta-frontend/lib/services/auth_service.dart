@@ -26,24 +26,26 @@ class AuthService {
   /// Get the currently stored authentication token
   /// Returns null if no token is available
   Future<String?> getStoredToken() async {
-    // Try to get from AuthManager first
+    // Prefer in-memory AuthManager token when already loaded
     if (_authManager != null) {
       final token = await _authManager!.getValidToken();
       if (token != null) {
         return token;
       }
     }
-    
-    // Initialize AuthManager if not done yet
-    if (_authManager == null) {
-      await initialize();
-      final token = await _authManager!.getValidToken();
-      if (token != null) {
+
+    // Read the shared prefs key directly. Avoid AuthManager.initializeAuth()
+    // here — its old localhost health check cleared auth_token on failure and
+    // logged users out after visiting /triggers.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+      if (token != null && token.isNotEmpty) {
+        _cachedToken = token;
         return token;
       }
-    }
-    
-    // Fallback to cached token
+    } catch (_) {}
+
     return _cachedToken;
   }
   

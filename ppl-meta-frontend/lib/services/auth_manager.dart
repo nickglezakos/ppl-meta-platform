@@ -52,13 +52,12 @@ class AuthManager {
       await _loadStoredAuth();
 
       if (_currentToken != null) {
-        final isValid = await _verifyToken();
-        if (isValid) {
-          _notifyAuthStateChange();
-          return true;
-        }
-
-        await clearAuth();
+        // Do not clearAuth() based on _verifyToken().
+        // That probe uses a hardcoded http://localhost/api/node health URL,
+        // which fails in lab/deployed UIs and previously wiped the shared
+        // auth_token key — logging the user out when leaving /triggers.
+        _notifyAuthStateChange();
+        return true;
       }
 
       return await _attemptAutoLogin();
@@ -116,7 +115,7 @@ class AuthManager {
 
   Future<String?> getValidToken() async {
     if (_currentToken == null) {
-      await initializeAuth();
+      await _loadStoredAuth();
     }
     return _currentToken;
   }
