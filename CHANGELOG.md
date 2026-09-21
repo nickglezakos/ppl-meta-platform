@@ -17,6 +17,10 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Fixed
 
+- Frontend nginx: stop 1-year `immutable` caching of unfingerprinted
+  `main.dart.js` / Flutter bootstrap / service worker so Stage 3 pulls are
+  visible without waiting a year (labs kept serving a cached pre-fix UI after
+  logout-after-`/triggers`).
 - Media compose: set `REDIS_HOST` / `REDIS_URL` so the instant-detection trigger
   subscriber connects to compose Redis (was defaulting to `localhost` and never
   evaluating triggers).
@@ -41,16 +45,19 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Stage 2 rebuilt and finalized
-  `release-manifest.yml` for gateway / discovery / cameras / frontend (plus
-  retag/coherence for the full twelve). Apply schema `049` and recreate Media
-  (or full compose up) on existing labs so Redis/comms env takes effect.
+- No `VERSION` bump (still **2.25.83**). Stage 2 must rebuild **`ppl-meta-frontend`**
+  for the nginx cache-header fix (Flutter web assets unchanged; AuthManager JWT
+  fix already in GHCR). After Stage 3, hard-refresh the UI once to drop any
+  previously cached `immutable` `main.dart.js`.
+- Stage 2 rebuilt and finalized `release-manifest.yml` for gateway / discovery /
+  cameras / frontend earlier today; apply schema `049` and recreate Media on
+  existing labs so Redis/comms env takes effect.
 - Tray publish not required for this Stage 1.
 - Process: do **not** copy container HTML/`docker cp` between labs — Stage 1 →
   Stage 2 GHCR → Stage 3 pull only.
 - Fleet tracking: `docs/deployment/lab-machines.md` § Fleet status — update
-  after each Stage 3. As of finalize: nickg matches GHCR; Ubuntu mini still
-  needs a Stage 3 re-pull for today’s digests.
+  after each Stage 3. Compare **running container Image ID** + `main.dart.js`
+  hash, not only the `:tag` RepoDigest.
 
 ## [2.25.83] — 2026-09-20
 
