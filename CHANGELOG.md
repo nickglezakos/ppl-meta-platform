@@ -15,6 +15,28 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+### Fixed
+
+- Media compose: set `REDIS_HOST` / `REDIS_URL` so the instant-detection trigger
+  subscriber connects to compose Redis (was defaulting to `localhost` and never
+  evaluating triggers).
+- Media compose: set `COMMUNICATIONS_SERVICE_URL` so alert/email/webhook actions
+  reach Communications (was defaulting to `localhost:8009`).
+- Frontend: stop clearing the shared JWT when legacy AuthManager's localhost
+  health probe fails (logout after leaving `/triggers`).
+- Frontend: remove 60s alert content-dedupe that hid legitimate trigger
+  notifications; trigger `cooldown_seconds` remains the rate limit.
+- Schema pack `049_individual_video_appearances_instant_columns.sql`: add
+  `quality_score` / `processing_method` / `source_session_uuid` / `created_at`
+  so instant-detection persist-batch stops 500ing.
+
+### Notes
+
+- No `VERSION` bump (still **2.25.83**). Stage 2 should rebuild at least
+  `ppl-meta-frontend`. Apply schema `049` and recreate Media (or full compose
+  up) on existing labs so Redis/comms env takes effect.
+- Tray publish not required for this Stage 1.
+
 ## [2.25.83] — 2026-09-20
 
 ### Added

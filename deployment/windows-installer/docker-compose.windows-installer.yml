@@ -90,12 +90,22 @@ services:
       SECRET_KEY: ${JWT_SECRET_KEY:-ppl-meta-secret-key-change-in-production}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-ppl-meta-internal-service-secret-key-change-in-production}
       DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
+      # Instant-detection triggers subscribe via REDIS_HOST (defaults to localhost otherwise).
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_URL: redis://redis:6379/0
+      # Alert/email/webhook actions call Communications (defaults to localhost:8009 otherwise).
+      COMMUNICATIONS_SERVICE_URL: http://ppl-meta-communications:8009
     volumes:
       - media_data:/app/media
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       ppl-meta-node:
+        condition: service_started
+      ppl-meta-communications:
         condition: service_started
     restart: unless-stopped
     mem_limit: 1g

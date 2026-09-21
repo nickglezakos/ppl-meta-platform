@@ -103,7 +103,8 @@ add "$COMPAT/014_camera_settings_and_enable_detection.sql"
 # These are not auto-numbered; apply.sh sorts lexicographically after 046.
 for pack_only in \
   047_orchestrator_workflow_settings.sql \
-  048_individuals_created_by_session.sql
+  048_individuals_created_by_session.sql \
+  049_individual_video_appearances_instant_columns.sql
 do
   src="$COMPAT/$pack_only"
   if [[ -f "$src" ]]; then
