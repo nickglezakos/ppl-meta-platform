@@ -9,6 +9,12 @@ mkdir -p "$MEDIA_ROOT" /logs /tmp/ppl-meta-media-android-compat
 
 if [ "$(id -u)" = "0" ]; then
   chown -R app:app "$MEDIA_ROOT" /logs /tmp/ppl-meta-media-android-compat
+  # Preserve app home so pip --user packages under /home/app/.local resolve.
+  export HOME=/home/app
+  export USER=app
+  export LOGNAME=app
+  export PATH="/home/app/.local/bin:${PATH}"
+  export PYTHONUSERBASE=/home/app/.local
   # Drop to app before starting uvicorn (setpriv is util-linux on Debian slim).
   if command -v setpriv >/dev/null 2>&1; then
     exec setpriv --reuid=1001 --regid=1001 --init-groups -- "$@"

@@ -20,6 +20,8 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 - Media: entrypoint chowns `/app/media` (uid 1001) then drops privileges so
   fresh Docker `media_data` volumes are writable — Stage 3 / empty volumes no
   longer regress with upload `Permission denied` and skipped face/MEDIA-VERIFY.
+- Media entrypoint: set `HOME=/home/app` before `setpriv` so pip `--user`
+  packages resolve (without this, uvicorn crashed with `No module named uvicorn`).
 - Installers (Windows + Ubuntu): post-`compose up` call
   `ensure-media-volume-perms.sh` as belt-and-suspenders until labs pull the
   new Media image.
