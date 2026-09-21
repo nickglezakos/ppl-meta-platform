@@ -31,8 +31,19 @@ class MobileCameraStreamingService:
         self.mobile_workers: Dict[str, Any] = {}  # device_id -> MobileCameraWorker
         self.worker_auto_start = True  # Auto-start workers when frames arrive
         
-        # Track stopped cameras to reject incoming frames
-        self.stopped_cameras: Dict[str, float] = {}  # device_id -> stop_timestamp
+        # Stopped / held cameras: device_id -> {"ts": float, "hold": bool}.
+        # hold=True (operator Disconnect) rejects frames until clear_frame_hold().
+        # hold=False (stale cleanup / transient stop) allows auto-resume on frames.
+        self.stopped_cameras: Dict[str, Dict[str, Any]] = {}
+
+    def clear_frame_hold(self, device_id: str) -> None:
+        """Allow frames again after an operator Disconnect hold."""
+        if self.stopped_cameras.pop(device_id, None) is not None:
+            logger.info(f"✅ Cleared frame hold for mobile camera {device_id}")
+
+    def is_frame_held(self, device_id: str) -> bool:
+        info = self.stopped_cameras.get(device_id)
+        return bool(info and info.get("hold"))
 
     async def setup_mobile_camera_stream(
         self, device_id: str, stream_config: Dict[str, Any]
@@ -41,6 +52,8 @@ class MobileCameraStreamingService:
 
         try:
             logger.info(f"Setting up mobile camera stream for {device_id}")
+            # Explicit setup (connect / start) clears any prior stop hold.
+            self.clear_frame_hold(device_id)
 
             # Extract mobile camera connection details
             ip_address = stream_config.get("ip_address")
@@ -227,11 +240,28 @@ class MobileCameraStreamingService:
         except Empty:
             return None
 
-    async def stop_mobile_camera_stream(self, device_id: str) -> bool:
-        """Stop streaming for a mobile camera."""
+    async def stop_mobile_camera_stream(
+        self, device_id: str, *, hold_until_reconnect: bool = False
+    ) -> bool:
+        """Stop streaming for a mobile camera.
+
+        Args:
+            hold_until_reconnect: If True (operator Disconnect), keep rejecting
+                frames until clear_frame_hold / explicit setup. If False (stale
+                cleanup), the next frame may auto-resume the stream.
+        """
 
         try:
             if device_id not in self.active_mobile_streams:
+                if hold_until_reconnect:
+                    self.stopped_cameras[device_id] = {
+                        "ts": time.time(),
+                        "hold": True,
+                    }
+                    logger.info(
+                        f"🛑 Hold frames for {device_id} (no active stream) until reconnect"
+                    )
+                    return True
                 logger.warning(f"Mobile camera stream {device_id} not active")
                 return False
 
@@ -257,10 +287,19 @@ class MobileCameraStreamingService:
             del self.active_mobile_streams[device_id]
             if device_id in self.stream_queues:
                 del self.stream_queues[device_id]
-            
-            # Mark camera as stopped to reject incoming frames
-            self.stopped_cameras[device_id] = time.time()
-            logger.info(f"🛑 Marked {device_id} as stopped - will reject incoming frames")
+
+            self.stopped_cameras[device_id] = {
+                "ts": time.time(),
+                "hold": hold_until_reconnect,
+            }
+            if hold_until_reconnect:
+                logger.info(
+                    f"🛑 Marked {device_id} as operator-disconnected — rejecting frames until reconnect"
+                )
+            else:
+                logger.info(
+                    f"🛑 Marked {device_id} as stopped (transient) — frames may auto-resume"
+                )
 
             logger.info(f"Stopped mobile camera stream for {device_id}")
             return True
@@ -345,10 +384,21 @@ class MobileCameraStreamingService:
         """
 
         try:
-            # Treat any incoming frame as an implicit resume signal.
-            # This prevents frame starvation when stop/start control messages flap.
-            if device_id in self.stopped_cameras:
-                stop_time = self.stopped_cameras.pop(device_id)
+            # Operator Disconnect must stick: phone keeps POSTing frames; without a
+            # hold those frames auto-setup the stream again within ~200ms and the
+            # Disconnect button looks broken.
+            stop_info = self.stopped_cameras.get(device_id)
+            if stop_info and stop_info.get("hold"):
+                logger.debug(
+                    "Rejecting frame for operator-disconnected camera %s",
+                    device_id,
+                )
+                return False
+
+            # Transient stop (stale cleanup): allow auto-resume on next frame.
+            if stop_info is not None:
+                stop_time = float(stop_info.get("ts") or 0)
+                self.stopped_cameras.pop(device_id, None)
                 elapsed = time.time() - stop_time
                 logger.info(
                     f"✅ Auto-resuming stopped camera {device_id} on incoming frame after {elapsed:.1f}s"

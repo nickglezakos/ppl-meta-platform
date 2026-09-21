@@ -627,6 +627,18 @@ async def connect_camera(
 
         # Handle mobile cameras differently - they don't need backend connection setup
         if camera.camera_type == CameraType.MOBILE:
+            # Clear any operator Disconnect hold so frames can flow again.
+            try:
+                from src.services.mobile_streaming import mobile_streaming_service
+
+                mobile_streaming_service.clear_frame_hold(device_id)
+            except Exception as hold_err:
+                logger.warning(
+                    "Could not clear mobile frame hold for %s: %s",
+                    device_id,
+                    hold_err,
+                )
+
             # For mobile cameras, "connecting" means marking them as available for streaming
             # The actual streaming connection is handled directly between frontend and mobile app
             camera.status = CameraStatus.CONNECTED
@@ -774,7 +786,9 @@ async def disconnect_camera(
             try:
                 from src.services.mobile_streaming import mobile_streaming_service
 
-                await mobile_streaming_service.stop_mobile_camera_stream(device_id)
+                await mobile_streaming_service.stop_mobile_camera_stream(
+                    device_id, hold_until_reconnect=True
+                )
                 await mobile_streaming_service.stop_mobile_worker(device_id)
             except Exception as mobile_err:
                 logger.warning(

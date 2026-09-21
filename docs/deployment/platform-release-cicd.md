@@ -1,7 +1,7 @@
 # Platform release CI/CD (single source of truth)
 
 **Status:** Active  
-**Last updated:** 2026-09-20  
+**Last updated:** 2026-09-21  
 **Current pin:** root [`VERSION`](../../VERSION) (today `2.25.83`)  
 **Registry:** `ghcr.io/nickglezakos/ppl-meta-platform`  
 **Architecture:** `linux/amd64` only for customer/lab installs  
@@ -9,8 +9,10 @@
 **How we ship (memorize this):**
 
 1. **Commit + push source** to GitHub for **every service/path the fixes touched** (Stage 1 hard gate)  
-2. **Build images** on a remote lab PC → GHCR  
-3. **Install** on labs (images **+** tray)
+2. **Build images** on a remote lab PC → GHCR (**only** from that pushed tip)  
+3. **Install** on labs by **pulling GHCR** (images **+** tray)
+
+**Non-negotiable:** A lab that “works” after `docker cp`, a local `docker build`, or copying `main.dart.js` between hosts is **debug**, not a release. Other labs must not be patched that way. Source → GHCR → pull.
 
 This is the **canonical** EyeNet platform release contract.  
 For a plain-language walkthrough + glossary, see [`eyenet-cicd-operator-guide.md`](./eyenet-cicd-operator-guide.md).  
@@ -87,11 +89,33 @@ Do **not**:
 - Publish Ubuntu-only or Windows-only service image tags  
 - Treat a lab `docker cp` / compose override / live DB patch as a release (bring the same change into monorepo source first)  
 - Start Stage 2 while affected service source is still only on a lab or only in an uncommitted working tree  
+- **Promote a lab-local image** (untagged digest, HTML copy, `docker commit`) to another lab or call that Stage 3  
+- **Reuse stale `ppl-meta-frontend/build/web`** when publishing frontend (Stage 2 always rebuilds Flutter web unless `SKIP_FLUTTER_REBUILD=1`)  
 - Bump only one installer’s `RELEASE_TAG`  
 - Skip [`CHANGELOG.md`](../../CHANGELOG.md) on a meaningful Stage 1  
 - Wait on GitHub Actions for images or tray — both are **manual** until this doc says otherwise  
 - Use the Apple Silicon Mac as the default Stage 2 builder  
 - Put tray binaries into GHCR or the twelve-image verify gate  
+
+### Pipeline failure mode (2026-09-21) — read this
+
+What went wrong: nickg ran a **local** frontend image that fixed logout-after-triggers; GHCR `:2.25.83` was a **different** digest; Ubuntu Stage 3 correctly pulled GHCR and “regressed.” Copying HTML between labs papered over it and **broke the CI/CD contract**.
+
+Root causes (process + tooling):
+
+1. Stage 1 incomplete or bypassed while a lab hotfix was treated as done.  
+2. Stage 2 could run on a dirty / divergent checkout, or skip Flutter rebuild when `build/web` already existed.  
+3. Operators/agents used lab-to-lab asset copy instead of GHCR.
+
+**Prevention (enforced in scripts):**
+
+| Gate | Script | Behavior |
+|---|---|---|
+| Source on GitHub | `scripts/stage2_preflight.sh` (via `stage2_one.sh`) | `HEAD == origin/main`; no dirty files under each service being built |
+| Fresh frontend assets | `scripts/stage2_one.sh` | Always `flutter build web --release` unless `SKIP_FLUTTER_REBUILD=1` |
+| Escape hatch | `STAGE2_ALLOW_DIRTY=1` | Emergency only — **not** a release path; still Stage-1 the code afterward |
+
+Stage 3 stays: **compose pull from GHCR only**. If two labs disagree, compare digests (`docker image inspect … RepoDigests`) — never copy container files between them as the fix.
 
 ---
 
@@ -109,7 +133,8 @@ Do **not**:
 | `.github/workflows/tray-release.yml` | **Future** tray automation — draft; **not used today** |
 | `scripts/build_windows_installer_images.sh` | Stage 2: build `linux/amd64` images |
 | `scripts/push_protected_service_images.sh` | Stage 2: push to GHCR |
-| `scripts/stage2_one.sh` | Stage 2: one-service build+push + `REPORT OK` |
+| `scripts/stage2_one.sh` | Stage 2: one-service build+push + `REPORT OK` (runs source gate) |
+| `scripts/stage2_preflight.sh` | Stage 2: require `origin/main` + clean service trees |
 | `scripts/stage2_changed_services.sh` | Stage 2: map git range → services (`ALL` / `NONE` / list) |
 | `scripts/stage2_retag_forward.sh` | Stage 2 Mode D: retag unchanged images to a new pin |
 | `scripts/write_release_manifest.sh` | Stage 2: write digest manifest from GHCR |
@@ -222,10 +247,12 @@ Tray-only path changes make `scripts/stage2_changed_services.sh` print **`NONE`*
 
 **Goal:** Refresh GHCR so both installers `compose pull` the latest product for the pinned `VERSION`.
 
-**Precondition:** Stage 1 hard gate is done — affected service source is on GitHub. Do not build from a lab hotpatch alone.
+**Precondition:** Stage 1 hard gate is done — affected service source is on GitHub (`origin/main`). Do not build from a lab hotpatch alone.
 
-**Does:** Flutter web build (when needed) + Docker build/push of changed or all services + verify (+ Mode D manifest).  
+**Does:** Flutter web build (frontend: always, unless explicitly skipped) + Docker build/push of changed or all services + verify (+ Mode D manifest).  
 **Does not:** replace Stage 1; does not upgrade lab hosts (that is Stage 3).
+
+`stage2_one.sh` **refuses** to run unless the build host checkout matches `origin/main` and the service trees being built are clean (`scripts/stage2_preflight.sh`). Override only with `STAGE2_ALLOW_DIRTY=1`.
 
 After a successful Stage 2, on the next Stage 1 (manifest commit), add under the matching CHANGELOG version:
 

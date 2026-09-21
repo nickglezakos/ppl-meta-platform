@@ -29,13 +29,25 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 - Schema pack `049_individual_video_appearances_instant_columns.sql`: add
   `quality_score` / `processing_method` / `source_session_uuid` / `created_at`
   so instant-detection persist-batch stops 500ing.
+- Gateway (and Discovery) CORS: allow Tailscale CGNAT origins (`100.64.0.0/10`)
+  so the UI at `http://<tailscale-ip>:3000` can call `:8080` (was only
+  localhost / `192.168.*`; personal Tailscale login preflight failed).
+- Cameras: operator Disconnect on mobile must **hold** frame ingest until
+  Connect — phone kept POSTing frames and auto-resume reattached the stream
+  within ~200ms (looked like Disconnect did nothing).
+- Stage 2 tooling: `stage2_one.sh` requires `origin/main` + clean service
+  trees (`stage2_preflight.sh`) and always rebuilds Flutter web for frontend
+  (stops publishing lab-local / stale `build/web` as if it were GHCR truth).
 
 ### Notes
 
 - No `VERSION` bump (still **2.25.83**). Stage 2 should rebuild at least
-  `ppl-meta-frontend`. Apply schema `049` and recreate Media (or full compose
-  up) on existing labs so Redis/comms env takes effect.
+  `ppl-meta-frontend`, **`ppl-meta-gateway`** (CORS), and **`ppl-meta-cameras`**
+  (mobile disconnect hold). Apply schema `049` and recreate Media (or full
+  compose up) on existing labs so Redis/comms env takes effect.
 - Tray publish not required for this Stage 1.
+- Process: do **not** copy container HTML/`docker cp` between labs — Stage 1 →
+  Stage 2 GHCR → Stage 3 pull only.
 
 ## [2.25.83] — 2026-09-20
 

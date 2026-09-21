@@ -453,7 +453,9 @@ A **product** release is complete when Stage 2 (+ coherent manifest) has updated
 5. **Forgetting finalize + commit of `release-manifest.yml`** — tags exist but coherence artifact missing.  
 6. **Hand-editing digests** — always regenerate with `write_release_manifest.sh`.  
 7. **Pointing customers at `:VERSION-<sha>`** — audit only; installers stay on `:VERSION`.  
-8. **Putting secrets in CHANGELOG or committing `docs/notes.txt`** — don’t.
+8. **Putting secrets in CHANGELOG or committing `docs/notes.txt`** — don’t.  
+9. **Lab hotfix as the product** — `docker cp`, local `docker build`, or copying `main.dart.js` between labs. That is debug only. **Stage 1 → Stage 2 (GHCR) → Stage 3 pull.** `stage2_one.sh` now refuses dirty / non-`origin/main` trees; do not use `STAGE2_ALLOW_DIRTY=1` for real releases.  
+10. **Skipping Flutter rebuild on frontend Stage 2** — stale `build/web` produced GHCR digests that did not match the “working” lab. Stage 2 rebuilds web by default.
 
 ---
 

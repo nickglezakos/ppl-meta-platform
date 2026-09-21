@@ -299,22 +299,26 @@ nothing — preview/ID keeps running.
 - Disconnect API did not stop instant detection for that device first.
 - Mobile connect has a special path; mobile disconnect only hit the queue worker
   and set status to `AVAILABLE`, without stopping the mobile stream/worker.
+- **Additional (2026-09-21):** after stop, `receive_mobile_frame` **auto-resumed**
+  on the next phone frame (~0.2s), so Disconnect returned 200 but the preview
+  came right back. Fix: operator stop uses `hold_until_reconnect`; Connect
+  clears the hold. Stale-cleanup stops may still auto-resume.
 
 **Lab status (Sept 2026 Ubuntu box):**
 
 - Source fixed in monorepo:
   - `ppl-meta-cameras/src/api/v1/endpoints/cameras.py`
   - `ppl-meta-cameras/src/services/camera_detection.py`
+  - `ppl-meta-cameras/src/services/mobile_streaming.py` (frame hold)
   - `ppl-meta-frontend/lib/presentation/widgets/camera/camera_card.dart`
-- **Only the running lab container** was hotfixed (`docker cp` + restart
-  `ppl-meta-cameras`). That change is **lost** on `compose pull` / recreate /
-  new host install until images are republished.
+- Hotfix on `lab-work-u24-mini-8g` after Stage 3 2.25.83 until cameras image
+  is republished.
 
 **CI/CD / release follow-up (required):**
 
-1. Commit the three source files above (plus this doc).
+1. Commit the cameras/frontend source files above (plus this doc).
 2. Rebuild and push GHCR images for at least:
-   - `ppl-meta-cameras` (backend disconnect/ID stop)
+   - `ppl-meta-cameras` (backend disconnect/ID stop + frame hold)
    - `ppl-meta-frontend` (stop ID before disconnect in UI)
 3. Bump `RELEASE_TAG` / installer pin and redeploy lab from registry (no more
    `docker cp` overrides).

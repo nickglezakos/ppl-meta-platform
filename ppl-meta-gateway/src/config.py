@@ -212,8 +212,17 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # CORS settings
+# Origins: loopback, typical LAN, and Tailscale CGNAT (100.64.0.0/10) so the
+# Flutter UI on :3000 can call the gateway on :8080 over personal Tailscale
+# (e.g. http://100.73.31.71:3000 → http://100.73.31.71:8080).
 CORS_SETTINGS = {
-    "allow_origin_regex": r"https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.\d+\.\d+)(:\d+)?",
+    "allow_origin_regex": (
+        r"https?://(?:"
+        r"localhost|127\.0\.0\.1|0\.0\.0\.0|"
+        r"192\.168\.\d+\.\d+|"
+        r"100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+"
+        r")(:\d+)?"
+    ),
     "allow_credentials": True,
     "allow_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     "allow_headers": ["*"],

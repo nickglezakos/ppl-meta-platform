@@ -233,8 +233,10 @@ async def stop_mobile_streaming(
                 detail=f"Mobile camera {device_id} not found",
             )
 
-        # Stop mobile streaming service
-        success = await mobile_streaming_service.stop_mobile_camera_stream(device_id)
+        # Stop mobile streaming service (hold frames until explicit reconnect)
+        success = await mobile_streaming_service.stop_mobile_camera_stream(
+            device_id, hold_until_reconnect=True
+        )
 
         # Disconnect camera from general streaming service
         await camera_service.disconnect_camera(device_id)
