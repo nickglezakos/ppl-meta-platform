@@ -65,11 +65,11 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Stage 2 must rebuild **`frontend`**
-  (timer + overlay) and **`ppl-meta-vmeta-protected`** (Gateway URL for MVR
-  materialize). Compose `PPL_GATEWAY_URL` for VMeta ships with Stage 3 recreate
-  even before the VMeta image rebuild (env-only). Media volume-perms entrypoint
-  already published (`780ea44d…`).
+- No `VERSION` bump (still **2.25.83**). Stage 2 published **`frontend`**
+  (`46ceeb64…`, timer + portrait overlay) and **`ppl-meta-vmeta-protected`**
+  (`4a4ff150…`, Gateway URL for MVR materialize). Compose `PPL_GATEWAY_URL` for
+  VMeta ships with Stage 3 recreate. Media volume-perms entrypoint already
+  published (`780ea44d…`).
 - Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once
   if a lab still shows a pre-fix cached `main.dart.js`.
 - Tray publish not required for this Stage 1.

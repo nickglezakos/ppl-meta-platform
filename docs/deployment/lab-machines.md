@@ -24,7 +24,7 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *â€
 
 ## Fleet status (vs GHCR)
 
-**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.83`** (Mode D; last finalized **2026-09-21** after communications audit `trigger_id` fix).  
+**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.83`** (Mode D; last finalized **2026-09-21** after timer/overlay/VMeta Gateway Stage 2).  
 **Rule:** After every **Stage 3** on a named lab, update this table (pin, match state, date, short notes). Do not treat a matching *tag* as current â€” compare **running container Image ID** (and ideally `main.dart.js` sha256) to the manifest. Tag RepoDigests alone can lie if the container was not recreated.
 
 | Lab ID | Pin | Match GHCR? | Last Stage 3 | Notes |
