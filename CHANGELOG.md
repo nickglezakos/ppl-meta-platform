@@ -71,10 +71,9 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Stage 2 must rebuild **`frontend`**
-  (overlay frame-dim fallback) and **`ppl-meta-vmeta-protected`** (FaceNet
-  skip/coerce for MVR embeddings). Prior digests `46ceeb64…` / `4a4ff150…`
-  shipped Gateway URL + first overlay pass but not these follow-ups.
+- No `VERSION` bump (still **2.25.83**). Stage 2 published **`frontend`**
+  (`3afac7f6…`, overlay frame-dim fallback) and **`ppl-meta-vmeta-protected`**
+  (`28dc8f0a…`, FaceNet skip/coerce for MVR embeddings).
 - Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once
   if a lab still shows a pre-fix cached `main.dart.js`.
 - Tray publish not required for this Stage 1.
