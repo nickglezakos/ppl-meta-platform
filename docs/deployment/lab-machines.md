@@ -24,13 +24,13 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 
 ## Fleet status (vs GHCR)
 
-**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.83`** (Mode D; last finalized **2026-09-21**).  
-**Rule:** After every **Stage 3** on a named lab, update this table (pin, match state, date, short notes). Do not treat a matching *tag* as current — compare running `RepoDigests` (or amd64 child digests) to the manifest.
+**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.83`** (Mode D; last finalized **2026-09-21** after frontend nginx cache fix).  
+**Rule:** After every **Stage 3** on a named lab, update this table (pin, match state, date, short notes). Do not treat a matching *tag* as current — compare **running container Image ID** (and ideally `main.dart.js` sha256) to the manifest. Tag RepoDigests alone can lie if the container was not recreated.
 
 | Lab ID | Pin | Match GHCR? | Last Stage 3 | Notes |
 |---|---|---|---|---|
-| `lab-home-win-nickg` | `2.25.83` | **Yes** (gateway / discovery / cameras / frontend) | 2026-09-21 | Running index digests match finalized manifest. `ADVERTISE_HOST=192.168.1.71`. |
-| `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (gateway / discovery / cameras / frontend) | 2026-09-21 | Stage 3 re-pull after finalize; index digests match manifest. Repo `86e5d8a`. `ADVERTISE_HOST=192.168.9.14`. Discovery 11/11 healthy. |
+| `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `635127bf…` + gateway/discovery/cameras) | 2026-09-21 | Force-recreated frontend; `Cache-Control: no-cache` on `main.dart.js`. Hard-refresh UI once to drop any prior 1y immutable browser cache. |
+| `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `635127bf…`) | 2026-09-21 | Same digest + `no-cache` headers verified. Hard-refresh UI once (Ctrl/Cmd+Shift+R) after Stage 3. |
 | `lab-work-dual-64g` | — | — | — | Offline / unreachable from work `192.168.9.x` as of 2026-09-21. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):

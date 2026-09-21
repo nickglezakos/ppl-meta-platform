@@ -4,8 +4,8 @@
 # coherence / audit layer (Mode D). Digest-pinned compose is a later step.
 schema_version: 1
 platform_version: "2.25.83"
-git_sha: "5eb22ebb"
-created_at: "2026-09-21T09:14:57Z"
+git_sha: "ff80d4f3"
+created_at: "2026-09-21T09:53:59Z"
 registry: "ghcr.io/nickglezakos/ppl-meta-platform"
 images:
   ppl-meta-node:
@@ -28,7 +28,7 @@ images:
     digest: "sha256:5cbc487b8a492b08e853fdc1498a5a78af69cc74d964e1ea7594fb61c54aceae"
   ppl-meta-frontend:
     tag: "2.25.83"
-    digest: "sha256:83130e5c4fc8e08e593f49d1cb083faaa9cf83fbe4c9ec1920689f63838fdde0"
+    digest: "sha256:635127bf98619accb2dab45edf70d2bf48a01a5b376120666df7dcbc5e07143e"
   ppl-meta-vision-protected:
     tag: "2.25.83"
     digest: "sha256:77d6e0fbc6a9dd3b7489b3a549dc65db4a789785b72fbbc582efc1b8f8405f67"
