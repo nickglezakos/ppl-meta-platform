@@ -100,9 +100,10 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Stage 2 republishes **`ppl-meta-presence`**
-  (media URL + mobile cleanup). Media/Presence compose env for VMeta/Node is
-  Stage 3 recreate (no media image rebuild).
+- No `VERSION` bump (still **2.25.83**). Stage 2 republished **`ppl-meta-presence`**
+  (`cbdac09a…`, media URL + mobile cleanup). Stage 3 on `lab-work-dual-64g`
+  Ubuntu (`192.168.9.13`) pulled presence and recreated Media with VMeta/Node
+  compose env (no media image rebuild). Hotfix overrides removed.
 - Prior Stage 2 on this pin: cameras (`4a969d77…`) + gateway (`1b95b5fd…`) lease
   follow-up; **`frontend`** (`3afac7f6…`); **`ppl-meta-vmeta-protected`**
   (`28dc8f0a…`).

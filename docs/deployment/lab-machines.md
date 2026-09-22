@@ -31,7 +31,7 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 |---|---|---|---|---|
 | `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. |
 | `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Prior digests had Gateway URL but not these follow-ups. |
-| `lab-work-dual-64g` | `2.25.83` | **Yes** (cameras `4a969d77…`, gateway `1b95b5fd…`) | 2026-09-22 | Ubuntu `eyenet-demo` @ `192.168.9.13`; GHCR replaced lease hotfixes (Connect reuse + Disconnect no-503). |
+| `lab-work-dual-64g` | `2.25.83` | **Yes** (presence `cbdac09a…`, cameras `4a969d77…`, gateway `1b95b5fd…`) | 2026-09-22 | Ubuntu `eyenet-demo` @ `192.168.9.13`; presence media URL + video-only VMeta compose; GHCR replaced hotfixes. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
 
