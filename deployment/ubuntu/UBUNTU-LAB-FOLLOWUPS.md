@@ -309,13 +309,19 @@ nothing — preview/ID keeps running.
 - Upload control is a **stream session lease** (`stream_session_id`): mint on
   Connect / `POST .../stream-lease`, require on `/frame`, revoke on Disconnect.
   Hold/409 remains a backup. USB/RTSP/edge unchanged.
+- Connect must **reuse** (`ensure_stream_lease`) an active phone lease — reminting
+  on Connect immediately 409s the phone.
+- Disconnect must not republish status via asyncio Redis from a worker thread
+  (wrong-loop reconnect closed the main client → SIGSEGV / gateway 503).
+- Gateway must expose an explicit `/streaming/mobile/{id}/stream-lease` route.
 - APK must call stream-lease before uploading; rebuild after Stage 1 push.
 
 **CI/CD / release follow-up:**
 
-1. Stage 1: cameras + `ppl_meta_mobile_camera` + CHANGELOG (pin `2.25.83`).
-2. Stage 2: rebuild/push `ppl-meta-cameras`; Mode D finalize manifest.
-3. Stage 3: pull cameras on work Ubuntu (`lab-work-dual-64g` @ `192.168.9.13`).
+1. Stage 1: cameras + gateway + `ppl_meta_mobile_camera` + CHANGELOG (pin `2.25.83`).
+2. Stage 2: rebuild/push `ppl-meta-cameras` + `ppl-meta-gateway`; Mode D finalize.
+3. Stage 3: pull both on work Ubuntu (`lab-work-dual-64g` @ `192.168.9.13`);
+   remove lab `docker-compose.override.yml` hotfix images.
 4. Operator builds/installs APK from pushed mobile source (not GHCR).
 
 ---

@@ -634,7 +634,10 @@ async def connect_camera(
                 from src.services.mobile_streaming import mobile_streaming_service
 
                 mobile_streaming_service.clear_frame_hold(device_id)
-                stream_session_id = mobile_streaming_service.mint_stream_lease(device_id)
+                # Keep phone's lease if already streaming; reminting causes 409.
+                stream_session_id = mobile_streaming_service.ensure_stream_lease(
+                    device_id
+                )
             except Exception as hold_err:
                 logger.warning(
                     "Could not mint mobile stream lease for %s: %s",
@@ -746,6 +749,7 @@ async def connect_camera(
 @router.post("/{device_id}/disconnect", dependencies=[Depends(require_connect_camera)])
 async def disconnect_camera(
     device_id: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
 ) -> Dict:
@@ -808,12 +812,33 @@ async def disconnect_camera(
             db.commit()
             db.refresh(camera)
 
-            # Best-effort queue disconnect if a worker exists
-            queue_service = get_camera_service()
+            # Publish disconnected on the request's event loop (safe), then
+            # tear down the queue worker after the HTTP 200 is sent so a
+            # worker-side crash cannot turn Disconnect into a gateway 503.
             try:
-                await queue_service.disconnect_camera(device_id)
-            except Exception:
-                pass
+                from src.services.status_notification_service import (
+                    CameraStatusEvent,
+                    get_status_service,
+                )
+
+                await get_status_service().publish_status_change(
+                    device_id,
+                    CameraStatusEvent.DISCONNECTED,
+                    {"source": "mobile_disconnect_api"},
+                )
+            except Exception as pub_err:
+                logger.debug("Disconnect status publish skipped: %s", pub_err)
+
+            async def _deferred_queue_disconnect(dev_id: str) -> None:
+                try:
+                    await asyncio.sleep(0.05)
+                    await get_camera_service().disconnect_camera(dev_id)
+                except Exception as q_err:
+                    logger.debug(
+                        "Deferred queue disconnect for %s: %s", dev_id, q_err
+                    )
+
+            background_tasks.add_task(_deferred_queue_disconnect, device_id)
 
             logger.info(
                 "User %s disconnected mobile camera %s, cleaned %d sessions",

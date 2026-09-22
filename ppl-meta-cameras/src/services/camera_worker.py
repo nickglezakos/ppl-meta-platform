@@ -195,51 +195,64 @@ class CameraWorker:
         """
         Publish status change to Redis (non-blocking).
         
-        Runs in a thread to avoid blocking the worker thread.
+        Uses sync Redis from a daemon thread. Never drive the shared asyncio
+        Redis client from a new event loop — that races the main loop and has
+        crashed cameras with SIGSEGV (exit 139) on Disconnect.
         """
-        def publish_async():
+        def publish_sync():
             try:
-                # Import here to avoid circular imports
-                from src.services.status_notification_service import get_status_service, CameraStatusEvent
-                
-                # Map status to event
+                import json
+                import os
+                from datetime import datetime
+
+                import redis as redis_sync
+
+                from src.services.status_notification_service import CameraStatusEvent
+
                 event_map = {
                     CameraStatus.CONNECTED: CameraStatusEvent.CONNECTED,
                     CameraStatus.DISCONNECTED: CameraStatusEvent.DISCONNECTED,
                     CameraStatus.CONNECTING: CameraStatusEvent.CONNECTING,
                     CameraStatus.ERROR: CameraStatusEvent.ERROR,
                 }
-                
+
                 event = event_map.get(new_status)
                 if not event:
                     return
-                
-                # Get service and publish
-                status_service = get_status_service()
-                
-                # Run async function in new event loop (we're in a thread)
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+
+                redis_url = (
+                    os.getenv("STATUS_REDIS_URL")
+                    or os.getenv("REDIS_URL")
+                    or "redis://redis:6379/1"
+                )
+                if redis_url.endswith("/0"):
+                    redis_url = redis_url[:-1] + "1"
+                client = redis_sync.Redis.from_url(
+                    redis_url, decode_responses=True, socket_timeout=2
+                )
                 try:
-                    loop.run_until_complete(
-                        status_service.publish_status_change(
-                            self.device_id,
-                            event,
-                            {
+                    message = json.dumps(
+                        {
+                            "device_id": self.device_id,
+                            "event": event.value,
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "details": {
                                 "old_status": old_status.value,
                                 "camera_type": self.camera_type.value,
                                 "frames_read": self.frames_read,
-                            }
-                        )
+                            },
+                        }
                     )
+                    client.publish(f"camera:status:{self.device_id}", message)
+                    client.publish("camera:status:all", message)
                 finally:
-                    loop.close()
-                    
+                    client.close()
+
             except Exception as e:
                 logger.debug(f"Could not publish status change: {e}")
-        
+
         # Run in separate thread to not block worker
-        threading.Thread(target=publish_async, daemon=True).start()
+        threading.Thread(target=publish_sync, daemon=True).start()
     
     def start(self):
         """Start the worker thread."""

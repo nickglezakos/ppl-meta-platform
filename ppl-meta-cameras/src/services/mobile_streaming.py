@@ -48,6 +48,20 @@ class MobileCameraStreamingService:
         logger.info("🎫 Minted stream lease for %s session=%s", device_id, session_id)
         return session_id
 
+    def ensure_stream_lease(self, device_id: str) -> str:
+        """Return the active lease, or mint one if none exists.
+
+        Operator Connect must use this — reminting while the phone is uploading
+        invalidates the phone's stream_session_id and immediately 409s frames.
+        """
+        existing = self._stream_leases.get(device_id)
+        if existing:
+            logger.info(
+                "♻️ Reusing stream lease for %s session=%s", device_id, existing
+            )
+            return existing
+        return self.mint_stream_lease(device_id)
+
     def revoke_stream_lease(self, device_id: str) -> Optional[str]:
         """Invalidate the upload lease so further frames are rejected."""
         old = self._stream_leases.pop(device_id, None)

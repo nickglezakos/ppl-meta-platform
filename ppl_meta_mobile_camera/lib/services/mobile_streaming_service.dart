@@ -133,8 +133,11 @@ class MobileStreamingService {
         developer.log('Acquired stream lease $sid', name: _logTag);
         return true;
       }
+      print(
+        '🛑 [STREAM_LEASE] Failed HTTP ${response.statusCode}: ${response.body}',
+      );
       if (response.statusCode == 409) {
-        print('🛑 [STREAM_LEASE] Held/disconnected — cannot upload (${response.body})');
+        print('🛑 [STREAM_LEASE] Held/disconnected — cannot upload');
         _streamSessionId = null;
         _isStreaming = false;
         return false;

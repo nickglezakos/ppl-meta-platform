@@ -2064,6 +2064,12 @@ async def receive_mobile_frame(request: Request):
     return await _proxy_to_cameras_service(request)
 
 
+@api_router.post("/streaming/mobile/{device_id}/stream-lease")
+async def acquire_mobile_stream_lease(request: Request):
+    """Proxy mobile upload lease mint to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
 @api_router.post("/streaming/mobile/{device_id}/setup")
 async def setup_mobile_streaming(request: Request):
     """Proxy mobile camera streaming setup to Cameras service."""

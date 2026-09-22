@@ -17,6 +17,15 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Fixed
 
+- Cameras: Connect **reuses** an active mobile `stream_session_id`
+  (`ensure_stream_lease`) instead of reminting — remint invalidated the phone’s
+  lease and immediately 409’d frames on Connect.
+- Cameras: Disconnect no longer segfaults (exit 139) / returns gateway **503**
+  when worker status pub/sub hit Redis on the wrong event loop — sync Redis
+  publish from workers; mobile Disconnect returns 200 before deferred queue
+  teardown.
+- Gateway: explicit `POST /streaming/mobile/{device_id}/stream-lease` proxy so
+  phone lease mint is not a 404 behind the gateway catch-all gap.
 - Cameras + mobile APK: **stream session lease** for mobile upload — Connect /
   `POST .../stream-lease` mint a `stream_session_id`; every `/frame` must carry
   it; Disconnect revokes the lease (and keeps hold). Stops the Connect/Disconnect

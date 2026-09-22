@@ -151,14 +151,22 @@ class StatusNotificationService:
             
             message_json = json.dumps(message)
             
-            # Try to publish, reconnect once if needed
+            # Try to publish, reconnect once if needed.
+            # Do NOT treat RuntimeError ("Future attached to a different loop") as
+            # connection loss — reconnecting from a worker thread closes the main
+            # loop's Redis client and has segfaulted the cameras process (exit 139).
             try:
                 # Publish to device-specific channel
                 await self.redis_client.publish(channel, message_json)
                 
                 # Also publish to global channel for monitoring
                 await self.redis_client.publish("camera:status:all", message_json)
-            except (ConnectionError, TimeoutError, OSError, RuntimeError) as conn_err:
+            except RuntimeError as loop_err:
+                logger.warning(
+                    "⚠️ Skipping async Redis publish (wrong event loop): %s", loop_err
+                )
+                return
+            except (ConnectionError, TimeoutError, OSError) as conn_err:
                 logger.warning(f"⚠️ Redis connection lost, attempting reconnect: {conn_err}")
                 # Try to reconnect
                 await self.connect()
@@ -175,10 +183,14 @@ class StatusNotificationService:
             
         except Exception as e:
             logger.error(f"❌ Failed to publish status for {device_id}: {e}", exc_info=True)
-            # Try to reconnect
+            # Only reconnect from the owning event loop; never from worker threads.
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                return
             try:
                 await self.connect()
-            except:
+            except Exception:
                 pass
     
     async def publish_segment_batch_ready(
