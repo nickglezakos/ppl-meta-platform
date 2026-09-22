@@ -83,9 +83,10 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Stage 2: republish **`ppl-meta-cameras`**
-  for stream lease; Stage 3 pull on work Ubuntu. Operator rebuilds APK from
-  `main` (lease client). Prior cameras digest `defffeee…` is superseded.
+- No `VERSION` bump (still **2.25.83**). Stage 2 republished **`ppl-meta-cameras`**
+  (`065fc898…`, stream session lease); Stage 3 on `lab-work-dual-64g` Ubuntu
+  (`192.168.9.13`) pulled it. **Rebuild APK from `main` @ `f78d67a2`** (or later)
+  — old APKs without `stream_session_id` get 409 on `/frame`.
 - Prior Stage 2 on this pin: **`frontend`** (`3afac7f6…`), **`ppl-meta-vmeta-protected`**
   (`28dc8f0a…`).
 - Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once
