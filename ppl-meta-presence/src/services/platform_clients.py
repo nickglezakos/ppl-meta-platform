@@ -38,6 +38,7 @@ class PlatformClients:
     def __init__(self) -> None:
         self.gateway_url = os.getenv("GATEWAY_SERVICE_URL", "http://localhost:8080").rstrip("/")
         self.cameras_url = config.CAMERAS_SERVICE_URL
+        self.media_url = config.MEDIA_SERVICE_URL
         self.communications_url = config.COMMUNICATIONS_SERVICE_URL
         self.service_name = "ppl-meta-presence"
         self.service_port = int(os.getenv("PRESENCE_SERVICE_PORT", "8011"))
@@ -210,21 +211,35 @@ class PlatformClients:
         return {"Authorization": f"Bearer {token}"}
 
     async def get_collection_by_camera_device_id(self, camera_device_id: str, token: str) -> Optional[Dict[str, Any]]:
-        response = await self._http_client.get(
-            f"http://localhost:8000/api/v1/media/collections/by-camera/{camera_device_id}",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        try:
+            response = await self._http_client.get(
+                f"{self.media_url}/api/v1/media/collections/by-camera/{camera_device_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"service": "media", "detail": str(exc)},
+            ) from exc
         if response.status_code == 404:
             return None
-        response.raise_for_status()
+        if response.status_code >= 400:
+            self._raise_downstream_http_error(response, "media")
         return response.json()
 
     async def list_collections(self, token: str) -> list[dict[str, Any]]:
-        response = await self._http_client.get(
-            "http://localhost:8000/api/v1/media/collections",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        response.raise_for_status()
+        try:
+            response = await self._http_client.get(
+                f"{self.media_url}/api/v1/media/collections",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"service": "media", "detail": str(exc)},
+            ) from exc
+        if response.status_code >= 400:
+            self._raise_downstream_http_error(response, "media")
         data = response.json()
         return data if isinstance(data, list) else []
 

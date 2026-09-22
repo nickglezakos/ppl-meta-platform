@@ -17,6 +17,14 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Fixed
 
+- Presence: media collections calls use `MEDIA_SERVICE_URL` (not `localhost:8000`)
+  so Presence tabs stop 500ing when reserving a camera/collection in compose.
+- Presence: after video-only / camera-only detection cleanup, **do not** full
+  Disconnect mobile cameras (that revoked the upload lease and killed the phone
+  stream mid-grant).
+- Media compose: set `VMETA_SERVICE_URL` / `NODE_SERVICE_URL` /
+  `PRESENCE_SERVICE_URL` / `VISION_SERVICE_URL` so `ppl_match` can reach VMeta
+  and video-only presence grants leave `awaiting_trigger_match`.
 - Cameras: Connect **reuses** an active mobile `stream_session_id`
   (`ensure_stream_lease`) instead of reminting — remint invalidated the phone’s
   lease and immediately 409’d frames on Connect.
@@ -92,13 +100,12 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Stage 2 republished **`ppl-meta-cameras`**
-  (`4a969d77…`, Connect lease reuse + Disconnect no-SIGSEGV) and
-  **`ppl-meta-gateway`** (`1b95b5fd…`, explicit `stream-lease` route). Stage 3 on
-  `lab-work-dual-64g` Ubuntu (`192.168.9.13`) pulled both and removed lab hotfix
-  override images.
-- Prior Stage 2 on this pin: stream-lease cameras (`065fc898…`); **`frontend`**
-  (`3afac7f6…`); **`ppl-meta-vmeta-protected`** (`28dc8f0a…`).
+- No `VERSION` bump (still **2.25.83**). Stage 2 republishes **`ppl-meta-presence`**
+  (media URL + mobile cleanup). Media/Presence compose env for VMeta/Node is
+  Stage 3 recreate (no media image rebuild).
+- Prior Stage 2 on this pin: cameras (`4a969d77…`) + gateway (`1b95b5fd…`) lease
+  follow-up; **`frontend`** (`3afac7f6…`); **`ppl-meta-vmeta-protected`**
+  (`28dc8f0a…`).
 - **Rebuild APK from `main` @ `f78d67a2`** (or later) — old APKs without
   `stream_session_id` get 409 on `/frame`.
 - Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once

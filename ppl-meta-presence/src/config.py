@@ -34,6 +34,10 @@ class Config:
         "CAMERAS_SERVICE_URL",
         "http://localhost:8005",
     ).rstrip("/")
+    MEDIA_SERVICE_URL: str = os.getenv(
+        "MEDIA_SERVICE_URL",
+        "http://localhost:8000",
+    ).rstrip("/")
     NODE_SERVICE_URL: str = os.getenv(
         "NODE_SERVICE_URL",
         "http://localhost:8001/api/v1",

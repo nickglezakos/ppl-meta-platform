@@ -96,6 +96,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       # Alert/email/webhook actions call Communications (defaults to localhost:8009 otherwise).
       COMMUNICATIONS_SERVICE_URL: http://ppl-meta-communications:8009
+      # ppl_match / vprofile_match (video-only presence grants) need VMeta + Node.
+      VMETA_SERVICE_URL: http://ppl-meta-vmeta:8008
+      NODE_SERVICE_URL: http://ppl-meta-node:8001
+      PRESENCE_SERVICE_URL: http://ppl-meta-presence:8011
+      VISION_SERVICE_URL: http://ppl-meta-vision:8003
     volumes:
       - media_data:/app/media
     depends_on:
@@ -264,6 +269,7 @@ services:
       COMMUNICATIONS_SERVICE_URL: http://ppl-meta-communications:8009/api/v1
       NODE_SERVICE_URL: http://ppl-meta-node:8001/api/v1
       CAMERAS_SERVICE_URL: http://ppl-meta-cameras:8005
+      MEDIA_SERVICE_URL: http://ppl-meta-media:8000
       PRESENCE_PREFERRED_CAMERA_TYPES: MOBILE,RTSP,EDGE
       SERVICE_SECRET: ${SERVICE_SECRET:-ppl-meta-secret-key-change-in-production}
       SECRET_KEY: ${JWT_SECRET_KEY:-ppl-meta-secret-key-change-in-production}

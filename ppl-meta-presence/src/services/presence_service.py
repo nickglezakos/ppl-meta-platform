@@ -1801,7 +1801,22 @@ class PresenceService:
         except httpx.HTTPError as exc:
             logger.warning("Failed to stop instant detection for %s during cleanup: %s", camera_id, exc)
 
+        # Do not call full Disconnect for mobile — that revokes the upload lease /
+        # frame hold and kills the phone stream mid video-only grant. USB/RTSP
+        # workers can still be torn down safely.
         try:
+            camera_meta = None
+            for resource in self.cameras.values():
+                if resource.platform_resource_uuid == camera_id:
+                    camera_meta = resource.metadata or {}
+                    break
+            camera_type = str((camera_meta or {}).get("camera_type") or "").upper()
+            if camera_type == "MOBILE":
+                logger.info(
+                    "Skipping disconnect for mobile camera %s after presence detection cleanup",
+                    camera_id,
+                )
+                return
             await self.platform_clients.disconnect_camera(camera_id)
         except (httpx.HTTPError, RuntimeError) as exc:
             logger.warning("Failed to disconnect camera %s during cleanup: %s", camera_id, exc)
