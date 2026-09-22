@@ -118,11 +118,14 @@ class _CameraScreenState extends State<CameraScreen>
         // Connect camera service to streaming service for frame transmission
         CameraService.instance.setStreamingService(streamingService);
         
-        // Enable frame sending for session-based streaming
-        streamingService.enableFrameSending();
-        
-        print('✅ Backend connection configured for frame streaming with device ID: $mobileDeviceId');
-        CameraLogger.info('✅ Backend connection configured for frame streaming with device ID: $mobileDeviceId');
+        final leased = await streamingService.beginUploadLease();
+        if (!leased) {
+          print('❌ Could not acquire stream lease for $mobileDeviceId');
+          CameraLogger.warning('❌ Could not acquire stream lease');
+        } else {
+          print('✅ Backend connection configured for frame streaming with device ID: $mobileDeviceId');
+          CameraLogger.info('✅ Backend connection configured for frame streaming with device ID: $mobileDeviceId');
+        }
       } else {
         CameraLogger.warning('❌ Backend URL or access token not available for streaming service');
         CameraLogger.info('🔍 camerasServiceUrl: $backendUrl, accessToken: ${authProvider.accessToken != null ? "present" : "null"}');
@@ -921,8 +924,14 @@ class _CameraScreenState extends State<CameraScreen>
         // Connect camera service to streaming service for frame transmission
         CameraService.instance.setStreamingService(streamingService);
         
-        // Enable frame sending for session-based streaming
-        streamingService.enableFrameSending();
+        // Mint upload lease then enable frame sending
+        final leased = await streamingService.beginUploadLease();
+        if (!leased) {
+          CameraLogger.warning(
+            '❌ Could not acquire stream lease — camera may be disconnected on platform',
+          );
+          throw Exception('Stream lease denied (platform disconnected or unreachable)');
+        }
         
         CameraLogger.info('✅ Backend connection configured for frame streaming with device ID: $mobileDeviceId');
       } else {

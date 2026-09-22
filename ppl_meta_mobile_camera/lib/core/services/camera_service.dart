@@ -503,19 +503,27 @@ class CameraService {
   /// Stop video streaming
   Future<bool> stopStreaming() async {
     try {
+      if (!_isStreaming) {
+        return true;
+      }
+      // Clear flag first so concurrent 409 handlers do not double-stop.
+      _isStreaming = false;
+
       if (_controller == null) {
-        _isStreaming = false;
         return true;
       }
 
-      if (_isStreaming) {
-        print('🛑 [STOP_STREAMING] Stopping image stream...');
-        await _controller!.stopImageStream();
-        _isStreaming = false;
-        print('✅ [STOP_STREAMING] Image stream stopped');
-      }
+      print('🛑 [STOP_STREAMING] Stopping image stream...');
+      await _controller!.stopImageStream();
+      print('✅ [STOP_STREAMING] Image stream stopped');
       return true;
     } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('No camera is streaming images')) {
+        print('✅ [STOP_STREAMING] Image stream already stopped');
+        _isStreaming = false;
+        return true;
+      }
       print('❌ [STOP_STREAMING] Failed to stop streaming: $e');
       _isStreaming = false;
       return false;

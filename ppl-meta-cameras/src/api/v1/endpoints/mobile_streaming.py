@@ -6,7 +6,7 @@ Extends the base streaming functionality with mobile-specific features.
 import base64
 import io
 import logging
-from typing import Dict
+from typing import Dict, Optional
 
 import cv2
 import numpy as np
@@ -279,6 +279,66 @@ class MobileFrameData(BaseModel):
     rotation_angle: int = 0  # 0, 90, 180, 270 degrees
     # Frame rate metadata (CRITICAL for accurate video recording)
     fps: int = 30  # Frames per second the mobile app is sending at (default 30)
+    # Upload lease minted by Connect or POST .../stream-lease
+    stream_session_id: Optional[str] = None
+
+
+@router.post(
+    "/mobile/{device_id}/stream-lease",
+    dependencies=[Depends(require_start_stream)],
+)
+async def acquire_mobile_stream_lease(
+    device_id: str,
+    current_user: Dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict:
+    """Mint a new mobile upload lease. Required before POSTing /frame.
+
+    Fails with 409 while operator Disconnect hold is active.
+    """
+    from datetime import datetime
+
+    from src.models.camera import CameraStatus
+
+    camera = (
+        db.query(Camera)
+        .filter(
+            Camera.device_id == device_id, Camera.camera_type == CameraType.MOBILE
+        )
+        .first()
+    )
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Mobile camera {device_id} not found",
+        )
+
+    if mobile_streaming_service.is_frame_held(device_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "stream_lease_held: operator disconnected this camera; "
+                "wait for Connect before uploading"
+            ),
+        )
+
+    session_id = mobile_streaming_service.mint_stream_lease(device_id)
+    if camera.status != CameraStatus.CONNECTED:
+        camera.status = CameraStatus.CONNECTED
+        camera.last_seen = datetime.utcnow()
+        db.commit()
+
+    logger.info(
+        "User %s acquired stream lease for %s session=%s",
+        current_user.get("sub"),
+        device_id,
+        session_id,
+    )
+    return {
+        "device_id": device_id,
+        "stream_session_id": session_id,
+        "status": "leased",
+    }
 
 
 @router.post("/mobile/{device_id}/frame")
@@ -314,6 +374,27 @@ async def receive_mobile_camera_frame(
                 detail=f"Mobile camera {device_id} not found",
             )
 
+        # Lease is the primary gate (Disconnect revokes it). Hold is backup.
+        if mobile_streaming_service.is_frame_held(device_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "stream_session_revoked: operator disconnected; "
+                    "stop uploading until Connect + new stream-lease"
+                ),
+            )
+
+        if not mobile_streaming_service.validate_stream_lease(
+            device_id, frame_data.stream_session_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "stream_session_invalid: missing or revoked stream_session_id; "
+                    "POST .../stream-lease then retry"
+                ),
+            )
+
         # Decode base64 frame data
         try:
             frame_bytes = base64.b64decode(frame_data.frame_data)
@@ -327,17 +408,6 @@ async def receive_mobile_camera_frame(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid frame data: {e}",
-            )
-
-        # Operator Disconnect holds ingest until Connect. Phone keeps POSTing;
-        # return 409 (not 500) so the APK can stop uploading cleanly.
-        if mobile_streaming_service.is_frame_held(device_id):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "Mobile camera held after operator disconnect; "
-                    "stop uploading until reconnect"
-                ),
             )
 
         # Store the frame in the mobile streaming service with orientation and FPS
@@ -356,15 +426,19 @@ async def receive_mobile_camera_frame(
                 "status": "received",
                 "message": "Frame received successfully",
                 "timestamp": frame_data.timestamp,
+                "stream_session_id": frame_data.stream_session_id,
             }
 
-        # Race: hold may have been set between the check and receive.
-        if mobile_streaming_service.is_frame_held(device_id):
+        if mobile_streaming_service.is_frame_held(
+            device_id
+        ) or not mobile_streaming_service.validate_stream_lease(
+            device_id, frame_data.stream_session_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    "Mobile camera held after operator disconnect; "
-                    "stop uploading until reconnect"
+                    "stream_session_revoked: operator disconnected; "
+                    "stop uploading until Connect + new stream-lease"
                 ),
             )
 

@@ -20,10 +20,14 @@ class MobileStreamingService {
   String? _backendUrl;
   String? _accessToken;
   String? _deviceId; // Add device ID storage
+  /// Active upload lease from POST .../stream-lease (required on every /frame).
+  String? _streamSessionId;
   
   // Streaming state
   bool _isStreaming = false;
   bool _isInitialized = false;
+  /// Guards concurrent 409 hold responses so stopStreaming runs once.
+  bool _holdStopInProgress = false;
   String? _currentStreamUrl;
   StreamingSession? _currentSession;
   
@@ -85,7 +89,8 @@ class MobileStreamingService {
     developer.log('Backend connection set: $backendUrl, deviceId: ${deviceId ?? "not provided"}', name: _logTag);
   }
   
-  /// Enable frame sending for session-based streaming (without RTMP)
+  /// Enable frame sending for session-based streaming (without RTMP).
+  /// Prefer [beginUploadLease] which mints stream_session_id first.
   void enableFrameSending() {
     _isStreaming = true;
     developer.log('Frame sending enabled for session-based streaming', name: _logTag);
@@ -93,7 +98,57 @@ class MobileStreamingService {
 
   void disableFrameSending() {
     _isStreaming = false;
+    _streamSessionId = null;
     developer.log('Frame sending disabled', name: _logTag);
+  }
+
+  String? get streamSessionId => _streamSessionId;
+
+  /// Mint a stream lease from the platform, then enable upload.
+  /// Returns false if the camera is held (operator Disconnect) or request fails.
+  Future<bool> beginUploadLease() async {
+    if (_backendUrl == null || _accessToken == null || _deviceId == null) {
+      developer.log('Cannot acquire stream lease — missing backend connection', name: _logTag, level: 900);
+      return false;
+    }
+    try {
+      final url = '$_backendUrl/api/v1/streaming/mobile/$_deviceId/stream-lease';
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_accessToken',
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        final sid = data['stream_session_id'] as String?;
+        if (sid == null || sid.isEmpty) {
+          developer.log('stream-lease response missing stream_session_id', name: _logTag, level: 900);
+          return false;
+        }
+        _streamSessionId = sid;
+        _isStreaming = true;
+        print('🎫 [STREAM_LEASE] Acquired session=$sid');
+        developer.log('Acquired stream lease $sid', name: _logTag);
+        return true;
+      }
+      if (response.statusCode == 409) {
+        print('🛑 [STREAM_LEASE] Held/disconnected — cannot upload (${response.body})');
+        _streamSessionId = null;
+        _isStreaming = false;
+        return false;
+      }
+      developer.log(
+        'stream-lease failed: ${response.statusCode} ${response.body}',
+        name: _logTag,
+        level: 900,
+      );
+      return false;
+    } catch (e) {
+      developer.log('stream-lease error: $e', name: _logTag, level: 1000);
+      return false;
+    }
   }
   
   /// Start streaming with the given configuration
@@ -166,12 +221,13 @@ class MobileStreamingService {
   
   /// Stop streaming
   Future<void> stopStreaming() async {
-    if (!_isStreaming) return;
+    if (!_isStreaming && _streamSessionId == null) return;
     
     developer.log('Stopping streaming', name: _logTag);
     
     try {
       _isStreaming = false;
+      _streamSessionId = null;
       _updateStatus(StreamingStatus.stopping());
       
       // Stop monitoring
@@ -300,8 +356,8 @@ class MobileStreamingService {
   /// Public method to send frame to backend (called by CameraService)
   Future<void> sendFrameToBackend(CameraImage image, {required bool isFrontCamera}) async {
     developer.log('sendFrameToBackend called - _isStreaming: $_isStreaming, _backendUrl: $_backendUrl, _accessToken: ${_accessToken != null ? "present" : "null"}', name: _logTag);
-    if (!_isStreaming || _backendUrl == null || _accessToken == null) {
-      developer.log('Skipping frame send - conditions not met', name: _logTag);
+    if (!_isStreaming || _backendUrl == null || _accessToken == null || _streamSessionId == null) {
+      developer.log('Skipping frame send - conditions not met (lease=${_streamSessionId != null})', name: _logTag);
       return;
     }
     developer.log('Sending frame to backend: ${image.width}x${image.height}', name: _logTag);
@@ -416,6 +472,7 @@ class MobileStreamingService {
         'rotation_angle': rotationAngle,
         // CRITICAL: Include the actual FPS being sent (prevents duplicate frames in recordings)
         'fps': _currentConfig.fps,
+        'stream_session_id': _streamSessionId,
       };
       
       final response = await http.post(
@@ -430,15 +487,20 @@ class MobileStreamingService {
       if (response.statusCode == 200) {
         developer.log('Frame sent successfully', name: _logTag);
       } else if (response.statusCode == 409) {
-        // Platform operator Disconnect holds frames until Connect.
-        // Stop uploading so Disconnect sticks on both sides.
+        // Lease revoked / held — stop once (ignore concurrent in-flight 409s).
+        if (_holdStopInProgress || (!_isStreaming && _streamSessionId == null)) return;
+        _holdStopInProgress = true;
         developer.log(
-          'Frame rejected (409 held) — stopping stream after operator disconnect',
+          'Frame rejected (409) — stopping after lease revoke/hold',
           name: _logTag,
           level: 900,
         );
-        print('🛑 [FRAME_SEND] Platform held camera (409) — stopping upload');
-        await stopStreaming();
+        print('🛑 [FRAME_SEND] Platform rejected frame (409) — stopping upload');
+        try {
+          await stopStreaming();
+        } finally {
+          _holdStopInProgress = false;
+        }
       } else {
         developer.log('Failed to send frame: ${response.statusCode}', name: _logTag, level: 900);
       }

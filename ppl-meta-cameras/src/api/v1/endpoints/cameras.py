@@ -627,14 +627,17 @@ async def connect_camera(
 
         # Handle mobile cameras differently - they don't need backend connection setup
         if camera.camera_type == CameraType.MOBILE:
-            # Clear any operator Disconnect hold so frames can flow again.
+            # Clear hold and mint a new upload lease. Phone must acquire/use
+            # stream_session_id (via stream-lease or this response / heartbeat).
+            stream_session_id = None
             try:
                 from src.services.mobile_streaming import mobile_streaming_service
 
                 mobile_streaming_service.clear_frame_hold(device_id)
+                stream_session_id = mobile_streaming_service.mint_stream_lease(device_id)
             except Exception as hold_err:
                 logger.warning(
-                    "Could not clear mobile frame hold for %s: %s",
+                    "Could not mint mobile stream lease for %s: %s",
                     device_id,
                     hold_err,
                 )
@@ -659,6 +662,7 @@ async def connect_camera(
                 "camera_type": "mobile",
                 "connection_string": camera.connection_string,
                 "last_seen": camera.last_seen.isoformat() if camera.last_seen else None,
+                "stream_session_id": stream_session_id,
             }
         
         # Handle edge cameras - they don't need backend connection setup either
@@ -786,6 +790,8 @@ async def disconnect_camera(
             try:
                 from src.services.mobile_streaming import mobile_streaming_service
 
+                # Revoke upload lease first so in-flight frames fail closed.
+                mobile_streaming_service.revoke_stream_lease(device_id)
                 await mobile_streaming_service.stop_mobile_camera_stream(
                     device_id, hold_until_reconnect=True
                 )
@@ -822,6 +828,7 @@ async def disconnect_camera(
                 "sessions_cleaned": cleaned_sessions,
                 "camera_type": "mobile",
                 "success": True,
+                "stream_session_id": None,
             }
 
         # Disconnect from camera using queue service (if currently connected)
@@ -2314,6 +2321,18 @@ async def mobile_camera_heartbeat(
             "timestamp": camera.last_seen.isoformat(),
             "pending_settings_count": len(pending_settings_list),
         }
+
+        try:
+            from src.services.mobile_streaming import mobile_streaming_service
+
+            lease = mobile_streaming_service.get_stream_lease(device_id)
+            response["stream_session_id"] = lease
+            response["stream_accepting"] = bool(
+                lease and not mobile_streaming_service.is_frame_held(device_id)
+            )
+        except Exception:
+            response["stream_session_id"] = None
+            response["stream_accepting"] = False
 
         if pending_settings_list:
             response["pending_settings"] = pending_settings_list

@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import uuid
 from queue import Empty, Queue
 from typing import Any, Dict, Optional
 
@@ -35,6 +36,36 @@ class MobileCameraStreamingService:
         # hold=True (operator Disconnect) rejects frames until clear_frame_hold().
         # hold=False (stale cleanup / transient stop) allows auto-resume on frames.
         self.stopped_cameras: Dict[str, Dict[str, Any]] = {}
+
+        # Upload lease: device_id -> stream_session_id (UUID).
+        # Phone must send this on every /frame; Disconnect revokes it.
+        self._stream_leases: Dict[str, str] = {}
+
+    def mint_stream_lease(self, device_id: str) -> str:
+        """Issue a new upload lease for this mobile camera (invalidates any prior)."""
+        session_id = str(uuid.uuid4())
+        self._stream_leases[device_id] = session_id
+        logger.info("🎫 Minted stream lease for %s session=%s", device_id, session_id)
+        return session_id
+
+    def revoke_stream_lease(self, device_id: str) -> Optional[str]:
+        """Invalidate the upload lease so further frames are rejected."""
+        old = self._stream_leases.pop(device_id, None)
+        if old:
+            logger.info("🚫 Revoked stream lease for %s (was %s)", device_id, old)
+        return old
+
+    def get_stream_lease(self, device_id: str) -> Optional[str]:
+        return self._stream_leases.get(device_id)
+
+    def validate_stream_lease(
+        self, device_id: str, session_id: Optional[str]
+    ) -> bool:
+        """True only when session_id matches the active lease."""
+        active = self._stream_leases.get(device_id)
+        if not active or not session_id:
+            return False
+        return session_id == active
 
     def clear_frame_hold(self, device_id: str) -> None:
         """Allow frames again after an operator Disconnect hold."""
@@ -252,6 +283,9 @@ class MobileCameraStreamingService:
         """
 
         try:
+            if hold_until_reconnect:
+                self.revoke_stream_lease(device_id)
+
             if device_id not in self.active_mobile_streams:
                 if hold_until_reconnect:
                     self.stopped_cameras[device_id] = {

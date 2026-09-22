@@ -306,21 +306,17 @@ nothing — preview/ID keeps running.
 
 **Lab status (Sept 2026):**
 
-- Source + GHCR **2.25.83** include disconnect ID-stop, mobile worker stop, and
-  `hold_until_reconnect`.
-- Residual (2026-09-22): held frames still returned **HTTP 500** (APK kept
-  uploading; UI looked stuck). Fixed in Stage 1: cameras → **409**; APK stops
-  upload/image stream on 409. Republish cameras + install new APK.
+- Upload control is a **stream session lease** (`stream_session_id`): mint on
+  Connect / `POST .../stream-lease`, require on `/frame`, revoke on Disconnect.
+  Hold/409 remains a backup. USB/RTSP/edge unchanged.
+- APK must call stream-lease before uploading; rebuild after Stage 1 push.
 
 **CI/CD / release follow-up:**
 
-1. Stage 1: cameras + `ppl_meta_mobile_camera` + CHANGELOG (same pin `2.25.83`).
+1. Stage 1: cameras + `ppl_meta_mobile_camera` + CHANGELOG (pin `2.25.83`).
 2. Stage 2: rebuild/push `ppl-meta-cameras`; Mode D finalize manifest.
 3. Stage 3: pull cameras on work Ubuntu (`lab-work-dual-64g` @ `192.168.9.13`).
 4. Operator builds/installs APK from pushed mobile source (not GHCR).
-
-Until steps 2–4, Disconnect can still *look* incomplete even though the API
-returns 200 and sets the hold.
 
 ---
 

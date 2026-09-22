@@ -17,6 +17,12 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Fixed
 
+- Cameras + mobile APK: **stream session lease** for mobile upload — Connect /
+  `POST .../stream-lease` mint a `stream_session_id`; every `/frame` must carry
+  it; Disconnect revokes the lease (and keeps hold). Stops the Connect/Disconnect
+  race where the phone kept POSTing after Disconnect. USB/RTSP/edge unchanged.
+- Mobile APK: acquire lease before upload; stop on 409 (revoked/held); idempotent
+  stop across in-flight frames.
 - Cameras: operator-disconnected mobile frame hold now returns **HTTP 409**
   (not 500) so the phone can stop uploading cleanly; Disconnect no longer looks
   broken while the APK keeps POSTing held frames.
@@ -77,10 +83,9 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Stage 2 republished **`ppl-meta-cameras`**
-  (`defffeee…`, held-frame **409**); Stage 3 on `lab-work-dual-64g` Ubuntu
-  (`192.168.9.13`) pulled that digest. Mobile APK: build from `main` @ `0bc72daf`
-  (or later) and install on the phone.
+- No `VERSION` bump (still **2.25.83**). Stage 2: republish **`ppl-meta-cameras`**
+  for stream lease; Stage 3 pull on work Ubuntu. Operator rebuilds APK from
+  `main` (lease client). Prior cameras digest `defffeee…` is superseded.
 - Prior Stage 2 on this pin: **`frontend`** (`3afac7f6…`), **`ppl-meta-vmeta-protected`**
   (`28dc8f0a…`).
 - Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once
