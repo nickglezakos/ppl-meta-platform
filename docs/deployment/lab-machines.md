@@ -31,7 +31,7 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 |---|---|---|---|---|
 | `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. |
 | `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Prior digests had Gateway URL but not these follow-ups. |
-| `lab-work-dual-64g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-22 | Ubuntu boot `eyenet-demo` @ `192.168.9.13`; native Docker CE install. |
+| `lab-work-dual-64g` | `2.25.83` | **Yes** (cameras `defffeee…`, frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-22 | Ubuntu `eyenet-demo` @ `192.168.9.13`; cameras Stage 3 for disconnect 409 hold. Install new APK for phone-side stop. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
 

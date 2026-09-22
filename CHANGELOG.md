@@ -77,9 +77,10 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). This residual needs Stage 2 republish of
-  **`ppl-meta-cameras`** only, then Stage 3 pull on work Ubuntu; mobile APK is
-  operator-built from pushed `ppl_meta_mobile_camera` (not GHCR).
+- No `VERSION` bump (still **2.25.83**). Stage 2 republished **`ppl-meta-cameras`**
+  (`defffeee…`, held-frame **409**); Stage 3 on `lab-work-dual-64g` Ubuntu
+  (`192.168.9.13`) pulled that digest. Mobile APK: build from `main` @ `0bc72daf`
+  (or later) and install on the phone.
 - Prior Stage 2 on this pin: **`frontend`** (`3afac7f6…`), **`ppl-meta-vmeta-protected`**
   (`28dc8f0a…`).
 - Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once
