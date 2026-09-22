@@ -1,7 +1,7 @@
 # Lab machines inventory
 
 **Status:** Active  
-**Last updated:** 2026-09-21  
+**Last updated:** 2026-09-22  
 **Operator console:** developer Mac (Apple Silicon) — Stage 1 git, docs, RDP/SSH into labs; **not** the default Stage 2 image builder  
 **Canonical release process:** [platform-release-cicd.md](./platform-release-cicd.md)  
 **Operator guide (for dummies + glossary):** [eyenet-cicd-operator-guide.md](./eyenet-cicd-operator-guide.md)
@@ -31,7 +31,7 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 |---|---|---|---|---|
 | `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. |
 | `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Prior digests had Gateway URL but not these follow-ups. |
-| `lab-work-dual-64g` | — | — | — | Offline / unreachable from work `192.168.9.x` as of 2026-09-21. |
+| `lab-work-dual-64g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-22 | Ubuntu boot `eyenet-demo` @ `192.168.9.13`; native Docker CE install. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
 
@@ -144,17 +144,19 @@ ssh eyenet-server 'hostname; free -h | head -2; cat ~/ppl-meta-platform/VERSION;
 
 | Field | Value |
 |---|---|
-| Site | Work LAN |
+| Site | Work LAN (`192.168.9.0/24` when on work Wi‑Fi) |
 | OS | **Dual-boot:** Windows 10/11 amd64 **or** Ubuntu 24.04 (reboot to switch) |
-| RAM | **64 GB** |
+| RAM | Labelled **64 GB** dual-boot laptop; Ubuntu currently reports **~15 Gi** visible (`free -h`) — re-check after BIOS/DIMM if Stage 2 needs full RAM |
+| Hostname (Ubuntu) | `eyenet-demo` |
 | Windows LAN (historical) | `192.168.11.29` (SSH host alias `windows-lab`, user `user`) — confirm after each boot |
-| Ubuntu LAN | Fill in when Ubuntu is booted (`hostname -I`); may be on `192.168.9.0/24` or `192.168.11.0/24` depending on Wi‑Fi |
-| Access (LAN) | Windows session: Windows App / RDP → LAN IP (or `ssh windows-lab` if OpenSSH is up). Ubuntu session: `ssh <user>@<lan-ip>` |
-| Access (remote) | Tailscale → same (RDP or SSH depending on which OS is booted) — enroll when bringing this host online remotely |
+| Ubuntu LAN | **`192.168.9.13`** (`wlp0s20f3`); set `ADVERTISE_HOST=192.168.9.13` |
+| Access (LAN) | Windows: Windows App / RDP → LAN IP (or `ssh windows-lab`). Ubuntu: `ssh eyenet@192.168.9.13` (Mac key `eyenet-mac-to-kvalvis` authorized) |
+| Access (remote) | Tailscale client installed on Ubuntu; run `sudo tailscale up` then add Host alias when mesh IP is known |
+| Install dir (Ubuntu) | `~/eyenet-platform` (user `eyenet`) |
 | Product path (Windows) | WSL `eyenet` + Windows installer |
-| Product path (Ubuntu) | Native Docker CE + Ubuntu installer |
-| Stage 2 builder? | **Yes — preferred.** Boot Windows+WSL or Ubuntu; run Stage 2 scripts from [platform-release-cicd.md](./platform-release-cicd.md) |
-| Notes | Only one OS active at a time. For Stage 2, prefer whichever boot has Docker + Flutter + ≥12 GB free disk ready. As of 2026-09-21, `192.168.11.29` was unreachable from work `192.168.9.x` Wi‑Fi — power on / join the right subnet / confirm Ubuntu IP before assuming it is available. |
+| Product path (Ubuntu) | Native Docker CE + `deployment/ubuntu/install-eyenet-ubuntu.sh` |
+| Stage 2 builder? | **Yes — preferred** when full RAM + ≥12 GB free disk + Flutter toolchain ready |
+| Notes | Only one OS active at a time. Fresh Ubuntu Stage 3 on 2026-09-22: GHCR pull can hit stub-resolver timeouts — retry `docker compose pull`. If schema verify fails on first apply, drop app-created `schema_migrations` (wrong shape vs pack) and re-run `schema/apply.sh`. UI `http://192.168.9.13:3000`. |
 
 ---
 
@@ -186,7 +188,7 @@ Agent wording examples:
 | `lab-home-win-nickg` | `ssh desktop-vdm2jkf` or Windows App → `192.168.1.71` |
 | `lab-work-u24-mini-8g` | `ssh eyenet-server` → `192.168.9.14` (user `eyenet`) |
 | `lab-work-dual-64g` (Windows booted) | Windows App → work LAN IP / `ssh windows-lab` if `192.168.11.29` is up |
-| `lab-work-dual-64g` (Ubuntu booted) | `ssh user@work-lan-ip` (record IP when known) |
+| `lab-work-dual-64g` (Ubuntu booted) | `ssh eyenet@192.168.9.13` (hostname `eyenet-demo`) |
 
 ### Access (remote)
 
@@ -220,7 +222,7 @@ Update this table as you stabilize addresses (do not put passwords here):
 |---|---|---|---|---|---|
 | `lab-home-win-nickg` | `DESKTOP-VDM2JKF` | `192.168.1.71` | `100.73.31.71` (`homenetwork`) | `nickg` | `ssh lab-home-win-nickg` / `ssh desktop-vdm2jkf`; product `ADVERTISE_HOST=192.168.1.71` |
 | `lab-work-u24-mini-8g` | `eyenet-server` | `192.168.9.14` | *(logged out — enroll for remote)* | `eyenet` | `ssh eyenet-server`; 8 GB soak; not Stage 2 |
-| `lab-work-dual-64g` | | Win hist. `192.168.11.29` | | Win: `user` | Dual-boot; confirm which OS + subnet after boot |
+| `lab-work-dual-64g` | `eyenet-demo` (Ubuntu) | Ubuntu `192.168.9.13`; Win hist. `192.168.11.29` | *(Tailscale: run `tailscale up`)* | Ubuntu: `eyenet` / Win: `user` | `ssh eyenet@192.168.9.13`; product `ADVERTISE_HOST=192.168.9.13` |
 
 Historical / other boxes (not in the named set above) may still appear in older notes (e.g. `kvalvis-pc` at older Tailscale `100.64.0.23`). Prefer the lab IDs in this document going forward; migrate aliases here when you rename hosts.
 

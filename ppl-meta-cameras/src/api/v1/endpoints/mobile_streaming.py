@@ -329,6 +329,17 @@ async def receive_mobile_camera_frame(
                 detail=f"Invalid frame data: {e}",
             )
 
+        # Operator Disconnect holds ingest until Connect. Phone keeps POSTing;
+        # return 409 (not 500) so the APK can stop uploading cleanly.
+        if mobile_streaming_service.is_frame_held(device_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Mobile camera held after operator disconnect; "
+                    "stop uploading until reconnect"
+                ),
+            )
+
         # Store the frame in the mobile streaming service with orientation and FPS
         success = await mobile_streaming_service.receive_mobile_frame(
             device_id,
@@ -346,11 +357,21 @@ async def receive_mobile_camera_frame(
                 "message": "Frame received successfully",
                 "timestamp": frame_data.timestamp,
             }
-        else:
+
+        # Race: hold may have been set between the check and receive.
+        if mobile_streaming_service.is_frame_held(device_id):
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to process mobile camera frame",
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Mobile camera held after operator disconnect; "
+                    "stop uploading until reconnect"
+                ),
             )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to process mobile camera frame",
+        )
 
     except HTTPException:
         raise

@@ -429,6 +429,16 @@ class MobileStreamingService {
       
       if (response.statusCode == 200) {
         developer.log('Frame sent successfully', name: _logTag);
+      } else if (response.statusCode == 409) {
+        // Platform operator Disconnect holds frames until Connect.
+        // Stop uploading so Disconnect sticks on both sides.
+        developer.log(
+          'Frame rejected (409 held) — stopping stream after operator disconnect',
+          name: _logTag,
+          level: 900,
+        );
+        print('🛑 [FRAME_SEND] Platform held camera (409) — stopping upload');
+        await stopStreaming();
       } else {
         developer.log('Failed to send frame: ${response.statusCode}', name: _logTag, level: 900);
       }

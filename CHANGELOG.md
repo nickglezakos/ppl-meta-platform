@@ -17,6 +17,12 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Fixed
 
+- Cameras: operator-disconnected mobile frame hold now returns **HTTP 409**
+  (not 500) so the phone can stop uploading cleanly; Disconnect no longer looks
+  broken while the APK keeps POSTing held frames.
+- Mobile camera APK: on frame **409** (platform hold after Disconnect), stop
+  backend upload and the camera image stream so the phone side matches the
+  platform.
 - Recording timer: reset from `startedAt` each session; `copyWith` can clear
   nullable fields so stop/start no longer keeps a stale timestamp.
 - Media preview face overlay: scale boxes using detection `frame_width` /
@@ -71,9 +77,11 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Stage 2 published **`frontend`**
-  (`3afac7f6…`, overlay frame-dim fallback) and **`ppl-meta-vmeta-protected`**
-  (`28dc8f0a…`, FaceNet skip/coerce for MVR embeddings).
+- No `VERSION` bump (still **2.25.83**). This residual needs Stage 2 republish of
+  **`ppl-meta-cameras`** only, then Stage 3 pull on work Ubuntu; mobile APK is
+  operator-built from pushed `ppl_meta_mobile_camera` (not GHCR).
+- Prior Stage 2 on this pin: **`frontend`** (`3afac7f6…`), **`ppl-meta-vmeta-protected`**
+  (`28dc8f0a…`).
 - Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once
   if a lab still shows a pre-fix cached `main.dart.js`.
 - Tray publish not required for this Stage 1.

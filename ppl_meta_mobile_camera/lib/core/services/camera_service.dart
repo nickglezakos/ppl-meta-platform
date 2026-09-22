@@ -530,7 +530,14 @@ class CameraService {
       print('✅ Sending frame to backend via streaming service');
       // Pass the current camera lens direction with each frame
       final isFrontCamera = _controller?.description.lensDirection == CameraLensDirection.front;
-      _streamingService!.sendFrameToBackend(image, isFrontCamera: isFrontCamera);
+      _streamingService!.sendFrameToBackend(image, isFrontCamera: isFrontCamera).then((_) {
+        // Platform operator Disconnect → 409 hold stops MobileStreamingService;
+        // mirror that on the camera image stream so preview upload fully stops.
+        if (_isStreaming && _streamingService != null && !_streamingService!.isStreaming) {
+          print('🛑 [CAMERA_SERVICE] Backend stream stopped (held) — stopping image stream');
+          stopStreaming();
+        }
+      });
     } else {
       print('❌ NOT sending frame - streamingService: ${_streamingService != null ? "OK" : "NULL"}, isStreaming: $_isStreaming');
     }

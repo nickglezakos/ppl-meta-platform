@@ -304,26 +304,23 @@ nothing — preview/ID keeps running.
   came right back. Fix: operator stop uses `hold_until_reconnect`; Connect
   clears the hold. Stale-cleanup stops may still auto-resume.
 
-**Lab status (Sept 2026 Ubuntu box):**
+**Lab status (Sept 2026):**
 
-- Source fixed in monorepo:
-  - `ppl-meta-cameras/src/api/v1/endpoints/cameras.py`
-  - `ppl-meta-cameras/src/services/camera_detection.py`
-  - `ppl-meta-cameras/src/services/mobile_streaming.py` (frame hold)
-  - `ppl-meta-frontend/lib/presentation/widgets/camera/camera_card.dart`
-- Hotfix on `lab-work-u24-mini-8g` after Stage 3 2.25.83 until cameras image
-  is republished.
+- Source + GHCR **2.25.83** include disconnect ID-stop, mobile worker stop, and
+  `hold_until_reconnect`.
+- Residual (2026-09-22): held frames still returned **HTTP 500** (APK kept
+  uploading; UI looked stuck). Fixed in Stage 1: cameras → **409**; APK stops
+  upload/image stream on 409. Republish cameras + install new APK.
 
-**CI/CD / release follow-up (required):**
+**CI/CD / release follow-up:**
 
-1. Commit the cameras/frontend source files above (plus this doc).
-2. Rebuild and push GHCR images for at least:
-   - `ppl-meta-cameras` (backend disconnect/ID stop + frame hold)
-   - `ppl-meta-frontend` (stop ID before disconnect in UI)
-3. Bump `RELEASE_TAG` / installer pin and redeploy lab from registry (no more
-   `docker cp` overrides).
+1. Stage 1: cameras + `ppl_meta_mobile_camera` + CHANGELOG (same pin `2.25.83`).
+2. Stage 2: rebuild/push `ppl-meta-cameras`; Mode D finalize manifest.
+3. Stage 3: pull cameras on work Ubuntu (`lab-work-dual-64g` @ `192.168.9.13`).
+4. Operator builds/installs APK from pushed mobile source (not GHCR).
 
-Until step 2–3, other installs and a fresh Ubuntu pull still have the old bug.
+Until steps 2–4, Disconnect can still *look* incomplete even though the API
+returns 200 and sets the hold.
 
 ---
 
