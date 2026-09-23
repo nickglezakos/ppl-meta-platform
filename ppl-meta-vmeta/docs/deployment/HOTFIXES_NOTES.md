@@ -15,53 +15,24 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ---
 
-## How to add an entry
-
-Copy this block under **Pending**:
-
-```markdown
-### YYYY-MM-DD — short title
-- **Status:** Pending
-- **Lab(s):** e.g. `lab-work-dual-64g` @ `10.171.48.228`
-- **Service(s):** e.g. `ppl-meta-gateway`
-- **Symptom:** what broke
-- **Hotfix applied:** what was changed on the lab (`docker cp`, file, restart, etc.)
-- **Source change:** monorepo path(s) that must land in Stage 1
-- **Stage 1:** not started | in progress | done (`commit`)
-- **Stage 2:** not started | in progress | done (image digest)
-- **Stage 3:** not started | in progress | done (lab + pull time)
-- **Notes:** anything else
-```
-
----
-
 ## Pending
 
-### 2026-09-23 — Mobile camera: crash during “comprehensive camera detection”
-- **Status:** Pending (Stage 1 in this release)
-- **Lab(s):** TrebleDroid with GApps (device IP `10.171.48.86`) vs platform `10.171.48.228`
-- **Service(s):** `ppl_meta_mobile_camera` (APK — not GHCR)
-- **Symptom:** App dies mid-init after login/register during front-camera orientation probe.
-- **Source change:** `ppl_meta_mobile_camera/lib/core/services/camera_service.dart` (+ provider getter rename)
-- **Stage 1:** in progress (this release)
-- **Stage 2:** N/A (mobile APK)
-- **Stage 3:** rebuild/sideload APK after Stage 1 push
-- **Notes:** Also includes persistent Stop stream UI (`camera_screen.dart`, `camera_controls.dart`).
-
-### 2026-09-23 — Gateway/Discovery CORS: allow RFC1918 `10/8` and `172.16/12`
-- **Status:** Pending (Stage 1 in this release)
-- **Lab(s):** `lab-work-dual-64g` @ `10.171.48.228`
-- **Service(s):** `ppl-meta-gateway`, `ppl-meta-discovery`
-- **Symptom:** UI flashed login → `/bootstrap` on `10.x` LAN (CORS preflight 400).
-- **Hotfix applied:** Lab gateway `config.py` docker-cp (superseded by Stage 2/3).
-- **Source change:** `ppl-meta-gateway/src/config.py`, `ppl-meta-discovery/src/main.py`
-- **Stage 1:** in progress (this release)
-- **Stage 2:** rebuild `gateway` + `discovery`
-- **Stage 3:** pull on lab; drop in-container hotfix
-- **Related:** Frontend mobile Connect lease chip (`camera_card.dart`, `camera_providers.dart`) — rebuild `frontend`.
+### 2026-09-23 — Mobile camera APK (crash fix + Stop stream)
+- **Status:** Pending (APK only — not GHCR)
+- **Service(s):** `ppl_meta_mobile_camera`
+- **Stage 1:** done (`dd464478`)
+- **Stage 2:** N/A
+- **Stage 3:** rebuild/sideload APK on TrebleDroid / devices
+- **Notes:** Source on `main`; operators must `flutter build apk` / install separately.
 
 ---
 
 ## Completed
 
-_None yet for this tracker. Move Pending entries here after Stage 1–3._
+### 2026-09-23 — Gateway/Discovery CORS RFC1918 + frontend mobile lease UI
+- **Status:** Completed
+- **VERSION / pin:** `2.25.83`
+- **Stage 1:** `dd464478`
+- **Stage 2:** gateway `b01e6b22…`, discovery `7ced8041…`, frontend `f9e2aacc…` (tags `2.25.83` / `2.25.83-dd46447`)
+- **Stage 3:** `lab-work-dual-64g` @ `10.171.48.228` — 2026-09-23; OPTIONS CORS 200 for `http://10.171.48.228:3000`
+- **Summary:** Replaced gateway docker-cp hotfix; 10.x LAN UI no longer false-bootstraps; mobile Connect lease chip in GHCR frontend.

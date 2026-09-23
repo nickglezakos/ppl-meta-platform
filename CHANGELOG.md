@@ -15,6 +15,12 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+### Notes
+
+- GHCR images republished for **2.25.83** (`dd464478`): gateway `b01e6b22…`,
+  discovery `7ced8041…`, frontend `f9e2aacc…`. Stage 3 on `lab-work-dual-64g`
+  @ `10.171.48.228` (2026-09-23). Mobile APK still needs a local rebuild.
+
 ### Fixed
 
 - Gateway + Discovery CORS: allow RFC1918 `10/8` and `172.16/12` origins (in
