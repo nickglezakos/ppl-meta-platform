@@ -36,7 +36,9 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   final _formKey = GlobalKey<FormState>();
   
   bool _isLoading = false;
-  bool _useEnrollmentToken = true; // token/self-register is the primary path
+  // Local discovery is the default. The one-time enrollment token is only
+  // required when the operator opts into VPN mesh onboarding.
+  bool _useEnrollmentToken = false;
   String? _errorMessage;
   String? _successMessage;
 
@@ -72,34 +74,38 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
       await configService.saveBackendUrl(backendIP, portString);
       print('✅ Configuration saved for backend IP: $backendIP:$discoveryPort');
 
-      if (_useEnrollmentToken) {
-        // ---- Scenario (b): one-time enrollment token (Both: LAN first, then paste) ----
-        var token = _enrollmentTokenController.text.trim();
+      final pastedToken = _enrollmentTokenController.text.trim();
+      // A configured discovery host enrolls locally and does not need a
+      // one-time token. VPN onboarding is the only path that requires one:
+      // the operator opted in and either pasted a token or has no LAN host.
+      final useVpnOnboarding = _useEnrollmentToken &&
+          (pastedToken.isNotEmpty || backendIP.isEmpty);
+
+      if (useVpnOnboarding) {
+        var token = pastedToken;
         String? authorityUrl = _manualAuthorityUrl.trim();
-        if (token.isEmpty) {
-          // LAN auto-discovery of a freshly-minted token first.
-          if (_installAuthSecret.isNotEmpty) {
-            final discovered = await _tryLanAutoDiscoveryToken(
-              backendIP: backendIP,
-              port: discoveryPort,
-            );
-            if (discovered != null) {
-              token = discovered.token;
-              if ((discovered.authorityUrl ?? '').isNotEmpty) {
-                authorityUrl = discovered.authorityUrl;
-              }
+        if (token.isEmpty && _installAuthSecret.isNotEmpty) {
+          final discovered = await _tryLanAutoDiscoveryToken(
+            backendIP: backendIP,
+            port: discoveryPort,
+          );
+          if (discovered != null) {
+            token = discovered.token;
+            if ((discovered.authorityUrl ?? '').isNotEmpty) {
+              authorityUrl = discovered.authorityUrl;
             }
           }
         }
         if (token.isEmpty) {
           throw Exception(
-            'No one-time enrollment token provided. Paste the token from the '
-            'platform network screen (http://$backendIP/#/network), or let LAN '
-            'auto-discovery find it.',
+            'VPN onboarding needs a one-time enrollment token. Paste the token '
+            'from the platform network screen '
+            '(http://${backendIP.isEmpty ? '<platform>' : backendIP}/#/network). '
+            'Local discovery does not need a token — enter the backend IP and '
+            'leave VPN onboarding off.',
           );
         }
         if (authorityUrl == null || authorityUrl.isEmpty) {
-          // Fall back to the configured/default authority URL.
           authorityUrl = configService.authorityServiceUrl;
         }
         await _redeemEnrollmentToken(
@@ -111,28 +117,15 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
           _successMessage = 'Enrolled with one-time token. VPN credentials saved.';
         });
       } else {
-        // ---- Local onboarding (Option 1): HMAC token from discovery ----
-        if (_installAuthSecret.isEmpty) {
+        if (backendIP.isEmpty) {
           throw Exception(
-            'Installation auth secret not configured. Rebuild with '
-            '--dart-define=INSTALL_AUTH_SECRET=<secret>.',
+            'Enter the backend IP address for local discovery.',
           );
         }
-        final enrollment = await _fetchLocalToken(
-          enrollKey: _installAuthSecret,
-          uuid: '', // blank -> server generates a stable signage-<uuid>
-          discoveryUrl: configService.discoveryServiceUrl,
-        );
-
-        await configService.saveAuthorityCredentials(
-          applicationKey: '',
-          installationUuid: enrollment.uuid,
-        );
-        await configService.saveVpnMetadata(apiToken: enrollment.token);
-        print('🔐 Token issued by local discovery (Option 1)');
+        await _enrollWithLocalDiscovery(configService);
         setState(() {
           _successMessage =
-              'Configuration saved. Local token issued by discovery.';
+              'Configuration saved. Enrolled with local discovery.';
         });
       }
 
@@ -151,6 +144,29 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  /// Local discovery: ask the on-LAN discovery service for an HMAC installation
+  /// token. This path does not use a one-time enrollment token.
+  Future<void> _enrollWithLocalDiscovery(ConfigService configService) async {
+    if (_installAuthSecret.isEmpty) {
+      throw Exception(
+        'Installation auth secret not configured. Rebuild with '
+        '--dart-define=INSTALL_AUTH_SECRET=<secret>.',
+      );
+    }
+    final enrollment = await _fetchLocalToken(
+      enrollKey: _installAuthSecret,
+      uuid: '', // blank -> server generates a stable signage-<uuid>
+      discoveryUrl: configService.discoveryServiceUrl,
+    );
+
+    await configService.saveAuthorityCredentials(
+      applicationKey: '',
+      installationUuid: enrollment.uuid,
+    );
+    await configService.saveVpnMetadata(apiToken: enrollment.token);
+    print('🔐 Token issued by local discovery (no enrollment token)');
   }
 
   /// Option 1 flow: ask the local discovery service to issue an HMAC
@@ -240,13 +256,12 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
     print('🔐 Enrollment token redeemed — VPN credentials saved');
   }
 
-  /// LAN auto-discovery: attempt to fetch a freshly-generated one-time enrollment
-  /// token from the platform's network screen helper endpoint, along with the
-  /// Authority URL to redeem it against. Returns null when the platform does not
-  /// expose one yet (the operator then pastes a token manually).
+  /// VPN onboarding helper: fetch a freshly minted one-time enrollment token
+  /// when the device is not using local discovery. Returns null when the
+  /// platform does not expose one (the operator then pastes a token).
+  /// Local discovery never calls this — it enrolls without a one-time token.
   ///
-  /// When no backend IP is typed (empty), it probes localhost and the LAN gateway
-  /// so onboarding does not depend on manually entering the platform IP.
+  /// When no backend IP is typed, it probes localhost and the LAN gateway.
   Future<({String token, String? authorityUrl})?> _tryLanAutoDiscoveryToken({
     required String backendIP,
     required int port,
@@ -338,17 +353,71 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                 ),
                 const SizedBox(height: 48),
 
-                // Primary: self-register via one-time enrollment token (VPN-first).
-                // LAN auto-discovery is tried first; a token can be pasted as fallback.
+                TextFormField(
+                  controller: _backendIPController,
+                  decoration: const InputDecoration(
+                    labelText: 'Backend IP Address',
+                    hintText: 'e.g., 192.168.1.100',
+                    prefixIcon: Icon(Icons.computer),
+                    border: OutlineInputBorder(),
+                    helperText: 'Local discovery. No enrollment token required.',
+                  ),
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    final tokenPasted =
+                        _enrollmentTokenController.text.trim().isNotEmpty;
+                    if (_useEnrollmentToken && tokenPasted) {
+                      if (value == null || value.trim().isEmpty) return null;
+                    }
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter backend IP address';
+                    }
+                    final parts = value.trim().split('.');
+                    if (parts.length != 4) {
+                      return 'Invalid IP address format';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _portController,
+                  decoration: const InputDecoration(
+                    labelText: 'Discovery Service Port',
+                    hintText: '8006',
+                    prefixIcon: Icon(Icons.settings_ethernet),
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    final tokenPasted =
+                        _enrollmentTokenController.text.trim().isNotEmpty;
+                    if (_useEnrollmentToken &&
+                        tokenPasted &&
+                        (value == null || value.trim().isEmpty)) {
+                      return null;
+                    }
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter port number';
+                    }
+                    final port = int.tryParse(value.trim());
+                    if (port == null || port < 1 || port > 65535) {
+                      return 'Invalid port number';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
                 SwitchListTile(
                   value: _useEnrollmentToken,
                   onChanged: _isLoading
                       ? null
                       : (v) => setState(() => _useEnrollmentToken = v),
+                  contentPadding: EdgeInsets.zero,
                   title: const Text('Join the VPN mesh (enrollment token)'),
                   subtitle: const Text(
-                    'Recommended. The device auto-discovers its message token on '
-                    'your network and self-registers its own mesh node.',
+                    'Only for VPN onboarding. Leave this off for local discovery.',
                   ),
                 ),
                 if (_useEnrollmentToken) ...[
@@ -356,11 +425,21 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                   TextFormField(
                     controller: _enrollmentTokenController,
                     decoration: const InputDecoration(
-                      labelText: 'One-time enrollment token (optional)',
-                      hintText: 'hsent-... — leave blank to auto-discover on LAN',
+                      labelText: 'One-time enrollment token',
+                      hintText: 'hsent-... from the platform network screen',
                       prefixIcon: Icon(Icons.vpn_key),
                       border: OutlineInputBorder(),
                     ),
+                    validator: (value) {
+                      if (!_useEnrollmentToken) return null;
+                      final hasBackend =
+                          _backendIPController.text.trim().isNotEmpty;
+                      if (hasBackend) return null;
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Paste an enrollment token, or enter a backend IP for local discovery';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 8),
                   TextFormField(
@@ -373,72 +452,6 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                     ),
                   ),
                 ],
-
-                const SizedBox(height: 16),
-
-                // Advanced / fallback: legacy local-discovery LAN fields.
-                // Kept (collapsed) so setups without LAN/VPN auto-discovery can
-                // still point at a backend host and use local device-enroll.
-                ExpansionTile(
-                  title: const Text('Advanced (local discovery)'),
-                  subtitle: const Text('Backend IP + discovery port + use local discovery.'),
-                  leading: const Icon(Icons.tune),
-                  tilePadding: EdgeInsets.zero,
-                  childrenPadding: const EdgeInsets.only(top: 8),
-                  children: [
-                    if (_useEnrollmentToken) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Used only as the network anchor when auto-discovery on '
-                        'this network is unavailable. For VPN onboarding, just '
-                        'press Connect above.',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    TextFormField(
-                      controller: _backendIPController,
-                      decoration: const InputDecoration(
-                        labelText: 'Backend IP Address',
-                        hintText: 'e.g., 192.168.1.100',
-                        prefixIcon: Icon(Icons.computer),
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Please enter backend IP address';
-                        }
-                        final parts = value.trim().split('.');
-                        if (parts.length != 4) {
-                          return 'Invalid IP address format';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _portController,
-                      decoration: const InputDecoration(
-                        labelText: 'Discovery Service Port',
-                        hintText: '8006',
-                        prefixIcon: Icon(Icons.settings_ethernet),
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Please enter port number';
-                        }
-                        final port = int.tryParse(value.trim());
-                        if (port == null || port < 1 || port > 65535) {
-                          return 'Invalid port number';
-                        }
-                        return null;
-                      },
-                    ),
-                  ],
-                ),
                 const SizedBox(height: 16),
 
                 // Connect Button
@@ -514,7 +527,9 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
 
                 const SizedBox(height: 24),
                 const Text(
-                  'Enter the IP address of your backend server and the discovery service port (default: 8006)',
+                  'Enter the backend IP and discovery port (default 8006). '
+                  'Local discovery does not need a token. Turn on VPN mesh only '
+                  'when joining remotely, and paste the one-time enrollment token.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 12,

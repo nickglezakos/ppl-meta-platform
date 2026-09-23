@@ -176,19 +176,37 @@ class _DeviceAwareUploadWidgetState extends ConsumerState<DeviceAwareUploadWidge
       return;
     }
 
+    // Copy first. A successful file is removed from _selectedFiles, and
+    // Dart throws ConcurrentModificationError if that list is still the
+    // loop source — the rest of the batch never starts and the button stays busy.
+    final files = List<PlatformFile>.from(_selectedFiles);
+
     setState(() {
       _isUploading = true;
       _uploadProgress.clear();
       _uploadStatus.clear();
     });
 
-    for (final file in _selectedFiles) {
-      await _uploadSingleFile(file);
+    try {
+      for (final file in files) {
+        if (!mounted) return;
+        try {
+          await _uploadSingleFile(file);
+        } catch (e) {
+          if (!mounted) return;
+          setState(() {
+            _uploadStatus[file.name] = UploadStatus.failed;
+          });
+          widget.onUploadError?.call('Failed to upload ${file.name}: $e');
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+        });
+      }
     }
-
-    setState(() {
-      _isUploading = false;
-    });
   }
 
   /// Upload a single file with progress tracking

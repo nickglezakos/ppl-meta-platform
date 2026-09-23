@@ -35,8 +35,19 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
   install instead of `eyenet-dev-change-me`.
 - `.github/workflows/tray-release.yml`: enabled as preferred tray publish path
   (`workflow_dispatch` or tag `v*`).
+- `scripts/check_installer_pins.sh`: match the `.bat` launcher `::  Version:`
+  pin (no longer `set "VERSION=…"`).
 
 ### Fixed
+
+- Media signage sync: use `DISCOVERY_SERVICE_URL` (`ppl-meta-discovery:8006`)
+  instead of hardcoded `localhost:8006` so playlist push can resolve the device
+  from inside the media container (lab hotfix → source).
+- Frontend `/upload`: multi-file batch no longer throws
+  `ConcurrentModificationError` after the first success (walk a snapshot; keep
+  Upload idle when the batch ends).
+- Signage simple player setup: local discovery enrolls without a one-time
+  enrollment token; token is required only for VPN mesh onboarding.
 
 - Gateway + Discovery CORS: allow RFC1918 `10/8` and `172.16/12` origins (in
   addition to `192.168/16`, loopback, Tailscale) so Flutter UI on a `10.x` LAN

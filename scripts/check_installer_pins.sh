@@ -29,7 +29,7 @@ echo
 check "$ROOT/deployment/windows-installer/.env.windows.template" \
   "^RELEASE_TAG=${VERSION}$"
 check "$ROOT/deployment/windows-installer/install-platform.bat" \
-  "^set \"VERSION=${VERSION}\"\$"
+  "^::  Version: ${VERSION}$"
 check "$ROOT/deployment/windows-installer/install-platform.ps1" \
   "\\\$script:ReleaseTag = \"${VERSION}\""
 check "$ROOT/deployment/ubuntu/install-eyenet-ubuntu.sh" \

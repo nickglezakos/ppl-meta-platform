@@ -45,6 +45,17 @@ def _discovery_auth_headers() -> dict:
     }
 
 
+def _discovery_base_url() -> str:
+    """Base URL for ppl-meta-discovery.
+
+    Inside Docker, ``localhost:8006`` is the media container itself — use the
+    compose service hostname (``DISCOVERY_SERVICE_URL``) instead.
+    """
+    return os.getenv(
+        "DISCOVERY_SERVICE_URL", "http://ppl-meta-discovery:8006"
+    ).rstrip("/")
+
+
 def _endpoint_candidates(
     discovery_info: Optional[dict],
     fallback_host: Optional[str],
@@ -105,7 +116,7 @@ def _resolve_media_service_url() -> str:
     try:
         with httpx.Client(timeout=2.0) as client:
             response = client.get(
-                "http://localhost:8006/api/v1/services",
+                f"{_discovery_base_url()}/api/v1/services",
                 headers=_discovery_auth_headers(),
             )
             if response.status_code == 200:
@@ -1046,7 +1057,7 @@ class SignageSyncService:
             logger.info(f"Device {device_id} not found in database, attempting auto-registration from discovery")
             try:
                 # Query discovery service for device info
-                discovery_url = "http://localhost:8006"  # Discovery service
+                discovery_url = _discovery_base_url()
                 logger.info(f"Querying discovery service at {discovery_url}/api/v1/services/{device_id}")
                 async with httpx.AsyncClient() as client:
                     response = await client.get(f"{discovery_url}/api/v1/services/{device_id}", timeout=5.0, headers=_discovery_auth_headers())
@@ -1550,7 +1561,7 @@ class SignageSyncService:
             Device info dict with host, port, name, status, or None if not found
         """
         try:
-            discovery_url = "http://localhost:8006"
+            discovery_url = _discovery_base_url()
             logger.info(f"Querying discovery service at {discovery_url}/api/v1/services/{service_id}")
             
             async with httpx.AsyncClient(timeout=5.0) as client:
@@ -1728,7 +1739,7 @@ class SignagePlaybackService:
             Device info dict with host, port, name, status, or None if not found
         """
         try:
-            discovery_url = "http://localhost:8006"
+            discovery_url = _discovery_base_url()
             logger.info(f"Querying discovery service at {discovery_url}/api/v1/services/{service_id}")
             
             async with httpx.AsyncClient(timeout=5.0) as client:
