@@ -19,7 +19,8 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 - GHCR images republished for **2.25.83** (`f5816b45`) on `lab-work-dual-64g`:
   media `d4635f9a…`, frontend `8279d972…` (tags `2.25.83` /
-  `2.25.83-f5816b4`). Manifest finalized; Stage 3 pull still needed on the lab.
+  `2.25.83-f5816b4`). **Stage 3** on `lab-work-dual-64g` @ `10.171.48.228`
+  (2026-09-23) — running digests match; media docker-cp hotfix replaced.
 - Prior GHCR republish for **2.25.83** (`dd464478`): gateway `b01e6b22…`,
   discovery `7ced8041…`, frontend `f9e2aacc…`. Stage 3 on `lab-work-dual-64g`
   @ `10.171.48.228` (2026-09-23).

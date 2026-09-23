@@ -17,23 +17,27 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-### 2026-09-23 — Media signage sync cannot reach discovery (`localhost:8006`)
-- **Status:** Pending Stage 3 — Stage 1 `f5816b45` + Stage 2 on `lab-work-dual-64g` (media `d4635f9a…`, tag `2.25.83-f5816b4`). Lab still needs compose pull to replace the `docker cp` hotfix.
-- **Service:** `ppl-meta-media`
-- **Where:** GHCR `:2.25.83` / `:2.25.83-f5816b4`; lab container may still be hotpatched until Stage 3.
-- **File:** `ppl-meta-media/src/services/signage_service.py` (`_discovery_base_url`)
-- **Summary:** Playlist sync returned 202 (“started”) then failed: media looked up the device at hardcoded `http://localhost:8006` inside the container (unreachable). Now uses `DISCOVERY_SERVICE_URL` (`http://ppl-meta-discovery:8006`).
-
-### 2026-09-23 — Frontend batch upload stops after the first file
-- **Status:** Pending Stage 3 — Stage 1 `f5816b45` + Stage 2 on `lab-work-dual-64g` (frontend `8279d972…`, tag `2.25.83-f5816b4`). Lab UI still needs Stage 3 pull.
-- **Service:** `ppl-meta-frontend`
-- **Where:** GHCR `:2.25.83` / `:2.25.83-f5816b4`; lab `@10.171.48.228:3000` until Stage 3.
-- **File:** `ppl-meta-frontend/lib/widgets/device_aware_upload_widget.dart` (`_uploadFiles`)
-- **Summary:** A multi-file `/upload` removed each success from `_selectedFiles` while that list was still the loop. Dart threw `ConcurrentModificationError` after the first file, so the rest of the batch never started and the Upload button stayed busy. The loop now walks a snapshot, reports a single-file failure and continues, and clears the uploading flag when the batch ends.
+*(none)*
 
 ---
 
 ## Completed
+
+### 2026-09-23 — Media signage sync cannot reach discovery (`localhost:8006`)
+- **Status:** Completed
+- **VERSION / pin:** `2.25.83` (source `f5816b45`)
+- **Stage 1:** `f5816b45`
+- **Stage 2:** media `d4635f9a…` (tag `2.25.83-f5816b4`) on `lab-work-dual-64g`
+- **Stage 3:** `lab-work-dual-64g` @ `10.171.48.228` — 2026-09-23; compose pull/recreate replaced docker-cp hotfix; running digest matches GHCR
+- **Summary:** Media used hardcoded `localhost:8006` for device lookup inside the container. Now uses `DISCOVERY_SERVICE_URL` (`http://ppl-meta-discovery:8006`).
+
+### 2026-09-23 — Frontend batch upload stops after the first file
+- **Status:** Completed
+- **VERSION / pin:** `2.25.83` (source `f5816b45`)
+- **Stage 1:** `f5816b45`
+- **Stage 2:** frontend `8279d972…` (tag `2.25.83-f5816b4`) on `lab-work-dual-64g`
+- **Stage 3:** `lab-work-dual-64g` @ `10.171.48.228:3000` — 2026-09-23; compose pull/recreate; running digest matches GHCR
+- **Summary:** Multi-file `/upload` no longer throws `ConcurrentModificationError` after the first success (walk a snapshot; clear uploading when the batch ends).
 
 ### 2026-09-23 — Signage simple player (local enroll + sync soak)
 - **Status:** Completed (APK path)
