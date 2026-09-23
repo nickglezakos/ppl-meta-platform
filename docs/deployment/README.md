@@ -36,7 +36,7 @@
 | `scripts/verify_platform_release.sh` | Confirms all twelve GHCR tags exist |
 | `scripts/check_installer_pins.sh` | Confirms both installers pin root `VERSION` |
 | `deployment/windows-installer/release-manifest.yml` | Digest coherence artifact for current `VERSION` (written after Stage 2) |
-| `.github/workflows/tray-release.yml` | **Future** tray automation — draft; not used today |
+| `.github/workflows/tray-release.yml` | Tray build/upload (`workflow_dispatch` or tag `v*`) |
 | `.github/workflows/platform-release.yml` | Draft Stage 2 automation — not used yet |
 
 ## Policy / proposals (background, not day-to-day)

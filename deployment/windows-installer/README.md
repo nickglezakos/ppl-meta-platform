@@ -54,8 +54,8 @@ Verify that each manifest shows `"architecture": "amd64"` and `"os": "linux"`.
 ## Files
 
 - `install-eyenet-wsl.bat` / `install-eyenet-wsl.ps1`: one-time WSL runtime bootstrap
-- `install-platform.bat`: Double-click installer and management console
-- `install-platform.ps1`: PowerShell alternative (WSL docker-aware)
+- `install-platform.ps1`: **canonical** Windows installer (WSL docker-aware: schema, reregister, tray, `ADVERTISE_HOST`)
+- `install-platform.bat`: thin double-click launcher that runs `install-platform.ps1` (do not maintain a second install path)
 - `docker-compose.windows-installer.yml`: pinned-image compose with memory budgets (`pgvector/pgvector:pg15`)
 - `.env.windows.template`: environment template (`RELEASE_TAG` must match `VERSION`)
 - `schema/`: **vendored DB migrations** (synced from the monorepo) — installer always applies + verifies
@@ -111,7 +111,7 @@ For the current release pin, generated `.env.windows` should keep `RELEASE_TAG=2
 
 ### Production note (INSTALLATION_UUID / APPLICATION_KEY)
 
-Lab installs may prompt for `INSTALLATION_UUID` and `APPLICATION_KEY` in `install-platform.ps1` for convenience. **Production must not.** Those values should be issued by Authority (entitlement / claim / first-owner `/bootstrap`), pre-seeded into `.env.windows`, or collected only through the product bootstrap UI—not typed as free-form installer fields by the customer.
+`install-platform.ps1` does **not** prompt for `INSTALLATION_UUID` or `APPLICATION_KEY`. Fresh installs leave them empty so first-owner activation happens in the product UI at `/bootstrap` (Authority entitlement / `lic_…` key). Pre-seeded values in an existing `.env.windows` are preserved. Local `POSTGRES_PASSWORD` / `JWT_SECRET_KEY` are auto-generated when missing or still at template defaults.
 
 ## Preferred runtime (full-product demo)
 

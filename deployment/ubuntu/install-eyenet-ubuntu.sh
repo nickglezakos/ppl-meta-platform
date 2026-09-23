@@ -81,16 +81,25 @@ mkdir -p "$INSTALL_DIR/data"
 cp -f "$COMPOSE_SRC" "$INSTALL_DIR/docker-compose.yml"
 
 if [[ ! -f "$INSTALL_DIR/.env" ]]; then
+  # Fresh install: empty entitlement fields → /bootstrap; generate local secrets
+  # (never ship change-me defaults to a customer machine).
+  PG_PASS="$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)"
+  JWT_SECRET="$(openssl rand -base64 32 | tr -d '/+=' | head -c 48)"
   sed \
     -e "s|^INSTALL_ROOT=.*|INSTALL_ROOT=${INSTALL_DIR}|" \
     -e "s|^EYENET_TS_SOCKET_HOST=.*|EYENET_TS_SOCKET_HOST=/var/run/tailscale/tailscaled.sock|" \
-    -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=eyenet-dev-change-me|" \
+    -e "s|^INSTALLATION_UUID=.*|INSTALLATION_UUID=|" \
+    -e "s|^APPLICATION_KEY=.*|APPLICATION_KEY=|" \
+    -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${PG_PASS}|" \
+    -e "s|^JWT_SECRET_KEY=.*|JWT_SECRET_KEY=${JWT_SECRET}|" \
+    -e "s|^SERVICE_SECRET=.*|SERVICE_SECRET=${JWT_SECRET}|" \
     -e "s|^ADVERTISE_HOST=.*|ADVERTISE_HOST=${ADVERTISE_HOST}|" \
     -e "s|^RELEASE_TAG=.*|RELEASE_TAG=${RELEASE_TAG}|" \
     -e "s|^REGISTRY=.*|REGISTRY=${REGISTRY}|" \
     "$ENV_SRC" > "$INSTALL_DIR/.env"
   grep -q '^INSTALLATION_UUID=' "$INSTALL_DIR/.env" || echo 'INSTALLATION_UUID=' >> "$INSTALL_DIR/.env"
-  echo "Wrote $INSTALL_DIR/.env"
+  grep -q '^APPLICATION_KEY=' "$INSTALL_DIR/.env" || echo 'APPLICATION_KEY=' >> "$INSTALL_DIR/.env"
+  echo "Wrote $INSTALL_DIR/.env (UUID/key empty → /bootstrap; local secrets generated)"
 else
   if grep -q '^ADVERTISE_HOST=' "$INSTALL_DIR/.env"; then
     sed -i.bak "s|^ADVERTISE_HOST=.*|ADVERTISE_HOST=${ADVERTISE_HOST}|" "$INSTALL_DIR/.env"

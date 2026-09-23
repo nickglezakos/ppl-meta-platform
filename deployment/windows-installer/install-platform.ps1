@@ -479,12 +479,14 @@ function Download-InstallerFiles {
 function New-EnvWindows {
     Write-Step "Preparing environment configuration..." ""
 
+    $createdEnv = $false
     try {
         if (Test-Path $script:EnvFile) {
             Write-WarningMsg "$script:EnvFile already exists. Using existing file."
         } else {
             Copy-Item $script:EnvTemplateFile $script:EnvFile -Force
             Write-Host "  Created $script:EnvFile" -ForegroundColor $script:Green
+            $createdEnv = $true
         }
     } catch {
         Write-ErrorMsg "Failed to create $script:EnvFile from template: $_"
@@ -507,14 +509,38 @@ function New-EnvWindows {
     Write-Host "EyeNet Configuration" -ForegroundColor $script:White
     Write-Divider $script:Cyan
 
-    # Prompt for required values (lab / first-boot only).
-    # PRODUCTION TODO: do NOT ask the end-user for INSTALLATION_UUID or APPLICATION_KEY.
-    # In production these must come from Authority entitlement / first-owner bootstrap
-    # (pre-provisioned .env, claim token, or /bootstrap after start) — never typed by hand
-    # during install. Keep POSTGRES_PASSWORD local-secret generation or secure prompt.
-    $installUuid = Prompt-Value -Label "INSTALLATION_UUID" -Current $currentValues['INSTALLATION_UUID'] -Required
-    $appKey = Prompt-Value -Label "APPLICATION_KEY" -Current $currentValues['APPLICATION_KEY'] -Required
-    $pgPassword = Prompt-ValueSecure -Label "POSTGRES_PASSWORD" -Current $currentValues['POSTGRES_PASSWORD'] -Required
+    # Never prompt for INSTALLATION_UUID / APPLICATION_KEY. Leave empty so first-owner
+    # activates via Authority entitlement + frontend /bootstrap (product UI).
+    # Pre-seeded values in an existing .env.windows are preserved as-is.
+    $installUuid = if ($null -ne $currentValues['INSTALLATION_UUID']) { $currentValues['INSTALLATION_UUID'] } else { "" }
+    $appKey = if ($null -ne $currentValues['APPLICATION_KEY']) { $currentValues['APPLICATION_KEY'] } else { "" }
+    if ([string]::IsNullOrWhiteSpace($installUuid) -and [string]::IsNullOrWhiteSpace($appKey)) {
+        Write-Host "  INSTALLATION_UUID / APPLICATION_KEY left empty → activate at /bootstrap after start" -ForegroundColor $script:Gray
+    } else {
+        Write-Host "  Keeping pre-seeded INSTALLATION_UUID / APPLICATION_KEY from existing .env" -ForegroundColor $script:Gray
+    }
+
+    # Local DB/JWT secrets: generate only on fresh .env (never rotate under an
+    # existing Postgres volume that was initialized with the old password).
+    $pgPassword = $currentValues['POSTGRES_PASSWORD']
+    $jwtSecret = $currentValues['JWT_SECRET_KEY']
+    $weakPg = [string]::IsNullOrWhiteSpace($pgPassword) -or ($pgPassword -eq "change-me") -or ($pgPassword -eq "eyenet-dev-change-me")
+    $weakJwt = [string]::IsNullOrWhiteSpace($jwtSecret) -or ($jwtSecret -match "change-in-production|change-me")
+    if ($createdEnv) {
+        if ($weakPg) {
+            $pgPassword = New-EyeNetSecret -Bytes 24
+            Write-Host "  Generated POSTGRES_PASSWORD (stored in .env.windows)" -ForegroundColor $script:Green
+        }
+        if ($weakJwt) {
+            $jwtSecret = New-EyeNetSecret -Bytes 32
+            Write-Host "  Generated JWT_SECRET_KEY / SERVICE_SECRET" -ForegroundColor $script:Green
+        }
+    } else {
+        Write-Host "  Keeping existing POSTGRES_PASSWORD / JWT secrets" -ForegroundColor $script:Gray
+        if ($weakPg -or $weakJwt) {
+            Write-WarningMsg "Existing .env still has weak template secrets — rotate manually only with a matching Postgres reset"
+        }
+    }
     Write-Divider $script:Cyan
     Write-Host ""
 
@@ -522,6 +548,8 @@ function New-EnvWindows {
     Set-EnvValue -Path $script:EnvFile -Key "INSTALLATION_UUID" -Value $installUuid
     Set-EnvValue -Path $script:EnvFile -Key "APPLICATION_KEY" -Value $appKey
     Set-EnvValue -Path $script:EnvFile -Key "POSTGRES_PASSWORD" -Value $pgPassword
+    Set-EnvValue -Path $script:EnvFile -Key "JWT_SECRET_KEY" -Value $jwtSecret
+    Set-EnvValue -Path $script:EnvFile -Key "SERVICE_SECRET" -Value $jwtSecret
     Set-EnvValue -Path $script:EnvFile -Key "RELEASE_TAG" -Value $script:ReleaseTag
     Set-EnvValue -Path $script:EnvFile -Key "REGISTRY" -Value "ghcr.io/nickglezakos/ppl-meta-platform"
 
@@ -699,6 +727,13 @@ function Invoke-PublishLanPorts {
     } catch {
         Write-WarningMsg "LAN port publish failed (non-fatal): $_"
     }
+}
+
+function New-EyeNetSecret {
+    param([int]$Bytes = 24)
+    $buf = New-Object byte[] $Bytes
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($buf)
+    return ([Convert]::ToBase64String($buf) -replace '[+/=]', 'x')
 }
 
 function Set-EnvValue {

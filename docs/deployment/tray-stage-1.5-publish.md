@@ -6,7 +6,18 @@ Canonical wording: [`platform-release-cicd.md`](./platform-release-cicd.md) (*Tr
 
 Use this after Stage 1 has landed `deployment/tray/` and installer hooks on `main`.
 
-Current pin example: **`2.25.82`** (always read root `VERSION`).
+Current pin example: **`2.25.83`** (always read root `VERSION`).
+
+## Preferred: GitHub Actions
+
+```bash
+gh workflow run tray-release.yml -f version="$(tr -d '[:space:]' < VERSION)"
+# or after tagging: git tag "v${VERSION}" && git push origin "v${VERSION}"
+```
+
+Confirm assets on the GitHub **Releases** page for `v${VERSION}`.
+
+Manual lab builds (below) remain valid when Actions is unavailable.
 
 ## 1. Confirm Stage 1 is on GitHub
 

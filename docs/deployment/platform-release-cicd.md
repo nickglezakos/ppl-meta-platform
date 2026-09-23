@@ -61,7 +61,7 @@ Optional extras (always name them explicitly):
      │  3. Install / upgrade ─────┼─────────────────────────────►│  installer (images+tray)│
 ```
 
-**GitHub Actions:** not used for platform images or tray **today**. Workflow YAML under `.github/workflows/` for those paths is **draft / future** only — see [Future automation](#future-automation-not-used-today). Do not wait on Actions to ship.
+**GitHub Actions:** Stage 2 (GHCR images) remains manual lab builds today — `platform-release.yml` is still draft. Tray publish may use `.github/workflows/tray-release.yml` (`workflow_dispatch` or tag `v*`); manual lab build + `gh release` remains valid.
 ---
 
 ## Core rule
@@ -74,7 +74,7 @@ Optional extras (always name them explicitly):
 | Compose + schema pack | **One** shared bundle | `deployment/windows-installer/` |
 | Windows/WSL installer | Host bootstrap | `deployment/windows-installer/install-*.bat\|ps1` |
 | Ubuntu 24 installer | Host bootstrap | `deployment/ubuntu/install-eyenet-ubuntu.sh` |
-| Host tray binaries | **One** pin, two OS assets | GitHub Releases `v${VERSION}` (**manual** build/upload today) |
+| Host tray binaries | **One** pin, two OS assets | GitHub Releases `v${VERSION}` (`tray-release.yml` or manual) |
 
 WSL Ubuntu and native Ubuntu 24 pull the **same** `linux/amd64` images. They are not two products.
 
@@ -129,8 +129,8 @@ Stage 3 stays: **compose pull from GHCR only**. If two labs disagree, compare di
 | [`eyenet-cicd-operator-guide.md`](./eyenet-cicd-operator-guide.md) | Operator guide; follows this contract |
 | [`CHANGELOG.md`](../../CHANGELOG.md) | Product release notes (required in Stage 1) |
 | `deployment/tray/` | Host tray source (Go systray) |
-| [`tray-stage-1.5-publish.md`](./tray-stage-1.5-publish.md) | Checklist: manual tray build + GitHub Release upload |
-| `.github/workflows/tray-release.yml` | **Future** tray automation — draft; **not used today** |
+| [`tray-stage-1.5-publish.md`](./tray-stage-1.5-publish.md) | Checklist: Actions `tray-release.yml` or manual tray build + upload |
+| `.github/workflows/tray-release.yml` | Tray build/upload (`workflow_dispatch` or tag `v*`) |
 | `scripts/build_windows_installer_images.sh` | Stage 2: build `linux/amd64` images |
 | `scripts/push_protected_service_images.sh` | Stage 2: push to GHCR |
 | `scripts/stage2_one.sh` | Stage 2: one-service build+push + `REPORT OK` (runs source gate) |
@@ -192,24 +192,25 @@ Agent wording:
 
 - *“Stage 1: push code to GitHub per platform-release-cicd.md”* ← includes affected-service source hard gate + changelog  
 - *“Bump VERSION to 2.25.83 and Stage 1 push”*  
-- *“Publish tray for 2.25.83”* ← manual build/upload, not Actions
+- *“Publish tray for 2.25.83”* ← `gh workflow run tray-release.yml` (or manual build/upload)
 
-After Stage 1 alone: labs can `git pull` installer scripts; containers stay on the previous GHCR tag until Stage 2; tray binaries update only after you upload Release assets (or copy a binary onto the lab).
+After Stage 1 alone: labs can `git pull` installer scripts; containers stay on the previous GHCR tag until Stage 2; tray binaries update only after Release assets exist (Actions or manual upload).
 
 ### Tray publish (part of Stage 1)
 
-Tray is a **host binary**, not a container. **Today you build and upload it by hand** on Windows and Ubuntu labs (or any amd64 host with Go). That is optional Stage 1 follow-through so Stage 3 installers can download the remote.
-
-GitHub Actions for tray (`tray-release.yml`) is **not available / not used** yet — treat that workflow as a future draft only.
+Tray is a **host binary**, not a container. Prefer `.github/workflows/tray-release.yml` (`workflow_dispatch` with version, or tag push `v*`). Manual lab builds + `gh release` remain valid when Actions is unavailable.
 
 | Asset | Build on |
 |---|---|
-| `eyenet-tray-windows-amd64-${VERSION}.exe` | Windows lab (`windows-latest` not required) |
-| `eyenet-tray-linux-amd64-${VERSION}.tar.gz` | Ubuntu lab (needs GTK/AppIndicator headers for systray) |
-| `SHA256SUMS` | either host after both assets exist |
+| `eyenet-tray-windows-amd64-${VERSION}.exe` | Actions `windows-latest` or Windows lab |
+| `eyenet-tray-linux-amd64-${VERSION}.tar.gz` | Actions `ubuntu-latest` or Ubuntu lab (GTK/AppIndicator) |
+| `SHA256SUMS` | Actions job or either host after both assets exist |
 
 ```bash
-# After Stage 1 push lands tray source on main — on each OS lab:
+# Preferred:
+gh workflow run tray-release.yml -f version="$(tr -d '[:space:]' < VERSION)"
+
+# Manual fallback — after Stage 1 push lands tray source on main — on each OS lab:
 git fetch origin && git checkout main && git pull --ff-only
 VERSION="$(tr -d '[:space:]' < VERSION)"
 cd deployment/tray
@@ -450,9 +451,9 @@ Do **not** depend on GitHub Actions for platform shipping:
 | Workflow | Intent | Status today |
 |---|---|---|
 | `.github/workflows/platform-release.yml` | Automate Stage 2 image matrix | **Draft** — Stage 2 stays manual (Modes A–D) |
-| `.github/workflows/tray-release.yml` | Automate tray build/upload on tag `v*` | **Draft** — tray stays **manual** lab build + `gh release` |
+| `.github/workflows/tray-release.yml` | Automate tray build/upload on tag `v*` / dispatch | **Active** — preferred; manual `gh release` still OK |
 
-This doc will say when either path is enabled. Until then: manual Stage 2 on a lab PC; manual tray publish.
+Stage 2 stays manual on a lab PC. Tray: prefer Actions; keep real OS smoke on lab hardware either way.
 
 ---
 
@@ -488,7 +489,7 @@ Runtime: [windows-wsl-docker-engine-full-product.md](./windows-wsl-docker-engine
 
 1. Ensure installer files match git.  
 2. First time: `install-eyenet-wsl.bat`.  
-3. `install-platform.bat` (or `.ps1`) — pulls `${RELEASE_TAG}`, starts stack, schema, reregister, tray.  
+3. `install-platform.ps1` (or double-click `install-platform.bat` launcher) — pulls `${RELEASE_TAG}`, starts stack, schema, reregister, tray.  
 4. Open `http://localhost:3000`. Confirm tray icon (Active/Inactive).  
 5. Health:
 
@@ -541,7 +542,7 @@ One release identity must agree everywhere:
 1. Root `VERSION`  
 2. GHCR tags `…/<service>:${VERSION}` (**Stage 2 only**)  
 3. Release manifest digests for that `platform_version`  
-4. Windows pins: `install-platform.bat` / `.ps1` / `.env.windows.template`  
+4. Windows pins: `install-platform.ps1` / `.bat` launcher / `.env.windows.template`  
 5. Ubuntu pin: `install-eyenet-ubuntu.sh` default `RELEASE_TAG=`  
 6. GitHub Release tag `v${VERSION}` (tray assets)  
 7. After promotion: wiki `software_ref.platform_version` and Authority eligibility  
@@ -591,12 +592,12 @@ A **product** release is complete when Stage 2 has updated GHCR **and** Stage 3 
 | Step | Where | Frequency |
 |---|---|---|
 | 1 — Code | Mac → GitHub | Often |
-| Tray publish | Windows + Ubuntu labs → `gh release` (manual) | When tray changes or a pin needs tray assets |
+| Tray publish | `tray-release.yml` or labs → `gh release` | When tray changes or a pin needs tray assets |
 | 2 — Images | Named lab → GHCR (manual) | When you want new containers |
 | 2b — Manifest | Mac or builder → `release-manifest.yml` → Stage 1 commit | After Stage 2 completes a pin |
 | 3 — Install | Each lab host | When asked |
 
-**Later (optional):** enable `tray-release.yml` and/or `platform-release.yml` only after this doc is updated to say they are active. Keep real OS smoke on lab hardware either way.
+**Later (optional):** enable `platform-release.yml` for Stage 2 only after this doc is updated to say it is active. Tray Actions (`tray-release.yml`) is already preferred. Keep real OS smoke on lab hardware either way.
 
 ---
 

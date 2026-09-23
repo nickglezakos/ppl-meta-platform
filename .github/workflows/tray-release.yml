@@ -1,9 +1,8 @@
 name: Tray Release
 
 # Publish EyeNet host tray binaries to GitHub Releases.
-# STATUS: draft / future — not used today. Operators build tray manually on
-# Windows + Ubuntu labs and upload with `gh release` (see docs/deployment/platform-release-cicd.md).
-# Trigger when enabled: push tag v* (e.g. v2.25.82) or workflow_dispatch.
+# Manual lab builds remain valid; this workflow is the preferred path when Actions
+# runners are available. Trigger: workflow_dispatch (version input) or tag push v*.
 # Does not build or push GHCR service images (Stage 2).
 
 on:

@@ -20,6 +20,21 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 - GHCR images republished for **2.25.83** (`dd464478`): gateway `b01e6b22…`,
   discovery `7ced8041…`, frontend `f9e2aacc…`. Stage 3 on `lab-work-dual-64g`
   @ `10.171.48.228` (2026-09-23). Mobile APK still needs a local rebuild.
+- Host tray binaries published on GitHub Release **`v2.25.83`**
+  (`eyenet-tray-windows-amd64-2.25.83.exe`,
+  `eyenet-tray-linux-amd64-2.25.83.tar.gz`).
+
+### Changed
+
+- Windows `install-platform.ps1`: no longer prompts for `INSTALLATION_UUID` /
+  `APPLICATION_KEY` (empty → `/bootstrap`); auto-generates weak
+  `POSTGRES_PASSWORD` / `JWT_SECRET_KEY`.
+- Windows `install-platform.bat`: deprecated as a full installer — now a thin
+  launcher for `install-platform.ps1`.
+- Ubuntu `install-eyenet-ubuntu.sh`: generate local DB/JWT secrets on fresh
+  install instead of `eyenet-dev-change-me`.
+- `.github/workflows/tray-release.yml`: enabled as preferred tray publish path
+  (`workflow_dispatch` or tag `v*`).
 
 ### Fixed
 

@@ -369,7 +369,7 @@ Images sitting in GHCR do nothing until a machine **pulls** them. Say explicitly
 
 1. Installer files match git.  
 2. First time: `install-eyenet-wsl.bat`.  
-3. Install/upgrade: `install-platform.bat` (or `.ps1`) — pulls `${RELEASE_TAG}`, schema apply/verify, discovery reregister.  
+3. Install/upgrade: `install-platform.ps1` (or `install-platform.bat` launcher) — pulls `${RELEASE_TAG}`, schema apply/verify, discovery reregister.  
 4. UI: `http://localhost:3000`  
 
 Manual pull (existing install dir):
