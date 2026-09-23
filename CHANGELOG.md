@@ -17,12 +17,18 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- GHCR images republished for **2.25.83** (`dd464478`): gateway `b01e6b22…`,
+- GHCR images republished for **2.25.83** (`f5816b45`) on `lab-work-dual-64g`:
+  media `d4635f9a…`, frontend `8279d972…` (tags `2.25.83` /
+  `2.25.83-f5816b4`). Manifest finalized; Stage 3 pull still needed on the lab.
+- Prior GHCR republish for **2.25.83** (`dd464478`): gateway `b01e6b22…`,
   discovery `7ced8041…`, frontend `f9e2aacc…`. Stage 3 on `lab-work-dual-64g`
-  @ `10.171.48.228` (2026-09-23). Mobile APK still needs a local rebuild.
+  @ `10.171.48.228` (2026-09-23).
 - Host tray binaries published on GitHub Release **`v2.25.83`**
   (`eyenet-tray-windows-amd64-2.25.83.exe`,
   `eyenet-tray-linux-amd64-2.25.83.tar.gz`).
+- Signage simple player APK rebuilt + installed on SM-T510 (local discovery
+  enroll without VPN token; playlist sync verified) — Stage 1 `f5816b45`,
+  2026-09-23.
 
 ### Changed
 
