@@ -17,6 +17,18 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Fixed
 
+- Gateway + Discovery CORS: allow RFC1918 `10/8` and `172.16/12` origins (in
+  addition to `192.168/16`, loopback, Tailscale) so Flutter UI on a `10.x` LAN
+  (e.g. `http://10.171.48.228:3000`) can call `:8080` / discovery without Dio
+  preflight **400** → false `/bootstrap` redirect.
+- Frontend `/cameras`: mobile Connect control has a three-state lease UI
+  (green → orange LEASE OPEN → red) via `mobileConnectPhaseProvider` (phase
+  survives camera-list refresh).
+- Mobile APK: stop crashing on TrebleDroid / GSI during init — use platform
+  `availableCameras()` instead of open/dispose-probing fabricated orientations.
+- Mobile APK: persistent **Stop stream** (top-right chip + center button morph)
+  while live; full teardown of camera image stream + mobile upload lease.
+
 - Presence: media collections calls use `MEDIA_SERVICE_URL` (not `localhost:8000`)
   so Presence tabs stop 500ing when reserving a camera/collection in compose.
 - Presence: after video-only / camera-only detection cleanup, **do not** full

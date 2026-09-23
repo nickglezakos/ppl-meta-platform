@@ -24,7 +24,8 @@ class CameraService {
 
   // Getters
   CameraController? get controller => _controller;
-  List<CameraDescription>? get availableCameras => _cameras;
+  /// Discovered platform cameras (name avoids shadowing package [availableCameras]).
+  List<CameraDescription>? get cameras => _cameras;
   CameraConfig? get currentConfig => _currentConfig;
   bool get isInitialized => _isInitialized;
   bool get isStreaming => _isStreaming;
@@ -71,80 +72,30 @@ class CameraService {
 
       print('Camera permissions granted, proceeding with camera initialization...');
 
-      // Initialize camera service with robust camera detection
+      // Use the platform camera list. Do NOT brute-force open/dispose fabricated
+      // CameraDescriptions for every orientation — that native open/close storm
+      // SIGSEGVs / kills the process on TrebleDroid / GSI and some real devices
+      // (Dart try/catch cannot catch the crash). Presence + auto-streaming
+      // already use availableCameras() successfully.
       try {
-        print('Starting comprehensive camera detection...');
-        final List<CameraDescription> workingCameras = [];
-        
-        // Test multiple camera configurations that are commonly available on Android
-        final List<Map<String, dynamic>> cameraConfigs = [
-          // Back cameras
-          {'id': '0', 'direction': CameraLensDirection.back, 'orientation': 90},
-          {'id': '0', 'direction': CameraLensDirection.back, 'orientation': 0},
-          {'id': '0', 'direction': CameraLensDirection.back, 'orientation': 180},
-          {'id': '0', 'direction': CameraLensDirection.back, 'orientation': 270},
-          // Front cameras  
-          {'id': '1', 'direction': CameraLensDirection.front, 'orientation': 270},
-          {'id': '1', 'direction': CameraLensDirection.front, 'orientation': 90},
-          {'id': '1', 'direction': CameraLensDirection.front, 'orientation': 0},
-          {'id': '1', 'direction': CameraLensDirection.front, 'orientation': 180},
-          // Additional camera IDs
-          {'id': '2', 'direction': CameraLensDirection.back, 'orientation': 90},
-          {'id': '3', 'direction': CameraLensDirection.front, 'orientation': 270},
-        ];
-        
-        for (final config in cameraConfigs) {
-          try {
-            final testCamera = CameraDescription(
-              name: config['id'] as String,
-              lensDirection: config['direction'] as CameraLensDirection,
-              sensorOrientation: config['orientation'] as int,
-            );
-            
-            print('Testing camera: ${testCamera.name} (${testCamera.lensDirection})...');
-            
-            final testController = CameraController(
-              testCamera,
-              ResolutionPreset.low,
-              enableAudio: false,
-            );
-            
-            // Add timeout to prevent hanging
-            await testController.initialize().timeout(
-              const Duration(seconds: 5),
-              onTimeout: () => throw Exception('Camera initialization timeout'),
-            );
-            
-            // If we reach here, the camera works!
-            await testController.dispose();
-            
-            // Add all working cameras (don't filter by direction anymore)
-            // We want all orientations available for selection
-            workingCameras.add(testCamera);
-            print('✅ Camera ${testCamera.name} (${testCamera.lensDirection}, ${testCamera.sensorOrientation}°) works!');
-            
-          } catch (e) {
-            print('❌ Camera ${config['id']} (${config['direction']}) failed: ${e.toString().split('\n').first}');
-          }
-          
-          // Continue testing all camera configurations to get all orientations
-          // No early termination - we want all working cameras available
-        }
-        
-        _cameras = workingCameras;
-        print('🎯 Camera detection completed: ${_cameras?.length ?? 0} working cameras found');
-        
+        print('Discovering cameras via availableCameras()...');
+        final discovered = await availableCameras();
+        _cameras = List<CameraDescription>.from(discovered);
+        print('🎯 Camera discovery completed: ${_cameras?.length ?? 0} camera(s)');
+
         if (_cameras != null && _cameras!.isNotEmpty) {
           for (int i = 0; i < _cameras!.length; i++) {
             final camera = _cameras![i];
-            print('📷 Camera $i: ID=${camera.name} Direction=${camera.lensDirection} Orientation=${camera.sensorOrientation}°');
+            print(
+              '📷 Camera $i: ID=${camera.name} Direction=${camera.lensDirection} '
+              'Orientation=${camera.sensorOrientation}°',
+            );
           }
         } else {
-          print('⚠️ No working cameras detected - device may have restricted camera access');
+          print('⚠️ No cameras reported by platform - device may have restricted camera access');
         }
-        
       } catch (e) {
-        print('❌ Camera detection failed completely: $e');
+        print('❌ Camera discovery failed: $e');
         _cameras = <CameraDescription>[];
       }
       
@@ -203,13 +154,10 @@ class CameraService {
         cameraConfig = config;
       } else {
         print('🎬 Creating default camera config...');
-        // Try to find back camera with 0° orientation first (for portrait mode)
+        // Prefer back camera; use the platform-reported sensor orientation.
         final preferredCamera = _cameras!.firstWhere(
-          (camera) => camera.lensDirection == CameraLensDirection.back && camera.sensorOrientation == 0,
-          orElse: () => _cameras!.firstWhere(
-            (camera) => camera.lensDirection == CameraLensDirection.back,
-            orElse: () => _cameras!.first,
-          ),
+          (camera) => camera.lensDirection == CameraLensDirection.back,
+          orElse: () => _cameras!.first,
         );
         
         cameraConfig = CameraConfig(
@@ -651,8 +599,11 @@ class CameraService {
   /// Check if camera is available on this device
   Future<bool> isCameraAvailable() async {
     try {
-      // TODO: Fix availableCameras import issue
-      return false; // Temporary stub
+      if (_cameras != null && _cameras!.isNotEmpty) {
+        return true;
+      }
+      final discovered = await availableCameras();
+      return discovered.isNotEmpty;
     } catch (e) {
       print('Error checking camera availability: $e');
       return false;

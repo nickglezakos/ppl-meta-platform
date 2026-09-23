@@ -38,6 +38,15 @@ final presenceApiClientProvider = Provider<PresenceApiClient>((ref) {
   return PresenceApiClient(apiClient);
 });
 
+/// Mobile connect UI phase (survives camera-list rebuilds that reset local State).
+/// idle → leaseOpen (first Connect) → attached (second Connect after phone starts).
+enum MobileConnectPhase { idle, leaseOpen, attached }
+
+final mobileConnectPhaseProvider =
+    StateProvider.family<MobileConnectPhase, String>((ref, deviceId) {
+  return MobileConnectPhase.idle;
+});
+
 /// Provider for edge camera streaming state (device_id -> is_streaming)
 final edgeCameraStreamingProvider = StateProvider.family<bool, String>((ref, deviceId) => false);
 

@@ -83,7 +83,7 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
       }
 
       print('🔧 Step 2: Setting up camera with detected cameras...');
-      print('🔧 Available cameras count: ${_cameraService.availableCameras?.length ?? 0}');
+      print('🔧 Available cameras count: ${_cameraService.cameras?.length ?? 0}');
 
       // Setup camera with default configuration
       final cameraSetup = await _cameraService.setupCamera();
@@ -97,7 +97,7 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
         _currentConfig = _cameraService.currentConfig;
         _isFrontCamera = _currentConfig?.camera.lensDirection == CameraLensDirection.front;
         print('✅ Camera setup completed successfully');
-        print('📷 Available cameras: ${_cameraService.availableCameras?.length ?? 0}');
+        print('📷 Available cameras: ${_cameraService.cameras?.length ?? 0}');
         print('📷 Current camera: ${_isFrontCamera ? 'front' : 'back'}');
         print('📷 Camera controller ready: ${_cameraService.controller?.value.isInitialized ?? false}');
       }
@@ -120,7 +120,7 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
       print('🔧 Step 4 Result: Gallery refresh completed');
 
       print('🎯 === CAMERA PROVIDER INITIALIZATION COMPLETE ===');
-      print('🎯 Final state: initialized=$_isInitialized, hasCamera=${_currentConfig != null}, cameraCount=${_cameraService.availableCameras?.length ?? 0}');
+      print('🎯 Final state: initialized=$_isInitialized, hasCamera=${_currentConfig != null}, cameraCount=${_cameraService.cameras?.length ?? 0}');
       
       notifyListeners();
     } catch (e) {
@@ -277,7 +277,7 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
         _isStreaming = _cameraService.isStreaming;
         notifyListeners();
       } else {
-        final errorMsg = 'Failed to switch camera - only ${_cameraService.availableCameras?.length ?? 0} camera(s) available';
+        final errorMsg = 'Failed to switch camera - only ${_cameraService.cameras?.length ?? 0} camera(s) available';
         print('❌ $errorMsg');
         _setError(errorMsg);
       }

@@ -13,6 +13,8 @@ class CameraControls extends StatefulWidget {
   final VoidCallback onPresenceVerifiedTap;
   final double zoomLevel;
   final bool isFrontCamera;
+  /// When true, the center video control shows Stop instead of Start stream.
+  final bool isStreaming;
   final int galleryItemCount;
 
   const CameraControls({
@@ -27,6 +29,7 @@ class CameraControls extends StatefulWidget {
     required this.onPresenceVerifiedTap,
     required this.zoomLevel,
     required this.isFrontCamera,
+    this.isStreaming = false,
     required this.galleryItemCount,
   }) : super(key: key);
 
@@ -110,9 +113,12 @@ class _CameraControlsState extends State<CameraControls>
   }
 
   Widget _buildVideoButton() {
+    final isStreaming = widget.isStreaming;
     return GestureDetector(
       onTap: () {
-        CameraLogger.setup('Red video button tapped!');
+        CameraLogger.setup(
+          isStreaming ? 'Stop stream button tapped!' : 'Red video button tapped!',
+        );
         CameraLogger.setup('Calling onVideoTap callback...');
         if (widget.onVideoTap != null) {
           widget.onVideoTap!();
@@ -125,16 +131,27 @@ class _CameraControlsState extends State<CameraControls>
         width: 50,
         height: 50,
         decoration: BoxDecoration(
-          color: Colors.red.withOpacity(0.8),
+          color: isStreaming
+              ? Colors.red.shade700
+              : Colors.red.withOpacity(0.8),
           shape: BoxShape.circle,
           border: Border.all(
-            color: Colors.white.withOpacity(0.5),
-            width: 2,
+            color: Colors.white.withOpacity(isStreaming ? 0.95 : 0.5),
+            width: isStreaming ? 3 : 2,
           ),
+          boxShadow: isStreaming
+              ? [
+                  BoxShadow(
+                    color: Colors.red.shade900.withOpacity(0.55),
+                    blurRadius: 10,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : null,
         ),
-        child: const Center(
+        child: Center(
           child: Icon(
-            Icons.videocam,
+            isStreaming ? Icons.stop : Icons.videocam,
             color: Colors.white,
             size: 24,
           ),

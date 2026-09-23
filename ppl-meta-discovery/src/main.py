@@ -236,13 +236,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS — loopback, LAN, Tailscale CGNAT (100.64.0.0/10); keep in sync
-# with ppl-meta-gateway/src/config.py CORS_SETTINGS.
+# Configure CORS — loopback, RFC1918 LAN (10/8, 172.16/12, 192.168/16),
+# Tailscale CGNAT (100.64.0.0/10); keep in sync with
+# ppl-meta-gateway/src/config.py CORS_SETTINGS.
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=(
         r"https?://(?:"
         r"localhost|127\.0\.0\.1|0\.0\.0\.0|"
+        r"10\.\d+\.\d+\.\d+|"
+        r"172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|"
         r"192\.168\.\d+\.\d+|"
         r"100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+"
         r")(:\d+)?"

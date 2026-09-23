@@ -50,7 +50,9 @@ class CameraCard extends ConsumerWidget {
 
   static bool _isCameraConnectedForUi(Camera camera, CameraStatus? status) {
     final normalized = camera.status.toLowerCase();
-    final cameraSaysActive = normalized == 'connected' || normalized == 'streaming';
+    final cameraSaysActive = normalized == 'connected' ||
+        normalized == 'streaming' ||
+        normalized == 'in_use';
     final wsSaysActive = (status?.isConnected ?? false) || (status?.isStreaming ?? false);
 
     // Mobile and edge cameras can be actively streamable without websocket connected state.
@@ -59,6 +61,21 @@ class CameraCard extends ConsumerWidget {
     }
 
     return wsSaysActive || cameraSaysActive;
+  }
+
+  /// Mobile: platform has opened the stream lease and is waiting for the phone
+  /// to start uploading (connected, but not yet live frames / in_use).
+  static bool _isMobileAwaitingStream(Camera camera, CameraStatus? status) {
+    if (camera.type != CameraType.mobile) return false;
+    if (!_isCameraConnectedForUi(camera, status)) return false;
+    return !_isMobileActivelyStreaming(camera, status);
+  }
+
+  static bool _isMobileActivelyStreaming(Camera camera, CameraStatus? status) {
+    if (camera.type != CameraType.mobile) return false;
+    final normalized = camera.status.toLowerCase();
+    if (normalized == 'streaming' || normalized == 'in_use') return true;
+    return status?.isStreaming ?? false;
   }
 
   @override
@@ -86,6 +103,14 @@ class CameraCard extends ConsumerWidget {
     // For mobile and edge cameras, use the camera's own status field since they don't use backend WebSocket
     // For USB/RTSP cameras, use WebSocket status if available, otherwise use camera status
     final bool isConnected = _isCameraConnectedForUi(updatedCamera, cameraStatus);
+    final mobilePhase = updatedCamera.type == CameraType.mobile
+        ? ref.watch(mobileConnectPhaseProvider(updatedCamera.deviceId))
+        : MobileConnectPhase.idle;
+    final bool showMobileLeaseOpen = updatedCamera.type == CameraType.mobile &&
+        (mobilePhase == MobileConnectPhase.leaseOpen ||
+            (isConnected &&
+                mobilePhase != MobileConnectPhase.attached &&
+                !_isMobileActivelyStreaming(updatedCamera, cameraStatus)));
     
     // 🔍 DEBUG: Log camera status evaluation
     debugPrint('🎥 [CameraCard] ${updatedCamera.deviceId}:');
@@ -95,13 +120,16 @@ class CameraCard extends ConsumerWidget {
     debugPrint('   📌 WebSocket.isConnected: ${cameraStatus?.isConnected}');
     debugPrint('   ✅ Final isConnected: $isConnected');
     debugPrint('   🎬 Play button visible: $isConnected');
+    debugPrint('   🟠 Mobile lease-open UI: $showMobileLeaseOpen (phase=$mobilePhase)');
 
     return ListableCard(
       isSelected: selected,
       onTap: onTap,
       leadingIcon: Icon(
         _getCameraIcon(updatedCamera.type),
-        color: isConnected ? AppColors.success : AppColors.textDisabled,
+        color: showMobileLeaseOpen
+            ? AppColors.warning
+            : (isConnected ? AppColors.success : AppColors.textDisabled),
         size: 24,
       ),
       title: Text(
@@ -280,7 +308,10 @@ Widget _buildActionFooter(
           tooltip: updatedCamera.archived ? 'Unarchive camera' : 'Archive camera',
         ),
         SizedBox(width: actionSpacingSmall),
-        _ConnectionButton(camera: updatedCamera),
+        _ConnectionButton(
+          key: ValueKey('connect-${updatedCamera.deviceId}'),
+          camera: updatedCamera,
+        ),
         SizedBox(width: actionSpacingMedium),
         if (isConnected) ...[
           if (updatedCamera.type != CameraType.edge) ...[
@@ -706,7 +737,7 @@ class _PulsingRecordingDotState extends State<_PulsingRecordingDot>
 class _ConnectionButton extends ConsumerStatefulWidget {
   final Camera camera;
   
-  const _ConnectionButton({required this.camera});
+  const _ConnectionButton({super.key, required this.camera});
   
   @override
   ConsumerState<_ConnectionButton> createState() => _ConnectionButtonState();
@@ -714,77 +745,143 @@ class _ConnectionButton extends ConsumerStatefulWidget {
 
 class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
   bool _isLoading = false;
+
+  MobileConnectPhase get _phase =>
+      ref.read(mobileConnectPhaseProvider(widget.camera.deviceId));
+
+  void _setPhase(MobileConnectPhase phase) {
+    ref.read(mobileConnectPhaseProvider(widget.camera.deviceId).notifier).state =
+        phase;
+  }
   
+  Future<void> _disconnectCamera() async {
+    final cameraService = ref.read(cameraServiceProvider);
+
+    try {
+      final detectionNotifier = ref.read(
+        cameraInstantDetectionProvider(widget.camera.deviceId).notifier,
+      );
+      final detectionState =
+          ref.read(cameraInstantDetectionProvider(widget.camera.deviceId));
+      if (detectionState.isDetecting) {
+        debugPrint(
+          '🛑 [ConnectionButton] Stopping instant detection before disconnect',
+        );
+        await detectionNotifier.stopDetection();
+      }
+    } catch (e) {
+      debugPrint(
+        '⚠️ [ConnectionButton] Instant detection stop before disconnect: $e',
+      );
+    }
+
+    debugPrint('🔌 [ConnectionButton] Starting disconnect for ${widget.camera.deviceId}');
+    await cameraService.disconnectCamera(widget.camera.deviceId);
+    debugPrint('🔌 [ConnectionButton] Disconnect API call completed');
+
+    await Future.delayed(const Duration(milliseconds: 500));
+    await ref.read(cameraListProvider.notifier).loadCameras();
+    _setPhase(MobileConnectPhase.idle);
+    debugPrint('✅ [ConnectionButton] Camera disconnected and status refreshed');
+  }
+
+  Future<void> _connectCamera({required bool isReEnsure}) async {
+    final cameraService = ref.read(cameraServiceProvider);
+    debugPrint(
+      '🔌 [ConnectionButton] Starting ${isReEnsure ? "re-ensure" : "connect"} '
+      'for ${widget.camera.deviceId}',
+    );
+    final success = await cameraService.connectCamera(widget.camera.deviceId);
+    debugPrint('🔌 [ConnectionButton] Connect API call completed: success=$success');
+
+    if (!success) return;
+
+    // Set phase immediately so orange/red survives the list refresh rebuild.
+    if (widget.camera.type == CameraType.mobile) {
+      _setPhase(
+        isReEnsure ? MobileConnectPhase.attached : MobileConnectPhase.leaseOpen,
+      );
+    }
+
+    await Future.delayed(const Duration(milliseconds: 500));
+    await ref.read(cameraListProvider.notifier).loadCameras();
+    debugPrint('✅ [ConnectionButton] Camera connected and status refreshed');
+
+    if (!mounted || widget.camera.type != CameraType.mobile) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isReEnsure
+              ? 'Mobile camera attached — open the preview if needed.'
+              : 'Platform ready for stream lease — start streaming from the phone, then tap the orange button again.',
+        ),
+        backgroundColor: isReEnsure ? AppColors.success : AppColors.warning,
+        duration: const Duration(seconds: 5),
+      ),
+    );
+  }
+
   Future<void> _toggleConnection() async {
     if (_isLoading) return;
     
     setState(() => _isLoading = true);
     
     try {
-      final cameraService = ref.read(cameraServiceProvider);
       final status = ref.read(cameraStatusProvider(widget.camera.deviceId));
+      final phase = _phase;
+      final apiConnected =
+          CameraCard._isCameraConnectedForUi(widget.camera, status);
+      final isMobile = widget.camera.type == CameraType.mobile;
+      final isLeaseOpen = isMobile &&
+          (phase == MobileConnectPhase.leaseOpen ||
+              (apiConnected && phase != MobileConnectPhase.attached));
+      final isAttached = isMobile &&
+          (phase == MobileConnectPhase.attached ||
+              CameraCard._isMobileActivelyStreaming(widget.camera, status));
+      final isConnected = apiConnected ||
+          phase == MobileConnectPhase.leaseOpen ||
+          phase == MobileConnectPhase.attached;
       
-      // For mobile and edge cameras, use camera.status since they don't use backend WebSocket
-      // For USB/RTSP cameras, use WebSocket status if available, otherwise camera.status
-        final isConnected = CameraCard._isCameraConnectedForUi(widget.camera, status);
+      debugPrint(
+        '🔌 [ConnectionButton] Toggle: deviceId=${widget.camera.deviceId}, '
+        'phase=$phase, apiConnected=$apiConnected, leaseOpen=$isLeaseOpen, '
+        'attached=$isAttached',
+      );
       
-      debugPrint('🔌 [ConnectionButton] Toggle check: deviceId=${widget.camera.deviceId}, type=${widget.camera.type}, isConnected=$isConnected');
-      
-      if (isConnected) {
-        // Stop instant detection first so disconnect is not a no-op while ID runs.
-        try {
-          final detectionNotifier = ref.read(
-            cameraInstantDetectionProvider(widget.camera.deviceId).notifier,
-          );
-          final detectionState =
-              ref.read(cameraInstantDetectionProvider(widget.camera.deviceId));
-          if (detectionState.isDetecting) {
-            debugPrint(
-              '🛑 [ConnectionButton] Stopping instant detection before disconnect',
-            );
-            await detectionNotifier.stopDetection();
-          }
-        } catch (e) {
-          debugPrint(
-            '⚠️ [ConnectionButton] Instant detection stop before disconnect: $e',
-          );
-        }
-
-        // Disconnect
-        debugPrint('🔌 [ConnectionButton] Starting disconnect for ${widget.camera.deviceId}');
-        await cameraService.disconnectCamera(widget.camera.deviceId);
-        debugPrint('🔌 [ConnectionButton] Disconnect API call completed');
-        
-        // Wait a moment for backend to update status
-        debugPrint('⏳ [ConnectionButton] Waiting 500ms for backend status update...');
-        await Future.delayed(const Duration(milliseconds: 500));
-        
-        // Refresh camera list to get updated disconnection status
-        debugPrint('🔄 [ConnectionButton] Calling loadCameras() to refresh list...');
-        await ref.read(cameraListProvider.notifier).loadCameras();
-        debugPrint('✅ [ConnectionButton] Camera disconnected and status refreshed');
+      if (!isConnected) {
+        await _connectCamera(isReEnsure: false);
+      } else if (isLeaseOpen && !isAttached) {
+        await _connectCamera(isReEnsure: true);
       } else {
-        // Connect
-        debugPrint('🔌 [ConnectionButton] Starting connect for ${widget.camera.deviceId}');
-        final success = await cameraService.connectCamera(widget.camera.deviceId);
-        debugPrint('🔌 [ConnectionButton] Connect API call completed: success=$success');
-        
-        if (success) {
-          // Wait a moment for backend to update status
-          debugPrint('⏳ [ConnectionButton] Waiting 500ms for backend status update...');
-          await Future.delayed(const Duration(milliseconds: 500));
-          
-          // Refresh camera list to get updated connection status
-          debugPrint('🔄 [ConnectionButton] Calling loadCameras() to refresh list...');
-          await ref.read(cameraListProvider.notifier).loadCameras();
-          debugPrint('✅ [ConnectionButton] Camera connected and status refreshed');
-        }
+        await _disconnectCamera();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Connection failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _cancelMobileLease() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+    try {
+      await _disconnectCamera();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Disconnect failed: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -803,10 +900,20 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
     final iconPadding = EdgeInsets.all(isCompact ? 4.0 : 8.0);
 
     final status = ref.watch(cameraStatusProvider(widget.camera.deviceId));
-    
-    // For mobile and edge cameras, use camera.status since they don't use backend WebSocket
-    // For USB/RTSP cameras, use WebSocket status if available, otherwise camera.status
-    final isConnected = CameraCard._isCameraConnectedForUi(widget.camera, status);
+    final phase = ref.watch(mobileConnectPhaseProvider(widget.camera.deviceId));
+    final isMobile = widget.camera.type == CameraType.mobile;
+    final apiConnected =
+        CameraCard._isCameraConnectedForUi(widget.camera, status);
+    final isAttached = isMobile &&
+        (phase == MobileConnectPhase.attached ||
+            CameraCard._isMobileActivelyStreaming(widget.camera, status));
+    final isLeaseOpen = isMobile &&
+        !isAttached &&
+        (phase == MobileConnectPhase.leaseOpen ||
+            (apiConnected && phase != MobileConnectPhase.attached));
+    final isConnected = apiConnected ||
+        phase == MobileConnectPhase.leaseOpen ||
+        phase == MobileConnectPhase.attached;
     
     if (_isLoading) {
       return Container(
@@ -821,17 +928,64 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
         ),
       );
     }
-    
+
+    if (!isConnected) {
+      return IconButton(
+        onPressed: _toggleConnection,
+        icon: const Icon(Icons.link, color: Colors.green),
+        iconSize: iconSize,
+        padding: iconPadding,
+        constraints: const BoxConstraints(),
+        tooltip: isMobile ? 'Connect — open stream lease' : 'Connect',
+      );
+    }
+
+    if (isMobile && isLeaseOpen) {
+      // High-visibility orange chip — icon tint alone was easy to miss.
+      return Tooltip(
+        message:
+            'Lease open — start stream on phone, then tap again (long-press to cancel)',
+        child: Material(
+          color: AppColors.warning,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            onTap: _toggleConnection,
+            onLongPress: _cancelMobileLease,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: isCompact ? 8 : 10,
+                vertical: isCompact ? 6 : 8,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.phonelink_ring, color: Colors.white, size: iconSize),
+                  const SizedBox(width: 6),
+                  Text(
+                    isCompact ? 'LEASE' : 'LEASE OPEN',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: isCompact ? 10 : 11,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return IconButton(
       onPressed: _toggleConnection,
-      icon: Icon(
-        isConnected ? Icons.link_off : Icons.link,
-        color: isConnected ? Colors.red : Colors.green,
-      ),
+      icon: const Icon(Icons.link_off, color: Colors.red),
       iconSize: iconSize,
       padding: iconPadding,
       constraints: const BoxConstraints(),
-      tooltip: isConnected ? 'Disconnect' : 'Connect',
+      tooltip: 'Disconnect',
     );
   }
 }

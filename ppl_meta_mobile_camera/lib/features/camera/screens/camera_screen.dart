@@ -42,6 +42,9 @@ class _CameraScreenState extends State<CameraScreen>
   bool _isNavigatingToAuth = false; // Prevent navigation loop
   bool _presenceFlowBusy = false;
   bool _ownerQrRenderActive = false;
+  /// True while session upload / camera image stream is active.
+  /// Local flag so Stop stays visible even when providers do not notify.
+  bool _isLiveStreaming = false;
   String? _activePresenceSessionUuid;
   String? _presenceStatusMessage;
   _PresenceResultAlertData? _presenceResultAlert;
@@ -205,7 +208,7 @@ class _CameraScreenState extends State<CameraScreen>
                 if (_presenceResultAlert != null)
                   _buildPresenceResultAlertOverlay(),
 
-                if (_shouldShowStopResetControl(cameraProvider))
+                if (_isLiveStreaming || _shouldShowStopResetControl(cameraProvider))
                   _buildStopResetOverlay(cameraProvider),
               ],
             ),
@@ -353,6 +356,8 @@ class _CameraScreenState extends State<CameraScreen>
 
   Widget _buildCameraControls(CameraProvider cameraProvider) {
     CameraLogger.debug('Building camera controls with zero-input workflow callback');
+    final isStreaming =
+        _isLiveStreaming || _isAnyStreamingActive(cameraProvider);
     return Positioned(
       bottom: 0,
       left: 0,
@@ -365,12 +370,13 @@ class _CameraScreenState extends State<CameraScreen>
         onVideoTap: () {
           CameraLogger.info('Video tap triggered - starting zero-input workflow');
           _handleSimpleStreamingWorkflow();
-        }, // NEW: Simplified streaming workflow with debug
+        },
         onPresenceQrTap: _startQrOnlyPresence,
         onPresenceCameraTap: _startCameraOnlyPresence,
         onPresenceVerifiedTap: _startVerifiedPresence,
         zoomLevel: cameraProvider.zoomLevel,
         isFrontCamera: cameraProvider.isFrontCamera,
+        isStreaming: isStreaming,
         galleryItemCount: cameraProvider.galleryItems.length,
       ),
     );
@@ -512,34 +518,54 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   bool _shouldShowStopResetControl(CameraProvider cameraProvider) {
-    return _isAnyStreamingActive(cameraProvider) ||
+    return _isLiveStreaming ||
+        _isAnyStreamingActive(cameraProvider) ||
         _presenceFlowBusy ||
         _presenceStatusMessage != null ||
         _activePresenceSessionUuid != null;
   }
 
   bool _isAnyStreamingActive(CameraProvider cameraProvider) {
-    return cameraProvider.isStreaming ||
+    return _isLiveStreaming ||
+        cameraProvider.isStreaming ||
         CameraService.instance.isStreaming ||
         MobileStreamingService().isStreaming;
   }
 
   Widget _buildStopResetOverlay(CameraProvider cameraProvider) {
+    // Persistent top-right control — not tied to bottom chrome / camera switch taps.
     return Positioned(
-      bottom: 152,
+      top: 72,
       right: 16,
       child: SafeArea(
-        child: FilledButton.icon(
-          onPressed: cameraProvider.isLoading
-              ? null
-              : () => _stopAndResetCameraState(cameraProvider),
-          style: FilledButton.styleFrom(
-            backgroundColor: Colors.red.shade700,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Material(
+          elevation: 6,
+          borderRadius: BorderRadius.circular(28),
+          color: Colors.red.shade700,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(28),
+            onTap: cameraProvider.isLoading
+                ? null
+                : () => _stopAndResetCameraState(cameraProvider),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.stop_circle, color: Colors.white, size: 22),
+                  SizedBox(width: 8),
+                  Text(
+                    'Stop stream',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-          icon: const Icon(Icons.stop_circle_outlined),
-          label: const Text('Stop / Reset'),
         ),
       ),
     );
@@ -723,10 +749,10 @@ class _CameraScreenState extends State<CameraScreen>
     
     final cameraProvider = context.read<CameraProvider>();
     
-    // If already streaming, stop it
+    // If already streaming, stop it (video button acts as stop while live)
     if (_isAnyStreamingActive(cameraProvider)) {
       CameraLogger.streaming('Camera is already streaming, stopping current stream');
-      await _stopAllStreamingPaths(cameraProvider);
+      await _stopAndResetCameraState(cameraProvider);
       CameraLogger.streaming('Stream stopped');
       return;
     }
@@ -958,6 +984,9 @@ class _CameraScreenState extends State<CameraScreen>
       final cameraStarted = await CameraService.instance.startStreaming();
       if (cameraStarted) {
         CameraLogger.success('Mobile camera streaming started - frontend can now view via session URL');
+        if (mounted) {
+          setState(() => _isLiveStreaming = true);
+        }
       } else {
         CameraLogger.warning('Camera startStreaming returned false - frames may not be sending');
       }
@@ -1286,14 +1315,25 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _stopAllStreamingPaths(CameraProvider cameraProvider) async {
     final mobileStreamingService = MobileStreamingService();
 
-    mobileStreamingService.disableFrameSending();
-
+    // Stop camera image stream first so frames stop immediately.
     if (CameraService.instance.isStreaming) {
       await CameraService.instance.stopStreaming();
     }
 
+    // Full mobile upload teardown (clears lease + frame sending flag).
+    mobileStreamingService.disableFrameSending();
+    try {
+      await mobileStreamingService.stopStreaming();
+    } catch (e) {
+      CameraLogger.warning('MobileStreamingService.stopStreaming: $e');
+    }
+
     if (cameraProvider.isStreaming) {
       await cameraProvider.stopStreaming();
+    }
+
+    if (mounted) {
+      setState(() => _isLiveStreaming = false);
     }
   }
 
@@ -1301,15 +1341,14 @@ class _CameraScreenState extends State<CameraScreen>
     final messenger = ScaffoldMessenger.of(context);
 
     try {
-      if (_isAnyStreamingActive(cameraProvider)) {
-        await _stopAllStreamingPaths(cameraProvider);
-      }
+      await _stopAllStreamingPaths(cameraProvider);
 
       if (!mounted) {
         return;
       }
 
       setState(() {
+        _isLiveStreaming = false;
         _presenceFlowBusy = false;
         _activePresenceSessionUuid = null;
         _presenceStatusMessage = null;
@@ -1319,7 +1358,7 @@ class _CameraScreenState extends State<CameraScreen>
       messenger.clearSnackBars();
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('Camera reset to idle state. Streaming stopped and Presence flow cleared.'),
+          content: Text('Camera idle — streaming stopped.'),
           backgroundColor: Colors.green,
           duration: Duration(seconds: 3),
         ),
@@ -1327,6 +1366,9 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (error) {
       if (!mounted) {
         return;
+      }
+      if (mounted) {
+        setState(() => _isLiveStreaming = false);
       }
       messenger.showSnackBar(
         SnackBar(
