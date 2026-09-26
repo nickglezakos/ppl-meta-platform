@@ -42,8 +42,11 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- Stage 2: rebuild **node**, **presence**, **frontend**; Mode D retag-forward
-  remaining services **2.25.83 → 2.25.84**; finalize `release-manifest.yml`.
+- Stage 2 on `lab-work-dual-64g`: rebuilt **node** `8e711f1b…`, **frontend**
+  `c5303a27…`, **presence** `2b9316be…` (tags `2.25.84` / `2.25.84-bc350b1`
+  after SQLAlchemy pin); Mode D retag-forward remaining from `2.25.83`.
+- **Stage 3** on `lab-work-dual-64g` @ `10.171.48.228` (2026-09-26):
+  `RELEASE_TAG=2.25.84`; node/presence/frontend digests match; presence healthy.
 - Presence `requirements.txt`: pin `sqlalchemy>=2.0.30,<2.1` so Stage 2 does
   not pull SQLAlchemy 2.1 (defaults to `psycopg` v3 and crash-loops without it).
 - Prior pin **2.25.83** GHCR republishes (frontend People-link `f9b2184d…`,
