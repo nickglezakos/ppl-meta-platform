@@ -902,6 +902,30 @@ class _IndividualGroupDetailScreenState
                       fit: StackFit.expand,
                       children: [
                         _buildMemberThumbnail(member.id),
+
+                        // Member details (People Profile link) — top-left
+                        Positioned(
+                          top: 2,
+                          left: 2,
+                          child: Material(
+                            color: Colors.black.withOpacity(0.55),
+                            shape: const CircleBorder(),
+                            child: IconButton(
+                              tooltip: 'Member details',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              iconSize: 18,
+                              icon: const Icon(
+                                Icons.info_outline,
+                                color: Colors.white,
+                              ),
+                              onPressed: () => _showMemberDetail(member),
+                            ),
+                          ),
+                        ),
                         
                         // Selection checkbox (always visible in top-right corner)
                         Positioned(
