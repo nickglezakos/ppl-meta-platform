@@ -144,6 +144,27 @@ class _PeopleProfilePickDialogState extends State<_PeopleProfilePickDialog> {
     });
   }
 
+  void _selectProfile(PresencePeopleProfile profile) {
+    setState(() {
+      _selected = profile;
+      // One choice per submission: picking a row clears create-new.
+      if (_name.text.isNotEmpty) {
+        _name.clear();
+      }
+      _error = null;
+    });
+  }
+
+  void _onCreateNameChanged(String value) {
+    setState(() {
+      // Typing a new name clears the list selection (mutual exclusivity).
+      if (value.trim().isNotEmpty && _selected != null) {
+        _selected = null;
+      }
+      _error = null;
+    });
+  }
+
   Future<void> _submit() async {
     setState(() => _saving = true);
     try {
@@ -152,10 +173,11 @@ class _PeopleProfilePickDialogState extends State<_PeopleProfilePickDialog> {
       if (profile == null && typedName.isEmpty) {
         setState(() {
           _saving = false;
-          _error = 'Pick an existing profile or enter a new name.';
+          _error = 'Select one People row, or enter a new profile name.';
         });
         return;
       }
+      // Prefer the selected row when both somehow exist.
       if (profile == null) {
         final created = await widget.apiClient.createPeopleProfile(name: typedName);
         if (!created.success || created.data == null) {
@@ -167,11 +189,20 @@ class _PeopleProfilePickDialogState extends State<_PeopleProfilePickDialog> {
         }
         profile = created.data;
       }
-      await widget.apiClient.linkMemberToPeopleProfile(
+      final linkResp = await widget.apiClient.linkMemberToPeopleProfile(
         pppUuid: profile!.pppUuid,
         groupId: widget.groupId,
         individualId: widget.individualId,
       );
+      if (!linkResp.success) {
+        if (mounted) {
+          setState(() {
+            _saving = false;
+            _error = linkResp.error ?? 'Failed to link profile';
+          });
+        }
+        return;
+      }
       if (mounted) {
         Navigator.pop(context, profile);
       }
@@ -187,12 +218,17 @@ class _PeopleProfilePickDialogState extends State<_PeopleProfilePickDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final canSubmit = !_saving &&
+        (_selected != null || _name.text.trim().isNotEmpty);
+
     return AlertDialog(
       title: const Text('People Profile'),
       content: SizedBox(
         width: 360,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextField(
               controller: _search,
@@ -204,7 +240,12 @@ class _PeopleProfilePickDialogState extends State<_PeopleProfilePickDialog> {
               ),
               onChanged: (v) => _searchProfiles(v),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+            Text(
+              'Tap one row to select it, then press Link.',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
             if (_loading)
               const Padding(
                 padding: EdgeInsets.all(12),
@@ -212,22 +253,82 @@ class _PeopleProfilePickDialogState extends State<_PeopleProfilePickDialog> {
               )
             else ...[
               if (_profiles.isNotEmpty) ...[
-                Flexible(
-                  child: ListView(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 220),
+                  child: ListView.builder(
                     shrinkWrap: true,
-                    children: _profiles.map((p) {
-                      return ListTile(
-                        dense: true,
-                        title: Text(p.name),
-                        subtitle: p.email != null ? Text(p.email!) : null,
-                        selected: _selected?.pppUuid == p.pppUuid,
-                        trailing: const Icon(Icons.add_link, size: 18),
-                        onTap: () => setState(() => _selected = p),
+                    itemCount: _profiles.length,
+                    itemBuilder: (context, index) {
+                      final p = _profiles[index];
+                      final isSelected = _selected?.pppUuid == p.pppUuid;
+                      return Material(
+                        color: isSelected
+                            ? scheme.primaryContainer
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        child: ListTile(
+                          dense: true,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(
+                              color: isSelected
+                                  ? scheme.primary
+                                  : scheme.outlineVariant,
+                            ),
+                          ),
+                          selected: isSelected,
+                          selectedTileColor: scheme.primaryContainer,
+                          leading: Icon(
+                            isSelected
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                            color: isSelected
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
+                          ),
+                          title: Text(
+                            p.name,
+                            style: TextStyle(
+                              fontWeight:
+                                  isSelected ? FontWeight.w600 : FontWeight.w400,
+                              color: isSelected
+                                  ? scheme.onPrimaryContainer
+                                  : null,
+                            ),
+                          ),
+                          subtitle: p.email != null
+                              ? Text(
+                                  p.email!,
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? scheme.onPrimaryContainer
+                                            .withOpacity(0.8)
+                                        : null,
+                                  ),
+                                )
+                              : null,
+                          trailing: isSelected
+                              ? Icon(Icons.check_circle,
+                                  size: 20, color: scheme.primary)
+                              : null,
+                          onTap: () => _selectProfile(p),
+                        ),
                       );
-                    }).toList(),
+                    },
                   ),
                 ),
-                const Divider(),
+                if (_selected != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Selected: ${_selected!.name}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.primary,
+                    ),
+                  ),
+                ],
+                const Divider(height: 20),
               ] else
                 const Padding(
                   padding: EdgeInsets.all(8),
@@ -242,21 +343,30 @@ class _PeopleProfilePickDialogState extends State<_PeopleProfilePickDialog> {
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
+              onChanged: _onCreateNameChanged,
             ),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                child: Text(_error!,
+                    style: const TextStyle(color: Colors.red, fontSize: 12)),
               ),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         FilledButton(
-          onPressed: _saving ? null : _submit,
+          onPressed: canSubmit ? _submit : null,
           child: _saving
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Text('Link'),
         ),
       ],

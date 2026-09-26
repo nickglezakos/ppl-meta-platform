@@ -51,9 +51,10 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Fixed
 
-- Individual Groups member cards: add a top-left **Member details** (info) icon
-  so operators can open People Profile link/create without relying on a bare
-  card tap or list mode.
+- Individual Groups (`/individual-groups`): member cards show a top-left **link**
+  icon (same height as trash) to open Member details / People profile linking.
+- People Profile picker: tap a People row to **select** it (highlighted); only
+  **Link** submits the link; one profile (or create-new) per submission.
 - Media signage sync: use `DISCOVERY_SERVICE_URL` (`ppl-meta-discovery:8006`)
   instead of hardcoded `localhost:8006` so playlist push can resolve the device
   from inside the media container (lab hotfix → source).

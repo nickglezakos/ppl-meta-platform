@@ -903,26 +903,28 @@ class _IndividualGroupDetailScreenState
                       children: [
                         _buildMemberThumbnail(member.id),
 
-                        // Member details (People Profile link) — top-left
+                        // People-profile link — same row/height as the top-right
+                        // selection control (top: 4), larger hit target.
                         Positioned(
-                          top: 2,
-                          left: 2,
-                          child: Material(
-                            color: Colors.black.withOpacity(0.55),
-                            shape: const CircleBorder(),
-                            child: IconButton(
-                              tooltip: 'Member details',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 32,
-                                minHeight: 32,
+                          top: 4,
+                          left: 4,
+                          child: Tooltip(
+                            message: 'Member details / People profile',
+                            child: Material(
+                              color: Colors.black.withOpacity(0.65),
+                              shape: const CircleBorder(),
+                              child: InkWell(
+                                customBorder: const CircleBorder(),
+                                onTap: () => _showMemberDetail(member),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(6),
+                                  child: Icon(
+                                    Icons.link,
+                                    color: Colors.white,
+                                    size: 28,
+                                  ),
+                                ),
                               ),
-                              iconSize: 18,
-                              icon: const Icon(
-                                Icons.info_outline,
-                                color: Colors.white,
-                              ),
-                              onPressed: () => _showMemberDetail(member),
                             ),
                           ),
                         ),
@@ -933,9 +935,10 @@ class _IndividualGroupDetailScreenState
                           right: 4,
                           child: Container(
                             decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.5),
+                              color: Colors.black.withOpacity(0.65),
                               shape: BoxShape.circle,
                             ),
+                            padding: const EdgeInsets.all(2),
                             child: Icon(
                               isSelected
                                   ? Icons.check_circle
@@ -943,7 +946,7 @@ class _IndividualGroupDetailScreenState
                               color: isSelected
                                   ? Theme.of(context).colorScheme.primary
                                   : Colors.white,
-                              size: 24,
+                              size: 28,
                             ),
                           ),
                         ),

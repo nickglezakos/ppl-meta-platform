@@ -18,6 +18,8 @@ import 'person_objects_detail_screen.dart';
 import '../widgets/individual_groups/create_group_dialog.dart';
 import '../widgets/individual_groups/camera_search_dialog.dart';
 import '../widgets/custom_app_bar.dart';
+import '../widgets/people_profile_picker.dart';
+import '../services/presence_api_client.dart';
 import '../models/cross_video_analysis_models.dart';
 import '../presentation/widgets/common/ux_breakpoints.dart';
 import '../presentation/widgets/common/content_pane.dart';
@@ -778,7 +780,53 @@ class _MembersGridState extends ConsumerState<_MembersGrid> {
       );
     }
   }
-@override
+
+  void _showMemberPeopleProfile(IndividualSummary member) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Member Details'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              member.name ?? _label(member, _members.indexOf(member)),
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'People Profile:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            if (member.mvrPersonUuid != null)
+              PeopleProfilePicker(
+                groupId: widget.groupId,
+                individualId: member.mvrPersonUuid!,
+                apiClient: PresenceApiClient(ref.read(apiClientProvider)),
+                onChanged: () {
+                  _load();
+                },
+              )
+            else
+              const Text(
+                'No MVR UUID available for this member',
+                style: TextStyle(color: Colors.grey),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (_loading) {
       return const Padding(
@@ -849,20 +897,49 @@ class _MembersGridState extends ConsumerState<_MembersGrid> {
                     )
                   else
                     _avatarFallback(scheme),
+                  // People-profile link — same height as trash (top: 6)
+                  Positioned(
+                    top: 6,
+                    left: 6,
+                    child: Tooltip(
+                      message: 'Member details / People profile',
+                      child: Material(
+                        color: Colors.black54,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () => _showMemberPeopleProfile(member),
+                          child: const Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Icon(
+                              Icons.link,
+                              size: 22,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                   Positioned(
                     top: 6,
                     right: 6,
-                    child: InkWell(
-                      onTap: () => _removeMember(member),
-                      child: const DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Padding(
-                          padding: EdgeInsets.all(4),
-                          child: Icon(Icons.delete_outline,
-                              size: 16, color: Colors.white),
+                    child: Tooltip(
+                      message: 'Remove from group',
+                      child: Material(
+                        color: Colors.black54,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () => _removeMember(member),
+                          child: const Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Icon(
+                              Icons.delete_outline,
+                              size: 22,
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
                       ),
                     ),
