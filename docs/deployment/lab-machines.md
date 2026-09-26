@@ -24,14 +24,14 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 
 ## Fleet status (vs GHCR)
 
-**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.83`** (Mode D; last finalized **2026-09-23** after CORS/`10.x` + mobile lease UI Stage 2).  
+**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.83`** (Mode D; last finalized **2026-09-26** after Individual Groups People-link + PPP select-then-link Stage 2).  
 **Rule:** After every **Stage 3** on a named lab, update this table (pin, match state, date, short notes). Do not treat a matching *tag* as current — compare **running container Image ID** (and ideally `main.dart.js` sha256) to the manifest. Tag RepoDigests alone can lie if the container was not recreated.
 
 | Lab ID | Pin | Match GHCR? | Last Stage 3 | Notes |
 |---|---|---|---|---|
 | `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. |
 | `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Prior digests had Gateway URL but not these follow-ups. |
-| `lab-work-dual-64g` | `2.25.83` | **Yes** (frontend `290a7d39…`, media `d4635f9a…`; gateway `b01e6b22…`, discovery `7ced8041…`) | 2026-09-26 | Ubuntu `eyenet-demo` @ `10.171.48.228`; Individual Groups member-details icon + prior media discovery URL / upload-batch. |
+| `lab-work-dual-64g` | `2.25.83` | **Yes** (frontend `f9b2184d…`, media `d4635f9a…`; gateway `b01e6b22…`, discovery `7ced8041…`) | 2026-09-26 | Ubuntu `eyenet-demo` @ `10.171.48.228`; People-link on `/individual-groups` + PPP select-then-link; prior media discovery URL / upload-batch. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
 

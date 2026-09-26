@@ -17,19 +17,20 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-### 2026-09-26 — Individual Groups People-link icon + PPP select-then-link UX
-- **Status:** Pending Stage 1–3 — **lab hotfixed** via Flutter web rebuild + `docker cp` into `pplmeta-ppl-meta-frontend-1` on `lab-work-dual-64g` (2026-09-26). Source updated locally.
-- **Service:** `ppl-meta-frontend`
-- **Where:** Lab container nginx html hotpatched (`/hotpatch.json` → `ppp-select-ux-…` / `individual-groups-link-…`); GHCR `:2.25.83` still older until Stage 2/3.
-- **Files:**
-  - `ppl-meta-frontend/lib/screens/individual_groups_screen.dart` — top-left **link** icon on `/individual-groups` right-pane member cards (same `top: 6` as trash)
-  - `ppl-meta-frontend/lib/widgets/people_profile_picker.dart` — tap People row selects (highlight); **Link** submits the link; one choice per submission
-  - `ppl-meta-frontend/lib/screens/individual_group_detail_screen.dart` — matching link control on detail cards
-- **Summary:** Operators open Member details / People profile from the groups list cards; picker uses select-then-Link (not link-on-row-tap).
+*(none)*
 
 ---
 
 ## Completed
+
+### 2026-09-26 — Individual Groups People-link icon + PPP select-then-link UX
+- **Status:** Completed
+- **VERSION / pin:** `2.25.83` (source `7282168f`)
+- **Stage 1:** `7282168f`
+- **Stage 2:** frontend `f9b2184d…` (tags `2.25.83` / `2.25.83-7282168`) on `lab-work-dual-64g`
+- **Stage 3:** `lab-work-dual-64g` @ `10.171.48.228:3000` — 2026-09-26; compose pull/recreate replaced docker-cp hotfix; running digest matches GHCR
+- **Files:** `individual_groups_screen.dart`, `people_profile_picker.dart`, `individual_group_detail_screen.dart`
+- **Summary:** `/individual-groups` member cards get a top-left link icon (same height as trash); People Profile picker uses select-then-Link (one choice per submission).
 
 ### 2026-09-23 — Media signage sync cannot reach discovery (`localhost:8006`)
 - **Status:** Completed

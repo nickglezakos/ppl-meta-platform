@@ -17,6 +17,10 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
+- GHCR images republished for **2.25.83** (`7282168f`) on `lab-work-dual-64g`:
+  frontend `f9b2184d…` (tags `2.25.83` / `2.25.83-7282168`) — Individual Groups
+  People-link icon + PPP select-then-link UX. **Stage 3** on
+  `lab-work-dual-64g` @ `10.171.48.228` (2026-09-26); docker-cp hotfix replaced.
 - GHCR images republished for **2.25.83** (`fcbca648`) on `lab-work-dual-64g`:
   frontend `290a7d39…` (tags `2.25.83` / `2.25.83-fcbca64`) — Individual Groups
   member-details icon. **Stage 3** on `lab-work-dual-64g` @ `10.171.48.228`
