@@ -44,6 +44,8 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 - Stage 2: rebuild **node**, **presence**, **frontend**; Mode D retag-forward
   remaining services **2.25.83 → 2.25.84**; finalize `release-manifest.yml`.
+- Presence `requirements.txt`: pin `sqlalchemy>=2.0.30,<2.1` so Stage 2 does
+  not pull SQLAlchemy 2.1 (defaults to `psycopg` v3 and crash-loops without it).
 - Prior pin **2.25.83** GHCR republishes (frontend People-link `f9b2184d…`,
   media discovery URL, CORS/`10.x`, etc.) remain under `[2.25.83]` below.
 
