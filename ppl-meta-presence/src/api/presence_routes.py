@@ -15,6 +15,7 @@ from models.presence_models import (
     PresenceBurstUploadRequest,
     PresenceOwnerQrRenderRequest,
     PresenceOwnerQrHitRequest,
+    PresenceScanOwnerQrRequest,
     PresenceQrHitRequest,
     PresenceQrRenderRequest,
     PresenceQrValidateRequest,
@@ -288,6 +289,20 @@ def build_presence_router(service: PresenceService) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"success": True, "data": session.model_dump()}
+
+    @router.post("/mobile/sessions/{session_uuid}/scan-owner-qr")
+    async def scan_owner_qr(
+        session_uuid: str,
+        request: PresenceScanOwnerQrRequest,
+        current_user: dict = Depends(get_current_user),
+    ):
+        if session_uuid not in service.sessions:
+            raise HTTPException(status_code=404, detail="Presence session not found")
+        try:
+            result = await service.scan_owner_qr_from_camera(session_uuid, request, current_user)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"success": True, "data": result}
 
     @router.post("/mobile/sessions/{session_uuid}/bind-resources")
     async def bind_resources(session_uuid: str, request: BindResourcesRequest):

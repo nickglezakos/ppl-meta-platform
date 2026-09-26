@@ -1,17 +1,17 @@
-import 'dart:convert';
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:excel/excel.dart' hide Border;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../core/api/api_client.dart';
+import '../core/config/app_config.dart';
 import '../core/providers/auth_provider.dart';
+import '../core/services/auth_service.dart';
 import '../models/api_response.dart';
 import '../core/theme/app_theme.dart';
 import '../models/presence_models.dart';
@@ -848,134 +848,108 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   }
 
   Future<void> _openOwnerQrScanner() async {
-    final session = await _ensureExecutionSession(sessionMode: 'qr_only');
-    if (session == null || !mounted) {
-      return;
-    }
-
-    final scannedText = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => const _PresenceQrScannerSheet(),
-    );
-    if (scannedText == null || scannedText.trim().isEmpty) {
-      return;
-    }
-    await _consumeScannedQr(scannedText.trim(), sessionMode: 'qr_only', requireOwnerQr: true);
+    await _runPlatformOwnerQrScan(sessionMode: 'qr_only');
   }
 
   Future<void> _openOwnerQrVideoScanner() async {
-    final session = await _ensureExecutionSession(sessionMode: 'qr_plus_camera');
-    if (session == null || !mounted) {
-      return;
-    }
-
-    final scannedText = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => const _PresenceQrScannerSheet(),
-    );
-    if (scannedText == null || scannedText.trim().isEmpty) {
-      return;
-    }
-    await _consumeScannedQr(scannedText.trim(), sessionMode: 'qr_plus_camera', requireOwnerQr: true);
+    await _runPlatformOwnerQrScan(sessionMode: 'qr_plus_camera');
   }
 
-  Future<void> _consumeScannedQr(
-    String rawValue, {
-    String sessionMode = 'qr_only',
-    bool requireOwnerQr = false,
-  }) async {
+  String? _reservedPresenceCameraId() {
+    final fromContext = _installationContext?.reservedCameraUuid;
+    if (fromContext != null && fromContext.isNotEmpty) {
+      return fromContext;
+    }
+    for (final camera in _cameras) {
+      if (camera.reservedForPresence) {
+        return camera.deviceId;
+      }
+    }
+    return null;
+  }
+
+  PresenceCameraOption? _reservedPresenceCamera() {
+    final cameraId = _reservedPresenceCameraId();
+    if (cameraId == null) {
+      return null;
+    }
+    for (final camera in _cameras) {
+      if (camera.deviceId == cameraId) {
+        return camera;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _runPlatformOwnerQrScan({required String sessionMode}) async {
     final installationUuid = _installationContext?.installationUuid;
-    final deviceReference = _deviceReference;
-    if (installationUuid == null || installationUuid.isEmpty || deviceReference.isEmpty) {
+    if (installationUuid == null || installationUuid.isEmpty) {
       return;
     }
 
-    setState(() {
-      _isSubmittingAdminAction = true;
-    });
-
-    Map<String, dynamic>? payload;
-    try {
-      final decoded = jsonDecode(rawValue);
-      if (decoded is Map<String, dynamic>) {
-        payload = decoded;
-      }
-    } catch (_) {
-      payload = null;
-    }
-
-    final activeSession = await _ensureExecutionSession(sessionMode: sessionMode);
-    if (activeSession == null) {
+    final cameraId = _reservedPresenceCameraId();
+    if (cameraId == null || cameraId.isEmpty) {
       if (!mounted) {
         return;
       }
-      setState(() {
-        _isSubmittingAdminAction = false;
-      });
-      return;
-    }
-
-    ApiResponse<PresenceLiveSession> response;
-    final isOwnerQrPayload = payload != null && payload['qr_type'] == 'owner_identity';
-    if (requireOwnerQr && !isOwnerQrPayload) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _isSubmittingAdminAction = false;
-      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Scan the owner QR from the mobile app for this action.'),
+          content: Text('Reserve a platform camera in Actions before scanning owner QR.'),
           backgroundColor: Colors.red,
         ),
       );
       return;
     }
 
-    if (isOwnerQrPayload) {
-      response = await _apiClient.submitOwnerQrHit(
-        sessionUuid: activeSession.sessionUuid,
-        qrPayload: payload,
-        installationUuid: installationUuid,
-      );
-    } else {
-      final qrToken = payload != null && payload['qr_token'] != null ? payload['qr_token'].toString() : rawValue;
-      response = await _apiClient.submitQrHit(
-        sessionUuid: activeSession.sessionUuid,
-        qrToken: qrToken,
-        installationUuid: installationUuid,
-        qrPayload: payload,
-      );
-    }
-
-    if (!mounted) {
+    final session = await _ensureExecutionSession(sessionMode: sessionMode);
+    if (session == null || !mounted) {
       return;
     }
 
-    setState(() {
-      _isSubmittingAdminAction = false;
-      _activeSession = response.data ?? activeSession;
-    });
+    final reservedCamera = _reservedPresenceCamera();
+    final scanResult = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _PresencePlatformQrScanSheet(
+        apiClient: _apiClient,
+        sessionUuid: session.sessionUuid,
+        installationUuid: installationUuid,
+        cameraDeviceId: cameraId,
+        cameraLabel: reservedCamera == null
+            ? cameraId
+            : (reservedCamera.name.isEmpty ? reservedCamera.deviceId : reservedCamera.name),
+        authService: ref.read(authServiceProvider),
+      ),
+    );
+
+    if (!mounted || scanResult == null) {
+      return;
+    }
+
+    final found = scanResult['found'] == true;
+    final sessionJson = scanResult['session'];
+    if (sessionJson is Map<String, dynamic>) {
+      setState(() {
+        _activeSession = PresenceLiveSession.fromJson(sessionJson);
+      });
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          response.success
+          found
               ? (sessionMode == 'qr_plus_camera'
-                  ? 'Scanned QR submitted. Camera verification is starting.'
-                  : requireOwnerQr
-                    ? 'Owner QR submitted.'
-                  : 'Scanned QR submitted.')
-              : (response.error ?? 'Failed to submit scanned QR'),
+                  ? 'Owner QR scanned from platform camera. Camera verification is starting.'
+                  : 'Owner QR scanned from platform camera.')
+              : (scanResult['reason']?.toString() == 'camera_unbound'
+                  ? 'No reserved presence camera is available.'
+                  : 'No owner QR detected on the platform camera before timeout.'),
         ),
-        backgroundColor: response.success ? null : Colors.red,
+        backgroundColor: found ? null : Colors.red,
       ),
     );
 
-    if (response.success) {
+    if (found) {
       if (sessionMode == 'qr_plus_camera') {
         _setAutoRefreshExecution(true);
       }
@@ -2851,7 +2825,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Operator controls for reservation, default policy, and group bootstrapping.',
+                      'Operator controls for match group selection and installation policy.',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
                     ),
                   ],
@@ -2879,42 +2853,6 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
             ),
             const SizedBox(height: 16),
           ],
-          const SizedBox(height: 20),
-          Text(
-            'Available Cameras',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Reserving a camera also auto-binds its linked collection when the backend can resolve one.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[400]),
-          ),
-          const SizedBox(height: 12),
-          if (_cameras.isEmpty)
-            Text(
-              'No cameras available from the presence backend.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            )
-          else
-            ..._cameras.map((camera) => Card(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  child: ListTile(
-                    title: Text(camera.name.isEmpty ? camera.deviceId : camera.name),
-                    subtitle: Text('${camera.cameraType} • ${camera.status}'),
-                    trailing: camera.reservedForPresence
-                        ? (camera.reservedResourceUuid != null && camera.reservedResourceUuid!.isNotEmpty
-                            ? TextButton(
-                                onPressed: _isSubmittingAdminAction ? null : () => _unreserveCamera(camera),
-                                child: const Text('Unreserve'),
-                              )
-                            : const Text('Reserved'))
-                        : TextButton(
-                            onPressed: _isSubmittingAdminAction ? null : () => _reserveCamera(camera),
-                            child: const Text('Reserve'),
-                          ),
-                  ),
-                )),
-          const SizedBox(height: 20),
           Text(
             'Presence Match Groups',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
@@ -2958,10 +2896,54 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
 
   Widget _buildExecutionSection(BuildContext context) {
     final outlinedBorderColor = Theme.of(context).colorScheme.outline.withValues(alpha: 0.5);
+    final reservedCamera = _reservedPresenceCamera();
+    final reservedCameraId = _reservedPresenceCameraId();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Text(
+          'Presence Camera',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Assign one platform camera (USB, RTSP, or edge) for Scan Owner QR, QR + Video, and Video Match. QR is decoded on that camera by the cameras service — not the browser.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[400]),
+        ),
+        const SizedBox(height: 12),
+        if (reservedCameraId != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _TraceChip(
+              label: 'Assigned ${reservedCamera == null ? reservedCameraId : (reservedCamera.name.isEmpty ? reservedCamera.deviceId : reservedCamera.name)}',
+            ),
+          ),
+        if (_cameras.isEmpty)
+          Text(
+            'No cameras available from the presence backend.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          )
+        else
+          ..._cameras.map((camera) => Card(
+                margin: const EdgeInsets.only(bottom: 10),
+                child: ListTile(
+                  title: Text(camera.name.isEmpty ? camera.deviceId : camera.name),
+                  subtitle: Text('${camera.cameraType} • ${camera.status}'),
+                  trailing: camera.reservedForPresence
+                      ? (camera.reservedResourceUuid != null && camera.reservedResourceUuid!.isNotEmpty
+                          ? TextButton(
+                              onPressed: _isSubmittingAdminAction ? null : () => _unreserveCamera(camera),
+                              child: const Text('Unreserve'),
+                            )
+                          : const Text('Reserved'))
+                      : TextButton(
+                          onPressed: _isSubmittingAdminAction ? null : () => _reserveCamera(camera),
+                          child: const Text('Reserve'),
+                        ),
+                ),
+              )),
+        const SizedBox(height: 16),
         if (_isSubmittingAdminAction)
           const Padding(
             padding: EdgeInsets.only(bottom: 12),
@@ -3645,310 +3627,108 @@ class _ManagePresenceGroupDialog extends StatefulWidget {
   State<_ManagePresenceGroupDialog> createState() => _ManagePresenceGroupDialogState();
 }
 
-class _PresenceQrScannerSheet extends StatefulWidget {
-  const _PresenceQrScannerSheet();
+
+class _PresencePlatformQrScanSheet extends StatefulWidget {
+  final PresenceApiClient apiClient;
+  final String sessionUuid;
+  final String installationUuid;
+  final String cameraDeviceId;
+  final String cameraLabel;
+  final AuthService authService;
+
+  const _PresencePlatformQrScanSheet({
+    required this.apiClient,
+    required this.sessionUuid,
+    required this.installationUuid,
+    required this.cameraDeviceId,
+    required this.cameraLabel,
+    required this.authService,
+  });
 
   @override
-  State<_PresenceQrScannerSheet> createState() => _PresenceQrScannerSheetState();
+  State<_PresencePlatformQrScanSheet> createState() => _PresencePlatformQrScanSheetState();
 }
 
-class _PresenceQrScannerSheetState extends State<_PresenceQrScannerSheet> {
-  static final bool _useIosWebScannerFlow =
-      kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+class _PresencePlatformQrScanSheetState extends State<_PresencePlatformQrScanSheet> {
+  static const double _scanTimeoutSeconds = 30;
 
-  final TextEditingController _controller = TextEditingController();
-  final MobileScannerController _scannerController = MobileScannerController(
-    autoStart: !_useIosWebScannerFlow,
-    facing: _useIosWebScannerFlow ? CameraFacing.front : CameraFacing.back,
-    formats: const [BarcodeFormat.qrCode],
-  );
-  bool _hasDetectedCode = false;
-  bool _isStartingScanner = false;
-  String? _scannerErrorMessage;
-  Future<void>? _pendingScannerStart;
-  CameraFacing _selectedCameraFacing = CameraFacing.front;
+  bool _isScanning = false;
+  String? _statusMessage;
+  String? _previewUrl;
+  bool _cancelled = false;
 
   @override
   void initState() {
     super.initState();
-    if (_useIosWebScannerFlow) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_startScanner());
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_preparePreview());
+      unawaited(_startScan());
+    });
   }
 
   @override
   void dispose() {
-    _scannerController.dispose();
-    _controller.dispose();
+    _cancelled = true;
     super.dispose();
   }
 
-  Future<void> _startScanner({bool force = false}) async {
-    if (_pendingScannerStart != null) {
-      await _pendingScannerStart;
-      return;
-    }
-
-    final pendingStart = _startScannerInternal(force: force);
-    _pendingScannerStart = pendingStart;
-
+  Future<void> _preparePreview() async {
     try {
-      await pendingStart;
-    } finally {
-      if (identical(_pendingScannerStart, pendingStart)) {
-        _pendingScannerStart = null;
-      }
-    }
-  }
-
-  Future<void> _startScannerInternal({bool force = false}) async {
-    if (_hasDetectedCode || _isStartingScanner) {
-      return;
-    }
-
-    final state = _scannerController.value;
-    if (!force && (state.isStarting || state.isRunning)) {
-      return;
-    }
-
-    setState(() {
-      _isStartingScanner = true;
-      _scannerErrorMessage = null;
-    });
-
-    try {
-      await WidgetsBinding.instance.endOfFrame;
-
-      if (!mounted) {
+      final token = await widget.authService.getToken();
+      if (!mounted || token == null || token.isEmpty) {
         return;
       }
-
-      final latestState = _scannerController.value;
-      if (!force && (latestState.isStarting || latestState.isRunning)) {
-        return;
-      }
-
-      await _scannerController.start(cameraDirection: _selectedCameraFacing);
-    } on MobileScannerException catch (error) {
-      if (error.errorCode == MobileScannerErrorCode.controllerInitializing) {
-        return;
-      }
-      if (!mounted) {
-        return;
-      }
+      final base = AppConfig.instance.apiBaseUrl;
       setState(() {
-        _scannerErrorMessage = _scannerMessageFromException(error);
+        _previewUrl = '$base/api/v1/streaming/${widget.cameraDeviceId}/video?token=$token';
       });
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _scannerErrorMessage = 'Unable to start the camera scanner on this device.';
-      });
-    } finally {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _isStartingScanner = false;
-      });
+      // Preview is optional aiming UX; scan still runs without it.
     }
   }
 
-  Future<void> _switchCamera() async {
-    if (!_useIosWebScannerFlow) {
+  Future<void> _startScan() async {
+    if (_isScanning) {
       return;
     }
-
-    final nextFacing = _selectedCameraFacing == CameraFacing.front
-        ? CameraFacing.back
-        : CameraFacing.front;
-
     setState(() {
-      _selectedCameraFacing = nextFacing;
-      _scannerErrorMessage = null;
+      _isScanning = true;
+      _statusMessage = 'Scanning for owner QR on ${widget.cameraLabel}…';
     });
 
-    if (_scannerController.value.isRunning) {
-      await _scannerController.stop();
-    }
+    final response = await widget.apiClient.scanOwnerQr(
+      sessionUuid: widget.sessionUuid,
+      installationUuid: widget.installationUuid,
+      timeoutSeconds: _scanTimeoutSeconds,
+    );
 
-    await _startScanner(force: true);
-  }
-
-  String _cameraLabel() {
-    return _selectedCameraFacing == CameraFacing.front ? 'Front Camera' : 'Back Camera';
-  }
-
-  String _scannerMessageFromException(MobileScannerException error) {
-    return error.errorDetails?.message ?? 'Unable to start the camera scanner on this device.';
-  }
-
-  void _handleDetect(BarcodeCapture capture) {
-    if (_hasDetectedCode) {
+    if (!mounted || _cancelled) {
       return;
     }
-    for (final barcode in capture.barcodes) {
-      final value = barcode.rawValue;
-      if (value != null && value.trim().isNotEmpty) {
-        _submitValue(value);
-        return;
-      }
-    }
-  }
 
-  Widget _buildDefaultScannerContent() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Web QR Scanner', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        const Text('Scan from the device camera when available, or paste scanned QR data manually. This accepts raw station tokens and full JSON payloads such as owner identity QR data.'),
-        const SizedBox(height: 12),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: SizedBox(
-            height: 280,
-            child: MobileScanner(
-              controller: _scannerController,
-              onDetect: _handleDetect,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+    setState(() {
+      _isScanning = false;
+    });
 
-  Widget _buildIosScannerWidget() {
-    return ValueListenableBuilder<MobileScannerState>(
-      valueListenable: _scannerController,
-      builder: (context, state, _) {
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            MobileScanner(
-              controller: _scannerController,
-              placeholderBuilder: (_) => const ColoredBox(color: Colors.black),
-              errorBuilder: (context, error) {
-                return ColoredBox(
-                  color: Colors.black,
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        _scannerMessageFromException(error),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ),
-                );
-              },
-              onDetect: _handleDetect,
-            ),
-            _buildScannerOverlay(state),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildIosScannerContent() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Web QR Scanner', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        const Text('Scan from the device camera when available, or paste scanned QR data manually. This accepts raw station tokens and full JSON payloads such as owner identity QR data.'),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Selected camera: ${_cameraLabel()} (both cameras open directly in QR scanning mode)',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-            TextButton.icon(
-              onPressed: _isStartingScanner ? null : _switchCamera,
-              icon: const Icon(Icons.cameraswitch_outlined),
-              label: const Text('Switch Camera'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: SizedBox(
-            height: 280,
-            child: _buildIosScannerWidget(),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildScannerOverlay(MobileScannerState state) {
-    final errorMessage = _scannerErrorMessage ?? state.error?.errorDetails?.message;
-    if (!_useIosWebScannerFlow && errorMessage == null) {
-      return const SizedBox.shrink();
-    }
-
-    if (state.isRunning) {
-      return const SizedBox.shrink();
-    }
-
-    final description = errorMessage == null
-        ? 'Starting ${_cameraLabel().toLowerCase()} in QR scanning mode.'
-        : 'Camera access did not start. Check the browser camera permission for this site, then retry.';
-
-    return Positioned.fill(
-      child: ColoredBox(
-        color: Colors.black.withValues(alpha: 0.72),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.qr_code_scanner, color: Colors.white, size: 40),
-              const SizedBox(height: 12),
-              Text(
-                errorMessage ?? 'Camera preview is waiting to start.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                description,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70),
-              ),
-              if (errorMessage != null) ...[
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: _isStartingScanner ? null : () => _startScanner(force: true),
-                  child: Text(_isStartingScanner ? 'Starting camera...' : 'Retry Camera'),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _submitValue(String value) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty || _hasDetectedCode) {
+    if (!response.success || response.data == null) {
+      setState(() {
+        _statusMessage = response.error ?? 'Platform QR scan failed.';
+      });
       return;
     }
-    _hasDetectedCode = true;
-    Navigator.of(context).pop(trimmed);
+
+    final data = response.data!;
+    if (data['found'] == true) {
+      Navigator.of(context).pop(data);
+      return;
+    }
+
+    final reason = data['reason']?.toString() ?? 'timeout';
+    setState(() {
+      _statusMessage = reason == 'camera_unbound'
+          ? 'No reserved presence camera is bound to this session.'
+          : 'No owner QR detected before timeout. Hold the QR in view of the platform camera and retry.';
+    });
   }
 
   @override
@@ -3961,32 +3741,74 @@ class _PresenceQrScannerSheetState extends State<_PresenceQrScannerSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (_useIosWebScannerFlow)
-              _buildIosScannerContent()
-            else
-              _buildDefaultScannerContent(),
+            Text(
+              'Platform Camera QR Scan',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Decoding runs on the reserved platform camera (${widget.cameraLabel}). Aim the owner QR at that camera — the browser camera is not used.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _controller,
-              minLines: 4,
-              maxLines: 10,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Manual QR Data',
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                height: 240,
+                width: double.infinity,
+                child: ColoredBox(
+                  color: Colors.black,
+                  child: _previewUrl == null
+                      ? const Center(
+                          child: Text(
+                            'Preview unavailable',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        )
+                      : Image.network(
+                          _previewUrl!,
+                          fit: BoxFit.contain,
+                          gaplessPlayback: true,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Text(
+                                  'Live preview could not start. Scanning still runs on the platform camera.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
               ),
             ),
             const SizedBox(height: 12),
+            if (_isScanning)
+              const LinearProgressIndicator()
+            else
+              const SizedBox(height: 4),
+            const SizedBox(height: 12),
+            Text(
+              _statusMessage ?? 'Ready',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: _isScanning
+                      ? null
+                      : () => Navigator.of(context).pop(),
                   child: const Text('Cancel'),
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
-                  onPressed: () => _submitValue(_controller.text),
-                  child: const Text('Submit'),
+                  onPressed: _isScanning ? null : _startScan,
+                  child: Text(_isScanning ? 'Scanning…' : 'Retry Scan'),
                 ),
               ],
             ),

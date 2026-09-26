@@ -50,6 +50,18 @@ class _FakeRepository:
     def load_resources(self, _resource_type: str):
         return {}
 
+    def load_people_profiles(self):
+        return {}
+
+    def list_people_profile_links(self):
+        return []
+
+    def save_people_profile(self, profile):
+        return None
+
+    def save_people_profile_link(self, link):
+        return None
+
     def save_profile(self, profile):
         self.saved_profiles.append(profile)
 
@@ -126,14 +138,6 @@ class _FakePlatformClients:
         self.calls.append(("start", camera_id))
         return {"session_uuid": "restart-session"}
 
-
-def test_parse_filter_datetime_normalizes_utc_suffix_to_naive_datetime() -> None:
-    parsed = _parse_filter_datetime("2026-06-02T23:59:59.000Z")
-
-    assert parsed == datetime(2026, 6, 2, 23, 59, 59)
-    assert parsed is not None
-    assert parsed.tzinfo is None
-
     async def connect_camera(self, camera_id: str):
         self.calls.append(("connect", camera_id))
         return {"status": "connected"}
@@ -145,6 +149,10 @@ def test_parse_filter_datetime_normalizes_utc_suffix_to_naive_datetime() -> None
     async def disconnect_camera(self, camera_id: str):
         self.calls.append(("disconnect", camera_id))
         return {"status": "disconnected"}
+
+    async def scan_qr_from_camera(self, camera_id: str, *, timeout_seconds: float = 30):
+        self.calls.append(("scan_qr", camera_id, timeout_seconds))
+        return {"found": False, "reason": "timeout", "device_id": camera_id}
 
     async def list_triggers(self, token: str):
         self.calls.append(("list_triggers", token))
@@ -196,6 +204,22 @@ def test_parse_filter_datetime_normalizes_utc_suffix_to_naive_datetime() -> None
     async def create_audit_log(self, token: str, payload):
         self.calls.append(("create_audit_log", token, payload))
         return {"log_uuid": "audit-log-001"}
+
+    async def create_association_audit_log(self, event_data):
+        self.calls.append(("association_audit", event_data))
+        return {"log_uuid": "assoc-audit-001"}
+
+    async def list_users_for_association(self, token: str | None = None):
+        self.calls.append(("list_users_for_association", token))
+        return []
+
+
+def test_parse_filter_datetime_normalizes_utc_suffix_to_naive_datetime() -> None:
+    parsed = _parse_filter_datetime("2026-06-02T23:59:59.000Z")
+
+    assert parsed == datetime(2026, 6, 2, 23, 59, 59)
+    assert parsed is not None
+    assert parsed.tzinfo is None
 
 
 def _build_service(monkeypatch: pytest.MonkeyPatch, platform_clients: _FakePlatformClients):
@@ -727,7 +751,7 @@ async def test_advance_live_detection_cleans_up_camera_after_retry_exhaustion(mo
     assert session.decision == PresenceDecisionState.FAILED
     assert attempt.instant_detection_status == "results_timeout"
     assert ("stop", camera_id) in platform_clients.calls
-    assert ("disconnect", camera_id) in platform_clients.calls
+    assert ("disconnect", camera_id) not in platform_clients.calls
 
 
 @pytest.mark.asyncio
@@ -975,4 +999,4 @@ async def test_get_result_grants_after_fresh_trigger_backed_match(monkeypatch: p
     assert result.external_assets.trigger_uuid == "trigger-uuid"
     assert service.sessions[session.session_uuid].policy_source == "platform_trigger"
     assert ("stop", camera_id) in platform_clients.calls
-    assert ("disconnect", camera_id) in platform_clients.calls
+    assert ("disconnect", camera_id) not in platform_clients.calls

@@ -30,6 +30,11 @@ from src.security.auth import (
     require_view_cameras,
 )
 from src.services.camera_service_queue import get_camera_service
+from src.services.qr_scan import (
+    DEFAULT_TIMEOUT_SECONDS,
+    MAX_TIMEOUT_SECONDS,
+    scan_qr_from_camera,
+)
 from src.services.session_auth import session_manager
 from src.services.session_aware_face_detector import session_aware_face_detector
 from src.services.session_statistics_broadcaster import statistics_broadcaster
@@ -37,6 +42,10 @@ from src.services.streaming_session_manager import streaming_session_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class ScanQrRequest(BaseModel):
+    timeout_seconds: Optional[float] = DEFAULT_TIMEOUT_SECONDS
 
 _ASSIGNED_MODEL_KEYS = (
     "assigned_model_id",
@@ -744,6 +753,48 @@ async def connect_camera(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to connect to camera",
         )
+
+
+@router.post("/{device_id}/scan-qr", dependencies=[Depends(require_connect_camera)])
+async def scan_qr(
+    device_id: str,
+    request: Optional[ScanQrRequest] = None,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """
+    Decode a QR code from the shared camera frame buffer.
+
+    Connects the camera worker if needed, polls frames until a QR is found or
+    timeout_seconds elapses, and leaves the camera connected afterward.
+    """
+    camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera {device_id} not found",
+        )
+
+    body = request or ScanQrRequest()
+    timeout_seconds = body.timeout_seconds
+    if timeout_seconds is not None and timeout_seconds > MAX_TIMEOUT_SECONDS:
+        timeout_seconds = MAX_TIMEOUT_SECONDS
+
+    logger.info(
+        "User %s started QR scan on camera %s (timeout=%s)",
+        current_user.get("sub"),
+        device_id,
+        timeout_seconds,
+    )
+    try:
+        result = await scan_qr_from_camera(device_id, timeout_seconds=timeout_seconds)
+    except Exception as e:
+        logger.error("QR scan failed for camera %s: %s", device_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to scan QR from camera",
+        ) from e
+    return result
 
 
 @router.post("/{device_id}/disconnect", dependencies=[Depends(require_connect_camera)])

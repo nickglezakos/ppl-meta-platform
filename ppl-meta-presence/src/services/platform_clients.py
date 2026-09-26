@@ -194,6 +194,21 @@ class PlatformClients:
         response.raise_for_status()
         return response.json()
 
+    async def scan_qr_from_camera(
+        self,
+        camera_id: str,
+        *,
+        timeout_seconds: float = 30,
+    ) -> Dict[str, Any]:
+        response = await self._http_client.post(
+            f"{self.cameras_url}/api/v1/cameras/{camera_id}/scan-qr",
+            headers=self._camera_service_headers(),
+            json={"timeout_seconds": timeout_seconds},
+            timeout=httpx.Timeout(max(60.0, float(timeout_seconds) + 15.0)),
+        )
+        response.raise_for_status()
+        return response.json()
+
     def _camera_service_headers(self) -> Dict[str, str]:
         if not config.SERVICE_SECRET:
             raise RuntimeError("Presence service is missing SERVICE_SECRET for camera lifecycle calls")

@@ -367,6 +367,31 @@ class PresenceApiClient {
     }
   }
 
+  /// Decode owner QR from the reserved platform camera (cameras-service scan-qr).
+  Future<ApiResponse<Map<String, dynamic>>> scanOwnerQr({
+    required String sessionUuid,
+    required String installationUuid,
+    double timeoutSeconds = 30,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/presence/mobile/sessions/$sessionUuid/scan-owner-qr',
+        data: {
+          'installation_uuid': installationUuid,
+          'timeout_seconds': timeoutSeconds,
+        },
+        // Scan blocks until QR found or timeout; leave headroom for HTTP.
+        options: Options(receiveTimeout: Duration(seconds: (timeoutSeconds + 20).ceil())),
+      );
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(Map<String, dynamic>.from(data as Map));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
   Future<ApiResponse<PresenceInstallationContext>> getInstallationContext() async {
     try {
       final response = await _apiClient.get('/api/v1/presence/installations/current');

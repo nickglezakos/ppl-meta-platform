@@ -17,7 +17,23 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-*(none yet for post-2.25.84)*
+*(none yet for post-2.25.85)*
+
+---
+
+## [2.25.85] — 2026-09-26
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.84 → 2.25.85**.
+- Presence Actions: assign the reserved platform camera here; Settings only keeps match-group reserve.
+- Presence **Scan Owner QR** / **Scan Owner QR + Video** decode QR from the assigned platform camera via cameras `scan-qr` (no browser MobileScanner).
+- Presence detection cleanup stops instant detection only and no longer disconnects shared USB/RTSP workers.
+
+### Added
+
+- Cameras: `POST /api/v1/cameras/{device_id}/scan-qr` (OpenCV QR on shared frame buffer).
+- Presence: `POST /api/v1/presence/mobile/sessions/{session_uuid}/scan-owner-qr`.
 
 ---
 

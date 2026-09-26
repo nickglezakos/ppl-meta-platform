@@ -974,6 +974,42 @@ Validation rules:
 - validation must not depend on a live call to the online authority service
 - any licence-related fields present in the QR are descriptive references only and do not themselves resolve entitlement approval
 
+## Scan Owner QR From Platform Camera
+
+```text
+POST /api/v1/presence/mobile/sessions/{session_uuid}/scan-owner-qr
+```
+
+Purpose:
+
+- decode an owner identity QR from the session's resolved / reserved **platform** camera
+- Presence calls cameras `POST /api/v1/cameras/{device_id}/scan-qr` (OpenCV on the shared frame buffer)
+- on success, applies the same owner-QR hit completion path as `POST .../owner-qr-hit`
+- does **not** use the browser/webcam client scanner
+
+Request body:
+
+```json
+{
+  "installation_uuid": "inst_123",
+  "timeout_seconds": 30
+}
+```
+
+Response `data` includes `found`, optional `reason` (`camera_unbound`, `timeout`, `scan_failed`, …), `camera_id`, and the updated `session` when found.
+
+Cameras companion endpoint (service auth):
+
+```text
+POST /api/v1/cameras/{device_id}/scan-qr
+```
+
+```json
+{ "timeout_seconds": 30 }
+```
+
+Returns `{ "found": true, "text": "..." }` or `{ "found": false, "reason": "timeout" }`. Leaves the camera worker connected afterward.
+
 ---
 
 ## Analytics Endpoints

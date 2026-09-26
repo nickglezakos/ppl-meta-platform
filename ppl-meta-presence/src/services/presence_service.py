@@ -39,6 +39,7 @@ from models.presence_models import (
     PresenceQrHitRequest,
     PresenceOwnerQrRenderRequest,
     PresenceOwnerQrHitRequest,
+    PresenceScanOwnerQrRequest,
     PresenceQrRenderRequest,
     PresenceResource,
     PresenceResult,
@@ -1474,6 +1475,90 @@ class PresenceService:
             await self._grant_qr_check_in(session, current_user)
         return session
 
+    async def scan_owner_qr_from_camera(
+        self,
+        session_uuid: str,
+        request: PresenceScanOwnerQrRequest,
+        current_user: dict,
+    ) -> dict:
+        session = self.sessions.get(session_uuid)
+        if not session:
+            raise ValueError("Presence session not found")
+        self._apply_session_limits(session)
+        if session.status == PresenceSessionStatus.FAILED:
+            raise ValueError(self._human_reason_for_code(session.failure_reason_code))
+
+        camera_id = session.resolved_camera_uuid or self._get_default_camera_id()
+        if not camera_id:
+            return {
+                "found": False,
+                "reason": "camera_unbound",
+                "session": session.model_dump(),
+            }
+
+        session.resolved_camera_uuid = camera_id
+        session.updated_at = datetime.utcnow()
+        self.repository.save_session(session)
+
+        timeout_seconds = float(request.timeout_seconds or 30)
+        if timeout_seconds <= 0:
+            timeout_seconds = 30.0
+        timeout_seconds = min(timeout_seconds, 60.0)
+
+        try:
+            await self.platform_clients.connect_camera(camera_id)
+            scan_result = await self.platform_clients.scan_qr_from_camera(
+                camera_id,
+                timeout_seconds=timeout_seconds,
+            )
+        except httpx.HTTPError as exc:
+            logger.warning("Platform QR scan failed for camera %s: %s", camera_id, exc)
+            return {
+                "found": False,
+                "reason": "scan_failed",
+                "detail": str(exc),
+                "camera_id": camera_id,
+                "session": session.model_dump(),
+            }
+
+        if not scan_result.get("found"):
+            return {
+                "found": False,
+                "reason": scan_result.get("reason") or "timeout",
+                "camera_id": camera_id,
+                "timeout_seconds": scan_result.get("timeout_seconds", timeout_seconds),
+                "session": session.model_dump(),
+            }
+
+        raw_text = str(scan_result.get("text") or "").strip()
+        if not raw_text:
+            return {
+                "found": False,
+                "reason": "empty_payload",
+                "camera_id": camera_id,
+                "session": session.model_dump(),
+            }
+
+        try:
+            payload = json.loads(raw_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Scanned QR is not valid JSON owner identity payload") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("Scanned QR is not an owner identity QR")
+
+        hit_request = PresenceOwnerQrHitRequest(
+            qr_payload=payload,
+            installation_uuid=request.installation_uuid,
+            scanned_at=datetime.utcnow(),
+        )
+        session = await self.owner_qr_hit_complete(session_uuid, hit_request, current_user)
+        return {
+            "found": True,
+            "camera_id": camera_id,
+            "qr_payload": payload,
+            "session": session.model_dump(),
+        }
+
     def bind_resources(self, session_uuid: str, request: BindResourcesRequest) -> PresenceSession:
         session = self.sessions[session_uuid]
         camera_resource = self._find_reserved_resource(self.cameras, request.camera_uuid)
@@ -1928,30 +2013,20 @@ class PresenceService:
         self.repository.save_session(session)
 
     async def _cleanup_detection_camera(self, camera_id: str) -> None:
+        """Stop Presence-owned instant detection only; leave shared USB/RTSP workers up."""
         try:
             await self.platform_clients.stop_instant_detection(camera_id)
         except httpx.HTTPError as exc:
             logger.warning("Failed to stop instant detection for %s during cleanup: %s", camera_id, exc)
 
-        # Do not call full Disconnect for mobile — that revokes the upload lease /
-        # frame hold and kills the phone stream mid video-only grant. USB/RTSP
-        # workers can still be torn down safely.
-        try:
-            camera_meta = None
-            for resource in self.cameras.values():
-                if resource.platform_resource_uuid == camera_id:
-                    camera_meta = resource.metadata or {}
-                    break
-            camera_type = str((camera_meta or {}).get("camera_type") or "").upper()
-            if camera_type == "MOBILE":
-                logger.info(
-                    "Skipping disconnect for mobile camera %s after presence detection cleanup",
-                    camera_id,
-                )
-                return
-            await self.platform_clients.disconnect_camera(camera_id)
-        except (httpx.HTTPError, RuntimeError) as exc:
-            logger.warning("Failed to disconnect camera %s during cleanup: %s", camera_id, exc)
+        # Do not disconnect the camera here. USB/RTSP workers are shared with live
+        # preview, triggers, and subsequent Presence Actions. MOBILE disconnect
+        # would also revoke the phone upload lease — never call disconnect from
+        # Actions cleanup.
+        logger.info(
+            "Presence detection cleanup stopped instant detection for %s without disconnect",
+            camera_id,
+        )
 
     async def _ensure_presence_automation_assets(self, session: PresenceSession, current_user: dict) -> None:
         token = current_user.get("token")

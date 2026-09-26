@@ -224,6 +224,11 @@ class PresenceOwnerQrHitRequest(BaseModel):
     scanned_at: datetime
 
 
+class PresenceScanOwnerQrRequest(BaseModel):
+    installation_uuid: str
+    timeout_seconds: float = 30
+
+
 class BindResourcesRequest(BaseModel):
     camera_uuid: str
     collection_uuid: str
