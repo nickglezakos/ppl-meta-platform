@@ -10,4 +10,4 @@ ADVERTISE_HOST=<lan-ip> bash deployment/ubuntu/install-eyenet-ubuntu.sh
 **Release notes:** [`CHANGELOG.md`](../../CHANGELOG.md)  
 **Tray:** after stack up, downloads `eyenet-tray-linux-amd64-${VERSION}.tar.gz` from GitHub Releases `v${VERSION}` (soft-fail if missing). See [`deployment/tray/`](../tray/).
 
-Pin: root `VERSION` / `RELEASE_TAG` (today `2.25.83`).
+Pin: root `VERSION` / `RELEASE_TAG` (today `2.25.84`).

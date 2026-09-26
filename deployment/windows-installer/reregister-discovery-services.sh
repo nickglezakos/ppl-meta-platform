@@ -36,7 +36,7 @@ register_from_inside_discovery() {
   docker exec -i "$cid" python - "$RELEASE_TAG" <<'PY'
 import json, sys, urllib.error, urllib.request
 
-version = sys.argv[1] if len(sys.argv) > 1 else "2.25.83"
+version = sys.argv[1] if len(sys.argv) > 1 else "2.25.84"
 pairs = [
     ("ppl-meta-discovery", 8006),
     ("ppl-meta-gateway", 8080),
@@ -107,7 +107,7 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 
-RELEASE_TAG="${RELEASE_TAG:-2.25.83}"
+RELEASE_TAG="${RELEASE_TAG:-2.25.84}"
 if [[ -n "${CID:-}" ]]; then
   register_from_inside_discovery "$CID"
 else

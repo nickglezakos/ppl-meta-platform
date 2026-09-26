@@ -17,45 +17,19 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- GHCR images republished for **2.25.83** (`7282168f`) on `lab-work-dual-64g`:
-  frontend `f9b2184d…` (tags `2.25.83` / `2.25.83-7282168`) — Individual Groups
-  People-link icon + PPP select-then-link UX. **Stage 3** on
-  `lab-work-dual-64g` @ `10.171.48.228` (2026-09-26); docker-cp hotfix replaced.
-- GHCR images republished for **2.25.83** (`fcbca648`) on `lab-work-dual-64g`:
-  frontend `290a7d39…` (tags `2.25.83` / `2.25.83-fcbca64`) — Individual Groups
-  member-details icon. **Stage 3** on `lab-work-dual-64g` @ `10.171.48.228`
-  (2026-09-26).
-- GHCR images republished for **2.25.83** (`f5816b45`) on `lab-work-dual-64g`:
-  media `d4635f9a…`, frontend `8279d972…` (tags `2.25.83` /
-  `2.25.83-f5816b4`). **Stage 3** on `lab-work-dual-64g` @ `10.171.48.228`
-  (2026-09-23) — running digests match; media docker-cp hotfix replaced.
-- Prior GHCR republish for **2.25.83** (`dd464478`): gateway `b01e6b22…`,
-  discovery `7ced8041…`, frontend `f9e2aacc…`. Stage 3 on `lab-work-dual-64g`
-  @ `10.171.48.228` (2026-09-23).
-- Host tray binaries published on GitHub Release **`v2.25.83`**
-  (`eyenet-tray-windows-amd64-2.25.83.exe`,
-  `eyenet-tray-linux-amd64-2.25.83.tar.gz`).
-- Signage simple player APK rebuilt + installed on SM-T510 (local discovery
-  enroll without VPN token; playlist sync verified) — Stage 1 `f5816b45`,
-  2026-09-23.
+*(none yet for post-2.25.84)*
+
+---
+
+## [2.25.84] — 2026-09-26
 
 ### Changed
 
-- Presence People Profiles can associate with installation user accounts by
-  email (user accounts are source of truth for display name when linked).
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.83 → 2.25.84**.
+- Presence People Profiles associate with installation user accounts by email
+  (user accounts are source of truth for display name when linked).
 - Presence People tab: **Sync with user accounts** button + linked-account chip;
   name is read-only when linked to a user.
-- Windows `install-platform.ps1`: no longer prompts for `INSTALLATION_UUID` /
-  `APPLICATION_KEY` (empty → `/bootstrap`); auto-generates weak
-  `POSTGRES_PASSWORD` / `JWT_SECRET_KEY`.
-- Windows `install-platform.bat`: deprecated as a full installer — now a thin
-  launcher for `install-platform.ps1`.
-- Ubuntu `install-eyenet-ubuntu.sh`: generate local DB/JWT secrets on fresh
-  install instead of `eyenet-dev-change-me`.
-- `.github/workflows/tray-release.yml`: enabled as preferred tray publish path
-  (`workflow_dispatch` or tag `v*`).
-- `scripts/check_installer_pins.sh`: match the `.bat` launcher `::  Version:`
-  pin (no longer `set "VERSION=…"`).
 
 ### Fixed
 
@@ -65,127 +39,15 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
   **Link** submits the link; one profile (or create-new) per submission.
 - Presence: people↔user email association sync (startup + interval + manual +
   user create/update notify); audit `people_association`.
-- Media signage sync: use `DISCOVERY_SERVICE_URL` (`ppl-meta-discovery:8006`)
-  instead of hardcoded `localhost:8006` so playlist push can resolve the device
-  from inside the media container (lab hotfix → source).
-- Frontend `/upload`: multi-file batch no longer throws
-  `ConcurrentModificationError` after the first success (walk a snapshot; keep
-  Upload idle when the batch ends).
-- Signage simple player setup: local discovery enrolls without a one-time
-  enrollment token; token is required only for VPN mesh onboarding.
-
-- Gateway + Discovery CORS: allow RFC1918 `10/8` and `172.16/12` origins (in
-  addition to `192.168/16`, loopback, Tailscale) so Flutter UI on a `10.x` LAN
-  (e.g. `http://10.171.48.228:3000`) can call `:8080` / discovery without Dio
-  preflight **400** → false `/bootstrap` redirect.
-- Frontend `/cameras`: mobile Connect control has a three-state lease UI
-  (green → orange LEASE OPEN → red) via `mobileConnectPhaseProvider` (phase
-  survives camera-list refresh).
-- Mobile APK: stop crashing on TrebleDroid / GSI during init — use platform
-  `availableCameras()` instead of open/dispose-probing fabricated orientations.
-- Mobile APK: persistent **Stop stream** (top-right chip + center button morph)
-  while live; full teardown of camera image stream + mobile upload lease.
-
-- Presence: media collections calls use `MEDIA_SERVICE_URL` (not `localhost:8000`)
-  so Presence tabs stop 500ing when reserving a camera/collection in compose.
-- Presence: after video-only / camera-only detection cleanup, **do not** full
-  Disconnect mobile cameras (that revoked the upload lease and killed the phone
-  stream mid-grant).
-- Media compose: set `VMETA_SERVICE_URL` / `NODE_SERVICE_URL` /
-  `PRESENCE_SERVICE_URL` / `VISION_SERVICE_URL` so `ppl_match` can reach VMeta
-  and video-only presence grants leave `awaiting_trigger_match`.
-- Cameras: Connect **reuses** an active mobile `stream_session_id`
-  (`ensure_stream_lease`) instead of reminting — remint invalidated the phone’s
-  lease and immediately 409’d frames on Connect.
-- Cameras: Disconnect no longer segfaults (exit 139) / returns gateway **503**
-  when worker status pub/sub hit Redis on the wrong event loop — sync Redis
-  publish from workers; mobile Disconnect returns 200 before deferred queue
-  teardown.
-- Gateway: explicit `POST /streaming/mobile/{device_id}/stream-lease` proxy so
-  phone lease mint is not a 404 behind the gateway catch-all gap.
-- Cameras + mobile APK: **stream session lease** for mobile upload — Connect /
-  `POST .../stream-lease` mint a `stream_session_id`; every `/frame` must carry
-  it; Disconnect revokes the lease (and keeps hold). Stops the Connect/Disconnect
-  race where the phone kept POSTing after Disconnect. USB/RTSP/edge unchanged.
-- Mobile APK: acquire lease before upload; stop on 409 (revoked/held); idempotent
-  stop across in-flight frames.
-- Cameras: operator-disconnected mobile frame hold now returns **HTTP 409**
-  (not 500) so the phone can stop uploading cleanly; Disconnect no longer looks
-  broken while the APK keeps POSTing held frames.
-- Mobile camera APK: on frame **409** (platform hold after Disconnect), stop
-  backend upload and the camera image stream so the phone side matches the
-  platform.
-- Recording timer: reset from `startedAt` each session; `copyWith` can clear
-  nullable fields so stop/start no longer keeps a stale timestamp.
-- Media preview face overlay: scale boxes using detection `frame_width` /
-  `frame_height` (with letterbox fit) so mobile portrait recordings are not
-  treated as landscape. Also fall back to top-level Enhanced V2 face dims when
-  `detection_result.faces_by_frame` omits them (common path — caused lingering
-  off-center rects after the first overlay fix).
-- VMeta MVR materialize: resolve Gateway via `GATEWAY_SERVICE_URL` (not
-  in-container `localhost:8080`) so face-crop enrich succeeds and face→MVR
-  people are created; compose sets `PPL_GATEWAY_URL` for VMeta.
-- VMeta FaceNet: treat pre-cropped faces with `detector_backend=skip` and
-  correctly parse bare 512-d embedding vectors — the multi-face guard was
-  rejecting every materialize (`Multi-face crop: 512 faces`) so individuals
-  stayed at 0 even after Gateway URL was fixed.
-- Media: entrypoint chowns `/app/media` (uid 1001) then drops privileges so
-  fresh Docker `media_data` volumes are writable — Stage 3 / empty volumes no
-  longer regress with upload `Permission denied` and skipped face/MEDIA-VERIFY.
-- Media entrypoint: set `HOME=/home/app` before `setpriv` so pip `--user`
-  packages resolve (without this, uvicorn crashed with `No module named uvicorn`).
-- Installers (Windows + Ubuntu): post-`compose up` call
-  `ensure-media-volume-perms.sh` as belt-and-suspenders until labs pull the
-  new Media image.
-- Communications audit logs: store the real trigger UUID in `trigger_id`
-  (from event payload) instead of the event type string `"alert"`, so the
-  Triggers tab detail pane can list on-screen notification logs for that
-  trigger (Analytics already showed them unfiltered).
-- Frontend nginx: stop 1-year `immutable` caching of unfingerprinted
-  `main.dart.js` / Flutter bootstrap / service worker so Stage 3 pulls are
-  visible without waiting a year (labs kept serving a cached pre-fix UI after
-  logout-after-`/triggers`).
-- Media compose: set `REDIS_HOST` / `REDIS_URL` so the instant-detection trigger
-  subscriber connects to compose Redis (was defaulting to `localhost` and never
-  evaluating triggers).
-- Media compose: set `COMMUNICATIONS_SERVICE_URL` so alert/email/webhook actions
-  reach Communications (was defaulting to `localhost:8009`).
-- Frontend: stop clearing the shared JWT when legacy AuthManager's localhost
-  health probe fails (logout after leaving `/triggers`).
-- Frontend: remove 60s alert content-dedupe that hid legitimate trigger
-  notifications; trigger `cooldown_seconds` remains the rate limit.
-- Schema pack `049_individual_video_appearances_instant_columns.sql`: add
-  `quality_score` / `processing_method` / `source_session_uuid` / `created_at`
-  so instant-detection persist-batch stops 500ing.
-- Gateway (and Discovery) CORS: allow Tailscale CGNAT origins (`100.64.0.0/10`)
-  so the UI at `http://<tailscale-ip>:3000` can call `:8080` (was only
-  localhost / `192.168.*`; personal Tailscale login preflight failed).
-- Cameras: operator Disconnect on mobile must **hold** frame ingest until
-  Connect — phone kept POSTing frames and auto-resume reattached the stream
-  within ~200ms (looked like Disconnect did nothing).
-- Stage 2 tooling: `stage2_one.sh` requires `origin/main` + clean service
-  trees (`stage2_preflight.sh`) and always rebuilds Flutter web for frontend
-  (stops publishing lab-local / stale `build/web` as if it were GHCR truth).
 
 ### Notes
 
-- No `VERSION` bump (still **2.25.83**). Stage 2 republished **`ppl-meta-presence`**
-  (`cbdac09a…`, media URL + mobile cleanup). Stage 3 on `lab-work-dual-64g`
-  Ubuntu (`192.168.9.13`) pulled presence and recreated Media with VMeta/Node
-  compose env (no media image rebuild). Hotfix overrides removed.
-- Prior Stage 2 on this pin: cameras (`4a969d77…`) + gateway (`1b95b5fd…`) lease
-  follow-up; **`frontend`** (`3afac7f6…`); **`ppl-meta-vmeta-protected`**
-  (`28dc8f0a…`).
-- **Rebuild APK from `main` @ `f78d67a2`** (or later) — old APKs without
-  `stream_session_id` get 409 on `/frame`.
-- Frontend nginx cache fix already published (`635127bf…`); hard-refresh UI once
-  if a lab still shows a pre-fix cached `main.dart.js`.
-- Tray publish not required for this Stage 1.
-- Process: do **not** copy container HTML/`docker cp` between labs — Stage 1 →
-  Stage 2 GHCR → Stage 3 pull only.
-- Fleet tracking: `docs/deployment/lab-machines.md` § Fleet status — update
-  after each Stage 3. Compare **running container Image ID** + `main.dart.js`
-  hash, not only the `:tag` RepoDigest.
+- Stage 2: rebuild **node**, **presence**, **frontend**; Mode D retag-forward
+  remaining services **2.25.83 → 2.25.84**; finalize `release-manifest.yml`.
+- Prior pin **2.25.83** GHCR republishes (frontend People-link `f9b2184d…`,
+  media discovery URL, CORS/`10.x`, etc.) remain under `[2.25.83]` below.
+
+---
 
 ## [2.25.83] — 2026-09-20
 
@@ -228,6 +90,11 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
   affected by the fixes** before Stage 2 (`platform-release-cicd.md`).
 
 ### Notes
+
+- GHCR images republished for **2.25.83** (`7282168f`) on `lab-work-dual-64g`:
+  frontend `f9b2184d…` (tags `2.25.83` / `2.25.83-7282168`) — Individual Groups
+  People-link icon + PPP select-then-link UX. **Stage 3** on
+  `lab-work-dual-64g` @ `10.171.48.228` (2026-09-26).
 
 - Stage 2 must rebuild at least: `ppl-meta-discovery`, `ppl-meta-node`, `ppl-meta-frontend` (login UUID). Republish cameras/frontend if Stage 3 still shows §13 disconnect gaps.
 - **Also rebuild for this Stage 1:** `ppl-meta-cameras`, `ppl-meta-vmeta` (instant detection SAVEPOINT + pool/timeout). Apply schema pack / `048` on existing labs.

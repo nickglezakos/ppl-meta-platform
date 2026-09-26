@@ -5,7 +5,7 @@
 set -euo pipefail
 
 ADVERTISE_HOST="${ADVERTISE_HOST:-$(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | head -1)}"
-RELEASE_TAG="${RELEASE_TAG:-2.25.83}"
+RELEASE_TAG="${RELEASE_TAG:-2.25.84}"
 REGISTRY="${REGISTRY:-ghcr.io/nickglezakos/ppl-meta-platform}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/eyenet-platform}"
 REPO_DIR="${REPO_DIR:-$HOME/ppl-meta-platform}"
