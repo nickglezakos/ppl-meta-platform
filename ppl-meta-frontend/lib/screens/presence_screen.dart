@@ -57,6 +57,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   );
   List<PresenceCameraOption> _cameras = const [];
   List<PresenceIndividualGroupOption> _availableIndividualGroups = const [];
+  PresenceVideoReadiness? _videoReadiness;
   PresenceLiveSession? _activeSession;
   PresenceQrPayload? _currentQr;
   PresenceResultDetails? _activeResult;
@@ -102,44 +103,14 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
 
   String get _deviceReference => widget.stationMode ? 'presence-web-station' : 'presence-web-console';
 
-  PresenceIndividualGroupOption? get _activePresenceIndividualGroup {
-    final installationContext = _installationContext;
-    if (installationContext == null) {
-      return null;
-    }
-    final activeGroupId = installationContext.activePresenceIndividualGroupId;
-    if (activeGroupId != null && activeGroupId.isNotEmpty) {
-      for (final group in _availableIndividualGroups) {
-        if (group.individualGroupId == activeGroupId) {
-          return group;
-        }
-      }
-      return PresenceIndividualGroupOption(
-        individualGroupId: activeGroupId,
-        name: installationContext.activePresenceIndividualGroupName ?? 'presence',
-        description: null,
-        memberCount: 0,
-      );
-    }
-    final activeGroupName = installationContext.activePresenceIndividualGroupName;
-    if (activeGroupName != null && activeGroupName.isNotEmpty) {
-      for (final group in _availableIndividualGroups) {
-        if (group.name.toLowerCase() == activeGroupName.toLowerCase()) {
-          return group;
-        }
-      }
-    }
-    return null;
-  }
+  bool get _videoPresenceReady => _videoReadiness?.ready == true;
 
-  List<PresenceIndividualGroupOption> get _presenceMatchGroups {
-    final groups = List<PresenceIndividualGroupOption>.from(_availableIndividualGroups);
-    final activeGroup = _activePresenceIndividualGroup;
-    if (activeGroup != null &&
-        groups.every((group) => group.individualGroupId != activeGroup.individualGroupId)) {
-      groups.insert(0, activeGroup);
+  String get _videoNotReadyMessage {
+    final readiness = _videoReadiness;
+    if (readiness == null) {
+      return 'Video readiness unknown. Open Settings or pull to refresh.';
     }
-    return groups;
+    return '${readiness.shortReason} See Settings → Video readiness.';
   }
 
   PresenceApiClient get _apiClient => ref.read(presenceApiClientProvider);
@@ -203,6 +174,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       _apiClient.getSessionTraces(limit: 12),
       _apiClient.getCameras(),
       _apiClient.getAvailableIndividualGroups(),
+      _apiClient.getVideoReadiness(),
     ]);
 
     final summaryResponse = results[0] as ApiResponse<PresenceAnalyticsSummary>;
@@ -212,6 +184,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     final traceResponse = results[4] as ApiResponse<List<PresenceSessionTraceSummary>>;
     final camerasResponse = results[5] as ApiResponse<List<PresenceCameraOption>>;
     final availableGroupsResponse = results[6] as ApiResponse<List<PresenceIndividualGroupOption>>;
+    final videoReadinessResponse = results[7] as ApiResponse<PresenceVideoReadiness>;
 
     if (!mounted) {
       return;
@@ -233,19 +206,22 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       _recentSessions = traceResponse.data ?? const [];
       _cameras = camerasResponse.data ?? const [];
       _availableIndividualGroups = availableGroupsResponse.data ?? const [];
+      _videoReadiness = videoReadinessResponse.data;
       _error = installationResponse.success &&
               modeResponse.success &&
               grantResponse.success &&
               traceResponse.success &&
               camerasResponse.success &&
-              availableGroupsResponse.success
+              availableGroupsResponse.success &&
+              videoReadinessResponse.success
           ? null
           : traceResponse.error ??
               modeResponse.error ??
               grantResponse.error ??
               installationResponse.error ??
               camerasResponse.error ??
-              availableGroupsResponse.error;
+              availableGroupsResponse.error ??
+              videoReadinessResponse.error;
       _isLoading = false;
     });
 
@@ -615,85 +591,6 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     }
   }
 
-  Future<void> _reservePresenceMatchGroup(PresenceIndividualGroupOption group) async {
-    final installationUuid = _installationContext?.installationUuid;
-    if (installationUuid == null || installationUuid.isEmpty) {
-      return;
-    }
-
-    setState(() {
-      _isSubmittingAdminAction = true;
-    });
-
-    final response = await _apiClient.updateActivePresenceGroup(
-      installationUuid: installationUuid,
-      individualGroupId: group.individualGroupId,
-      groupName: group.name,
-    );
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _isSubmittingAdminAction = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          response.success
-              ? 'Reserved match group ${group.name} for presence.'
-              : (response.error ?? 'Failed to reserve match group'),
-        ),
-        backgroundColor: response.success ? null : Colors.red,
-      ),
-    );
-
-    if (response.success) {
-      await _loadPresenceDashboard();
-    }
-  }
-
-  Future<void> _unreservePresenceMatchGroup(PresenceIndividualGroupOption group) async {
-    final installationUuid = _installationContext?.installationUuid;
-    if (installationUuid == null || installationUuid.isEmpty) {
-      return;
-    }
-
-    setState(() {
-      _isSubmittingAdminAction = true;
-    });
-
-    final response = await _apiClient.updateActivePresenceGroup(
-      installationUuid: installationUuid,
-      clearActiveGroup: true,
-    );
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _isSubmittingAdminAction = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          response.success
-              ? 'Released match group ${group.name} from presence.'
-              : (response.error ?? 'Failed to unreserve match group'),
-        ),
-        backgroundColor: response.success ? null : Colors.red,
-      ),
-    );
-
-    if (response.success) {
-      await _loadPresenceDashboard();
-    }
-  }
-
   Future<void> _showSessionInspector(PresenceSessionTraceSummary session) async {
     showModalBottomSheet<void>(
       context: context,
@@ -832,6 +729,15 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   }
 
   Future<void> _startCameraOnlyMatch() async {
+    if (!_videoPresenceReady) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_videoNotReadyMessage), backgroundColor: Colors.red),
+      );
+      return;
+    }
     final session = await _ensureExecutionSession(
       sessionMode: 'camera_only',
       enableAutoRefresh: true,
@@ -852,6 +758,15 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   }
 
   Future<void> _openOwnerQrVideoScanner() async {
+    if (!_videoPresenceReady) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_videoNotReadyMessage), backgroundColor: Colors.red),
+      );
+      return;
+    }
     await _runPlatformOwnerQrScan(sessionMode: 'qr_plus_camera');
   }
 
@@ -2793,22 +2708,17 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   }
 
   Widget _buildAdminSection(BuildContext context) {
-    final installation = _installationContext;
-    final activePresenceIndividualGroup = _activePresenceIndividualGroup;
-    final reservedCameraUuid = installation?.reservedCameraUuid;
-    final reservedCameraName = reservedCameraUuid == null
-      ? null
-      : _cameras
-        .where((camera) => camera.deviceId == reservedCameraUuid)
-        .map((camera) => camera.name.isEmpty ? camera.deviceId : camera.name)
-        .cast<String?>()
-        .firstWhere((name) => name != null, orElse: () => reservedCameraUuid);
+    final readiness = _videoReadiness;
+    final ready = readiness?.ready == true;
+    final theme = Theme.of(context);
+    final statusColor = ready ? Colors.greenAccent : Colors.orangeAccent;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2)),
+        border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2821,12 +2731,12 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
                   children: [
                     Text(
                       'Presence Settings',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Operator controls for match group selection and installation policy.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
+                      'Video Match and QR + Video require an active people-match or Vprofile-match trigger with camera, group, and a Presence action.',
+                      style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
                     ),
                   ],
                 ),
@@ -2840,55 +2750,87 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
             ],
           ),
           const SizedBox(height: 16),
-          if (installation != null) ...[
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (reservedCameraName != null)
-                  _TraceChip(label: 'Camera $reservedCameraName'),
-                if (activePresenceIndividualGroup != null)
-                  _TraceChip(label: 'Group ${activePresenceIndividualGroup.name}'),
-              ],
-            ),
-            const SizedBox(height: 16),
-          ],
           Text(
-            'Presence Match Groups',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            'Video readiness',
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Reserve one group as the active ppl-match group for presence.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[400]),
-          ),
-          const SizedBox(height: 12),
-          if (_presenceMatchGroups.isEmpty)
+          if (readiness == null)
             Text(
-              'No individual groups are available yet.',
-              style: Theme.of(context).textTheme.bodyMedium,
+              'Unable to load video readiness. Pull to refresh.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: Colors.orangeAccent),
             )
-          else
-            ..._presenceMatchGroups.map((group) {
-              final isActive = activePresenceIndividualGroup != null &&
-                  group.individualGroupId == activePresenceIndividualGroup.individualGroupId;
-              return Card(
-                margin: const EdgeInsets.only(bottom: 10),
-                child: ListTile(
-                  title: Text(group.name),
-                  subtitle: Text('${group.individualGroupId} • ${group.memberCount} members'),
-                  trailing: isActive
-                      ? TextButton(
-                          onPressed: _isSubmittingAdminAction ? null : () => _unreservePresenceMatchGroup(group),
-                          child: const Text('Unreserve'),
-                        )
-                      : TextButton(
-                          onPressed: _isSubmittingAdminAction ? null : () => _reservePresenceMatchGroup(group),
-                          child: const Text('Reserve'),
-                        ),
+          else ...[
+            Row(
+              children: [
+                Icon(ready ? Icons.check_circle : Icons.warning_amber_rounded, color: statusColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    ready ? 'Ready for Video Match / QR + Video' : 'Not ready for video presence',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: statusColor,
+                    ),
+                  ),
                 ),
-              );
-            }),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (ready) ...[
+              Text(
+                'Qualifying triggers',
+                style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey[400]),
+              ),
+              const SizedBox(height: 8),
+              if (readiness.qualifyingTriggers.isEmpty)
+                Text('No qualifying triggers listed.', style: theme.textTheme.bodyMedium)
+              else
+                ...readiness.qualifyingTriggers.map((trigger) {
+                  final modeLabel = trigger.triggerMode == 'vprofile_match'
+                      ? 'Vprofile match'
+                      : (trigger.triggerMode == 'ppl_match' ? 'People match' : trigger.triggerMode);
+                  final actionLabel = trigger.presenceActionNames.isEmpty
+                      ? 'Presence action'
+                      : trigger.presenceActionNames.join(', ');
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    child: ListTile(
+                      title: Text(trigger.name),
+                      subtitle: Text(
+                        '$modeLabel · ${trigger.cameraIds.length} camera(s) · '
+                        '${trigger.groupIds.length} group(s) · $actionLabel',
+                      ),
+                    ),
+                  );
+                }),
+            ] else ...[
+              Text(
+                'Missing steps',
+                style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey[400]),
+              ),
+              const SizedBox(height: 8),
+              ...readiness.issues.map((issue) {
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  child: ListTile(
+                    leading: const Icon(Icons.playlist_add_check, color: Colors.orangeAccent),
+                    title: Text(issue.message),
+                    subtitle: Text(
+                      issue.hint.isEmpty
+                          ? 'Fix this in Triggers (Home → Triggers), then pull to refresh.'
+                          : '${issue.hint} Then pull to refresh this report.',
+                    ),
+                  ),
+                );
+              }),
+              if (readiness.issues.isEmpty)
+                Text(
+                  'Create an active people-match or Vprofile-match trigger with camera(s), group(s), and a Presence action in Triggers.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+            ],
+          ],
         ],
       ),
     );
@@ -2996,7 +2938,9 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
                   width: buttonWidth.clamp(140.0, 280.0),
                   height: buttonHeight,
                   child: OutlinedButton(
-                    onPressed: _isSubmittingAdminAction ? null : _startCameraOnlyMatch,
+                    onPressed: (_isSubmittingAdminAction || !_videoPresenceReady)
+                        ? null
+                        : _startCameraOnlyMatch,
                     style: OutlinedButton.styleFrom(
                       padding: EdgeInsets.zero,
                       side: BorderSide(color: outlinedBorderColor),
@@ -3014,6 +2958,14 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                         ),
+                        if (!_videoPresenceReady) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Not ready',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orangeAccent),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -3048,7 +3000,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
                   width: buttonWidth.clamp(140.0, 280.0),
                   height: buttonHeight,
                   child: OutlinedButton(
-                    onPressed: widget.stationMode || _isSubmittingAdminAction
+                    onPressed: widget.stationMode || _isSubmittingAdminAction || !_videoPresenceReady
                         ? null
                         : _openOwnerQrVideoScanner,
                     style: OutlinedButton.styleFrom(
@@ -3068,6 +3020,14 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                         ),
+                        if (!_videoPresenceReady) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Not ready',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orangeAccent),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -3076,6 +3036,13 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
             );
           },
         ),
+        if (!_videoPresenceReady) ...[
+          const SizedBox(height: 8),
+          Text(
+            _videoNotReadyMessage,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orangeAccent),
+          ),
+        ],
         const SizedBox(height: 12),
         TextFormField(
           controller: _deviceDisplayNameController,
@@ -3614,20 +3581,6 @@ class _InspectorRow extends StatelessWidget {
   }
 }
 
-class _ManagePresenceGroupDialog extends StatefulWidget {
-  final PresenceIndividualGroupOption? currentGroup;
-  final List<PresenceIndividualGroupOption> availableGroups;
-
-  const _ManagePresenceGroupDialog({
-    required this.currentGroup,
-    required this.availableGroups,
-  });
-
-  @override
-  State<_ManagePresenceGroupDialog> createState() => _ManagePresenceGroupDialogState();
-}
-
-
 class _PresencePlatformQrScanSheet extends StatefulWidget {
   final PresenceApiClient apiClient;
   final String sessionUuid;
@@ -3815,133 +3768,6 @@ class _PresencePlatformQrScanSheetState extends State<_PresencePlatformQrScanShe
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ManagePresenceGroupDialogState extends State<_ManagePresenceGroupDialog> {
-  final _displayNameController = TextEditingController();
-  PresenceIndividualGroupOption? _selectedGroup;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedGroup = widget.currentGroup;
-    _displayNameController.text = widget.currentGroup?.name ?? '';
-  }
-
-  @override
-  void dispose() {
-    _displayNameController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hasCurrentGroup = widget.currentGroup != null;
-    return AlertDialog(
-      title: Text(hasCurrentGroup ? 'Manage Match Group' : 'Create Match Group'),
-      content: SizedBox(
-        width: 480,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (widget.currentGroup != null) ...[
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(widget.currentGroup!.name),
-                subtitle: Text(widget.currentGroup!.individualGroupId),
-                trailing: Text('${widget.currentGroup!.memberCount} members'),
-              ),
-              const SizedBox(height: 12),
-            ],
-            Autocomplete<PresenceIndividualGroupOption>(
-              initialValue: TextEditingValue(text: _displayNameController.text),
-              optionsBuilder: (textEditingValue) {
-                final query = textEditingValue.text.trim().toLowerCase();
-                if (query.isEmpty) {
-                  return widget.availableGroups;
-                }
-                return widget.availableGroups.where(
-                  (group) => group.name.toLowerCase().contains(query),
-                );
-              },
-              displayStringForOption: (option) => option.name,
-              onSelected: (group) {
-                _selectedGroup = group;
-                _displayNameController.text = group.name;
-              },
-              fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                controller.value = TextEditingValue(
-                  text: _displayNameController.text,
-                  selection: TextSelection.collapsed(offset: _displayNameController.text.length),
-                );
-                controller.addListener(() {
-                  _displayNameController.value = controller.value;
-                  if (_selectedGroup != null && controller.text.trim() != _selectedGroup!.name) {
-                    _selectedGroup = null;
-                  }
-                });
-                return TextFormField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  decoration: InputDecoration(
-                    labelText: 'Match Group Name',
-                    helperText: hasCurrentGroup
-                        ? 'Select an existing individual group or enter a new name to create it.'
-                        : 'Enter the individual group name Presence should use for matching.',
-                    border: const OutlineInputBorder(),
-                  ),
-                  onFieldSubmitted: (_) => onFieldSubmitted(),
-                );
-              },
-              optionsViewBuilder: (context, onSelected, options) {
-                return Align(
-                  alignment: Alignment.topLeft,
-                  child: Material(
-                    color: Theme.of(context).colorScheme.surface,
-                    elevation: 4,
-                    borderRadius: BorderRadius.circular(12),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 480, maxHeight: 240),
-                      child: ListView.builder(
-                        padding: EdgeInsets.zero,
-                        shrinkWrap: true,
-                        itemCount: options.length,
-                        itemBuilder: (context, index) {
-                          final group = options.elementAt(index);
-                          return ListTile(
-                            title: Text(group.name),
-                            subtitle: Text(group.individualGroupId),
-                            trailing: Text('${group.memberCount} members'),
-                            onTap: () => onSelected(group),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(
-          onPressed: () {
-            final displayName = _displayNameController.text.trim();
-            if (displayName.isEmpty) {
-              return;
-            }
-            Navigator.pop(context, {
-              'group_name': displayName,
-              'individual_group_id': _selectedGroup?.individualGroupId,
-            });
-          },
-          child: Text(hasCurrentGroup ? 'Save' : 'Create'),
-        ),
-      ],
     );
   }
 }

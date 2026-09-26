@@ -77,6 +77,14 @@ def build_presence_router(service: PresenceService) -> APIRouter:
         items = await service.list_available_individual_groups(current_user)
         return {"success": True, "data": {"items": [item.model_dump() for item in items]}}
 
+    @router.get("/video-readiness")
+    async def get_video_readiness(current_user: dict = Depends(get_current_user)):
+        try:
+            report = await service.get_video_readiness(current_user)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"success": True, "data": report}
+
     @router.post("/installations/current/active-group")
     async def update_current_installation_active_group(
         request: UpdateActivePresenceGroupRequest,
@@ -230,7 +238,10 @@ def build_presence_router(service: PresenceService) -> APIRouter:
         request: CreatePresenceSessionRequest,
         current_user: dict = Depends(get_current_user),
     ):
-        session = await service.create_session(request, current_user)
+        try:
+            session = await service.create_session(request, current_user)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"success": True, "data": session.model_dump()}
 
     @router.get("/mobile/sessions/{session_uuid}")

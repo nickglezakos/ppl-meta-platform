@@ -63,6 +63,11 @@ from .people_user_association import (
     normalize_email,
     user_display_name,
 )
+from .video_readiness import (
+    build_video_readiness_report,
+    first_qualifying_camera_id,
+    first_qualifying_group_id,
+)
 
 
 class PresenceService:
@@ -721,10 +726,38 @@ class PresenceService:
             "reserved_collection_uuid": None,
         }
 
+    async def get_video_readiness(self, current_user: dict) -> dict:
+        token = current_user.get("token")
+        if not token:
+            raise ValueError("Missing auth token for video readiness")
+        triggers = await self.platform_clients.list_triggers(token)
+        actions = await self.platform_clients.list_user_actions(token)
+        return build_video_readiness_report(triggers, actions)
+
     async def create_session(self, request: CreatePresenceSessionRequest, current_user: dict) -> PresenceSession:
         profile = self._get_or_create_user_profile(current_user=current_user, device_uuid=request.device_uuid)
         session_settings = self._current_session_settings()
         await self._ensure_default_resources(current_user)
+
+        video_modes = {PresenceSessionMode.CAMERA_ONLY, PresenceSessionMode.QR_PLUS_CAMERA}
+        readiness: dict | None = None
+        if request.session_mode in video_modes:
+            readiness = await self.get_video_readiness(current_user)
+            if not readiness.get("ready"):
+                issues = readiness.get("issues") or []
+                detail = issues[0]["message"] if issues else "Video presence is not ready."
+                hint = issues[0].get("hint") if issues else None
+                raise ValueError(f"{detail}" + (f" {hint}" if hint else ""))
+
+        resolved_camera = self._get_default_camera_id()
+        if readiness and readiness.get("ready"):
+            trigger_camera = first_qualifying_camera_id(readiness)
+            if trigger_camera:
+                resolved_camera = trigger_camera
+            trigger_group = first_qualifying_group_id(readiness)
+            if trigger_group:
+                self._apply_video_readiness_group(trigger_group, readiness)
+
         session = PresenceSession(
             device_uuid=request.device_uuid,
             user_uuid=profile.user_uuid or "unknown-user",
@@ -737,10 +770,13 @@ class PresenceService:
                 if request.session_mode in {PresenceSessionMode.QR_ONLY, PresenceSessionMode.CAMERA_ONLY}
                 else PresenceSessionStatus.AWAITING_FRONT_BURST
             ),
-            resolved_camera_uuid=self._get_default_camera_id(),
+            resolved_camera_uuid=resolved_camera,
             resolved_collection_uuid=self._get_default_collection_id(),
         )
-        await self._ensure_presence_automation_assets(session, current_user)
+        # Video path uses platform Triggers + Presence action; do not auto-provision
+        # a private Presence ppl_match trigger when readiness is already green.
+        if request.session_mode not in video_modes:
+            await self._ensure_presence_automation_assets(session, current_user)
         self._sync_session_external_assets(session)
         self.sessions[session.session_uuid] = session
         self.qr_tokens[session.qr_token] = session.session_uuid
@@ -751,6 +787,23 @@ class PresenceService:
             await self._start_camera_only_detection(session)
 
         return session
+
+    def _apply_video_readiness_group(self, group_id: str, readiness: dict) -> None:
+        """Mirror a qualifying trigger's group onto installation metadata for analytics."""
+        group_name = group_id
+        for trigger in readiness.get("qualifying_triggers") or []:
+            groups = trigger.get("group_ids") or []
+            if group_id in groups:
+                group_name = str(trigger.get("name") or group_id)
+                break
+        metadata = dict(self.installation_profile.metadata or {})
+        if metadata.get("active_presence_individual_group_id") == group_id:
+            return
+        metadata["active_presence_individual_group_id"] = group_id
+        metadata["active_presence_individual_group_name"] = group_name
+        self.installation_profile.metadata = metadata
+        self.installation_profile.updated_at = datetime.utcnow()
+        self.repository.save_profile(self.installation_profile)
 
     def _installation_owner_uuid(self) -> str | None:
         """Resolve the installation owner user UUID from the installation profile."""

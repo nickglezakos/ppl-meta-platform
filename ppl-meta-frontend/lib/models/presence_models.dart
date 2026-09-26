@@ -1275,3 +1275,103 @@ class PeopleUserSyncReport {
     );
   }
 }
+
+class PresenceVideoReadinessIssue {
+  final String code;
+  final String message;
+  final String hint;
+
+  const PresenceVideoReadinessIssue({
+    required this.code,
+    required this.message,
+    required this.hint,
+  });
+
+  factory PresenceVideoReadinessIssue.fromJson(Map<String, dynamic> json) {
+    return PresenceVideoReadinessIssue(
+      code: (json['code'] ?? '').toString(),
+      message: (json['message'] ?? '').toString(),
+      hint: (json['hint'] ?? '').toString(),
+    );
+  }
+}
+
+class PresenceQualifyingTrigger {
+  final String uuid;
+  final String name;
+  final String triggerMode;
+  final List<String> cameraIds;
+  final List<String> groupIds;
+  final List<String> presenceActionNames;
+
+  const PresenceQualifyingTrigger({
+    required this.uuid,
+    required this.name,
+    required this.triggerMode,
+    required this.cameraIds,
+    required this.groupIds,
+    required this.presenceActionNames,
+  });
+
+  factory PresenceQualifyingTrigger.fromJson(Map<String, dynamic> json) {
+    List<String> readList(String key) {
+      final value = json[key];
+      if (value is List) {
+        return value.map((item) => item.toString()).toList();
+      }
+      return const [];
+    }
+
+    return PresenceQualifyingTrigger(
+      uuid: (json['uuid'] ?? '').toString(),
+      name: (json['name'] ?? json['uuid'] ?? 'trigger').toString(),
+      triggerMode: (json['trigger_mode'] ?? '').toString(),
+      cameraIds: readList('camera_ids'),
+      groupIds: readList('group_ids'),
+      presenceActionNames: readList('presence_action_names'),
+    );
+  }
+}
+
+class PresenceVideoReadiness {
+  final bool ready;
+  final List<PresenceQualifyingTrigger> qualifyingTriggers;
+  final List<PresenceVideoReadinessIssue> issues;
+  final int evaluatedTriggerCount;
+
+  const PresenceVideoReadiness({
+    required this.ready,
+    required this.qualifyingTriggers,
+    required this.issues,
+    required this.evaluatedTriggerCount,
+  });
+
+  factory PresenceVideoReadiness.fromJson(Map<String, dynamic> json) {
+    final qualifying = (json['qualifying_triggers'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(PresenceQualifyingTrigger.fromJson)
+        .toList();
+    final issues = (json['issues'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(PresenceVideoReadinessIssue.fromJson)
+        .toList();
+    return PresenceVideoReadiness(
+      ready: json['ready'] == true,
+      qualifyingTriggers: qualifying,
+      issues: issues,
+      evaluatedTriggerCount: json['evaluated_trigger_count'] is num
+          ? (json['evaluated_trigger_count'] as num).toInt()
+          : 0,
+    );
+  }
+
+  String get shortReason {
+    if (ready) {
+      return 'Video presence is ready.';
+    }
+    if (issues.isNotEmpty) {
+      return issues.first.message;
+    }
+    return 'Video presence is not ready. Open Settings for the checklist.';
+  }
+}

@@ -17,8 +17,20 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- Stage 2 on `lab-work-dual-64g` finalized GHCR digests for pin **2.25.85** (git `f5cf7d7`): rebuilt **cameras** / **presence** / **frontend**; Mode D retag-forward for the rest. Manifest verified.
-- Stage 3 on `lab-work-dual-64g`: compose pull `2.25.85`; running digests match manifest (cameras `d811cace…`, presence `f424b3bf…`, frontend `b1874d89…`).
+---
+
+## [2.25.86] — 2026-09-26
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.85 → 2.25.86**.
+- Presence Settings: replace match-group reserve UI with a **Video readiness** report (active `ppl_match` / `vprofile_match` + camera + group + Presence action).
+- Presence Actions: **Video Match** and **Scan Owner QR + Video** stay disabled until readiness is green; QR-only paths unchanged.
+- Presence video sessions no longer require the Settings group reserve / private auto-provision path when a qualifying platform trigger is ready.
+
+### Added
+
+- Presence: `GET /api/v1/presence/video-readiness` readiness scoring endpoint.
 
 ---
 

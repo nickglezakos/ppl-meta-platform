@@ -436,6 +436,18 @@ class PresenceApiClient {
     }
   }
 
+  Future<ApiResponse<PresenceVideoReadiness>> getVideoReadiness() async {
+    try {
+      final response = await _apiClient.get('/api/v1/presence/video-readiness');
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(PresenceVideoReadiness.fromJson(data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
   Future<ApiResponse<PresenceResourceReservation>> reserveCamera({
     required String installationUuid,
     required String resourceUuid,
