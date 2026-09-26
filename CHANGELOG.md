@@ -17,6 +17,8 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
+- Stage 2 on `lab-work-dual-64g` finalized GHCR digests for pin **2.25.86** (git `346ee37`): rebuilt **presence** / **frontend**; Mode D retag-forward for the rest. Manifest verified.
+
 ---
 
 ## [2.25.86] — 2026-09-26
