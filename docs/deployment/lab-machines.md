@@ -31,7 +31,7 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 |---|---|---|---|---|
 | `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. |
 | `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Prior digests had Gateway URL but not these follow-ups. |
-| `lab-work-dual-64g` | `2.25.83` | **Yes** (media `d4635f9a…`, frontend `8279d972…`; gateway `b01e6b22…`, discovery `7ced8041…`) | 2026-09-23 | Ubuntu `eyenet-demo` @ `10.171.48.228`; media discovery URL + frontend upload-batch; GHCR replaced media docker-cp hotfix. |
+| `lab-work-dual-64g` | `2.25.83` | **Yes** (frontend `290a7d39…`, media `d4635f9a…`; gateway `b01e6b22…`, discovery `7ced8041…`) | 2026-09-26 | Ubuntu `eyenet-demo` @ `10.171.48.228`; Individual Groups member-details icon + prior media discovery URL / upload-batch. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
 

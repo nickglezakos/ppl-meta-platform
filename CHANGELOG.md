@@ -17,6 +17,10 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
+- GHCR images republished for **2.25.83** (`fcbca648`) on `lab-work-dual-64g`:
+  frontend `290a7d39…` (tags `2.25.83` / `2.25.83-fcbca64`) — Individual Groups
+  member-details icon. **Stage 3** on `lab-work-dual-64g` @ `10.171.48.228`
+  (2026-09-26).
 - GHCR images republished for **2.25.83** (`f5816b45`) on `lab-work-dual-64g`:
   media `d4635f9a…`, frontend `8279d972…` (tags `2.25.83` /
   `2.25.83-f5816b4`). **Stage 3** on `lab-work-dual-64g` @ `10.171.48.228`
