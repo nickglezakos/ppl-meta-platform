@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     GATEWAY_SERVICE_URL: str = "http://localhost:8080"
     BOOTCORE_SERVICE_URL: str = "http://localhost:8007"
     COMMUNICATIONS_SERVICE_URL: str = "http://localhost:8009"
+    PRESENCE_SERVICE_URL: str = "http://localhost:8011"
     FRONTEND_URL: str = "http://localhost:3000"
     SERVICE_SECRET: str = ""
     AUTHORITY_SERVICE_ENABLED: bool = False

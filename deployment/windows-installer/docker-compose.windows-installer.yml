@@ -64,6 +64,7 @@ services:
       SECRET_KEY: ${JWT_SECRET_KEY:-ppl-meta-secret-key-change-in-production}
       SERVICE_SECRET: ${SERVICE_SECRET:-ppl-meta-secret-key-change-in-production}
       DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
+      PRESENCE_SERVICE_URL: http://ppl-meta-presence:8011
       # LAN/Tailscale IP phones use; required for TrustedHostMiddleware inside Docker.
       ADVERTISE_HOST: ${ADVERTISE_HOST:-}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
@@ -274,6 +275,8 @@ services:
       SERVICE_SECRET: ${SERVICE_SECRET:-ppl-meta-secret-key-change-in-production}
       SECRET_KEY: ${JWT_SECRET_KEY:-ppl-meta-secret-key-change-in-production}
       DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
+      PEOPLE_USER_SYNC_ENABLED: "true"
+      PEOPLE_USER_SYNC_INTERVAL_SECONDS: "300"
     depends_on:
       postgres:
         condition: service_healthy

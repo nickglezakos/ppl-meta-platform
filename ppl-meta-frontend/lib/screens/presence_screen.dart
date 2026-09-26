@@ -91,7 +91,9 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   List<PresencePeopleProfile> _peopleProfiles = const [];
   bool _isPeopleLoading = false;
   bool _isPeopleSaving = false;
+  bool _isPeopleSyncing = false;
   String? _peopleError;
+  String? _peopleLastSyncLabel;
   final TextEditingController _peopleSearchController = TextEditingController();
   String _peopleSearchQuery = '';
   Timer? _peopleSearchDebounce;
@@ -1625,6 +1627,35 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     });
   }
 
+  Future<void> _syncPeopleWithUsers() async {
+    setState(() => _isPeopleSyncing = true);
+    final resp = await _apiClient.syncPeopleWithUsers();
+    if (!mounted) return;
+    setState(() => _isPeopleSyncing = false);
+    if (!resp.success || resp.data == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(resp.error ?? 'People sync failed')),
+      );
+      return;
+    }
+    final report = resp.data!;
+    final finished = report.finishedAt ?? DateTime.now().toIso8601String();
+    setState(() {
+      _peopleLastSyncLabel =
+          'Last sync: $finished · created ${report.created}, updated ${report.updatedName}, linked ${report.linked}, unchanged ${report.unchanged}';
+    });
+    await _loadPeopleProfiles();
+    if (!mounted) return;
+    final errSuffix = report.errors.isEmpty ? '' : ' · errors: ${report.errors.length}';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Synced ${report.usersSeen} users — created ${report.created}, updated ${report.updatedName}, linked ${report.linked}$errSuffix',
+        ),
+      ),
+    );
+  }
+
   Widget _buildPeopleTab(BuildContext context) {
     final List<Widget> body;
     if (_isPeopleLoading) {
@@ -1677,13 +1708,42 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
                   ],
                 ),
               ),
-              FilledButton.icon(
-                icon: const Icon(Icons.person_add, size: 18),
-                label: const Text('New Profile'),
-                onPressed: _isPeopleSaving ? null : () => _showPeopleProfileDialog(context),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    icon: _isPeopleSyncing
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.sync, size: 18),
+                    label: const Text('Sync with user accounts'),
+                    onPressed: (_isPeopleSaving || _isPeopleSyncing)
+                        ? null
+                        : _syncPeopleWithUsers,
+                  ),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.person_add, size: 18),
+                    label: const Text('New Profile'),
+                    onPressed: (_isPeopleSaving || _isPeopleSyncing)
+                        ? null
+                        : () => _showPeopleProfileDialog(context),
+                  ),
+                ],
               ),
             ],
           ),
+          if (_peopleLastSyncLabel != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _peopleLastSyncLabel!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[500]),
+            ),
+          ],
           const SizedBox(height: 16),
           TextField(
             controller: _peopleSearchController,
@@ -1723,6 +1783,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   Widget _buildPeopleCard(BuildContext context, PresencePeopleProfile profile) {
     final chips = <Widget>[
       _TraceChip(label: '${profile.linkedMemberCount} linked'),
+      if (profile.isLinkedToUser) _TraceChip(label: 'Linked to account'),
       if (profile.email != null && profile.email!.isNotEmpty) _TraceChip(label: profile.email!),
       if (profile.phone != null && profile.phone!.isNotEmpty) _TraceChip(label: profile.phone!),
       if (profile.externalRef != null && profile.externalRef!.isNotEmpty)
@@ -1847,7 +1908,14 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
               children: [
                 TextField(
                   controller: name,
-                  decoration: const InputDecoration(labelText: 'Name *', border: OutlineInputBorder()),
+                  readOnly: profile?.isLinkedToUser == true,
+                  decoration: InputDecoration(
+                    labelText: 'Name *',
+                    border: const OutlineInputBorder(),
+                    helperText: profile?.isLinkedToUser == true
+                        ? 'Name comes from the user account'
+                        : null,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(

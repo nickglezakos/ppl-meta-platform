@@ -281,6 +281,8 @@ class PresencePeopleProfile(BaseModel):
     parent_ppp_uuid: Optional[str] = None
     installation_uuid: str = "local-installation"
     linked_member_count: int = 0
+    linked_user_uuid: Optional[str] = None
+    association_updated_at: Optional[datetime] = None
     status: str = "active"  # active | inactive | merged
     metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -314,6 +316,19 @@ class UpdatePeopleProfileRequest(BaseModel):
     notes: Optional[str] = None
     external_ref: Optional[str] = None
     status: Optional[str] = None
+
+
+class PeopleUserSyncReport(BaseModel):
+    reason: str
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    created: int = 0
+    updated_name: int = 0
+    linked: int = 0
+    unlinked: int = 0
+    unchanged: int = 0
+    errors: List[str] = Field(default_factory=list)
+    users_seen: int = 0
 
 
 class LinkMemberRequest(BaseModel):

@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from presence_auth import get_current_user, require_admin_user
+from config import config
 from models.presence_models import (
     BindResourcesRequest,
     CreatePeopleProfileRequest,
@@ -442,10 +443,27 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     async def lookup_people_profile_by_member(individual_id: str):
         return {"success": True, "data": service.lookup_people_profile_by_member(individual_id)}
 
+    @router.post("/people-profiles/sync-users")
+    async def sync_people_with_users(current_user: dict = Depends(get_current_user)):
+        report = await service.sync_people_with_users(reason="manual")
+        return {
+            "success": True,
+            "data": {
+                **report.model_dump(mode="json"),
+                "requested_by": current_user.get("sub") or current_user.get("user_id"),
+            },
+        }
+
+    @router.get("/people-profiles/sync-users/status")
+    async def people_user_sync_status():
+        return {"success": True, "data": service.last_people_user_sync_report()}
+
     @router.post("/people-profiles")
     async def create_people_profile(request: CreatePeopleProfileRequest):
         try:
             profile = service.create_people_profile(request)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"create people profile failed: {exc}") from exc
         return {"success": True, "data": profile.model_dump(mode="json")}
@@ -459,7 +477,10 @@ def build_presence_router(service: PresenceService) -> APIRouter:
 
     @router.put("/people-profiles/{ppp_uuid}")
     async def update_people_profile(ppp_uuid: str, request: UpdatePeopleProfileRequest):
-        profile = service.update_people_profile(ppp_uuid, request)
+        try:
+            profile = service.update_people_profile(ppp_uuid, request)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         if profile is None:
             raise HTTPException(status_code=404, detail="people profile not found")
         return {"success": True, "data": profile.model_dump(mode="json")}
@@ -526,6 +547,17 @@ def build_internal_router(service: PresenceService) -> APIRouter:
                 "grant_type": session.grant_type.value,
             },
         }
+
+    @router.post("/internal/people-user-sync")
+    async def internal_people_user_sync(
+        authorization: str | None = Header(None),
+        reason: str = "user_update",
+    ):
+        expected = config.SERVICE_SECRET
+        if not expected or not authorization or authorization != f"Bearer {expected}":
+            raise HTTPException(status_code=401, detail="Invalid service authorization")
+        report = await service.sync_people_with_users(reason=reason)
+        return {"success": True, "data": report.model_dump(mode="json")}
 
     return router
 

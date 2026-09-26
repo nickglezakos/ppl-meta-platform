@@ -74,6 +74,12 @@ class Config:
         ).split(",")
         if status.strip()
     ]
+    PEOPLE_USER_SYNC_ENABLED: bool = os.getenv(
+        "PEOPLE_USER_SYNC_ENABLED", "true"
+    ).lower() in {"1", "true", "yes", "on"}
+    PEOPLE_USER_SYNC_INTERVAL_SECONDS: int = int(
+        os.getenv("PEOPLE_USER_SYNC_INTERVAL_SECONDS", "300")
+    )
 
 
 config = Config()

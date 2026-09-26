@@ -27,6 +27,7 @@ from models.presence_models import (
     PresencePeopleProfileLink,
     CreatePeopleProfileRequest,
     UpdatePeopleProfileRequest,
+    PeopleUserSyncReport,
     PresenceGrantType,
     PresenceGroupPolicy,
     PresenceAnalyticsEvent,
@@ -56,6 +57,11 @@ from models.presence_models import (
 )
 from .platform_clients import PlatformClients
 from .presence_repository import PresenceRepository
+from .people_user_association import (
+    PeopleUserAssociationService,
+    normalize_email,
+    user_display_name,
+)
 
 
 class PresenceService:
@@ -67,6 +73,7 @@ class PresenceService:
         self.analytics_events: List[PresenceAnalyticsEvent] = self.repository.load_analytics_events()
         self.decision_history: List[PresenceDecisionRecord] = self.repository.load_decision_history()
         self._session_timeout_tasks: Dict[str, asyncio.Task[None]] = {}
+        self._people_user_sync_task: asyncio.Task[None] | None = None
         self._repair_terminal_session_metadata()
         self._backfill_analytics_event_metadata()
         self.qr_tokens: Dict[str, str] = {}
@@ -76,8 +83,27 @@ class PresenceService:
         self.installation_profile = self._load_or_create_installation_profile()
         self.people_profiles: Dict[str, PresencePeopleProfile] = self.repository.load_people_profiles()
         self.people_profile_links: List[PresencePeopleProfileLink] = self.repository.list_people_profile_links()
+        self._users_by_email_cache: Dict[str, dict] = {}
+        self.people_user_association = PeopleUserAssociationService(
+            get_profiles=lambda: self.people_profiles,
+            save_profile=self._persist_people_profile,
+            list_users=self.platform_clients.list_users_for_association,
+            emit_association_log=self._emit_people_association_log,
+        )
         for session in self.sessions.values():
             self.qr_tokens[session.qr_token] = session.session_uuid
+
+    def _persist_people_profile(self, profile: PresencePeopleProfile) -> None:
+        self.people_profiles[profile.ppp_uuid] = profile
+        self.repository.save_people_profile(profile)
+
+    def _emit_people_association_log(self, **event_data: Any) -> None:
+        logger.info("people_association %s", event_data)
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.platform_clients.create_association_audit_log(event_data))
+        except RuntimeError:
+            pass
 
     def _load_or_create_installation_profile(self) -> PresenceProfile:
         installation_profiles = [
@@ -500,9 +526,46 @@ class PresenceService:
             raise RuntimeError("Presence database connection failed")
         await self.platform_clients.startup()
         self._schedule_existing_session_timeouts()
+        if config.PEOPLE_USER_SYNC_ENABLED:
+            await self.sync_people_with_users(reason="startup")
+            self._people_user_sync_task = asyncio.create_task(self._people_user_sync_loop())
 
     async def shutdown(self) -> None:
+        if self._people_user_sync_task is not None:
+            self._people_user_sync_task.cancel()
+            try:
+                await self._people_user_sync_task
+            except asyncio.CancelledError:
+                pass
+            self._people_user_sync_task = None
         await self.platform_clients.shutdown()
+
+    async def _people_user_sync_loop(self) -> None:
+        interval = max(30, int(config.PEOPLE_USER_SYNC_INTERVAL_SECONDS or 300))
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await self.sync_people_with_users(reason="interval")
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("people-user interval sync failed: %s", exc)
+
+    async def sync_people_with_users(self, reason: str = "manual") -> PeopleUserSyncReport:
+        report = await self.people_user_association.sync(reason=reason)
+        # Refresh email→user cache for PPP create/update hooks
+        try:
+            users = await self.platform_clients.list_users_for_association()
+            self._users_by_email_cache = {
+                normalize_email(u.get("email")): u
+                for u in users
+                if isinstance(u, dict) and normalize_email(u.get("email"))
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("people-user cache refresh failed: %s", exc)
+        return report
+
+    def last_people_user_sync_report(self) -> dict | None:
+        report = self.people_user_association.last_report
+        return report.model_dump(mode="json") if report else None
 
     def get_current_installation_context(self) -> dict:
         reserved_camera = next(iter(self.cameras.values()), None)
@@ -881,16 +944,39 @@ class PresenceService:
         return {"items": [p.model_dump(mode="json") for p in page], "total": total, "returned": len(page)}
 
     def create_people_profile(self, request: CreatePeopleProfileRequest) -> PresencePeopleProfile:
+        email = normalize_email(request.email)
+        if email:
+            existing = self.people_user_association.find_active_by_email(email)
+            if existing is not None:
+                raise ValueError(f"An active people profile already uses email {email}")
+        name = request.name.strip()
+        linked_user_uuid = None
+        user = self._users_by_email_cache.get(email) if email else None
+        if user:
+            name = user_display_name(user)
+            linked_user_uuid = str(user.get("guid") or "") or None
         profile = PresencePeopleProfile(
-            name=request.name.strip(),
-            email=request.email,
+            name=name,
+            email=email or request.email,
             phone=request.phone,
             notes=request.notes,
             external_ref=request.external_ref,
             installation_uuid=request.installation_uuid,
+            linked_user_uuid=linked_user_uuid,
+            association_updated_at=datetime.utcnow() if linked_user_uuid else None,
         )
-        self.people_profiles[profile.ppp_uuid] = profile
-        self.repository.save_people_profile(profile)
+        self._persist_people_profile(profile)
+        if linked_user_uuid:
+            self._emit_people_association_log(
+                outcome="created",
+                reason="ppp_create",
+                email=email,
+                user_guid=linked_user_uuid,
+                ppp_uuid=profile.ppp_uuid,
+                name_before=None,
+                name_after=profile.name,
+            )
+        self._schedule_people_user_sync("ppp_create")
         return profile
 
     def get_people_profile(self, ppp_uuid: str) -> dict | None:
@@ -905,12 +991,58 @@ class PresenceService:
         if profile is None:
             return None
         updates = request.model_dump(exclude_unset=True)
+        if "email" in updates:
+            new_email = normalize_email(updates.get("email"))
+            if new_email:
+                other = self.people_user_association.find_active_by_email(new_email)
+                if other is not None and other.ppp_uuid != profile.ppp_uuid:
+                    raise ValueError(f"An active people profile already uses email {new_email}")
+            updates["email"] = new_email
+            # Email changed away from linked user → unlink until sync
+            if profile.linked_user_uuid and new_email != normalize_email(profile.email):
+                profile.linked_user_uuid = None
+                profile.association_updated_at = datetime.utcnow()
+
         for field in ("name", "email", "phone", "notes", "external_ref", "status"):
             if field in updates:
                 setattr(profile, field, updates[field])
+
+        # User accounts are SoT when email matches
+        email = normalize_email(profile.email)
+        user = self._users_by_email_cache.get(email) if email else None
+        if user:
+            name_before = profile.name
+            profile.name = user_display_name(user)
+            profile.linked_user_uuid = str(user.get("guid") or "") or profile.linked_user_uuid
+            profile.association_updated_at = datetime.utcnow()
+            if name_before != profile.name:
+                self._emit_people_association_log(
+                    outcome="updated_name",
+                    reason="ppp_update",
+                    email=email,
+                    user_guid=profile.linked_user_uuid,
+                    ppp_uuid=profile.ppp_uuid,
+                    name_before=name_before,
+                    name_after=profile.name,
+                )
+        elif profile.linked_user_uuid and "name" in updates:
+            # Linked profiles cannot override account name without matching user cache;
+            # keep linked name sticky until next sync.
+            pass
+
         profile.updated_at = datetime.utcnow()
-        self.repository.save_people_profile(profile)
+        self._persist_people_profile(profile)
+        self._schedule_people_user_sync("ppp_update")
         return profile
+
+    def _schedule_people_user_sync(self, reason: str) -> None:
+        if not config.PEOPLE_USER_SYNC_ENABLED:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.sync_people_with_users(reason=reason))
+        except RuntimeError:
+            pass
 
     def delete_people_profile(self, ppp_uuid: str) -> bool:
         profile = self.people_profiles.get(ppp_uuid)

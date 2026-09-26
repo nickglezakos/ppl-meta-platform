@@ -1178,6 +1178,8 @@ class PresencePeopleProfile {
   final String? externalRef;
   final String? installationUuid;
   final int linkedMemberCount;
+  final String? linkedUserUuid;
+  final String? associationUpdatedAt;
   final String status;
   final List<PresencePeopleProfileLink> links;
 
@@ -1190,9 +1192,14 @@ class PresencePeopleProfile {
     this.externalRef,
     this.installationUuid,
     this.linkedMemberCount = 0,
+    this.linkedUserUuid,
+    this.associationUpdatedAt,
     this.status = 'active',
     this.links = const [],
   });
+
+  bool get isLinkedToUser =>
+      linkedUserUuid != null && linkedUserUuid!.trim().isNotEmpty;
 
   factory PresencePeopleProfile.fromJson(Map<String, dynamic> json) {
     final links = <PresencePeopleProfileLink>[];
@@ -1214,8 +1221,57 @@ class PresencePeopleProfile {
       linkedMemberCount: json['linked_member_count'] is num
           ? (json['linked_member_count'] as num).toInt()
           : 0,
+      linkedUserUuid: json['linked_user_uuid']?.toString(),
+      associationUpdatedAt: json['association_updated_at']?.toString(),
       status: (json['status'] ?? 'active').toString(),
       links: links,
+    );
+  }
+}
+
+class PeopleUserSyncReport {
+  final String reason;
+  final String? startedAt;
+  final String? finishedAt;
+  final int created;
+  final int updatedName;
+  final int linked;
+  final int unlinked;
+  final int unchanged;
+  final int usersSeen;
+  final List<String> errors;
+
+  const PeopleUserSyncReport({
+    required this.reason,
+    this.startedAt,
+    this.finishedAt,
+    this.created = 0,
+    this.updatedName = 0,
+    this.linked = 0,
+    this.unlinked = 0,
+    this.unchanged = 0,
+    this.usersSeen = 0,
+    this.errors = const [],
+  });
+
+  factory PeopleUserSyncReport.fromJson(Map<String, dynamic> json) {
+    final rawErrors = json['errors'];
+    return PeopleUserSyncReport(
+      reason: (json['reason'] ?? '').toString(),
+      startedAt: json['started_at']?.toString(),
+      finishedAt: json['finished_at']?.toString(),
+      created: json['created'] is num ? (json['created'] as num).toInt() : 0,
+      updatedName:
+          json['updated_name'] is num ? (json['updated_name'] as num).toInt() : 0,
+      linked: json['linked'] is num ? (json['linked'] as num).toInt() : 0,
+      unlinked: json['unlinked'] is num ? (json['unlinked'] as num).toInt() : 0,
+      unchanged:
+          json['unchanged'] is num ? (json['unchanged'] as num).toInt() : 0,
+      usersSeen:
+          json['users_seen'] is num ? (json['users_seen'] as num).toInt() : 0,
+      errors: rawErrors is List
+          ? rawErrors.map((e) => e.toString()).toList()
+          : const [],
     );
   }
 }

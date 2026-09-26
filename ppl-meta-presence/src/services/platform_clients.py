@@ -433,3 +433,39 @@ class PlatformClients:
                 return sock.getsockname()[0]
         except OSError:
             return "127.0.0.1"
+
+    async def list_users_for_association(self) -> list[dict[str, Any]]:
+        """Fetch slim user directory from node (service-token auth)."""
+        if not config.SERVICE_SECRET:
+            raise RuntimeError("Presence service is missing SERVICE_SECRET for user association")
+        headers = {"Authorization": f"Bearer {config.SERVICE_SECRET}"}
+        response = await self._http_client.get(
+            f"{config.NODE_SERVICE_URL}/users/internal/association-directory",
+            headers=headers,
+        )
+        if response.status_code >= 400:
+            self._raise_downstream_http_error(response, "node")
+        payload = response.json()
+        if isinstance(payload, dict) and isinstance(payload.get("users"), list):
+            return [u for u in payload["users"] if isinstance(u, dict)]
+        if isinstance(payload, list):
+            return [u for u in payload if isinstance(u, dict)]
+        return []
+
+    async def create_association_audit_log(self, event_data: Dict[str, Any]) -> None:
+        """Best-effort people_association audit via communications (service JWT)."""
+        try:
+            headers = self._camera_service_headers()
+            token = headers["Authorization"].split(" ", 1)[1]
+            await self.create_audit_log(
+                token,
+                {
+                    "event_type": "people_association",
+                    "event_source": "ppl-meta-presence",
+                    "event_data": event_data,
+                    "severity": "info",
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("people_association audit log skipped: %s", exc)
+

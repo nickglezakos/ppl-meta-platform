@@ -272,3 +272,21 @@ Key constraints established:
 - PPP name is the **sole source of truth** for display where a link exists.
 - PPP creation is available from **both** the presence sessions tab and the individual-groups member view.
 - PPPs are **installation-scoped**; foreign-installation profiles are reached only through a future connector middleware.
+
+---
+
+## 12. People ↔ user account association (2026-09-26)
+
+Installation **user accounts** (ppl-meta-node) associate with PPPs by **normalized email**.
+
+| Rule | Behavior |
+|---|---|
+| Source of truth | User account wins for PPP `name` when emails match (`given_name` → `name` → `username`) |
+| Durable link | PPP stores `linked_user_uuid` (user `guid`) |
+| Sync triggers | Presence startup, interval (`PEOPLE_USER_SYNC_INTERVAL_SECONDS`, default 300), People tab **Sync with user accounts**, PPP create/update, node user create/update notify |
+| Missing PPP for user | Auto-create PPP |
+| Create PPP with user email | Name forced from user; link set |
+| Create/update user with PPP email | Presence sync updates PPP name + link |
+| Audit | Communications / presence log type `people_association` |
+| API | `POST /api/v1/presence/people-profiles/sync-users` (manual); node `GET /api/v1/users/internal/association-directory` (service token) |
+

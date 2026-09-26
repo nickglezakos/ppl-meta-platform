@@ -41,6 +41,10 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Changed
 
+- Presence People Profiles can associate with installation user accounts by
+  email (user accounts are source of truth for display name when linked).
+- Presence People tab: **Sync with user accounts** button + linked-account chip;
+  name is read-only when linked to a user.
 - Windows `install-platform.ps1`: no longer prompts for `INSTALLATION_UUID` /
   `APPLICATION_KEY` (empty → `/bootstrap`); auto-generates weak
   `POSTGRES_PASSWORD` / `JWT_SECRET_KEY`.
@@ -59,6 +63,8 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
   icon (same height as trash) to open Member details / People profile linking.
 - People Profile picker: tap a People row to **select** it (highlighted); only
   **Link** submits the link; one profile (or create-new) per submission.
+- Presence: people↔user email association sync (startup + interval + manual +
+  user create/update notify); audit `people_association`.
 - Media signage sync: use `DISCOVERY_SERVICE_URL` (`ppl-meta-discovery:8006`)
   instead of hardcoded `localhost:8006` so playlist push can resolve the device
   from inside the media container (lab hotfix → source).

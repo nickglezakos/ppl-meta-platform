@@ -712,6 +712,20 @@ class PresenceApiClient {
     }
   }
 
+  Future<ApiResponse<PeopleUserSyncReport>> syncPeopleWithUsers() async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/presence/people-profiles/sync-users',
+      );
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(PeopleUserSyncReport.fromJson(data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
   Map<String, dynamic> _unwrapData(dynamic payload) {
     if (payload is Map<String, dynamic>) {
       final data = payload['data'];

@@ -128,6 +128,13 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
 
         log_user_action(db, created_user.username, created_user.email, "register")
 
+        try:
+            from src.services.presence_people_sync_notify import notify_presence_people_user_sync
+
+            await notify_presence_people_user_sync(reason="user_create")
+        except Exception as notify_err:  # noqa: BLE001
+            logger.warning("Presence people sync after register skipped: %s", notify_err)
+
         # Send verification email
         try:
             verification_token = jwt.encode(
@@ -660,6 +667,32 @@ async def get_user_info_for_service(
     }
 
 
+@router.get("/internal/association-directory")
+def association_directory_for_service(
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_service_token),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=5000),
+):
+    """Slim user directory for Presence people↔user association (service token)."""
+    users = list_users(db, skip=skip, limit=limit)
+    return {
+        "users": [
+            {
+                "guid": str(user.guid),
+                "email": user.email,
+                "given_name": user.given_name,
+                "family_name": user.family_name,
+                "name": user.name,
+                "username": user.username,
+                "is_active": bool(user.is_active),
+                "blocked": bool(getattr(user, "blocked", False)),
+            }
+            for user in users
+        ]
+    }
+
+
 @router.get("/user-permissions/{user_id}")
 async def get_user_permissions_for_service(
     user_id: int, db: Session = Depends(get_db), _: bool = Depends(verify_service_token)
@@ -792,13 +825,13 @@ def api_get_user_by_id(
 
 
 @router.put("/{user_id}", response_model=UserRead)
-def api_update_user(
+async def api_update_user(
     user_id: int,
     body: dict,
     db: Session = Depends(get_db),
     current_user: UserRead = Depends(require_capability("users.accounts.update")),
 ):
-    """Update a user's email or username. Only owner or admin."""
+    """Update a user's email, username, or name fields. Only owner or admin."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -813,10 +846,22 @@ def api_update_user(
         if existing:
             raise HTTPException(status_code=409, detail="Email already taken")
         user.email = body["email"]
+    if "given_name" in body:
+        user.given_name = body["given_name"]
+    if "family_name" in body:
+        user.family_name = body["family_name"]
+    if "name" in body:
+        user.name = body["name"]
 
     db.commit()
     db.refresh(user)
     log_user_action(db, current_user.username, current_user.email, f"user_update:{user_id}")
+    try:
+        from src.services.presence_people_sync_notify import notify_presence_people_user_sync
+
+        await notify_presence_people_user_sync(reason="user_update")
+    except Exception as notify_err:  # noqa: BLE001
+        logger.warning("Presence people sync after user update skipped: %s", notify_err)
     return user
 
 
