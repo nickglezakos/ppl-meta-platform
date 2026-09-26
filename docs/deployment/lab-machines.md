@@ -1,7 +1,7 @@
 # Lab machines inventory
 
 **Status:** Active  
-**Last updated:** 2026-09-23  
+**Last updated:** 2026-09-26  
 **Operator console:** developer Mac (Apple Silicon) — Stage 1 git, docs, RDP/SSH into labs; **not** the default Stage 2 image builder  
 **Canonical release process:** [platform-release-cicd.md](./platform-release-cicd.md)  
 **Operator guide (for dummies + glossary):** [eyenet-cicd-operator-guide.md](./eyenet-cicd-operator-guide.md)
@@ -24,14 +24,14 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 
 ## Fleet status (vs GHCR)
 
-**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.84`** (Mode D; last finalized **2026-09-26** after people↔user association + SQLAlchemy pin).  
+**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.85`** (Mode D; last finalized **2026-09-26** after platform Presence QR scan — cameras `d811cace…`, presence `f424b3bf…`, frontend `b1874d89…`).  
 **Rule:** After every **Stage 3** on a named lab, update this table (pin, match state, date, short notes). Do not treat a matching *tag* as current — compare **running container Image ID** (and ideally `main.dart.js` sha256) to the manifest. Tag RepoDigests alone can lie if the container was not recreated.
 
 | Lab ID | Pin | Match GHCR? | Last Stage 3 | Notes |
 |---|---|---|---|---|
 | `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. |
 | `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Prior digests had Gateway URL but not these follow-ups. |
-| `lab-work-dual-64g` | `2.25.84` | **Yes** (node `8e711f1b…`, presence `2b9316be…`, frontend `c5303a27…`) | 2026-09-26 | Ubuntu `eyenet-demo` @ `10.171.48.228`; people↔user association sync + People-tab Sync button. |
+| `lab-work-dual-64g` | `2.25.84` | **No** (still on `2.25.84` runtime; GHCR pin is `2.25.85`) | 2026-09-26 | Ubuntu `eyenet-demo` @ `10.171.48.228`; Stage 2 for `2.25.85` done — Stage 3 pull pending. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
 

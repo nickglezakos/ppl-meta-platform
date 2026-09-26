@@ -17,7 +17,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-*(none yet for post-2.25.85)*
+- Stage 2 on `lab-work-dual-64g` finalized GHCR digests for pin **2.25.85** (git `f5cf7d7`): rebuilt **cameras** / **presence** / **frontend**; Mode D retag-forward for the rest. Manifest verified.
 
 ---
 
