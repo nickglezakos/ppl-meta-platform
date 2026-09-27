@@ -23,6 +23,12 @@ _(none yet)_
 
 ## [2.25.89] — 2026-09-27
 
+### Notes
+
+- GHCR images republished for **2.25.89** (`b50e0ffa`) Mode D on `lab-work-dual-64g`:
+  rebuilt node/cameras/media/orchestrator/communications/presence/models/vision/vmeta;
+  retagged gateway/discovery/frontend from `2.25.88`. Manifest finalized.
+
 ### Changed
 
 - Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.88 → 2.25.89**.

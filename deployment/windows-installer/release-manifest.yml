@@ -4,43 +4,43 @@
 # coherence / audit layer (Mode D). Digest-pinned compose is a later step.
 schema_version: 1
 platform_version: "2.25.89"
-git_sha: "c3fb0e2"
-created_at: "2026-09-27T15:32:42Z"
+git_sha: "b50e0ff"
+created_at: "2026-09-27T16:30:43Z"
 registry: "ghcr.io/nickglezakos/ppl-meta-platform"
 images:
   ppl-meta-node:
     tag: "2.25.89"
-    digest: "sha256:8e711f1b359aac1eb7f95b8fae6eaf6b7e8fac3b7f1e4764708f70c8db2ebd02"
+    digest: "sha256:bfdd58b64bca0394d471a9a24ff9c5e6609ae171469eac7cc65a37deda9ea872"
   ppl-meta-media:
     tag: "2.25.89"
-    digest: "sha256:d4635f9a33f14231e40be801941c5af318327c2d15f808038b4083db7b846793"
+    digest: "sha256:539924ced8a11dedc7125f8dc8e9bca080c87b76ced56ff2cd11c5d244c39cf0"
   ppl-meta-gateway:
     tag: "2.25.89"
     digest: "sha256:b01e6b2242bdc998d135fa08fe8b98ca71bbef92eb1d890eaca521b022329be8"
   ppl-meta-orchestrator:
     tag: "2.25.89"
-    digest: "sha256:76e9510f9ade936da94032f59ccab7a7dc3e7221b17f440a352629dfca30e1d7"
+    digest: "sha256:e099aafdcf94892f4289eb41145ba16f22dd989aedeb98ca430e2277c777c07f"
   ppl-meta-discovery:
     tag: "2.25.89"
     digest: "sha256:7ced804133e0375f1950e4c878f633a26837c57e593a41db14162dc26f1f13fc"
   ppl-meta-communications:
     tag: "2.25.89"
-    digest: "sha256:2920453cd75bbd0e47cc0d75dd160c0161fcf24a7947635e41d03ebec7f37772"
+    digest: "sha256:7ebfd0d5745841424c94a80d611e2d810edb1876b1bd64a882bfb50a9302d3ad"
   ppl-meta-frontend:
     tag: "2.25.89"
     digest: "sha256:d9b782189eeef86f7a22398ebc84aef248137bd8962a3c669ba742c977c69b6d"
   ppl-meta-vision-protected:
     tag: "2.25.89"
-    digest: "sha256:77d6e0fbc6a9dd3b7489b3a549dc65db4a789785b72fbbc582efc1b8f8405f67"
+    digest: "sha256:3150e44150b063df0407cfe77dbcaf550e0db877e5a326a5177ce4b748a23d6c"
   ppl-meta-vmeta-protected:
     tag: "2.25.89"
-    digest: "sha256:4c2ae38c15904951fa885635990d2217b26b4e9c9b84d42fde016c09518ac6f3"
+    digest: "sha256:6a7c770094c4cac7f22bdebba39cf318bd8a6489c1e179ec1b8c46bf2de748b9"
   ppl-meta-cameras:
     tag: "2.25.89"
-    digest: "sha256:0d9fa7774906b363cb70860bb9b58717538b7d4904375138759da27ec0e59f49"
+    digest: "sha256:d21706ff75f8e40a467f778fb99ff0557f945d2207480cfb177ccc92bb6f43db"
   ppl-meta-presence:
     tag: "2.25.89"
-    digest: "sha256:16f74ecbded646e1985346bf146a8834ad0172236919e70e95a0b785c6290bb6"
+    digest: "sha256:4cc75af76a388d0533bc0e9c440d8bfbf361bc4faee098535a93ca0a14ba11b3"
   ppl-meta-models:
     tag: "2.25.89"
-    digest: "sha256:2bf505c80f817657af9b15098fcabf4e2ed56b96ee8486d29c3062f360a0c5d4"
+    digest: "sha256:327e2fe8d3401b6a93f6e4d4ae024fc0f2491f21eb9affc2349f14eea767f3f3"
