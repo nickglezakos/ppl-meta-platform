@@ -253,10 +253,12 @@ class AuthoritySafeguardMiddleware(BaseHTTPMiddleware):
     _exempt_exact_paths = {
         "/",
         "/health",
+        "/health/",
         "/docs",
         "/redoc",
         "/openapi.json",
         "/api/v1/health",
+        "/api/v1/health/",
         "/api/v1/licensing/bootstrap/status",
         "/api/v1/licensing/bootstrap/activate",
         "/api/v1/licensing/authority/status",
@@ -313,16 +315,22 @@ async def lifespan(_app: FastAPI):
     # Initialize service discovery if available
     if service_discovery_available:
         try:
-            # Detect actual network IP for registration
-            try:
-                # Connect to a remote address to determine local IP
-                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                s.connect(("8.8.8.8", 80))
-                detected_ip = s.getsockname()[0]
-                s.close()
-            except OSError:
-                # Fallback to hostname resolution
-                detected_ip = socket.gethostbyname(socket.gethostname())
+            # Prefer ADVERTISE_HOST (LAN/VPN) over the container bridge IP.
+            # Discovery health-checks the registered host; Docker IPs trip
+            # TrustedHostMiddleware (HTTP 400) and the entry is pruned as stale.
+            advertise_host = (os.getenv("ADVERTISE_HOST") or "").strip().split(":")[0]
+            if advertise_host:
+                detected_ip = advertise_host
+            else:
+                try:
+                    # Connect to a remote address to determine local IP
+                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    s.connect(("8.8.8.8", 80))
+                    detected_ip = s.getsockname()[0]
+                    s.close()
+                except OSError:
+                    # Fallback to hostname resolution
+                    detected_ip = socket.gethostbyname(socket.gethostname())
 
             # Detect our Headscale/Tailscale mesh IP so devices dialing in over
             # the VPN can resolve this node's API to a reachable address.

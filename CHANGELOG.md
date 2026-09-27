@@ -30,7 +30,8 @@ _(none yet)_
   retagged gateway/discovery/frontend from `2.25.88`. Models `00e33bb1…`,
   orchestrator `e0fd8418…` after sqlalchemy `<2.1` pin. Manifest finalized.
   Stage 3 on `lab-work-dual-64g` @ `192.168.1.90` / `100.101.128.40` (2026-09-27):
-  discovery registry self-populates after recreate (9 healthy; node still flaps on probe HTTP 400).
+  discovery registry self-populates after recreate. Node `ADVERTISE_HOST`
+  registration follow-up keeps node healthy for mobile setup.
 
 ### Changed
 
@@ -41,6 +42,8 @@ _(none yet)_
 - Service discovery self-registration after restart: vendor gateway-style `shared.service_discovery` into node, cameras, media, orchestrator, communications, vision, presence, vmeta, and models (plus `PYTHONPATH`), so `/network` no longer shows only gateway when discovery’s in-memory registry is wiped on recreate.
 - Models + orchestrator: pin `sqlalchemy` to `>=2.0.x,<2.1` so rebuilds keep `psycopg2` (SQLAlchemy 2.1 defaults to `psycopg` v3 and crashed startup).
 - Orchestrator lifespan: remove nested `import os` that unbound the module-level `os` when DB init failed early.
+- Node discovery registration: prefer `ADVERTISE_HOST` over Docker bridge IP so discovery health checks no longer get TrustedHost `400 Invalid host header` and prune node (mobile setup “Node service not found”).
+- Node safeguard exempt paths: include trailing-slash `/health/` and `/api/v1/health/`.
 
 ---
 
