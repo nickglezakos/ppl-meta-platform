@@ -88,7 +88,6 @@ async def lifespan(_app: FastAPI):
         
         # Import workflow models directly from models.py to ensure they're registered with Base
         import sys
-        import os
         # Add src directory to path
         src_dir = os.path.dirname(__file__)
         if src_dir not in sys.path:

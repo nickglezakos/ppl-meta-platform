@@ -36,6 +36,8 @@ _(none yet)_
 ### Fixed
 
 - Service discovery self-registration after restart: vendor gateway-style `shared.service_discovery` into node, cameras, media, orchestrator, communications, vision, presence, vmeta, and models (plus `PYTHONPATH`), so `/network` no longer shows only gateway when discovery’s in-memory registry is wiped on recreate.
+- Models + orchestrator: pin `sqlalchemy` to `>=2.0.x,<2.1` so rebuilds keep `psycopg2` (SQLAlchemy 2.1 defaults to `psycopg` v3 and crashed startup).
+- Orchestrator lifespan: remove nested `import os` that unbound the module-level `os` when DB init failed early.
 
 ---
 
