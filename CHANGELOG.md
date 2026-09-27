@@ -25,9 +25,12 @@ _(none yet)_
 
 ### Notes
 
-- GHCR images republished for **2.25.89** (`b50e0ffa`) Mode D on `lab-work-dual-64g`:
+- GHCR images republished for **2.25.89** (`b50e0ffa` / follow-up `e3e54e88`) Mode D on `lab-work-dual-64g`:
   rebuilt node/cameras/media/orchestrator/communications/presence/models/vision/vmeta;
-  retagged gateway/discovery/frontend from `2.25.88`. Manifest finalized.
+  retagged gateway/discovery/frontend from `2.25.88`. Models `00e33bb1…`,
+  orchestrator `e0fd8418…` after sqlalchemy `<2.1` pin. Manifest finalized.
+  Stage 3 on `lab-work-dual-64g` @ `192.168.1.90` / `100.101.128.40` (2026-09-27):
+  discovery registry self-populates after recreate (9 healthy; node still flaps on probe HTTP 400).
 
 ### Changed
 

@@ -24,14 +24,14 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 
 ## Fleet status (vs GHCR)
 
-**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.88`** (Mode D; last finalized **2026-09-27** after cameras mobile FPS calibration/stamp — cameras `0d9fa777…`).  
+**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.89`** (Mode D; last finalized **2026-09-27** after discovery self-registration fix — models `00e33bb1…`, orchestrator `e0fd8418…`).  
 **Rule:** After every **Stage 3** on a named lab, update this table (pin, match state, date, short notes). Do not treat a matching *tag* as current — compare **running container Image ID** (and ideally `main.dart.js` sha256) to the manifest. Tag RepoDigests alone can lie if the container was not recreated.
 
 | Lab ID | Pin | Match GHCR? | Last Stage 3 | Notes |
 |---|---|---|---|---|
 | `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. |
 | `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Prior digests had Gateway URL but not these follow-ups. |
-| `lab-work-dual-64g` | `2.25.88` | **Yes** (cameras `0d9fa777…`) | 2026-09-27 | Ubuntu `eyenet-demo` @ `192.168.1.90` / Tailscale `100.101.128.40`; mobile FPS calibration floor + stamp fallback. APK stream profiles separate. |
+| `lab-work-dual-64g` | `2.25.89` | **Yes** (models `00e33bb1…`, orchestrator `e0fd8418…`) | 2026-09-27 | Ubuntu `eyenet-demo` @ `192.168.1.90` / Tailscale `100.101.128.40`; discovery self-register after recreate. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
 
