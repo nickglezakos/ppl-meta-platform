@@ -1,7 +1,7 @@
 # Lab machines inventory
 
 **Status:** Active  
-**Last updated:** 2026-09-26  
+**Last updated:** 2026-09-27  
 **Operator console:** developer Mac (Apple Silicon) — Stage 1 git, docs, RDP/SSH into labs; **not** the default Stage 2 image builder  
 **Canonical release process:** [platform-release-cicd.md](./platform-release-cicd.md)  
 **Operator guide (for dummies + glossary):** [eyenet-cicd-operator-guide.md](./eyenet-cicd-operator-guide.md)
@@ -24,14 +24,14 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 
 ## Fleet status (vs GHCR)
 
-**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.89`** (Mode D; last finalized **2026-09-27** after discovery self-registration fix — models `00e33bb1…`, orchestrator `e0fd8418…`).  
+**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.90`** (Mode D; last finalized **2026-09-27** — frontend `d55e6440…` mobile disconnect UI).  
 **Rule:** After every **Stage 3** on a named lab, update this table (pin, match state, date, short notes). Do not treat a matching *tag* as current — compare **running container Image ID** (and ideally `main.dart.js` sha256) to the manifest. Tag RepoDigests alone can lie if the container was not recreated.
 
 | Lab ID | Pin | Match GHCR? | Last Stage 3 | Notes |
 |---|---|---|---|---|
 | `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. |
 | `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Prior digests had Gateway URL but not these follow-ups. |
-| `lab-work-dual-64g` | `2.25.89` | **Yes** (models `00e33bb1…`, orchestrator `e0fd8418…`) | 2026-09-27 | Ubuntu `eyenet-demo` @ `192.168.1.90` / Tailscale `100.101.128.40`; discovery self-register after recreate. |
+| `lab-work-dual-64g` | `2.25.90` | **Yes** (frontend `d55e6440…`) | 2026-09-27 | Ubuntu `eyenet-demo` @ `192.168.1.90` / Tailscale `100.101.128.40`; mobile Connect/Disconnect UI fix. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
 
