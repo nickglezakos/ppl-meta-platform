@@ -255,15 +255,25 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
               response['success'] == true || 
               response['status'] == 'success');
               
-      // If registration was successful, store the device ID
-      if (isSuccess && registrationData['device_id'] != null) {
-        print('💾 Storing device ID after registration: ${registrationData['device_id']}');
-        authService.setDeviceId(registrationData['device_id']);
-        
-        // Update streaming service with the device ID immediately
-        print('🔄 Updating streaming service with device ID');
-        final cameraProvider = context.read<CameraProvider>();
-        await cameraProvider.updateStreamingDeviceId(registrationData['device_id']);
+      // If registration was successful, store the *server* device_id (UUID),
+      // not the client-generated registration payload id.
+      if (isSuccess) {
+        final serverDeviceId = response?['camera']?['device_id']?.toString() ??
+            registrationData['device_id']?.toString();
+        if (serverDeviceId != null && serverDeviceId.isNotEmpty) {
+          print('💾 Storing device ID after registration: $serverDeviceId');
+          authService.setDeviceId(serverDeviceId);
+          try {
+            await DeviceIdentifierService().storeCameraUuid(serverDeviceId);
+          } catch (e) {
+            print('⚠️ Failed to persist camera UUID: $e');
+          }
+
+          // Update streaming service with the device ID immediately
+          print('🔄 Updating streaming service with device ID');
+          final cameraProvider = context.read<CameraProvider>();
+          await cameraProvider.updateStreamingDeviceId(serverDeviceId);
+        }
       }
 
       return isSuccess;

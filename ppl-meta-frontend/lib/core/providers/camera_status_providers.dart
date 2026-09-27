@@ -121,6 +121,19 @@ class CameraStatusNotifier extends StateNotifier<Map<String, CameraStatus>> {
     
     state = {...state, event.deviceId: newStatus};
   }
+
+  /// Optimistically mark a camera disconnected (e.g. right after Disconnect API).
+  void markDisconnected(String deviceId) {
+    final current = state[deviceId] ?? CameraStatus(deviceId: deviceId, status: 'disconnected');
+    state = {
+      ...state,
+      deviceId: current.copyWith(
+        status: 'disconnected',
+        isRecording: false,
+        isStreaming: false,
+      ),
+    };
+  }
   
   @override
   void dispose() {

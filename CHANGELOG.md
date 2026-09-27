@@ -21,6 +21,20 @@ _(none yet)_
 
 ---
 
+## [2.25.90] — 2026-09-27
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.89 → 2.25.90**.
+
+### Fixed
+
+- Frontend mobile Connect button: do not treat a stale WebSocket `connected` event as still connected after Disconnect (list status from live frame activity is authoritative).
+- Frontend mobile Connect toggle: when the phone is already sending frames, tap Disconnect instead of re-ensure Connect (re-ensure was clearing the disconnect hold and looked like “won’t disconnect”). LEASE OPEN without frames still uses short-tap re-ensure / long-press cancel.
+- Mobile camera Stop stream: notify platform `/disconnect` so the camera card flips off immediately; stop teardown no longer clears lease flags before the stop path runs.
+
+---
+
 ## [2.25.89] — 2026-09-27
 
 ### Notes

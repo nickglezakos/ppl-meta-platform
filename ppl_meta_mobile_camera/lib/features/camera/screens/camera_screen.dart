@@ -1331,17 +1331,18 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _stopAllStreamingPaths(CameraProvider cameraProvider) async {
     final mobileStreamingService = MobileStreamingService();
 
-    // Stop camera image stream first so frames stop immediately.
-    if (CameraService.instance.isStreaming) {
-      await CameraService.instance.stopStreaming();
-    }
-
-    // Full mobile upload teardown (clears lease + frame sending flag).
-    mobileStreamingService.disableFrameSending();
+    // Full mobile upload teardown first (clears lease + notifies platform).
+    // Do this before CameraService.stop so in-flight frames see the lease gone.
     try {
       await mobileStreamingService.stopStreaming();
     } catch (e) {
       CameraLogger.warning('MobileStreamingService.stopStreaming: $e');
+    }
+    mobileStreamingService.disableFrameSending();
+
+    // Stop camera image stream so frames stop immediately.
+    if (CameraService.instance.isStreaming) {
+      await CameraService.instance.stopStreaming();
     }
 
     if (cameraProvider.isStreaming) {

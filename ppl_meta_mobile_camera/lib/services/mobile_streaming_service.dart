@@ -293,30 +293,63 @@ class MobileStreamingService {
   
   /// Stop streaming
   Future<void> stopStreaming() async {
-    if (!_isStreaming && _streamSessionId == null) return;
-    
     developer.log('Stopping streaming', name: _logTag);
-    
+
+    final hadLease = _streamSessionId != null || _isStreaming;
     try {
       _isStreaming = false;
       _streamSessionId = null;
       _updateStatus(StreamingStatus.stopping());
-      
+
       // Stop monitoring
       _stopMonitoring();
-      
+
       // Stop RTMP stream
       await _stopRTMPStream();
-      
+
+      // Tell the platform to disconnect so UI status flips immediately.
+      if (hadLease) {
+        await _notifyPlatformDisconnect();
+      }
+
       // Cleanup resources
       await _cleanup();
-      
+
       _updateStatus(StreamingStatus.stopped());
       developer.log('Streaming stopped successfully', name: _logTag);
-      
     } catch (e) {
       developer.log('Error stopping stream: $e', name: _logTag, level: 1000);
       _updateStatus(StreamingStatus.error('Error stopping stream: $e'));
+    }
+  }
+
+  /// Operator-facing disconnect so list status / lease hold update without waiting
+  /// for inactivity timeout.
+  Future<void> _notifyPlatformDisconnect() async {
+    final backend = _backendUrl;
+    final token = _accessToken;
+    final deviceId = _deviceId;
+    if (backend == null || token == null || deviceId == null || deviceId.isEmpty) {
+      return;
+    }
+    try {
+      final url = '$backend/api/v1/cameras/$deviceId/disconnect';
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      print(
+        '🛑 [STOP_STREAM] Platform disconnect HTTP ${response.statusCode} for $deviceId',
+      );
+    } catch (e) {
+      developer.log(
+        'Platform disconnect notify failed (non-fatal): $e',
+        name: _logTag,
+        level: 900,
+      );
     }
   }
   
@@ -591,6 +624,7 @@ class MobileStreamingService {
         );
         print('🛑 [FRAME_SEND] Platform rejected frame (409) — stopping upload');
         try {
+          // Clears lease flags; CameraService mirrors stop via sendFrameToBackend().then
           await stopStreaming();
         } finally {
           _holdStopInProgress = false;

@@ -55,8 +55,16 @@ class CameraCard extends ConsumerWidget {
         normalized == 'in_use';
     final wsSaysActive = (status?.isConnected ?? false) || (status?.isStreaming ?? false);
 
-    // Mobile and edge cameras can be actively streamable without websocket connected state.
-    if (camera.type == CameraType.mobile || camera.type == CameraType.edge) {
+    // Mobile list status is derived from live frame activity
+    // (has_active_mobile_camera). Do not keep the Connect button stuck on
+    // "Disconnect" because of a stale WebSocket "connected" event after
+    // operator Disconnect (WS events can be missed or arrive late).
+    if (camera.type == CameraType.mobile) {
+      return cameraSaysActive;
+    }
+
+    // Edge cameras can be streamable without websocket connected state.
+    if (camera.type == CameraType.edge) {
       return cameraSaysActive || wsSaysActive;
     }
 
@@ -106,11 +114,11 @@ class CameraCard extends ConsumerWidget {
     final mobilePhase = updatedCamera.type == CameraType.mobile
         ? ref.watch(mobileConnectPhaseProvider(updatedCamera.deviceId))
         : MobileConnectPhase.idle;
+    // Orange lease chrome only while waiting for the phone — not once frames flow.
     final bool showMobileLeaseOpen = updatedCamera.type == CameraType.mobile &&
-        (mobilePhase == MobileConnectPhase.leaseOpen ||
-            (isConnected &&
-                mobilePhase != MobileConnectPhase.attached &&
-                !_isMobileActivelyStreaming(updatedCamera, cameraStatus)));
+        mobilePhase == MobileConnectPhase.leaseOpen &&
+        !isConnected &&
+        !_isMobileActivelyStreaming(updatedCamera, cameraStatus);
     
     // 🔍 DEBUG: Log camera status evaluation
     debugPrint('🎥 [CameraCard] ${updatedCamera.deviceId}:');
@@ -779,9 +787,12 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
     await cameraService.disconnectCamera(widget.camera.deviceId);
     debugPrint('🔌 [ConnectionButton] Disconnect API call completed');
 
+    // Clear stale WS "connected" immediately so the button does not stay on Disconnect.
+    ref.read(cameraStatusNotifierProvider.notifier).markDisconnected(widget.camera.deviceId);
+    _setPhase(MobileConnectPhase.idle);
+
     await Future.delayed(const Duration(milliseconds: 500));
     await ref.read(cameraListProvider.notifier).loadCameras();
-    _setPhase(MobileConnectPhase.idle);
     debugPrint('✅ [ConnectionButton] Camera disconnected and status refreshed');
   }
 
@@ -830,30 +841,38 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
     try {
       final status = ref.read(cameraStatusProvider(widget.camera.deviceId));
       final phase = _phase;
+      // Always prefer fresh list status (frames / has_active), not a stale widget snapshot.
+      final listCamera = ref.read(cameraListProvider).cameras.firstWhere(
+            (c) => c.deviceId == widget.camera.deviceId,
+            orElse: () => widget.camera,
+          );
       final apiConnected =
-          CameraCard._isCameraConnectedForUi(widget.camera, status);
-      final isMobile = widget.camera.type == CameraType.mobile;
-      final isLeaseOpen = isMobile &&
-          (phase == MobileConnectPhase.leaseOpen ||
-              (apiConnected && phase != MobileConnectPhase.attached));
+          CameraCard._isCameraConnectedForUi(listCamera, status);
+      final isMobile = listCamera.type == CameraType.mobile;
       final isAttached = isMobile &&
           (phase == MobileConnectPhase.attached ||
-              CameraCard._isMobileActivelyStreaming(widget.camera, status));
+              CameraCard._isMobileActivelyStreaming(listCamera, status));
+      final isLeaseOpen = isMobile &&
+          !isAttached &&
+          !apiConnected &&
+          phase == MobileConnectPhase.leaseOpen;
       final isConnected = apiConnected ||
           phase == MobileConnectPhase.leaseOpen ||
           phase == MobileConnectPhase.attached;
-      
+
       debugPrint(
-        '🔌 [ConnectionButton] Toggle: deviceId=${widget.camera.deviceId}, '
+        '🔌 [ConnectionButton] Toggle: deviceId=${listCamera.deviceId}, '
         'phase=$phase, apiConnected=$apiConnected, leaseOpen=$isLeaseOpen, '
-        'attached=$isAttached',
+        'attached=$isAttached, listStatus=${listCamera.status}',
       );
-      
+
       if (!isConnected) {
         await _connectCamera(isReEnsure: false);
-      } else if (isLeaseOpen && !isAttached) {
+      } else if (isLeaseOpen) {
+        // Waiting for the phone: short tap re-ensures lease; long-press cancels.
         await _connectCamera(isReEnsure: true);
       } else {
+        // Frames flowing, or already attached → Disconnect (not another Connect).
         await _disconnectCamera();
       }
     } catch (e) {
@@ -901,16 +920,20 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
 
     final status = ref.watch(cameraStatusProvider(widget.camera.deviceId));
     final phase = ref.watch(mobileConnectPhaseProvider(widget.camera.deviceId));
-    final isMobile = widget.camera.type == CameraType.mobile;
+    final listCamera = ref.watch(cameraListProvider).cameras.firstWhere(
+          (c) => c.deviceId == widget.camera.deviceId,
+          orElse: () => widget.camera,
+        );
+    final isMobile = listCamera.type == CameraType.mobile;
     final apiConnected =
-        CameraCard._isCameraConnectedForUi(widget.camera, status);
+        CameraCard._isCameraConnectedForUi(listCamera, status);
     final isAttached = isMobile &&
         (phase == MobileConnectPhase.attached ||
-            CameraCard._isMobileActivelyStreaming(widget.camera, status));
+            CameraCard._isMobileActivelyStreaming(listCamera, status));
     final isLeaseOpen = isMobile &&
         !isAttached &&
-        (phase == MobileConnectPhase.leaseOpen ||
-            (apiConnected && phase != MobileConnectPhase.attached));
+        !apiConnected &&
+        phase == MobileConnectPhase.leaseOpen;
     final isConnected = apiConnected ||
         phase == MobileConnectPhase.leaseOpen ||
         phase == MobileConnectPhase.attached;
@@ -944,7 +967,7 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
       // High-visibility orange chip — icon tint alone was easy to miss.
       return Tooltip(
         message:
-            'Lease open — start stream on phone, then tap again (long-press to cancel)',
+            'Lease open — start stream on phone. Tap to re-ensure; long-press to cancel. Once streaming, tap Disconnect.',
         child: Material(
           color: AppColors.warning,
           borderRadius: BorderRadius.circular(8),
