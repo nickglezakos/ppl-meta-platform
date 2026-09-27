@@ -88,8 +88,10 @@ from src.services.multicast_discovery import MulticastServiceDiscoveryBroadcaste
 from src.services.vpn_service import enroll_once, report_platform_local_ip
 from src.services.role_service import ensure_default_capabilities, ensure_exact_system_roles
 
-# Try to import the shared service discovery module
+# Local gateway-style client at src/shared/service_discovery.py
 try:
+    from shared.service_discovery import deregister_service, register_service
+
     service_discovery_available = True
     logger.info("Service discovery module available")
 except ImportError:
@@ -312,8 +314,6 @@ async def lifespan(_app: FastAPI):
     if service_discovery_available:
         try:
             # Detect actual network IP for registration
-            from shared.service_discovery import register_service
-
             try:
                 # Connect to a remote address to determine local IP
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

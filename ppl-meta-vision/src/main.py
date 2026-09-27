@@ -21,9 +21,6 @@ from typing import Any, Dict, List, Optional, Union
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
-# Add parent directory to path for shared modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-
 try:
     from shared.service_discovery import deregister_service, register_service
 
@@ -506,8 +503,6 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup when the service is shutting down."""
     try:
-        # Add parent directory to path for shared modules
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
         from shared.service_discovery import deregister_service
 
         await deregister_service("ppl-meta-vision")

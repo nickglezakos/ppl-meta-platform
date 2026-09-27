@@ -1,5 +1,5 @@
 """
-PPL Meta Discovery Service integration for ppl-meta-cameras.
+PPL Meta Discovery Service integration for ppl-meta-presence.
 Aligned with the working gateway client (HTTP register to ppl-meta-discovery).
 """
 
@@ -22,7 +22,7 @@ INTERNAL_SERVICE_TOKEN = os.getenv(
     "INTERNAL_SERVICE_TOKEN",
     "ppl-meta-internal-service-secret-key-change-in-production",
 )
-_SERVICE_NAME = "ppl-meta-cameras"
+_SERVICE_NAME = "ppl-meta-presence"
 
 
 def _auth_headers() -> dict:

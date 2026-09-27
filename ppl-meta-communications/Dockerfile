@@ -2,8 +2,10 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# PYTHONPATH: /app for `src.*` package imports; /app/src for `shared.*`
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app:/app/src
 
 RUN apt-get update && apt-get install -y \
     curl \

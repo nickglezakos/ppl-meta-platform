@@ -20,6 +20,9 @@ RUN pip install --no-cache-dir -r requirements/base.txt
 # Copy application code
 COPY src/ src/
 
+# /app/src so `shared.service_discovery` resolves (vendored under src/shared/)
+ENV PYTHONPATH=/app/src
+
 # Expose port
 EXPOSE 8008
 

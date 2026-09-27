@@ -43,8 +43,10 @@ RUN pip install --user --no-warn-script-location -r requirements.txt
 FROM python:3.11-slim-bookworm AS runtime
 
 # Set environment variables
+# PYTHONPATH: /app for `src.*` package imports; /app/src for `shared.*`
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app:/app/src \
     PATH="/home/app/.local/bin:$PATH"
 
 # Install only runtime dependencies (ffmpeg required for H.264 stream-token remux)

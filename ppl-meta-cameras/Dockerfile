@@ -22,7 +22,8 @@ COPY src/ ./src/
 
 RUN mkdir -p /app/logs /app/storage /app/temp
 
-ENV PYTHONPATH=/app
+# /app for `src.*` imports; /app/src for `shared.service_discovery`
+ENV PYTHONPATH=/app:/app/src
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8005

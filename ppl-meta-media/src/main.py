@@ -4,7 +4,6 @@ FastAPI microservice main application.
 
 import logging
 import os
-import sys
 import time
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
@@ -34,9 +33,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.info(f"📝 Media service logging to: {log_file}")
 print(f"📝 Media service logging to: {log_file}", flush=True)
-
-# Add the parent directory to Python path to import shared modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from src.api.health import router as legacy_health_router
 from src.api.v1.routes import v1_router

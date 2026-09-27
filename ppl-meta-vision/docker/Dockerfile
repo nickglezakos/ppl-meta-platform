@@ -25,6 +25,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY models/ ./models/
 
+# /app/src so `shared.service_discovery` resolves (vendored under src/shared/)
+ENV PYTHONPATH=/app/src
+
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser

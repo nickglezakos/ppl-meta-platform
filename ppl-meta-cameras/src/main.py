@@ -14,9 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
-# Add the parent directory to Python path to import shared modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-
 # Local logging implementation
 import logging
 
@@ -34,12 +31,15 @@ from src.models.recording_session import (
     RecordingStatus,
 )
 
-# Try to import the shared service discovery module
+# Local gateway-style client at src/shared/service_discovery.py (PYTHONPATH includes /app/src)
 try:
-    sys.path.append("/Users/nickgklezakos/Documents/ppl-meta-code/shared")
+    from shared.service_discovery import deregister_service, register_service
+
     service_discovery_available = True
 except ImportError:
     service_discovery_available = False
+    register_service = None  # type: ignore
+    deregister_service = None  # type: ignore
 
 # Initialize configuration
 config = get_config()
@@ -66,8 +66,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ppl-meta-cameras")
 
-# Global service discovery client
-service_discovery_client = None
+# Host/port used at registration time for cleanup on shutdown
+_registered_discovery_host = None
+_registered_discovery_port = None
 
 if service_discovery_available:
     logger.info("Service discovery module available")
@@ -78,7 +79,7 @@ else:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Application lifespan context manager for startup and shutdown tasks."""
-    global service_discovery_client
+    global _registered_discovery_host, _registered_discovery_port
     logger.info("Starting PPL Meta Cameras Service...")
 
     # Test database connection
@@ -183,14 +184,9 @@ async def lifespan(_app: FastAPI):
     logger.info("Metrics initialization skipped")
 
     # Initialize service discovery if available
-    if service_discovery_available:
+    if service_discovery_available and register_service is not None:
         try:
             import socket
-
-            from service_discovery.ppl_discovery_client import (
-                DiscoveryClient,
-                ServiceConfig,
-            )
 
             # Detect actual network IP for registration
             try:
@@ -220,38 +216,33 @@ async def lifespan(_app: FastAPI):
             except Exception:
                 pass
 
-            # Create discovery client
-            discovery_url = os.getenv(
-                "DISCOVERY_SERVICE_URL", "http://ppl-meta-discovery:8006"
-            ).rstrip("/")
-            discovery_client = DiscoveryClient(discovery_url)
+            metadata = {
+                "service_type": "backend",
+                "version": "1.0.0",
+                "environment": "development",
+                "features": "camera_management,video_streaming,detection",
+            }
+            if tailscale_ip:
+                metadata["tailscale_ip"] = tailscale_ip
 
-            # Create service configuration
-            service_config = ServiceConfig(
+            success = await register_service(
                 service_name="ppl-meta-cameras",
-                service_id="ppl-meta-cameras-001",
                 host=detected_ip,
                 port=config.PORT,
                 health_endpoint="/health",
                 tags=["cameras", "video-streaming", "detection"],
-                metadata={
-                    "service_type": "backend",
-                    "version": "1.0.0",
-                    "environment": "development",
-                    "features": "camera_management,video_streaming,detection",
-                    "tailscale_ip": tailscale_ip,
-                },
+                metadata=metadata,
             )
-
-            # Register service
-            await discovery_client.register_service(service_config)
-            logger.info(
-                "Successfully registered ppl-meta-cameras with discovery service"
-            )
-
-            # Store client for cleanup
-            global service_discovery_client
-            service_discovery_client = discovery_client
+            if success:
+                _registered_discovery_host = detected_ip
+                _registered_discovery_port = config.PORT
+                logger.info(
+                    "Successfully registered ppl-meta-cameras with discovery service"
+                )
+            else:
+                logger.error(
+                    "Failed to register ppl-meta-cameras with discovery service"
+                )
 
         except Exception as e:
             logger.error(f"Failed to register with discovery service: {e}")
@@ -281,9 +272,18 @@ async def lifespan(_app: FastAPI):
         logger.error(f"Error stopping status notification service: {e}")
 
     # Deregister service
-    if service_discovery_available and service_discovery_client:
+    if (
+        service_discovery_available
+        and deregister_service is not None
+        and _registered_discovery_host is not None
+        and _registered_discovery_port is not None
+    ):
         try:
-            await service_discovery_client.deregister_service("ppl-meta-cameras-001")
+            await deregister_service(
+                service_name="ppl-meta-cameras",
+                host=_registered_discovery_host,
+                port=_registered_discovery_port,
+            )
             logger.info("Service deregistered from discovery service")
         except Exception as e:
             logger.error(f"Failed to deregister service: {e}")

@@ -17,8 +17,19 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- Stage 2 on `lab-work-dual-64g` finalized GHCR digests for pin **2.25.88** (git `c3fb0e2`): rebuilt **cameras**; Mode D retag-forward for the rest. Manifest verified.
-- Stage 3 on `lab-work-dual-64g`: compose pull `2.25.88`; running digests match (cameras `0d9fa777…`).
+_(none yet)_
+
+---
+
+## [2.25.89] — 2026-09-27
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.88 → 2.25.89**.
+
+### Fixed
+
+- Service discovery self-registration after restart: vendor gateway-style `shared.service_discovery` into node, cameras, media, orchestrator, communications, vision, presence, vmeta, and models (plus `PYTHONPATH`), so `/network` no longer shows only gateway when discovery’s in-memory registry is wiped on recreate.
 
 ---
 

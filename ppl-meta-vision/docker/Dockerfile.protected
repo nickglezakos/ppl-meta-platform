@@ -45,6 +45,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY --from=builder /app/src/ ./src/
 COPY --from=builder /app/models/ ./models/
 
+# /app/src so `shared.service_discovery` resolves (vendored under src/shared/)
+ENV PYTHONPATH=/app/src
+
 RUN find /app/src -name "*.pyc" -delete \
     && rm -f /app/src/extracted_face_detector.py \
     && rm -f /app/src/distance_calculator.py \

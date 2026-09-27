@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import os
 import socket
-import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 import httpx
@@ -15,10 +13,6 @@ from jose import jwt
 from config import config
 
 logger = logging.getLogger(__name__)
-
-workspace_root = Path(__file__).resolve().parents[3]
-if str(workspace_root) not in sys.path:
-    sys.path.insert(0, str(workspace_root))
 
 try:
     from shared.service_discovery import deregister_service, register_service

@@ -31,8 +31,10 @@ RUN CFLAGS="-Wno-error=int-conversion" pip install --user --no-warn-script-locat
 FROM python:3.11-alpine AS runtime
 
 # Set environment variables
+# PYTHONPATH: /app for `src.*` package imports; /app/src for `shared.*`
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app:/app/src \
     PATH="/home/appuser/.local/bin:$PATH"
 
 # Install only runtime dependencies + Tailscale CLI (talks to host socket)

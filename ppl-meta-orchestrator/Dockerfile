@@ -28,8 +28,10 @@ RUN pip install --user --no-warn-script-location -r requirements.txt
 FROM python:3.11-alpine AS runtime
 
 # Set environment variables
+# COPY src/ ./ puts shared at /app/shared — PYTHONPATH=/app enables import
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
     PATH="/home/appuser/.local/bin:$PATH"
 
 # Install only runtime dependencies

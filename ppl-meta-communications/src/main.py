@@ -4,7 +4,6 @@ PPL Meta Communications Service - Main application entry point.
 
 import logging
 import os
-import sys
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 
@@ -31,9 +30,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.info(f"📝 Communications service logging to: {log_file}")
 print(f"📝 Communications service logging to: {log_file}", flush=True)
-
-# Add the parent directory to Python path to import shared modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from .config import get_config
 from .database import Base, engine, test_connection

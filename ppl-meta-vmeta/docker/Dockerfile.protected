@@ -63,6 +63,9 @@ COPY --from=builder /usr/local /usr/local
 COPY --from=builder /app/src/ ./src/
 COPY --from=builder /app/setup_protected.py ./setup_protected.py
 
+# /app/src so `shared.service_discovery` resolves (vendored under src/shared/)
+ENV PYTHONPATH=/app/src
+
 # Do not delete the .py sources unless matching .so files are present.
 RUN python setup_protected.py verify \
  && find /app/src -name "*.pyc" -delete \

@@ -317,8 +317,38 @@ async def lifespan(app: FastAPI):
         # request (asyncio.to_thread). Eager in-process warmup deadlocks
         # Uvicorn/Keras on this CPU image and makes /health hang.
 
-        # Register with service discovery
-        # await register_with_discovery()
+        # Register with service discovery (gateway-style client under src/shared/)
+        try:
+            import socket
+            from shared.service_discovery import register_service
+
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                detected_ip = s.getsockname()[0]
+                s.close()
+            except Exception:
+                detected_ip = socket.gethostbyname(socket.gethostname())
+
+            await register_service(
+                name="ppl-meta-vmeta",
+                service_type="backend",
+                version=settings.SERVICE_VERSION,
+                host=detected_ip,
+                port=settings.PORT,
+                health_endpoint="/health",
+                capabilities=["vmeta", "embeddings", "person-detection", "mvr"],
+                metadata={
+                    "version": settings.SERVICE_VERSION,
+                    "environment": os.getenv("ENVIRONMENT", "development"),
+                },
+            )
+            logger.info(
+                "✅ Successfully registered ppl-meta-vmeta with discovery service"
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to register with discovery service: {e}")
+            logger.info("Continuing without service discovery")
 
         logger.info("✅ vmeta service initialization completed successfully")
 
@@ -331,6 +361,13 @@ async def lifespan(app: FastAPI):
     finally:
         # Cleanup
         logger.info("🧹 Shutting down vmeta service...")
+        try:
+            from shared.service_discovery import deregister_service
+
+            await deregister_service("ppl-meta-vmeta")
+            logger.info("✅ Service deregistered from discovery service")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to deregister from discovery: {e}")
         if vmeta_cache_client:
             await vmeta_cache_client.disconnect()
         if hasattr(app.state, 'mvr_pool') and app.state.mvr_pool:
