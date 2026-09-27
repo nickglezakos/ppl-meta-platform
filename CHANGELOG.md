@@ -18,6 +18,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Notes
 
 - Stage 2 on `lab-work-dual-64g` finalized GHCR digests for pin **2.25.88** (git `c3fb0e2`): rebuilt **cameras**; Mode D retag-forward for the rest. Manifest verified.
+- Stage 3 on `lab-work-dual-64g`: compose pull `2.25.88`; running digests match (cameras `0d9fa777…`).
 
 ---
 
