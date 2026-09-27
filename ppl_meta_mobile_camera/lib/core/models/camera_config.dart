@@ -50,10 +50,10 @@ class CameraConfig {
 
 /// Stream quality enumeration
 enum StreamQuality {
-  low(ResolutionPreset.low, 15, 'low'),
-  medium(ResolutionPreset.medium, 30, 'medium'),
-  high(ResolutionPreset.high, 30, 'high'),
-  veryHigh(ResolutionPreset.veryHigh, 60, 'very_high');
+  low(ResolutionPreset.low, 8, 'low'),
+  medium(ResolutionPreset.medium, 12, 'medium'),
+  high(ResolutionPreset.high, 20, 'high'),
+  veryHigh(ResolutionPreset.veryHigh, 20, 'very_high');
 
   const StreamQuality(this.resolution, this.fps, this.label);
   

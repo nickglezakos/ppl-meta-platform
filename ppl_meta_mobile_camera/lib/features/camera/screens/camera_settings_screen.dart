@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/core.dart';
+import '../../../core/models/stream_profile.dart';
 import '../../../services/camera_settings_service.dart';
 import '../../../services/offline_queue_service.dart';
 import '../../../services/device_identifier_service.dart';
@@ -36,6 +37,7 @@ class _CameraSettingsScreenState extends State<CameraSettingsScreen> {
   String? _selectedResolution;
   int? _selectedFrameRate;
   String? _selectedOrientation;
+  StreamProfile _selectedProfile = StreamProfile.defaultProfile;
   bool _recordingEnabled = true;
   bool _autoStartRecording = false;
 
@@ -47,7 +49,7 @@ class _CameraSettingsScreenState extends State<CameraSettingsScreen> {
     '3840x2160',
   ];
   
-  final List<int> _frameRates = [15, 24, 30, 60];
+  final List<int> _frameRates = [8, 12, 15, 20, 24, 30];
   final List<String> _orientations = ['portrait', 'landscape'];
 
   @override
@@ -95,13 +97,27 @@ class _CameraSettingsScreenState extends State<CameraSettingsScreen> {
 
   void _updateFormFields() {
     _nameController.text = _settings['name'] ?? '';
-    _selectedResolution = _settings['resolution'] ?? '1920x1080';
-    _selectedFrameRate = _settings['frame_rate'] ?? 30;
+    _selectedProfile = StreamProfile.fromSettingsKey(
+      _settings['stream_profile'] as String?,
+    );
+    _selectedResolution =
+        _settings['resolution'] as String? ?? _selectedProfile.resolution;
+    _selectedFrameRate =
+        (_settings['frame_rate'] as num?)?.toInt() ?? _selectedProfile.targetFps;
     _selectedOrientation = _settings['orientation'] ?? 'portrait';
     _recordingEnabled = _settings['recording_enabled'] ?? true;
     _autoStartRecording = _settings['auto_start_recording'] ?? false;
     _maxDurationController.text = (_settings['max_recording_duration'] ?? 300).toString();
     _storageLimitController.text = (_settings['storage_limit_mb'] ?? 1000).toString();
+  }
+
+  void _applyStreamProfile(StreamProfile profile) {
+    setState(() {
+      _selectedProfile = profile;
+      _selectedResolution = profile.resolution;
+      _selectedFrameRate = profile.targetFps;
+      _hasUnsavedChanges = true;
+    });
   }
 
   Future<void> _saveSettings() async {
@@ -110,8 +126,10 @@ class _CameraSettingsScreenState extends State<CameraSettingsScreen> {
     try {
       // Update settings map
       _settings['name'] = _nameController.text.trim();
+      _settings['stream_profile'] = _selectedProfile.settingsKey;
       _settings['resolution'] = _selectedResolution;
       _settings['frame_rate'] = _selectedFrameRate;
+      _settings['jpeg_quality'] = _selectedProfile.jpegQuality;
       _settings['orientation'] = _selectedOrientation;
       _settings['recording_enabled'] = _recordingEnabled;
       _settings['auto_start_recording'] = _autoStartRecording;
@@ -385,27 +403,74 @@ class _CameraSettingsScreenState extends State<CameraSettingsScreen> {
                   ),
                   const SizedBox(height: 16),
                   
+                  // Stream profile (primary control for older vs newer devices)
+                  _buildSectionHeader('Stream Profile'),
+                  ...StreamProfile.all.map((profile) {
+                    final selected = _selectedProfile.id == profile.id;
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      color: selected
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : null,
+                      child: RadioListTile<StreamProfileId>(
+                        value: profile.id,
+                        groupValue: _selectedProfile.id,
+                        onChanged: (val) {
+                          if (val == null) return;
+                          _applyStreamProfile(
+                            StreamProfile.all.firstWhere((p) => p.id == val),
+                          );
+                        },
+                        title: Text(
+                          profile.label,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text(
+                          '${profile.description}\n'
+                          '${profile.resolution} · ${profile.targetFps} fps target · JPEG ${profile.jpegQuality}',
+                        ),
+                        isThreeLine: true,
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Advanced overrides (optional)',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                  ),
+                  const SizedBox(height: 8),
                   // Video Settings
                   _buildSectionHeader('Video Settings'),
                   _buildDropdown<String>(
                     label: 'Resolution',
                     value: _selectedResolution,
                     items: _resolutions,
-                    onChanged: (val) => setState(() => _selectedResolution = val),
+                    onChanged: (val) => setState(() {
+                      _selectedResolution = val;
+                      _hasUnsavedChanges = true;
+                    }),
                   ),
                   const SizedBox(height: 12),
                   _buildDropdown<int>(
-                    label: 'Frame Rate',
+                    label: 'Target Upload FPS',
                     value: _selectedFrameRate,
                     items: _frameRates,
-                    onChanged: (val) => setState(() => _selectedFrameRate = val),
+                    onChanged: (val) => setState(() {
+                      _selectedFrameRate = val;
+                      _hasUnsavedChanges = true;
+                    }),
                   ),
                   const SizedBox(height: 12),
                   _buildDropdown<String>(
                     label: 'Orientation',
                     value: _selectedOrientation,
                     items: _orientations,
-                    onChanged: (val) => setState(() => _selectedOrientation = val),
+                    onChanged: (val) => setState(() {
+                      _selectedOrientation = val;
+                      _hasUnsavedChanges = true;
+                    }),
                   ),
                   const SizedBox(height: 16),
                   

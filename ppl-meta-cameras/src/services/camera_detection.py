@@ -1237,14 +1237,37 @@ class CameraDetectionService:
         height, width = frame.shape[:2]
         
         # 📊 Use measured FPS from worker (actual frame rate) instead of hardcoded value
-        # Mobile cameras may send frames at lower rates (5-10 fps) which causes fast playback if we use 30 fps
+        # Mobile cameras may send frames at lower rates (2-10 fps) which causes fast playback if we use 30 fps
         measured_fps = worker.get_measured_fps()
         if measured_fps and measured_fps > 1.0:
             fps = min(round(measured_fps, 2), 30.0)  # Cap at 30 fps, keep decimals for accuracy
             logger.info(f"📊 Using measured FPS: {measured_fps:.2f} → {fps} fps for recording")
         else:
-            fps = 30.0  # Fallback to 30 fps if measurement not available yet
-            logger.warning(f"⚠️ Measured FPS not available, using default {fps} fps")
+            fps = 30.0
+            # Prefer arrival-calibrated FPS for mobile before hard 30 fallback
+            try:
+                from src.models.camera import CameraType
+                from src.services.mobile_streaming import mobile_streaming_service
+
+                if getattr(worker, "camera_type", None) == CameraType.MOBILE:
+                    stream_info = mobile_streaming_service.active_mobile_streams.get(device_id)
+                    if stream_info and stream_info.get("fps_locked") and stream_info.get("calibrated_fps"):
+                        fps = float(stream_info["calibrated_fps"])
+                        logger.info(
+                            f"📊 Measured FPS not ready; using calibrated mobile FPS {fps} for recording"
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠️ Measured FPS not available, using default {fps} fps"
+                        )
+                else:
+                    logger.warning(
+                        f"⚠️ Measured FPS not available, using default {fps} fps"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"⚠️ Measured FPS not available, using default {fps} fps ({e})"
+                )
 
         # Create session directory
         session_dir = os.path.join("recordings", device_id, session_uuid)

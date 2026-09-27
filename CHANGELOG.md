@@ -17,8 +17,21 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- Stage 2 on `lab-work-dual-64g` finalized GHCR digests for pin **2.25.87** (git `2d53913`): rebuilt **vmeta**; Mode D retag-forward for the rest. Manifest verified.
-- Stage 3 on `lab-work-dual-64g`: compose pull `2.25.87`; running digests match (vmeta `4c2ae38c…`).
+_(none yet)_
+
+---
+
+## [2.25.88] — 2026-09-27
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.87 → 2.25.88**.
+- Mobile camera app: named **Stream Profile** in Camera Settings (`lowBandwidth` / `balanced` / `highQuality`) with real upload pacing + JPEG quality (APK rebuild required; not a GHCR image).
+
+### Fixed
+
+- Cameras mobile FPS calibration: floor lowered so slow phones (~2–4 fps JPEG upload) lock the **measured** rate instead of falling back to declared 30.
+- Cameras session recording: if worker `measured_fps` is not ready yet, prefer arrival-**calibrated** FPS for mobile before the hard 30 fallback.
 
 ---
 

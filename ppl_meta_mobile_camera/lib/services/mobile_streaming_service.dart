@@ -10,6 +10,8 @@ import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../core/models/stream_profile.dart';
+import 'camera_settings_service.dart';
 
 /// Mobile camera streaming service for PPL Meta Platform
 /// Handles streaming from mobile device cameras to backend
@@ -45,12 +47,17 @@ class MobileStreamingService {
   
   // Configuration
   StreamConfig _currentConfig = StreamConfig.medium();
+  StreamProfile _activeProfile = StreamProfile.defaultProfile;
+  int _jpegQuality = StreamProfile.defaultProfile.jpegQuality;
+  DateTime? _lastFrameSentAt;
+  bool _frameSendInFlight = false;
   
   // Singleton pattern
   static final MobileStreamingService _instance = MobileStreamingService._internal();
   factory MobileStreamingService() => _instance;
   MobileStreamingService._internal();
-  
+
+  StreamProfile get activeProfile => _activeProfile;  
   /// Initialize the streaming service
   Future<bool> initialize() async {
     if (_isInitialized) return true;
@@ -94,6 +101,68 @@ class MobileStreamingService {
   void enableFrameSending() {
     _isStreaming = true;
     developer.log('Frame sending enabled for session-based streaming', name: _logTag);
+  }
+
+  /// Load the user's stream profile from local camera settings and apply pacing/quality.
+  Future<StreamProfile> loadAndApplyStreamProfile() async {
+    try {
+      final settings = await CameraSettingsService().getLocalSettings();
+      final hasExplicitProfile = settings.containsKey('stream_profile');
+      final profile = StreamProfile.fromSettingsKey(
+        settings['stream_profile'] as String?,
+      );
+      // Only honor advanced FPS/JPEG overrides when a profile was explicitly saved.
+      // Legacy installs often have frame_rate=30 with no profile key — don't pace to 30.
+      final overrideFps = hasExplicitProfile
+          ? (settings['frame_rate'] as num?)?.toInt()
+          : null;
+      final jpeg = hasExplicitProfile
+          ? (settings['jpeg_quality'] as num?)?.toInt()
+          : null;
+      applyStreamProfile(
+        profile,
+        targetFpsOverride: overrideFps,
+        jpegQualityOverride: jpeg,
+      );
+      return profile;
+    } catch (e) {
+      developer.log('Failed to load stream profile, using default: $e', name: _logTag, level: 900);
+      applyStreamProfile(StreamProfile.defaultProfile);
+      return StreamProfile.defaultProfile;
+    }
+  }
+
+  /// Apply a named stream profile (capture target FPS + JPEG quality for upload).
+  void applyStreamProfile(
+    StreamProfile profile, {
+    int? targetFpsOverride,
+    int? jpegQualityOverride,
+  }) {
+    _activeProfile = profile;
+    final fps = (targetFpsOverride != null && targetFpsOverride > 0)
+        ? targetFpsOverride
+        : profile.targetFps;
+    _jpegQuality = (jpegQualityOverride != null && jpegQualityOverride > 0)
+        ? jpegQualityOverride.clamp(1, 100)
+        : profile.jpegQuality;
+
+    // Keep StreamConfig in sync so frame metadata reports the paced target.
+    _currentConfig = StreamConfig(
+      width: int.tryParse(profile.resolution.split('x').first) ?? 640,
+      height: int.tryParse(profile.resolution.split('x').last) ?? 480,
+      fps: fps,
+      bitrate: fps <= 10 ? 500000 : (fps <= 15 ? 1000000 : 2500000),
+      quality: profile.id == StreamProfileId.lowBandwidth
+          ? StreamQuality.low
+          : (profile.id == StreamProfileId.highQuality
+              ? StreamQuality.high
+              : StreamQuality.medium),
+    );
+    _lastFrameSentAt = null;
+    developer.log(
+      'Applied stream profile=${profile.settingsKey} targetFps=$fps jpeg=$_jpegQuality',
+      name: _logTag,
+    );
   }
 
   void disableFrameSending() {
@@ -363,8 +432,30 @@ class MobileStreamingService {
       developer.log('Skipping frame send - conditions not met (lease=${_streamSessionId != null})', name: _logTag);
       return;
     }
+
+    // Drop frames while a previous upload is still in flight (common on older phones).
+    if (_frameSendInFlight) {
+      return;
+    }
+
+    // Pace uploads to the profile target FPS instead of flooding HTTP with camera callbacks.
+    final minIntervalMs = (1000 / _currentConfig.fps.clamp(1, 60)).round();
+    final now = DateTime.now();
+    if (_lastFrameSentAt != null) {
+      final elapsedMs = now.difference(_lastFrameSentAt!).inMilliseconds;
+      if (elapsedMs < minIntervalMs) {
+        return;
+      }
+    }
+    _lastFrameSentAt = now;
+
     developer.log('Sending frame to backend: ${image.width}x${image.height}', name: _logTag);
-    await _sendFrameToBackend(image, isFrontCamera: isFrontCamera);
+    _frameSendInFlight = true;
+    try {
+      await _sendFrameToBackend(image, isFrontCamera: isFrontCamera);
+    } finally {
+      _frameSendInFlight = false;
+    }
   }
   
   /// Send camera frame to backend
@@ -433,7 +524,7 @@ class MobileStreamingService {
         order: img.ChannelOrder.rgb,
       );
       
-      return Uint8List.fromList(img.encodeJpg(rgbImage, quality: 80));
+      return Uint8List.fromList(img.encodeJpg(rgbImage, quality: _jpegQuality));
       
     } catch (e) {
       developer.log('Error converting camera image: $e', name: _logTag, level: 1000);
@@ -768,27 +859,27 @@ class StreamConfig {
     this.enableAudio = false,
   });
   
-  // Predefined quality configurations
+  // Predefined quality configurations (aligned with StreamProfile defaults)
   factory StreamConfig.low() => const StreamConfig(
-    width: 320,
-    height: 240,
-    fps: 15,
+    width: 640,
+    height: 480,
+    fps: 8,
     bitrate: 500000, // 500kbps
     quality: StreamQuality.low,
   );
   
   factory StreamConfig.medium() => const StreamConfig(
-    width: 640,
-    height: 480,
-    fps: 30,
+    width: 1280,
+    height: 720,
+    fps: 12,
     bitrate: 1000000, // 1Mbps
     quality: StreamQuality.medium,
   );
   
   factory StreamConfig.high() => const StreamConfig(
-    width: 1280,
-    height: 720,
-    fps: 30,
+    width: 1920,
+    height: 1080,
+    fps: 20,
     bitrate: 2500000, // 2.5Mbps
     quality: StreamQuality.high,
   );
@@ -796,7 +887,7 @@ class StreamConfig {
   factory StreamConfig.ultra() => const StreamConfig(
     width: 1920,
     height: 1080,
-    fps: 30,
+    fps: 20,
     bitrate: 5000000, // 5Mbps
     quality: StreamQuality.ultra,
   );

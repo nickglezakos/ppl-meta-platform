@@ -515,8 +515,14 @@ class MobileCameraStreamingService:
 
                     if time_span > 0 and intervals > 0:
                         calculated_fps = intervals / time_span
-                        if 5 <= calculated_fps <= 60:
-                            locked_fps = int(round(calculated_fps))
+                        # Allow slow phones (~2–4 fps JPEG upload). Floor was 5 and
+                        # wrongly locked those streams to the app-reported 30 fps.
+                        if 1.0 <= calculated_fps <= 60:
+                            # Keep one decimal for sub-5 rates; int for higher.
+                            if calculated_fps < 5:
+                                locked_fps = max(1, int(round(calculated_fps)))
+                            else:
+                                locked_fps = int(round(calculated_fps))
                             stream_info["calibrated_fps"] = locked_fps
                             stream_info["fps_locked"] = True
 
@@ -529,12 +535,20 @@ class MobileCameraStreamingService:
                                     f"📱 FPS CALIBRATED for {device_id}: locked at {locked_fps}"
                                 )
                         else:
-                            # Invalid estimate: lock to fallback to avoid repeated work.
-                            stream_info["calibrated_fps"] = int(fps)
-                            stream_info["fps_locked"] = True
-                            logger.warning(
-                                f"📱 FPS calibration out of range for {device_id} ({calculated_fps:.2f}), locking to fallback {fps}"
-                            )
+                            # Prefer measured rate when slightly out of band; else app fallback.
+                            if calculated_fps > 0:
+                                locked_fps = max(1, min(60, int(round(calculated_fps))))
+                                stream_info["calibrated_fps"] = locked_fps
+                                stream_info["fps_locked"] = True
+                                logger.warning(
+                                    f"📱 FPS calibration unusual for {device_id} ({calculated_fps:.2f}), locking to measured {locked_fps}"
+                                )
+                            else:
+                                stream_info["calibrated_fps"] = int(fps)
+                                stream_info["fps_locked"] = True
+                                logger.warning(
+                                    f"📱 FPS calibration out of range for {device_id} ({calculated_fps:.2f}), locking to fallback {fps}"
+                                )
                     else:
                         stream_info["calibrated_fps"] = int(fps)
                         stream_info["fps_locked"] = True

@@ -117,6 +117,12 @@ class _CameraScreenState extends State<CameraScreen>
         // Configure the mobile streaming service with backend info
         final streamingService = MobileStreamingService();
         streamingService.setBackendConnection(backendUrl, authProvider.accessToken!, deviceId: mobileDeviceId);
+
+        final profile = await streamingService.loadAndApplyStreamProfile();
+        await CameraService.instance.applyCapturePreset(
+          profile.cameraPreset,
+          fps: profile.targetFps,
+        );
         
         // Connect camera service to streaming service for frame transmission
         CameraService.instance.setStreamingService(streamingService);
@@ -946,6 +952,16 @@ class _CameraScreenState extends State<CameraScreen>
         // Configure the mobile streaming service with backend info
         final streamingService = MobileStreamingService();
         streamingService.setBackendConnection(backendUrl, authProvider.accessToken!, deviceId: mobileDeviceId);
+
+        // Apply saved stream profile (pacing + JPEG) and match camera capture size.
+        final profile = await streamingService.loadAndApplyStreamProfile();
+        await CameraService.instance.applyCapturePreset(
+          profile.cameraPreset,
+          fps: profile.targetFps,
+        );
+        CameraLogger.info(
+          '📡 Stream profile=${profile.settingsKey} targetFps=${profile.targetFps} jpeg=${profile.jpegQuality}',
+        );
         
         // Connect camera service to streaming service for frame transmission
         CameraService.instance.setStreamingService(streamingService);

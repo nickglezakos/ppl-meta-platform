@@ -6,6 +6,7 @@ export 'interfaces/camera_interface.dart';
 // Models
 export 'models/camera_config.dart';
 export 'models/mobile_camera.dart';
+export 'models/stream_profile.dart';
 
 // Services
 export 'services/camera_service.dart';

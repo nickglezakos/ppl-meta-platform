@@ -502,6 +502,34 @@ class CameraService {
     print('Received frame: ${image.width}x${image.height} | StreamingService: ${_streamingService != null ? "CONNECTED" : "NULL"} | isStreaming: $_isStreaming');
   }
 
+  /// Update capture resolution preset (used by stream profiles).
+  Future<bool> applyCapturePreset(ResolutionPreset preset, {int? fps}) async {
+    try {
+      if (_currentConfig == null) return false;
+
+      final newConfig = _currentConfig!.copyWith(
+        resolution: preset,
+        fps: fps ?? _currentConfig!.fps,
+      );
+
+      final wasStreaming = _isStreaming;
+      if (wasStreaming) {
+        await stopStreaming();
+      }
+
+      final success = await setupCamera(newConfig);
+
+      if (success && wasStreaming) {
+        await startStreaming();
+      }
+
+      return success;
+    } catch (e) {
+      print('Failed to apply capture preset: $e');
+      return false;
+    }
+  }
+
   /// Update stream quality
   Future<bool> updateStreamQuality(StreamQuality quality) async {
     try {

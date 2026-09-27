@@ -15,8 +15,11 @@ class CameraSettingsService {
     'name': '',
     'collection_id': null,
     'recording_enabled': true,
-    'resolution': '1920x1080',
-    'frame_rate': 30,
+    // Named stream profile (see StreamProfile). Drives capture + upload pacing.
+    'stream_profile': 'balanced',
+    'resolution': '1280x720',
+    'frame_rate': 12,
+    'jpeg_quality': 70,
     'orientation': 'portrait',
     'auto_start_recording': false,
     'max_recording_duration': 300, // 5 minutes
