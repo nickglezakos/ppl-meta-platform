@@ -410,14 +410,15 @@ class HierarchicalMVRMerger:
                 WHERE imm.mvr_people_uuid = ANY($1::uuid[])
             """, mvr_uuids)
 
-            demographics_by_mvr: Dict[UUID, Dict[str, Any]] = defaultdict(
-                lambda: {
-                    "genders": [],
-                    "ages": [],
-                }
-            )
+            # Plain dict — this module is Cythonized; annotated Dict[...] = defaultdict(...)
+            # raises TypeError: Expected dict, got collections.defaultdict at runtime.
+            demographics_by_mvr: Dict[UUID, Dict[str, Any]] = {}
             for row in individual_demographics_rows:
-                bucket = demographics_by_mvr[row["mvr_people_uuid"]]
+                mvr_uuid = row["mvr_people_uuid"]
+                bucket = demographics_by_mvr.setdefault(
+                    mvr_uuid,
+                    {"genders": [], "ages": []},
+                )
                 gender = self._normalize_gender(row["gender_estimate"])
                 if gender is not None:
                     bucket["genders"].append(gender)
@@ -431,7 +432,10 @@ class HierarchicalMVRMerger:
                 embedding_str = row["face_embedding"]
                 embedding = self._parse_pgvector(embedding_str)
 
-                linked_demo = demographics_by_mvr[row["mvr_people_uuid"]]
+                linked_demo = demographics_by_mvr.get(
+                    row["mvr_people_uuid"],
+                    {"genders": [], "ages": []},
+                )
                 linked_genders = linked_demo["genders"]
                 linked_ages = linked_demo["ages"]
                 linked_gender_consensus = None

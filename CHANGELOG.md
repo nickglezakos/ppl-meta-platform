@@ -17,8 +17,17 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- Stage 2 on `lab-work-dual-64g` finalized GHCR digests for pin **2.25.86** (git `346ee37`): rebuilt **presence** / **frontend**; Mode D retag-forward for the rest. Manifest verified.
-- Stage 3 on `lab-work-dual-64g`: compose pull `2.25.86`; running digests match manifest (presence `16f74ecb…`, frontend `d9b78218…`).
+---
+
+## [2.25.87] — 2026-09-27
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.86 → 2.25.87**.
+
+### Fixed
+
+- Vmeta hierarchical MVR merge preview: Cython runtime `TypeError` (`Expected dict, got collections.defaultdict`) that aborted auto-merge during media preview search and could leave Details/MVR people inconsistent after idle refresh.
 
 ---
 
