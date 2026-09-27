@@ -18,6 +18,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Notes
 
 - Stage 2 on `lab-work-dual-64g` finalized GHCR digests for pin **2.25.87** (git `2d53913`): rebuilt **vmeta**; Mode D retag-forward for the rest. Manifest verified.
+- Stage 3 on `lab-work-dual-64g`: compose pull `2.25.87`; running digests match (vmeta `4c2ae38c…`).
 
 ---
 
