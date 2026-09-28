@@ -23,6 +23,12 @@ _(none yet)_
 
 ## [2.25.91] — 2026-09-28
 
+### Notes
+
+- GHCR images published for **2.25.91** (Mode D on `lab-work-dual-64g`): rebuilt media
+  `c8e7cc7f…` and frontend `b0709dd2…` from `054dea62`; retagged the other ten from `2.25.90`.
+  Stage 3 on `lab-work-dual-64g` @ `192.168.1.90` / `100.101.128.40` (2026-09-28).
+
 ### Changed
 
 - Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.90 → 2.25.91**.
