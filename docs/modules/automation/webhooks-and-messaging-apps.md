@@ -196,7 +196,7 @@ In n8n you can then simply use:
 | `{trigger_id}` | UUID of the trigger |
 | `{reason}` | Full evaluation reason string |
 | `{match_reason}` | Formatted match reason (ppl_match only) |
-| `{matched_member_name}` | Name of the matched group member |
+| `{matched_member_name}` | Name of the matched group member (People Profile name when linked) |
 | `{matched_member_uuid}` | UUID of the matched individual |
 | `{group_member_number}` | Ordinal of the member within the group |
 | `{similarity_score}` | Decimal similarity score (e.g. `0.91`) |

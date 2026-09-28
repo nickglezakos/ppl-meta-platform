@@ -481,8 +481,11 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
 
     final bestMatch = match['best_match'];
     if (bestMatch is Map<String, dynamic>) {
-      final memberName = bestMatch['member_name']?.toString();
-      final memberUuid = bestMatch['member_uuid']?.toString();
+      final memberName = bestMatch['people_name']?.toString() ??
+          bestMatch['existing_member_name']?.toString() ??
+          bestMatch['member_name']?.toString();
+      final memberUuid = bestMatch['matched_member_uuid']?.toString() ??
+          bestMatch['member_uuid']?.toString();
       final similarity = bestMatch['similarity_score'];
       final similarityText = similarity is num ? similarity.toStringAsFixed(2) : null;
       final personLabel = memberName ?? memberUuid ?? 'Unknown member';

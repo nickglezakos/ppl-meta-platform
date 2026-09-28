@@ -38,6 +38,10 @@ from ..services.velocity_trigger_worker import get_velocity_trigger_worker
 from ..services.left_object_worker import get_left_object_worker
 from ..services.vehicle_plate_worker import get_vehicle_plate_worker
 from ..services.communications_client import CommunicationsClient
+from ..services.people_profile_enrichment import (
+    display_name_from_best_match,
+    enrich_match_info_with_people_profiles,
+)
 from ..services.signage_service import SignagePlaybackService
 from ..schemas.signage import PlaybackControlRequest, PlaybackCommand, PlaybackParameters
 
@@ -117,7 +121,7 @@ def _build_trigger_response_dict(db: Session, trigger) -> dict:
 def _build_ppl_match_reason(best_match: Dict[str, Any]) -> str:
     similarity_score = best_match.get("similarity_score")
     matched_member_uuid = best_match.get("matched_member_uuid")
-    existing_member_name = (best_match.get("existing_member_name") or "").strip()
+    display_name = display_name_from_best_match(best_match)
     group_member_number_raw = best_match.get("group_member_number")
 
     group_member_number: Optional[int] = None
@@ -130,8 +134,8 @@ def _build_ppl_match_reason(best_match: Dict[str, Any]) -> str:
     if group_member_number is not None:
         descriptor = f"Group Member {group_member_number:02d}"
 
-    if existing_member_name:
-        descriptor = f"{descriptor} ({existing_member_name})" if descriptor else existing_member_name
+    if display_name:
+        descriptor = f"{descriptor} ({display_name})" if descriptor else display_name
 
     if not descriptor and matched_member_uuid:
         descriptor = f"member {matched_member_uuid}"
@@ -148,11 +152,13 @@ def _extract_ppl_match_context(match_info: Optional[Dict[str, Any]]) -> Dict[str
 
     best_match = match_info.get("best_match") or {}
     match_reason = _build_ppl_match_reason(best_match)
+    display_name = display_name_from_best_match(best_match)
 
     return {
         "match_reason": match_reason,
         "matched_member_uuid": best_match.get("matched_member_uuid") or "",
-        "matched_member_name": (best_match.get("existing_member_name") or "").strip(),
+        "matched_member_name": display_name,
+        "people_name": (best_match.get("people_name") or "").strip(),
         "group_member_number": best_match.get("group_member_number") or "",
         "similarity_score": best_match.get("similarity_score") if best_match.get("similarity_score") is not None else "",
     }
@@ -174,6 +180,7 @@ def _interpolate_action_message(
         "match_reason": match_context.get("match_reason", ""),
         "matched_member_uuid": match_context.get("matched_member_uuid", ""),
         "matched_member_name": match_context.get("matched_member_name", ""),
+        "people_name": match_context.get("people_name", ""),
         "group_member_number": match_context.get("group_member_number", ""),
         "similarity_score": match_context.get("similarity_score", ""),
     }
@@ -185,11 +192,15 @@ def _interpolate_action_message(
             used_template_variable = True
             message = message.replace(token, str(value))
 
+    match_mode = (match_info or {}).get("mode") if isinstance(match_info, dict) else None
     if (
         not used_template_variable
         and match_context.get("match_reason")
         and match_info
-        and (match_info.get("mode") == "ppl_match" or match_info.get("matched"))
+        and (
+            match_mode in ("ppl_match", "vprofile_match")
+            or match_info.get("matched")
+        )
     ):
         if message:
             message = f"{message} - {match_context['match_reason']}"
@@ -1057,6 +1068,12 @@ async def process_instant_detection_webhook(
                     )
                 
                 if passed:
+                    if trigger_mode == "ppl_match" and match_info is not None:
+                        await enrich_match_info_with_people_profiles(match_info)
+                        best = match_info.get("best_match") if isinstance(match_info, dict) else None
+                        if isinstance(best, dict):
+                            reason = _build_ppl_match_reason(best)
+
                     logger.info("="*80)
                     logger.info(f"🔥 TRIGGER FIRED! 🔥")
                     logger.info("="*80)

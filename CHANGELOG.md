@@ -21,6 +21,19 @@ _(none yet)_
 
 ---
 
+## [2.25.91] — 2026-09-28
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.90 → 2.25.91**.
+
+### Fixed
+
+- Media trigger/action logs: after a `ppl_match` / `vprofile_match`, look up the Presence People Profile linked to the matched member and prefer `ppp.name` for `{matched_member_name}`, match reason, and audit payloads (falls back to MVR plain name). Also append match reason for `vprofile_match` when the action message has no template vars.
+- Frontend Triggers tab: show People / `existing_member_name` on latest match instead of only legacy `member_name` / `member_uuid` keys.
+
+---
+
 ## [2.25.90] — 2026-09-27
 
 ### Notes

@@ -194,7 +194,7 @@ Template variables are substituted at fire time in supported text fields. They u
 | `{reason}` | Human-readable explanation of why the trigger passed (e.g. condition values, match details) | Always |
 | `{match_reason}` | Formatted description of the best face match (e.g. "Matched John Doe — 89.3% similarity") | `ppl_match` / `search` triggers only; empty string otherwise |
 | `{matched_member_uuid}` | UUID of the matched individual-group member | `ppl_match` / `search` triggers with a match; empty string otherwise |
-| `{matched_member_name}` | Display name of the matched individual-group member | `ppl_match` / `search` triggers with a named match; empty string otherwise |
+| `{matched_member_name}` | Display name of the matched individual-group member (Presence People Profile name when linked; otherwise MVR plain name) | `ppl_match` / `vprofile_match` / `search` triggers with a named match; empty string otherwise |
 | `{group_member_number}` | Position/number of the matched member within the group | `ppl_match` / `search` triggers with a match; empty string otherwise |
 | `{similarity_score}` | Numeric similarity score of the best match (0.0 – 1.0) | `ppl_match` / `search` triggers with a match; empty string otherwise |
 
