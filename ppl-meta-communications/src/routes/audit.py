@@ -96,6 +96,10 @@ async def get_communication_logs(
     trigger_id: Optional[str] = Query(None, description="Filter by trigger ID"),
     installation_id: Optional[str] = Query(None, description="Filter by installation ID"),
     tenant_name: Optional[str] = Query(None, description="Filter by tenant name"),
+    people_names: Optional[str] = Query(
+        None,
+        description="Comma-separated People Profile names (OR match against payload/message)",
+    ),
     start_date: Optional[str] = Query(None, description="Filter by start date (ISO format)"),
     end_date: Optional[str] = Query(None, description="Filter by end date (ISO format)"),
     page: int = Query(1, ge=1, description="Page number"),
@@ -112,6 +116,11 @@ async def get_communication_logs(
     # Parse dates if provided
     start_dt = datetime.fromisoformat(start_date) if start_date else None
     end_dt = datetime.fromisoformat(end_date) if end_date else None
+    people_name_list = (
+        [part.strip() for part in people_names.split(",") if part.strip()]
+        if people_names
+        else None
+    )
     
     logs, total = log_service.get_logs(
         type=log_type,
@@ -121,6 +130,7 @@ async def get_communication_logs(
         trigger_id=trigger_id,
         installation_id=installation_id,
         tenant_name=tenant_name,
+        people_names=people_name_list,
         start_date=start_dt,
         end_date=end_dt,
         page=page,

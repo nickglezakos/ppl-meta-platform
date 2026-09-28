@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:csv/csv.dart';
@@ -7,7 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../core/theme/theme_kit.dart';
 import '../models/communication_log_model.dart';
+import '../models/presence_models.dart';
 import '../models/trigger_model.dart';
+import '../services/presence_api_client.dart';
 import '../services/trigger_service.dart';
 import '../presentation/widgets/common/content_pane.dart';
 import '../presentation/widgets/common/item_logs_list.dart';
@@ -53,6 +56,12 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   List<TriggerModel> _triggers = [];
   final Set<String> _selectedTriggerIds = {};
 
+  /// Selected People Profile display names (OR filter on logs).
+  final LinkedHashSet<String> _selectedPeopleNames = LinkedHashSet<String>();
+  final PresenceApiClient _presenceClient = PresenceApiClient();
+  /// Bumped on each add so Autocomplete remounts with a cleared search field.
+  int _peopleSearchKey = 0;
+
   /// true = charts view (default), false = logs list view.
   bool _showCharts = true;
   bool _isDownloading = false;
@@ -63,6 +72,23 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   void initState() {
     super.initState();
     _loadTriggers();
+  }
+
+  void _addPeopleName(String raw) {
+    final name = raw.trim();
+    if (name.isEmpty) return;
+    final exists = _selectedPeopleNames.any(
+      (n) => n.toLowerCase() == name.toLowerCase(),
+    );
+    if (exists) return;
+    setState(() {
+      _selectedPeopleNames.add(name);
+      _peopleSearchKey++;
+    });
+  }
+
+  void _removePeopleName(String name) {
+    setState(() => _selectedPeopleNames.remove(name));
   }
 
   Future<void> _loadTriggers() async {
@@ -198,6 +224,108 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                 ],
               ),
             const SizedBox(height: 20),
+            _sectionTitle('People'),
+            const SizedBox(height: 8),
+            Text(
+              'Filter logs by People Profile name (one or more)',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Autocomplete<PresencePeopleProfile>(
+              key: ValueKey<int>(_peopleSearchKey),
+              optionsBuilder: (TextEditingValue textEditingValue) async {
+                final q = textEditingValue.text.trim();
+                if (q.isEmpty) {
+                  return const Iterable<PresencePeopleProfile>.empty();
+                }
+                final resp = await _presenceClient.listPeopleProfiles(
+                  query: q,
+                  limit: 25,
+                );
+                if (!resp.success) {
+                  return const Iterable<PresencePeopleProfile>.empty();
+                }
+                final selectedLower = {
+                  for (final n in _selectedPeopleNames) n.toLowerCase(),
+                };
+                return (resp.data ?? const <PresencePeopleProfile>[]).where(
+                  (p) => !selectedLower.contains(p.name.toLowerCase()),
+                );
+              },
+              displayStringForOption: (p) => p.name,
+              fieldViewBuilder:
+                  (context, textController, focusNode, onFieldSubmitted) {
+                return TextField(
+                  controller: textController,
+                  focusNode: focusNode,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    hintText: 'Search people…',
+                    prefixIcon: Icon(Icons.person_search, size: 20),
+                    border: OutlineInputBorder(),
+                  ),
+                  onSubmitted: (value) {
+                    final typed = value.trim();
+                    if (typed.isNotEmpty) {
+                      _addPeopleName(typed);
+                    } else {
+                      onFieldSubmitted();
+                    }
+                  },
+                );
+              },
+              onSelected: (profile) => _addPeopleName(profile.name),
+              optionsViewBuilder: (context, onSelected, options) {
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: Material(
+                    elevation: 4,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    child: ConstrainedBox(
+                      constraints:
+                          const BoxConstraints(maxHeight: 220, maxWidth: 320),
+                      child: ListView.builder(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        itemCount: options.length,
+                        itemBuilder: (context, index) {
+                          final option = options.elementAt(index);
+                          final email = option.email;
+                          return ListTile(
+                            dense: true,
+                            leading:
+                                const Icon(Icons.badge_outlined, size: 18),
+                            title: Text(option.name),
+                            subtitle: (email == null || email.isEmpty)
+                                ? null
+                                : Text(email),
+                            onTap: () => onSelected(option),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            if (_selectedPeopleNames.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final name in _selectedPeopleNames)
+                    FilterChip(
+                      avatar: const Icon(Icons.person, size: 16),
+                      label: Text(name),
+                      selected: true,
+                      onSelected: (_) {},
+                      onDeleted: () => _removePeopleName(name),
+                    ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 20),
             _sectionTitle('Time Range'),
             const SizedBox(height: 8),
             OutlinedButton.icon(
@@ -293,6 +421,9 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
           _selectedTriggerIds.isEmpty ? null : _selectedTriggerIds.toList(),
       status: _selectedStatus,
       type: _selectedType,
+      peopleNames: _selectedPeopleNames.isEmpty
+          ? null
+          : _selectedPeopleNames.toList(growable: false),
       startDate: _startDate,
       endDate: _endDate,
       pageSize: 50,

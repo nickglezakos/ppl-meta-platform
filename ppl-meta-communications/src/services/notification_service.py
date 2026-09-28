@@ -189,6 +189,7 @@ class CommunicationLogService:
         trigger_id: Optional[str] = None,
         installation_id: Optional[str] = None,
         tenant_name: Optional[str] = None,
+        people_names: Optional[List[str]] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         page: int = 1,
@@ -200,6 +201,8 @@ class CommunicationLogService:
         Returns:
             tuple: (logs, total_count)
         """
+        from sqlalchemy import String, cast, or_
+
         query = self.db.query(CommunicationLog)
 
         # Apply filters
@@ -217,6 +220,31 @@ class CommunicationLogService:
             query = query.filter(CommunicationLog.installation_id == installation_id)
         if tenant_name:
             query = query.filter(CommunicationLog.tenant_name.ilike(f"%{tenant_name}%"))
+        if people_names:
+            # OR match: log mentions any selected People Profile name in payload/message.
+            name_clauses = []
+            for raw in people_names:
+                name = (raw or "").strip()
+                if not name:
+                    continue
+                # Escape ILIKE wildcards from user input.
+                escaped = (
+                    name.replace("\\", "\\\\")
+                    .replace("%", "\\%")
+                    .replace("_", "\\_")
+                )
+                pattern = f"%{escaped}%"
+                name_clauses.append(
+                    cast(CommunicationLog.payload, String).ilike(pattern, escape="\\")
+                )
+                name_clauses.append(
+                    CommunicationLog.content.ilike(pattern, escape="\\")
+                )
+                name_clauses.append(
+                    CommunicationLog.subject.ilike(pattern, escape="\\")
+                )
+            if name_clauses:
+                query = query.filter(or_(*name_clauses))
         if start_date:
             query = query.filter(CommunicationLog.created_at > start_date)
         if end_date:

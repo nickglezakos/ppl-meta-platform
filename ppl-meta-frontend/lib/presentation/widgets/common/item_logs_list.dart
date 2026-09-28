@@ -18,6 +18,7 @@ class ItemLogsList extends StatefulWidget {
     this.triggerIds,
     this.type,
     this.status,
+    this.peopleNames,
     this.startDate,
     this.endDate,
     this.pageSize = 20,
@@ -38,6 +39,9 @@ class ItemLogsList extends StatefulWidget {
 
   /// Optional status filter (sent, pending, failed, ...).
   final String? status;
+
+  /// Optional People Profile display names (OR match in payload/message).
+  final List<String>? peopleNames;
 
   /// Optional time range bounds.
   final DateTime? startDate;
@@ -76,8 +80,15 @@ class ItemLogsListState extends State<ItemLogsList> {
     final newIds = widget.triggerIds ?? const <String>[];
     final idsChanged = oldIds.length != newIds.length ||
         !{for (final id in newIds) id}.containsAll(oldIds);
+    final oldPeople = oldWidget.peopleNames ?? const <String>[];
+    final newPeople = widget.peopleNames ?? const <String>[];
+    final peopleChanged = oldPeople.length != newPeople.length ||
+        !{for (final n in newPeople) n.toLowerCase()}.containsAll(
+          {for (final n in oldPeople) n.toLowerCase()},
+        );
     if (oldWidget.itemId != widget.itemId ||
         idsChanged ||
+        peopleChanged ||
         oldWidget.type != widget.type ||
         oldWidget.status != widget.status ||
         oldWidget.startDate != widget.startDate ||
@@ -111,6 +122,7 @@ class ItemLogsListState extends State<ItemLogsList> {
               type: widget.type,
               status: widget.status,
               triggerId: id,
+              peopleNames: widget.peopleNames,
               startDate: widget.startDate,
               endDate: widget.endDate,
             )
@@ -132,6 +144,7 @@ class ItemLogsListState extends State<ItemLogsList> {
           type: widget.type,
           status: widget.status,
           triggerId: widget.itemId,
+          peopleNames: widget.peopleNames,
           startDate: widget.startDate,
           endDate: widget.endDate,
         );

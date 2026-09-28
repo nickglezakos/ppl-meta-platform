@@ -37,6 +37,7 @@ class CommunicationsApiClient {
     String? triggerId,
     String? installationId,
     String? tenantName,
+    List<String>? peopleNames,
     DateTime? startDate,
     DateTime? endDate,
   }) async {
@@ -50,6 +51,9 @@ class CommunicationsApiClient {
     if (triggerId != null) queryParams['trigger_id'] = triggerId;
     if (installationId != null) queryParams['installation_id'] = installationId;
     if (tenantName != null) queryParams['tenant_name'] = tenantName;
+    if (peopleNames != null && peopleNames.isNotEmpty) {
+      queryParams['people_names'] = peopleNames.join(',');
+    }
     if (startDate != null) queryParams['start_date'] = startDate.toIso8601String();
     if (endDate != null) queryParams['end_date'] = endDate.toIso8601String();
 

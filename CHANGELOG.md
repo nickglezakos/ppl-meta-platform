@@ -21,6 +21,19 @@ _(none yet)_
 
 ---
 
+## [2.25.93] — 2026-09-28
+
+### Added
+
+- Triggers Analytics: filter communication logs by one or more People Profile
+  names (search widget, then chips; OR match on payload/content/subject).
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.92 → 2.25.93**.
+
+---
+
 ## [2.25.92] — 2026-09-28
 
 ### Notes
