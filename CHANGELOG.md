@@ -23,6 +23,13 @@ _(none yet)_
 
 ## [2.25.93] — 2026-09-28
 
+### Notes
+
+- GHCR images published for **2.25.93** (Mode D on `lab-work-dual-64g`): rebuilt
+  communications `4fec9dbe…` and frontend `dd546e4c…` from `b7b06437`; retagged
+  the other ten from `2.25.92`. Stage 3 on `lab-work-dual-64g` @ `192.168.1.90` /
+  `100.101.128.40` (2026-09-28).
+
 ### Added
 
 - Triggers Analytics: filter communication logs by one or more People Profile
