@@ -25,7 +25,9 @@ _(none yet)_
 
 ### Notes
 
-_(Stage 2 notes after publish)_
+- GHCR images published for **2.25.92** (Mode D on `lab-work-dual-64g`): rebuilt presence
+  `d481e52e…` and media `1b400a35…` from `9d8d80d8`; retagged the other ten from `2.25.91`.
+  Stage 3 on `lab-work-dual-64g` @ `192.168.1.90` / `100.101.128.40` (2026-09-28).
 
 ### Changed
 
