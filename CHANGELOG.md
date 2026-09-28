@@ -21,6 +21,23 @@ _(none yet)_
 
 ---
 
+## [2.25.92] — 2026-09-28
+
+### Notes
+
+_(Stage 2 notes after publish)_
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.91 → 2.25.92**.
+
+### Fixed
+
+- Presence: add internal `GET /api/v1/presence/internal/people-profiles/lookup` for the media match pipeline (no end-user JWT).
+- Media: call that internal PPP lookup so trigger/action logs can include People names such as **Nick** (previously 401 on the authenticated lookup left only "Group Member 02").
+
+---
+
 ## [2.25.91] — 2026-09-28
 
 ### Notes

@@ -574,6 +574,14 @@ def build_internal_router(service: PresenceService) -> APIRouter:
             },
         }
 
+    @router.get("/internal/people-profiles/lookup")
+    async def internal_lookup_people_profile_by_member(individual_id: str):
+        """Match-pipeline lookup (media → presence). No end-user JWT required."""
+        return {
+            "success": True,
+            "data": service.lookup_people_profile_by_member(individual_id),
+        }
+
     @router.post("/internal/people-user-sync")
     async def internal_people_user_sync(
         authorization: str | None = Header(None),

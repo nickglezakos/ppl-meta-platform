@@ -147,7 +147,8 @@ The **PPP name is the sole source of truth for display** (Decision #1). If a PPP
 | `DELETE` | `/api/v1/presence/people-profiles/{ppp_uuid}` | Deactivate (or merge) a PPP |
 | `POST` | `/api/v1/presence/people-profiles/{ppp_uuid}/links` | Link a group member to this PPP |
 | `DELETE` | `/api/v1/presence/people-profiles/{ppp_uuid}/links/{group_id}/{individual_id}` | Unlink a group member |
-| `GET` | `/api/v1/presence/people-profiles/lookup?individual_id=...` | Find the PPP linked to a specific group member (used by the match pipeline) |
+| `GET` | `/api/v1/presence/people-profiles/lookup?individual_id=...` | Find the PPP linked to a specific group member (authenticated UI / clients) |
+| `GET` | `/api/v1/presence/internal/people-profiles/lookup?individual_id=...` | Same lookup for service-to-service match pipeline (media → presence; no end-user JWT) |
 
 ---
 

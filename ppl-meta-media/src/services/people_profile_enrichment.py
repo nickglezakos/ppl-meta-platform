@@ -52,26 +52,50 @@ async def lookup_people_profile_by_member(
     if not member_id:
         return None
 
-    url = f"{_presence_base_url()}/api/v1/presence/people-profiles/lookup"
+    # Prefer the internal (no end-user JWT) match-pipeline path; fall back to
+    # the authenticated route for older presence builds.
+    base = _presence_base_url()
+    urls = (
+        f"{base}/api/v1/presence/internal/people-profiles/lookup",
+        f"{base}/api/v1/presence/people-profiles/lookup",
+    )
     owns_client = client is None
     http = client or httpx.AsyncClient(timeout=timeout)
     try:
-        response = await http.get(url, params={"individual_id": member_id})
-        if response.status_code != 200:
-            logger.debug(
-                "PPP lookup failed for %s: %s %s",
-                member_id[:12],
-                response.status_code,
-                response.text[:120],
-            )
-            return None
-        payload = response.json() or {}
-        data = payload.get("data") if isinstance(payload, dict) else None
-        if not isinstance(data, dict):
-            return None
-        if (data.get("status") or "active") == "inactive":
-            return None
-        return data
+        last_status = None
+        last_body = ""
+        for idx, url in enumerate(urls):
+            response = await http.get(url, params={"individual_id": member_id})
+            last_status = response.status_code
+            last_body = response.text[:160]
+            if response.status_code == 401 and idx == 0:
+                # Unexpected on internal path — try authenticated path next.
+                continue
+            if response.status_code == 401:
+                logger.warning(
+                    "PPP lookup unauthorized for %s (presence requires auth; "
+                    "deploy presence with /internal/people-profiles/lookup)",
+                    member_id[:12],
+                )
+                return None
+            if response.status_code != 200:
+                continue
+            payload = response.json() or {}
+            data = payload.get("data") if isinstance(payload, dict) else None
+            if data is None:
+                return None
+            if not isinstance(data, dict):
+                return None
+            if (data.get("status") or "active") == "inactive":
+                return None
+            return data
+        logger.warning(
+            "PPP lookup failed for %s: %s %s",
+            member_id[:12],
+            last_status,
+            last_body,
+        )
+        return None
     except Exception as exc:
         logger.warning("PPP lookup error for %s: %s", member_id[:12], exc)
         return None
