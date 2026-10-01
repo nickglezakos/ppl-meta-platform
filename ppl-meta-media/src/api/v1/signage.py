@@ -20,6 +20,10 @@ from ...schemas.signage import (
     ErrorResponse,
     PlaybackControlRequest,
     PlaybackControlResponse,
+    RichMessageTemplateCreate,
+    RichMessageTemplateListResponse,
+    RichMessageTemplateResponse,
+    RichMessageTemplateUpdate,
     SignageDeviceListResponse,
     SignageDeviceRegister,
     SignageDeviceResponse,
@@ -318,6 +322,163 @@ async def delete_video_list(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete video list",
+        )
+
+
+# ============================================================================
+# Rich Message Template Endpoints
+# ============================================================================
+
+
+@router.post(
+    "/rich-messages",
+    response_model=RichMessageTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a rich message template",
+)
+async def create_rich_message(
+    data: RichMessageTemplateCreate,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RichMessageTemplateResponse:
+    try:
+        user_id = UUID(current_user.user_id)
+        service = SignageService(db)
+        template = service.create_rich_message_template(user_id, data)
+        return RichMessageTemplateResponse(**service._template_to_response_dict(template))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating rich message template: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create rich message template",
+        )
+
+
+@router.get(
+    "/rich-messages",
+    response_model=RichMessageTemplateListResponse,
+    summary="List rich message templates",
+)
+async def list_rich_messages(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    is_active: Optional[bool] = Query(None),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RichMessageTemplateListResponse:
+    try:
+        user_id = UUID(current_user.user_id)
+        service = SignageService(db)
+        results, total = service.list_rich_message_templates(
+            user_id=user_id,
+            page=page,
+            page_size=page_size,
+            search=search,
+            is_active=is_active,
+        )
+        return RichMessageTemplateListResponse(
+            total_count=total,
+            page=page,
+            page_size=page_size,
+            results=[
+                RichMessageTemplateResponse(**service._template_to_response_dict(t))
+                for t in results
+            ],
+        )
+    except Exception as e:
+        logger.error(f"Error listing rich message templates: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list rich message templates",
+        )
+
+
+@router.get(
+    "/rich-messages/{template_uuid}",
+    response_model=RichMessageTemplateResponse,
+    summary="Get rich message template",
+)
+async def get_rich_message(
+    template_uuid: UUID,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RichMessageTemplateResponse:
+    try:
+        user_id = UUID(current_user.user_id)
+        service = SignageService(db)
+        template = service.get_rich_message_template(template_uuid, user_id=user_id)
+        if not template:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Rich message template not found",
+            )
+        return RichMessageTemplateResponse(**service._template_to_response_dict(template))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting rich message template: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get rich message template",
+        )
+
+
+@router.put(
+    "/rich-messages/{template_uuid}",
+    response_model=RichMessageTemplateResponse,
+    summary="Update rich message template",
+)
+async def update_rich_message(
+    template_uuid: UUID,
+    data: RichMessageTemplateUpdate,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RichMessageTemplateResponse:
+    try:
+        user_id = UUID(current_user.user_id)
+        service = SignageService(db)
+        template = service.update_rich_message_template(template_uuid, user_id, data)
+        return RichMessageTemplateResponse(**service._template_to_response_dict(template))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error updating rich message template: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update rich message template",
+        )
+
+
+@router.delete(
+    "/rich-messages/{template_uuid}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete rich message template",
+)
+async def delete_rich_message(
+    template_uuid: UUID,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        user_id = UUID(current_user.user_id)
+        service = SignageService(db)
+        deleted = service.delete_rich_message_template(template_uuid, user_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Rich message template not found",
+            )
+        return None
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting rich message template: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete rich message template",
         )
 
 

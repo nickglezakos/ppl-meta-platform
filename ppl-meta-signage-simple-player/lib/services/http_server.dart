@@ -1,15 +1,17 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
+import 'package:signage_simple_player/services/player_engine.dart';
+import 'package:signage_simple_player/services/config_service.dart';
+import 'package:signage_simple_player/services/rich_message_overlay_service.dart';
+import 'package:signage_simple_player/models/rich_message_models.dart';
+import 'package:signage_simple_player/config/app_config.dart';
+import 'package:signage_simple_player/models/video_list.dart';
+import 'package:logger/logger.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
-import 'package:logger/logger.dart';
 import 'package:signage_simple_player/database/playlist_database.dart';
-import 'package:signage_simple_player/services/player_engine.dart';
-import 'package:signage_simple_player/models/video_list.dart';
-import 'package:signage_simple_player/config/app_config.dart';
-import 'package:signage_simple_player/services/config_service.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 /// Embedded HTTP server for local signage control and monitoring
 /// 
@@ -22,6 +24,7 @@ class SignageHttpServer {
   final PlaylistDatabase _database;
   final SignagePlayerEngine _playerEngine;
   final ConfigService _configService;
+  final RichMessageOverlayService _richMessageOverlay;
   final Logger _logger;
   final String _deviceId;
   final int port;
@@ -33,12 +36,14 @@ class SignageHttpServer {
     required PlaylistDatabase database,
     required SignagePlayerEngine playerEngine,
     required ConfigService configService,
+    required RichMessageOverlayService richMessageOverlay,
     required Logger logger,
     required String deviceId,
     this.port = AppConfig.httpServerPort,
   })  : _database = database,
         _playerEngine = playerEngine,
         _configService = configService,
+        _richMessageOverlay = richMessageOverlay,
         _logger = logger,
         _deviceId = deviceId;
 
@@ -393,6 +398,28 @@ class SignageHttpServer {
           message = 'Loop mode set to $mode';
           break;
 
+        case 'show_rich_message':
+          final raw = data['rich_message'];
+          if (raw is! Map<String, dynamic>) {
+            return Response.badRequest(
+              body: jsonEncode({
+                'error': 'Missing required field: rich_message',
+              }),
+              headers: {'Content-Type': 'application/json'},
+            );
+          }
+          final payload = RichMessageOverlayPayload.fromJson(raw);
+          await _richMessageOverlay.show(payload);
+          success = true;
+          message = 'Rich message overlay shown';
+          break;
+
+        case 'dismiss_rich_message':
+          await _richMessageOverlay.dismiss();
+          success = true;
+          message = 'Rich message overlay dismissed';
+          break;
+
         default:
           return Response.badRequest(
             body: jsonEncode({
@@ -407,6 +434,8 @@ class SignageHttpServer {
                 'load_playlist',
                 'seek',
                 'set_loop_mode',
+                'show_rich_message',
+                'dismiss_rich_message',
               ],
             }),
             headers: {'Content-Type': 'application/json'},

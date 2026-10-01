@@ -115,6 +115,8 @@ def _interpolate_action_message(
     trigger: Trigger,
     evaluation_reason: Optional[str],
     match_info: Optional[Dict[str, Any]],
+    *,
+    auto_append_match_reason: bool = True,
 ) -> str:
     message = base_message or ""
     original_message = message
@@ -141,7 +143,8 @@ def _interpolate_action_message(
 
     match_mode = (match_info or {}).get("mode") if isinstance(match_info, dict) else None
     if (
-        not used_template_variable
+        auto_append_match_reason
+        and not used_template_variable
         and match_context.get("match_reason")
         and match_info
         and (
@@ -1133,6 +1136,14 @@ class InstantDetectionSubscriber:
                 evaluation_reason=evaluation_reason,
                 match_info=match_info,
             )
+        elif action.action_type == "signage_rich_message":
+            await self._execute_signage_rich_message_action(
+                action,
+                trigger,
+                db,
+                evaluation_reason=evaluation_reason,
+                match_info=match_info,
+            )
         elif action.action_type == "email":
             await self._execute_email_action(action, trigger, db, evaluation_reason=evaluation_reason, match_info=match_info)
         elif action.action_type == "webhook":
@@ -1288,6 +1299,150 @@ class InstantDetectionSubscriber:
             logger.error(f"Failed to parse action_config: {e}")
         except Exception as e:
             logger.error(f"Error executing signage action: {e}", exc_info=True)
+
+    async def _execute_signage_rich_message_action(
+        self,
+        action,
+        trigger: Trigger,
+        db: Session,
+        evaluation_reason: Optional[str] = None,
+        match_info: Optional[Dict[str, Any]] = None,
+    ):
+        """Show a rich media overlay on devices without interrupting playlist playback."""
+        logger.info("  🖼️ Executing signage rich message action...")
+
+        try:
+            config = (
+                json.loads(action.action_config)
+                if isinstance(action.action_config, str)
+                else action.action_config
+            ) or {}
+
+            device_ids = config.get("device_ids", [])
+            template_id = config.get("template_id")
+            duration_ms = config.get("duration_ms")
+            layout_override = config.get("layout_override")
+
+            if not device_ids or not template_id:
+                logger.error(
+                    "     ❌ Missing device_ids or template_id in rich message action config"
+                )
+                return
+
+            from src.schemas.signage import PlaybackControlRequest, PlaybackCommand
+            from src.services.signage_service import SignageService, SignagePlaybackService
+
+            signage_service = SignageService(db)
+            template = signage_service.get_rich_message_template(
+                UUID(str(template_id)), user_id=None
+            )
+            if not template:
+                logger.error(
+                    f"     ❌ Rich message template not found: {template_id}"
+                )
+                return
+
+            interpolated_title = _interpolate_action_message(
+                base_message=template.title or "",
+                trigger=trigger,
+                evaluation_reason=evaluation_reason,
+                match_info=match_info,
+                auto_append_match_reason=False,
+            )
+            interpolated_message = _interpolate_action_message(
+                base_message=template.message or "",
+                trigger=trigger,
+                evaluation_reason=evaluation_reason,
+                match_info=match_info,
+            )
+            logger.info(
+                "     🖼️ Rich message interpolate title=%r message=%r "
+                "has_match=%s keys=%s",
+                interpolated_title,
+                interpolated_message,
+                bool(match_info),
+                list(match_info.keys()) if isinstance(match_info, dict) else None,
+            )
+            # Preserve "no message body" when template.message was None and nothing
+            # was auto-appended.
+            message_override = (
+                interpolated_message
+                if (template.message is not None or interpolated_message)
+                else None
+            )
+
+            overlay = signage_service.resolve_rich_message_overlay(
+                UUID(str(template_id)),
+                duration_ms=duration_ms,
+                layout_override=layout_override,
+                title=interpolated_title,
+                message=message_override,
+            )
+            playback_service = SignagePlaybackService(db)
+
+            for device_uuid_str in device_ids:
+                try:
+                    device_uuid = UUID(str(device_uuid_str))
+                    control_request = PlaybackControlRequest(
+                        device_ids=[device_uuid],
+                        command=PlaybackCommand.SHOW_RICH_MESSAGE,
+                        rich_message=overlay,
+                    )
+                    result = await playback_service.control_playback(control_request)
+                    logger.info(
+                        f"        ✅ Rich message command result: {json.dumps(result, default=str)}"
+                    )
+
+                    command_success = True
+                    if isinstance(result, dict):
+                        if isinstance(result.get("results"), list):
+                            command_success = all(
+                                bool(item.get("success", item.get("status") == "success"))
+                                for item in result.get("results", [])
+                                if isinstance(item, dict)
+                            )
+                        elif "success" in result:
+                            command_success = bool(result.get("success"))
+
+                    detection_data = getattr(self, "_current_detection_data", {})
+                    audit_event_data = {
+                        "trigger_id": str(trigger.uuid),
+                        "trigger_name": trigger.name,
+                        "action_name": action.name,
+                        "action_type": action.action_type,
+                        "camera_id": detection_data.get("camera_id"),
+                        "detection_timestamp": detection_data.get("timestamp"),
+                        "people_count": detection_data.get("people_count", 0),
+                        "demographics": detection_data.get("demographics", {}),
+                        "reason": evaluation_reason,
+                        "match": match_info,
+                        "signage_rich_message": {
+                            "device_id": str(device_uuid),
+                            "template_id": str(template_id),
+                            "duration_ms": overlay.duration_ms,
+                            "layout": overlay.layout,
+                            "command": "show_rich_message",
+                            "success": command_success,
+                        },
+                    }
+                    comms_client = get_communications_client()
+                    await comms_client.log_audit_event(
+                        event_type="trigger_fired",
+                        event_source="media_service",
+                        event_data=audit_event_data,
+                        severity="info" if command_success else "warning",
+                    )
+                except ValueError as e:
+                    logger.error(f"Invalid device/template UUID: {e}")
+                except Exception as e:
+                    logger.error(
+                        f"Error showing rich message for device {device_uuid_str}: {e}"
+                    )
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse action_config: {e}")
+        except Exception as e:
+            logger.error(f"Error executing rich message action: {e}", exc_info=True)
     
     async def _execute_email_action(
         self,

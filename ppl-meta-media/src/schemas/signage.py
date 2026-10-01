@@ -53,6 +53,16 @@ class PlaybackCommand(str, Enum):
     NEXT = "next"
     PREVIOUS = "previous"
     SEEK = "seek"
+    SHOW_RICH_MESSAGE = "show_rich_message"
+    DISMISS_RICH_MESSAGE = "dismiss_rich_message"
+
+
+class RichMessageLayout(str, Enum):
+    """Rich message overlay layout."""
+
+    FULLSCREEN = "fullscreen"
+    BANNER = "banner"
+    CARD = "card"
 
 
 class PlaybackState(str, Enum):
@@ -316,6 +326,25 @@ class PlaybackParameters(BaseModel):
     speed: float = Field(default=1.0, description="Playback speed", ge=0.1, le=3.0)
 
 
+class RichMessageOverlayPayload(BaseModel):
+    """Resolved overlay payload sent to the player."""
+
+    template_id: UUID
+    title: str = ""
+    message: Optional[str] = None
+    html_body: str
+    media_url: Optional[str] = None
+    sound_url: Optional[str] = None
+    title_font_size: int = 48
+    message_font_size: int = 28
+    title_color: str = "#FFFFFF"
+    message_color: str = "#F0F0F0"
+    background_color: str = "#000000"
+    opacity: int = 80
+    layout: str = "card"
+    duration_ms: int = 15000
+
+
 class PlaybackControlRequest(BaseModel):
     """Request to control playback on device(s)."""
 
@@ -329,12 +358,23 @@ class PlaybackControlRequest(BaseModel):
     parameters: Optional[PlaybackParameters] = Field(
         None, description="Additional playback parameters"
     )
+    rich_message: Optional[RichMessageOverlayPayload] = Field(
+        None,
+        description="Resolved rich message overlay payload (for show_rich_message)",
+    )
 
     @validator("video_list_id")
     def validate_video_list_for_start(cls, v, values):
         """Ensure video_list_id is provided for START command."""
         if values.get("command") == PlaybackCommand.START and not v:
             raise ValueError("video_list_id is required for START command")
+        return v
+
+    @validator("rich_message")
+    def validate_rich_message_for_show(cls, v, values):
+        """Ensure rich_message is provided for SHOW_RICH_MESSAGE command."""
+        if values.get("command") == PlaybackCommand.SHOW_RICH_MESSAGE and not v:
+            raise ValueError("rich_message is required for show_rich_message command")
         return v
 
 
@@ -346,6 +386,100 @@ class PlaybackControlResponse(BaseModel):
     affected_devices: int
     executed_at: datetime
     message: str
+
+
+# ============================================================================
+# Rich Message Template Schemas
+# ============================================================================
+
+
+class RichMessageTemplateBase(BaseModel):
+    """Base schema for rich message templates."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+    title: str = Field(default="", max_length=255)
+    message: Optional[str] = None
+    title_font_size: int = Field(default=48, ge=8, le=200)
+    message_font_size: int = Field(default=28, ge=8, le=200)
+    title_color: str = Field(default="#FFFFFF", max_length=32)
+    message_color: str = Field(default="#F0F0F0", max_length=32)
+    background_color: str = Field(default="#000000", max_length=32)
+    opacity: int = Field(default=80, ge=0, le=100)
+    layout: RichMessageLayout = Field(default=RichMessageLayout.CARD)
+    media_uuid: Optional[UUID] = Field(
+        None, description="Optional media UUID for video/image container"
+    )
+    sound_media_uuid: Optional[UUID] = Field(
+        None, description="Optional sound media UUID"
+    )
+    default_duration_ms: int = Field(default=15000, ge=500, le=600000)
+
+
+class RichMessageTemplateCreate(RichMessageTemplateBase):
+    """Schema for creating a rich message template."""
+
+    pass
+
+
+class RichMessageTemplateUpdate(BaseModel):
+    """Schema for updating a rich message template."""
+
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    title: Optional[str] = Field(None, max_length=255)
+    message: Optional[str] = None
+    title_font_size: Optional[int] = Field(None, ge=8, le=200)
+    message_font_size: Optional[int] = Field(None, ge=8, le=200)
+    title_color: Optional[str] = Field(None, max_length=32)
+    message_color: Optional[str] = Field(None, max_length=32)
+    background_color: Optional[str] = Field(None, max_length=32)
+    opacity: Optional[int] = Field(None, ge=0, le=100)
+    layout: Optional[RichMessageLayout] = None
+    media_uuid: Optional[UUID] = None
+    sound_media_uuid: Optional[UUID] = None
+    clear_media: bool = Field(default=False, description="Clear media_id when true")
+    clear_sound: bool = Field(
+        default=False, description="Clear sound_media_id when true"
+    )
+    default_duration_ms: Optional[int] = Field(None, ge=500, le=600000)
+    is_active: Optional[bool] = None
+
+
+class RichMessageTemplateResponse(BaseModel):
+    """Schema for rich message template response."""
+
+    id: int
+    uuid: UUID
+    name: str
+    title: str
+    message: Optional[str]
+    html_body: Optional[str]
+    title_font_size: int
+    message_font_size: int
+    title_color: str
+    message_color: str
+    background_color: str
+    opacity: int
+    layout: str
+    media_id: Optional[int]
+    media_uuid: Optional[UUID] = None
+    sound_media_id: Optional[int]
+    sound_media_uuid: Optional[UUID] = None
+    default_duration_ms: int
+    is_active: bool
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+class RichMessageTemplateListResponse(BaseModel):
+    """Paginated list of rich message templates."""
+
+    total_count: int
+    page: int
+    page_size: int
+    results: List[RichMessageTemplateResponse]
 
 
 # ============================================================================

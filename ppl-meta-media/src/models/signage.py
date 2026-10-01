@@ -55,6 +55,16 @@ class PlaybackCommand(str, Enum):
     NEXT = "next"
     PREVIOUS = "previous"
     SEEK = "seek"
+    SHOW_RICH_MESSAGE = "show_rich_message"
+    DISMISS_RICH_MESSAGE = "dismiss_rich_message"
+
+
+class RichMessageLayout(str, Enum):
+    """Rich message overlay layout modes."""
+
+    FULLSCREEN = "fullscreen"
+    BANNER = "banner"
+    CARD = "card"
 
 
 class VideoList(BaseModel):
@@ -295,6 +305,53 @@ class VideoListSyncHistory(BaseModel):
         if self.sync_started_at:
             duration = (self.sync_completed_at - self.sync_started_at).total_seconds()
             self.sync_duration_ms = int(duration * 1000)
+
+
+class SignageRichMessageTemplate(BaseModel):
+    """
+    Reusable rich media message template for non-blocking signage overlays.
+
+    Rendered by the player as a Stack layer above continuing playlist playback.
+    """
+
+    __tablename__ = "signage_rich_message_templates"
+
+    uuid = Column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, index=True)
+
+    # Ownership
+    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+
+    # Content
+    name = Column(String(255), nullable=False, index=True)
+    title = Column(String(255), nullable=False, default="")
+    message = Column(Text, nullable=True)
+    html_body = Column(Text, nullable=True)
+
+    # Style
+    title_font_size = Column(Integer, nullable=False, default=48)
+    message_font_size = Column(Integer, nullable=False, default=28)
+    title_color = Column(String(32), nullable=False, default="#FFFFFF")
+    message_color = Column(String(32), nullable=False, default="#F0F0F0")
+    background_color = Column(String(32), nullable=False, default="#000000")
+    opacity = Column(Integer, nullable=False, default=80)  # 0-100
+    layout = Column(String(50), nullable=False, default=RichMessageLayout.CARD.value)
+
+    # Optional media / sound (FK to media.id)
+    media_id = Column(Integer, ForeignKey("media.id", ondelete="SET NULL"), nullable=True)
+    sound_media_id = Column(
+        Integer, ForeignKey("media.id", ondelete="SET NULL"), nullable=True
+    )
+
+    default_duration_ms = Column(Integer, nullable=False, default=15000)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+
+    media = relationship("Media", foreign_keys=[media_id])
+    sound_media = relationship("Media", foreign_keys=[sound_media_id])
+
+    def __repr__(self):
+        return (
+            f"<SignageRichMessageTemplate(uuid={self.uuid}, name='{self.name}')>"
+        )
 
 
 class SignageDevice(BaseModel):

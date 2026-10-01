@@ -14,6 +14,7 @@ import 'services/history_tracking_service.dart';
 import 'services/sync_service.dart';
 import 'services/config_service.dart';
 import 'services/tailscale_service.dart';
+import 'services/rich_message_overlay_service.dart';
 import 'database/playlist_database.dart';
 import 'api/signage_api_client.dart';
 import 'utils/device_info_helper.dart';
@@ -171,6 +172,7 @@ class _InitializationScreenState extends State<InitializationScreen> {
   SignageApiClient? _apiClient;
   SignagePlayerEngine? _playerEngine;
   SignageHttpServer? _httpServer;
+  RichMessageOverlayService? _richMessageOverlay;
   HistoryTrackingService? _historyTracker;
   SyncService? _syncService;
   SignageDiscoveryService? _discoveryService;
@@ -268,11 +270,14 @@ class _InitializationScreenState extends State<InitializationScreen> {
       setState(() {
         _statusMessage = 'Starting HTTP server...';
       });
+
+      _richMessageOverlay = RichMessageOverlayService(logger: logger);
       
       _httpServer = SignageHttpServer(
         database: _database!,
         playerEngine: _playerEngine!,
         configService: _configService!,
+        richMessageOverlay: _richMessageOverlay!,
         logger: logger,
         deviceId: deviceId,
         port: AppConfig.httpServerPort,
@@ -379,6 +384,9 @@ class _InitializationScreenState extends State<InitializationScreen> {
         Provider<PlaylistDatabase>.value(value: _database!),
         Provider<SignageApiClient>.value(value: _apiClient!),
         ChangeNotifierProvider<SignagePlayerEngine>.value(value: _playerEngine!),
+        ChangeNotifierProvider<RichMessageOverlayService>.value(
+          value: _richMessageOverlay!,
+        ),
         Provider<SignageHttpServer>.value(value: _httpServer!),
         Provider<HistoryTrackingService>.value(value: _historyTracker!),
         ChangeNotifierProvider<SyncService>.value(value: _syncService!),

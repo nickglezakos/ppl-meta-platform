@@ -49,6 +49,9 @@ dependencies:
   # Configuration persistence
   shared_preferences: ^2.3.4
   
+  just_audio: ^0.9.42
+  webview_flutter: ^4.10.0
+
   # Embedded HTTP server
   shelf: ^1.4.2
   shelf_router: ^1.1.4

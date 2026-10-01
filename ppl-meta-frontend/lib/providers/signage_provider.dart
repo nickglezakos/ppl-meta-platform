@@ -32,6 +32,11 @@ class SignageProvider with ChangeNotifier {
   bool _isControllingPlayback = false;
   String? _playbackError;
 
+  // Rich Message Templates State
+  List<RichMessageTemplate> _richMessages = [];
+  bool _isLoadingRichMessages = false;
+  String? _richMessagesError;
+
   SignageProvider(this._apiClient);
 
   // ==================== Getters ====================
@@ -57,6 +62,10 @@ class SignageProvider with ChangeNotifier {
 
   bool get isControllingPlayback => _isControllingPlayback;
   String? get playbackError => _playbackError;
+
+  List<RichMessageTemplate> get richMessages => _richMessages;
+  bool get isLoadingRichMessages => _isLoadingRichMessages;
+  String? get richMessagesError => _richMessagesError;
 
   // ==================== Video List Operations ====================
 
@@ -502,12 +511,89 @@ class SignageProvider with ChangeNotifier {
 
   // ==================== Utility Methods ====================
 
+  Future<void> loadRichMessages({String? search}) async {
+    _isLoadingRichMessages = true;
+    _richMessagesError = null;
+    notifyListeners();
+    try {
+      final response = await _apiClient.getRichMessages(search: search);
+      _richMessages = response.results;
+      _richMessagesError = null;
+    } catch (e) {
+      if (e.toString().contains('404') || e.toString().contains('Not Found')) {
+        _richMessages = [];
+        _richMessagesError = null;
+      } else {
+        _richMessagesError = 'Failed to load rich messages: $e';
+        debugPrint('SignageProvider: $_richMessagesError');
+      }
+    } finally {
+      _isLoadingRichMessages = false;
+      notifyListeners();
+    }
+  }
+
+  Future<RichMessageTemplate?> createRichMessage(
+    CreateRichMessageTemplateRequest request,
+  ) async {
+    try {
+      final created = await _apiClient.createRichMessage(request);
+      _richMessages.insert(0, created);
+      notifyListeners();
+      return created;
+    } catch (e) {
+      _richMessagesError = 'Failed to create rich message: $e';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<RichMessageTemplate?> updateRichMessage(
+    String templateId,
+    CreateRichMessageTemplateRequest request, {
+    bool clearMedia = false,
+    bool clearSound = false,
+  }) async {
+    try {
+      final updated = await _apiClient.updateRichMessage(
+        templateId,
+        request,
+        clearMedia: clearMedia,
+        clearSound: clearSound,
+      );
+      final index = _richMessages.indexWhere((t) => t.uuid == templateId);
+      if (index >= 0) {
+        _richMessages[index] = updated;
+      }
+      notifyListeners();
+      return updated;
+    } catch (e) {
+      _richMessagesError = 'Failed to update rich message: $e';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<bool> deleteRichMessage(String templateId) async {
+    try {
+      await _apiClient.deleteRichMessage(templateId);
+      _richMessages.removeWhere((t) => t.uuid == templateId);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _richMessagesError = 'Failed to delete rich message: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Clear errors
   void clearErrors() {
     _listsError = null;
     _devicesError = null;
     _syncError = null;
     _playbackError = null;
+    _richMessagesError = null;
     notifyListeners();
   }
 
@@ -519,6 +605,7 @@ class SignageProvider with ChangeNotifier {
     _selectedDevice = null;
     _deviceStatuses = {};
     _syncResults = {};
+    _richMessages = [];
     clearErrors();
   }
 }

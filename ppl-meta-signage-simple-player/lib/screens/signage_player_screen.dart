@@ -7,6 +7,7 @@ import 'package:signage_simple_player/services/discovery_service.dart';
 import 'package:signage_simple_player/services/config_service.dart';
 import 'package:signage_simple_player/widgets/player_controls.dart';
 import 'package:signage_simple_player/widgets/status_overlay.dart';
+import 'package:signage_simple_player/widgets/rich_message_overlay.dart';
 import 'package:signage_simple_player/main.dart';
 
 /// Full-screen signage player screen
@@ -242,6 +243,9 @@ class _SignagePlayerScreenState extends State<SignagePlayerScreen> {
                   !playerEngine.isLoading && 
                   !playerEngine.hasError)
                 _buildPlaceholder(),
+
+              // Rich media message overlay (does not interrupt playlist)
+              const RichMessageOverlay(),
 
               // Status overlay (top)
               if (widget.showStatusOverlay && _statusVisible)

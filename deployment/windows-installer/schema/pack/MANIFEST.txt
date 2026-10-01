@@ -49,3 +49,4 @@
 046_014_camera_settings_and_enable_detection.sql  <=  deployment/mac-lima/sql/014_camera_settings_and_enable_detection.sql
 047_orchestrator_workflow_settings.sql  <=  deployment/mac-lima/sql/047_orchestrator_workflow_settings.sql
 048_individuals_created_by_session.sql  <=  deployment/mac-lima/sql/048_individuals_created_by_session.sql
+050_add_signage_rich_message_templates.sql  <=  ppl-meta-media/migrations/add_signage_rich_message_templates.sql

@@ -1140,6 +1140,36 @@ async def sync_video_list(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.post("/signage/rich-messages")
+async def create_rich_message(request: Request):
+    """Proxy create rich message template to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/signage/rich-messages")
+async def list_rich_messages(request: Request):
+    """Proxy list rich message templates to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/signage/rich-messages/{template_uuid}")
+async def get_rich_message(request: Request):
+    """Proxy get rich message template to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.put("/signage/rich-messages/{template_uuid}")
+async def update_rich_message(request: Request):
+    """Proxy update rich message template to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.delete("/signage/rich-messages/{template_uuid}")
+async def delete_rich_message(request: Request):
+    """Proxy delete rich message template to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.get("/signage/devices")
 async def list_signage_devices(request: Request):
     """Proxy list signage devices to Media service."""

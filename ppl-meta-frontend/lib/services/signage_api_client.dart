@@ -83,6 +83,64 @@ class SignageApiClient {
     await _apiClient.delete('/api/v1/signage/video-lists/$listId');
   }
 
+  // ==================== Rich Message Templates ====================
+
+  Future<RichMessageTemplateListResponse> getRichMessages({
+    int page = 1,
+    int limit = 50,
+    String? search,
+    bool? isActive,
+  }) async {
+    final response = await _apiClient.get(
+      '/api/v1/signage/rich-messages',
+      queryParameters: {
+        'page': page,
+        'page_size': limit.clamp(1, 100),
+        if (search != null) 'search': search,
+        if (isActive != null) 'is_active': isActive,
+      },
+    );
+    return RichMessageTemplateListResponse.fromJson(response.data);
+  }
+
+  Future<RichMessageTemplate> getRichMessage(String templateId) async {
+    final response = await _apiClient.get(
+      '/api/v1/signage/rich-messages/$templateId',
+    );
+    return RichMessageTemplate.fromJson(response.data);
+  }
+
+  Future<RichMessageTemplate> createRichMessage(
+    CreateRichMessageTemplateRequest request,
+  ) async {
+    final response = await _apiClient.post(
+      '/api/v1/signage/rich-messages',
+      data: request.toJson(),
+    );
+    return RichMessageTemplate.fromJson(response.data);
+  }
+
+  Future<RichMessageTemplate> updateRichMessage(
+    String templateId,
+    CreateRichMessageTemplateRequest request, {
+    bool clearMedia = false,
+    bool clearSound = false,
+  }) async {
+    final response = await _apiClient.put(
+      '/api/v1/signage/rich-messages/$templateId',
+      data: {
+        ...request.toJson(),
+        'clear_media': clearMedia,
+        'clear_sound': clearSound,
+      },
+    );
+    return RichMessageTemplate.fromJson(response.data);
+  }
+
+  Future<void> deleteRichMessage(String templateId) async {
+    await _apiClient.delete('/api/v1/signage/rich-messages/$templateId');
+  }
+
   // ==================== ETL Sync Operations ====================
 
   /// Sync a video list to one or more devices

@@ -21,6 +21,25 @@ _(none yet)_
 
 ---
 
+## [2.25.94] — 2026-10-01
+
+### Notes
+
+- GHCR images for **2.25.94** (Mode D): rebuild media, gateway, frontend; retag-forward the other nine from `2.25.93`. Stage 3 on `lab-work-dual-64g` after publish.
+
+### Added
+
+- Signage **rich media message** overlays: HTML templates (Signage → Messages) with optional media/sound, non-blocking player overlay (`show_rich_message` / `dismiss_rich_message`), and automation action type `signage_rich_message`.
+- Rich-message template title/message support fire-time magic tags (`{trigger_name}`, `{reason}`, `{match_reason}`, `{similarity_score}`, `{matched_member_name}`, …) like other actions.
+- Schema pack `050_add_signage_rich_message_templates.sql` for `signage_rich_message_templates`.
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.93 → 2.25.94**.
+- Gateway proxies `/api/v1/signage/rich-messages` CRUD to media.
+
+---
+
 ## [2.25.93] — 2026-09-28
 
 ### Notes

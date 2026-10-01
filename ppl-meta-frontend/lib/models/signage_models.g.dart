@@ -295,6 +295,8 @@ const _$PlaybackCommandEnumMap = {
   PlaybackCommand.stop: 'stop',
   PlaybackCommand.next: 'next',
   PlaybackCommand.previous: 'previous',
+  PlaybackCommand.showRichMessage: 'show_rich_message',
+  PlaybackCommand.dismissRichMessage: 'dismiss_rich_message',
 };
 
 PlaybackParameters _$PlaybackParametersFromJson(Map<String, dynamic> json) =>

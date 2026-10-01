@@ -5,12 +5,13 @@ Business logic for video list management, synchronization, and playback control.
 """
 
 import asyncio
+import html
 import json
 import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 from uuid import UUID
 
 import httpx
@@ -20,6 +21,7 @@ from sqlalchemy.orm import Session, joinedload
 from ..models.media import Media, MediaCollection, MediaCollectionItem, MediaType
 from ..models.signage import (
     SignageDevice,
+    SignageRichMessageTemplate,
     SyncStatus,
     VideoList,
     VideoListItem,
@@ -28,10 +30,17 @@ from ..models.signage import (
 from ..schemas.signage import (
     PlaybackCommand,
     PlaybackControlRequest,
+    RichMessageLayout,
+    RichMessageOverlayPayload,
+    RichMessageTemplateCreate,
+    RichMessageTemplateUpdate,
     SyncMode,
     VideoListCreate,
     VideoListUpdate,
 )
+
+# Sentinel so resolve_rich_message_overlay can distinguish "not provided" from None/"".
+_RICH_MESSAGE_TEXT_UNSET = object()
 
 # Use simple logging like other working services
 logger = logging.getLogger(__name__)
@@ -92,6 +101,22 @@ def _endpoint_candidates(
         add(fallback_host, fallback_port or 8009, "lan")
 
     return candidates
+
+
+def _hex_to_rgb_csv(hex_color: str) -> str:
+    """Convert #RRGGBB (or RRGGBB) to 'r,g,b' for CSS rgba()."""
+    raw = (hex_color or "#000000").strip().lstrip("#")
+    if len(raw) == 3:
+        raw = "".join(ch * 2 for ch in raw)
+    if len(raw) != 6:
+        return "0,0,0"
+    try:
+        r = int(raw[0:2], 16)
+        g = int(raw[2:4], 16)
+        b = int(raw[4:6], 16)
+        return f"{r},{g},{b}"
+    except ValueError:
+        return "0,0,0"
 
 
 def _resolve_media_service_url() -> str:
@@ -551,6 +576,405 @@ class SignageService:
         logger.info(f"Deleted video list '{name}' (UUID: {uuid})")
 
         return True
+
+    # ========================================================================
+    # Rich Message Template CRUD
+    # ========================================================================
+
+    def _resolve_media_by_uuid(self, media_uuid: Optional[UUID]) -> Optional[Media]:
+        if not media_uuid:
+            return None
+        media = self.db.query(Media).filter(Media.uuid == media_uuid).first()
+        if not media:
+            raise ValueError(f"Media not found: {media_uuid}")
+        return media
+
+    @staticmethod
+    def build_rich_message_html(
+        *,
+        title: str,
+        message: Optional[str],
+        title_font_size: int,
+        message_font_size: int,
+        title_color: str,
+        message_color: str,
+        background_color: str,
+        opacity: int,
+        layout: str,
+        media_url: Optional[str] = None,
+        media_mime: Optional[str] = None,
+    ) -> str:
+        """Build a self-contained HTML document for the player WebView overlay."""
+        alpha = max(0.0, min(1.0, (opacity or 0) / 100.0))
+        safe_title = html.escape(title or "")
+        safe_message = html.escape(message or "").replace("\n", "<br/>")
+        bg = background_color or "#000000"
+
+        layout_css = {
+            "fullscreen": "width:100%;height:100%;border-radius:0;",
+            "banner": (
+                "width:100%;max-height:40%;border-radius:0;"
+                "align-self:flex-start;margin-top:0;"
+            ),
+            "card": (
+                "width:min(720px,92%);max-height:80%;border-radius:16px;"
+                "box-shadow:0 12px 40px rgba(0,0,0,0.45);"
+            ),
+        }.get(layout or "card", "width:min(720px,92%);max-height:80%;border-radius:16px;")
+
+        media_block = ""
+        if media_url:
+            mime = (media_mime or "").lower()
+            if mime.startswith("video/") or media_url.lower().endswith(
+                (".mp4", ".webm", ".ogg", ".m4v")
+            ):
+                media_block = (
+                    f'<div class="media">'
+                    f'<video src="{html.escape(media_url)}" autoplay muted loop playsinline '
+                    f'style="max-width:100%;max-height:280px;border-radius:8px;"></video>'
+                    f"</div>"
+                )
+            else:
+                media_block = (
+                    f'<div class="media">'
+                    f'<img src="{html.escape(media_url)}" alt="" '
+                    f'style="max-width:100%;max-height:280px;border-radius:8px;object-fit:contain;"/>'
+                    f"</div>"
+                )
+
+        return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<style>
+  html,body {{
+    margin:0;padding:0;width:100%;height:100%;
+    background:transparent;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    overflow:hidden;
+  }}
+  .root {{
+    width:100%;height:100%;
+    display:flex;align-items:center;justify-content:center;
+    box-sizing:border-box;padding:24px;
+  }}
+  .panel {{
+    {layout_css}
+    background:rgba({_hex_to_rgb_csv(bg)},{alpha});
+    color:#fff;padding:28px 32px;box-sizing:border-box;
+    display:flex;flex-direction:column;gap:12px;
+    overflow:auto;
+  }}
+  h1 {{
+    margin:0;font-size:{title_font_size}px;line-height:1.15;
+    color:{html.escape(title_color)};font-weight:700;
+  }}
+  .msg {{
+    margin:0;font-size:{message_font_size}px;line-height:1.35;
+    color:{html.escape(message_color)};font-weight:400;
+  }}
+  .media {{ margin-top:8px; }}
+</style>
+</head>
+<body>
+  <div class="root">
+    <div class="panel">
+      <h1>{safe_title}</h1>
+      <p class="msg">{safe_message}</p>
+      {media_block}
+    </div>
+  </div>
+</body>
+</html>"""
+
+    def _template_to_response_dict(
+        self, template: SignageRichMessageTemplate
+    ) -> Dict[str, Any]:
+        media_uuid = template.media.uuid if template.media else None
+        sound_uuid = template.sound_media.uuid if template.sound_media else None
+        return {
+            "id": template.id,
+            "uuid": template.uuid,
+            "name": template.name,
+            "title": template.title,
+            "message": template.message,
+            "html_body": template.html_body,
+            "title_font_size": template.title_font_size,
+            "message_font_size": template.message_font_size,
+            "title_color": template.title_color,
+            "message_color": template.message_color,
+            "background_color": template.background_color,
+            "opacity": template.opacity,
+            "layout": template.layout,
+            "media_id": template.media_id,
+            "media_uuid": media_uuid,
+            "sound_media_id": template.sound_media_id,
+            "sound_media_uuid": sound_uuid,
+            "default_duration_ms": template.default_duration_ms,
+            "is_active": template.is_active,
+            "created_at": template.created_at,
+            "updated_at": template.updated_at,
+        }
+
+    def create_rich_message_template(
+        self, user_id: UUID, data: RichMessageTemplateCreate
+    ) -> SignageRichMessageTemplate:
+        media = self._resolve_media_by_uuid(data.media_uuid)
+        sound = self._resolve_media_by_uuid(data.sound_media_uuid)
+
+        layout_value = (
+            data.layout.value
+            if isinstance(data.layout, RichMessageLayout)
+            else str(data.layout)
+        )
+        media_url = None
+        media_mime = None
+        if media:
+            base = _resolve_media_service_url()
+            media_url = f"{base}/api/v1/signage/stream/{media.id}"
+            media_mime = media.mime_type
+
+        html_body = self.build_rich_message_html(
+            title=data.title,
+            message=data.message,
+            title_font_size=data.title_font_size,
+            message_font_size=data.message_font_size,
+            title_color=data.title_color,
+            message_color=data.message_color,
+            background_color=data.background_color,
+            opacity=data.opacity,
+            layout=layout_value,
+            media_url=media_url,
+            media_mime=media_mime,
+        )
+
+        template = SignageRichMessageTemplate(
+            user_id=user_id,
+            name=data.name,
+            title=data.title or "",
+            message=data.message,
+            html_body=html_body,
+            title_font_size=data.title_font_size,
+            message_font_size=data.message_font_size,
+            title_color=data.title_color,
+            message_color=data.message_color,
+            background_color=data.background_color,
+            opacity=data.opacity,
+            layout=layout_value,
+            media_id=media.id if media else None,
+            sound_media_id=sound.id if sound else None,
+            default_duration_ms=data.default_duration_ms,
+            is_active=True,
+        )
+        self.db.add(template)
+        self.db.commit()
+        self.db.refresh(template)
+        # Eager-load relationships for response mapping
+        return (
+            self.db.query(SignageRichMessageTemplate)
+            .options(
+                joinedload(SignageRichMessageTemplate.media),
+                joinedload(SignageRichMessageTemplate.sound_media),
+            )
+            .filter(SignageRichMessageTemplate.id == template.id)
+            .first()
+        )
+
+    def get_rich_message_template(
+        self, template_uuid: UUID, user_id: Optional[UUID] = None
+    ) -> Optional[SignageRichMessageTemplate]:
+        query = (
+            self.db.query(SignageRichMessageTemplate)
+            .options(
+                joinedload(SignageRichMessageTemplate.media),
+                joinedload(SignageRichMessageTemplate.sound_media),
+            )
+            .filter(SignageRichMessageTemplate.uuid == template_uuid)
+        )
+        if user_id is not None:
+            query = query.filter(SignageRichMessageTemplate.user_id == user_id)
+        return query.first()
+
+    def list_rich_message_templates(
+        self,
+        user_id: UUID,
+        page: int = 1,
+        page_size: int = 20,
+        search: Optional[str] = None,
+        is_active: Optional[bool] = None,
+    ) -> Tuple[List[SignageRichMessageTemplate], int]:
+        query = self.db.query(SignageRichMessageTemplate).filter(
+            SignageRichMessageTemplate.user_id == user_id
+        )
+        if search:
+            query = query.filter(SignageRichMessageTemplate.name.ilike(f"%{search}%"))
+        if is_active is not None:
+            query = query.filter(SignageRichMessageTemplate.is_active == is_active)
+
+        total_count = query.count()
+        offset = (page - 1) * page_size
+        results = (
+            query.options(
+                joinedload(SignageRichMessageTemplate.media),
+                joinedload(SignageRichMessageTemplate.sound_media),
+            )
+            .order_by(SignageRichMessageTemplate.created_at.desc())
+            .offset(offset)
+            .limit(page_size)
+            .all()
+        )
+        return results, total_count
+
+    def update_rich_message_template(
+        self,
+        template_uuid: UUID,
+        user_id: UUID,
+        data: RichMessageTemplateUpdate,
+    ) -> SignageRichMessageTemplate:
+        template = self.get_rich_message_template(template_uuid, user_id=user_id)
+        if not template:
+            raise ValueError("Rich message template not found or unauthorized")
+
+        update_data = data.dict(exclude_unset=True)
+        clear_media = update_data.pop("clear_media", False)
+        clear_sound = update_data.pop("clear_sound", False)
+        media_uuid = update_data.pop("media_uuid", None)
+        sound_media_uuid = update_data.pop("sound_media_uuid", None)
+
+        for field, value in update_data.items():
+            if field == "layout" and value is not None:
+                setattr(
+                    template,
+                    field,
+                    value.value if isinstance(value, RichMessageLayout) else str(value),
+                )
+            elif hasattr(template, field):
+                setattr(template, field, value)
+
+        if clear_media:
+            template.media_id = None
+        elif media_uuid is not None:
+            media = self._resolve_media_by_uuid(media_uuid)
+            template.media_id = media.id if media else None
+
+        if clear_sound:
+            template.sound_media_id = None
+        elif sound_media_uuid is not None:
+            sound = self._resolve_media_by_uuid(sound_media_uuid)
+            template.sound_media_id = sound.id if sound else None
+
+        # Rebuild HTML after field/media changes
+        self.db.flush()
+        self.db.refresh(template)
+        media = template.media
+        media_url = None
+        media_mime = None
+        if media:
+            base = _resolve_media_service_url()
+            media_url = f"{base}/api/v1/signage/stream/{media.id}"
+            media_mime = media.mime_type
+
+        template.html_body = self.build_rich_message_html(
+            title=template.title or "",
+            message=template.message,
+            title_font_size=template.title_font_size,
+            message_font_size=template.message_font_size,
+            title_color=template.title_color,
+            message_color=template.message_color,
+            background_color=template.background_color,
+            opacity=template.opacity,
+            layout=template.layout,
+            media_url=media_url,
+            media_mime=media_mime,
+        )
+
+        self.db.commit()
+        return self.get_rich_message_template(template_uuid, user_id=user_id)
+
+    def delete_rich_message_template(
+        self, template_uuid: UUID, user_id: UUID
+    ) -> bool:
+        template = self.get_rich_message_template(template_uuid, user_id=user_id)
+        if not template:
+            return False
+        self.db.delete(template)
+        self.db.commit()
+        return True
+
+    def resolve_rich_message_overlay(
+        self,
+        template_uuid: UUID,
+        *,
+        duration_ms: Optional[int] = None,
+        layout_override: Optional[str] = None,
+        user_id: Optional[UUID] = None,
+        title: Any = _RICH_MESSAGE_TEXT_UNSET,
+        message: Any = _RICH_MESSAGE_TEXT_UNSET,
+    ) -> RichMessageOverlayPayload:
+        """Resolve a template into a player control payload with absolute URLs.
+
+        Optional ``title`` / ``message`` override the stored template text (used by
+        automation to inject fire-time template variables like ``{matched_member_name}``).
+        Pass ``_RICH_MESSAGE_TEXT_UNSET`` (default) to keep the stored values.
+        """
+        template = self.get_rich_message_template(template_uuid, user_id=user_id)
+        if not template:
+            # Allow automation to resolve by uuid without user filter
+            template = self.get_rich_message_template(template_uuid, user_id=None)
+        if not template:
+            raise ValueError(f"Rich message template not found: {template_uuid}")
+
+        base = _resolve_media_service_url()
+        media_url = None
+        media_mime = None
+        if template.media_id and template.media:
+            media_url = f"{base}/api/v1/signage/stream/{template.media_id}"
+            media_mime = template.media.mime_type
+        sound_url = None
+        if template.sound_media_id:
+            sound_url = f"{base}/api/v1/signage/stream/{template.sound_media_id}"
+
+        resolved_title = (
+            (template.title or "")
+            if title is _RICH_MESSAGE_TEXT_UNSET
+            else (title or "")
+        )
+        resolved_message = (
+            template.message if message is _RICH_MESSAGE_TEXT_UNSET else message
+        )
+
+        layout = layout_override or template.layout
+        html_body = self.build_rich_message_html(
+            title=resolved_title,
+            message=resolved_message,
+            title_font_size=template.title_font_size,
+            message_font_size=template.message_font_size,
+            title_color=template.title_color,
+            message_color=template.message_color,
+            background_color=template.background_color,
+            opacity=template.opacity,
+            layout=layout,
+            media_url=media_url,
+            media_mime=media_mime,
+        )
+
+        return RichMessageOverlayPayload(
+            template_id=template.uuid,
+            title=resolved_title,
+            message=resolved_message,
+            html_body=html_body,
+            media_url=media_url,
+            sound_url=sound_url,
+            title_font_size=template.title_font_size,
+            message_font_size=template.message_font_size,
+            title_color=template.title_color,
+            message_color=template.message_color,
+            background_color=template.background_color,
+            opacity=template.opacity,
+            layout=layout,
+            duration_ms=duration_ms or template.default_duration_ms,
+        )
 
     # ========================================================================
     # Video List Item Management
@@ -1885,6 +2309,9 @@ class SignagePlaybackService:
                     request.parameters.dict() if request.parameters else {}
                 ),
             }
+            if request.rich_message is not None:
+                # Serialize via JSON so UUID fields become strings (httpx json=).
+                payload["rich_message"] = json.loads(request.rich_message.json())
 
             logger.info(f"Sending control request to {url}")
             logger.info(f"Payload: {payload}")

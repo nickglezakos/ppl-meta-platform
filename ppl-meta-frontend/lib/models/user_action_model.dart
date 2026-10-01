@@ -89,6 +89,8 @@ class UserActionModel {
         return 'Log';
       case 'digital_signage':
         return 'Digital Signage';
+      case 'signage_rich_message':
+        return 'Signage Rich Message';
       case 'messaging_app':
         return 'Messaging App';
       default:
@@ -109,6 +111,8 @@ class UserActionModel {
         return Icons.description;
       case 'digital_signage':
         return Icons.smart_display;
+      case 'signage_rich_message':
+        return Icons.campaign;
       case 'messaging_app':
         return Icons.chat_bubble;
       default:
@@ -129,6 +133,8 @@ class UserActionModel {
         return Colors.grey;
       case 'digital_signage':
         return Colors.green;
+      case 'signage_rich_message':
+        return Colors.deepOrange;
       case 'messaging_app':
         return Colors.teal;
       default:

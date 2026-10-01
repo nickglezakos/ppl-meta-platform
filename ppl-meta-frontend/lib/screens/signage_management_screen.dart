@@ -9,6 +9,7 @@ import '../providers/signage_provider.dart';
 import '../models/signage_models.dart';
 import '../widgets/signage/video_list_builder.dart';
 import '../widgets/signage/playback_controls.dart';
+import '../widgets/signage/rich_message_template_editor.dart';
 import '../widgets/custom_app_bar.dart';
 import '../core/theme/app_theme.dart';
 import '../presentation/widgets/common/ux_breakpoints.dart';
@@ -38,6 +39,10 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
   /// playlist content. Toggled via the mode pill in the pane header.
   bool _paneShowSettings = false;
 
+  /// Currently selected rich message template in the Messages tab.
+  RichMessageTemplate? _selectedRichMessage;
+  bool _editingRichMessage = false;
+
   // Helper to get SignageProvider without conflict with Riverpod
   SignageProvider _getSignageProvider({bool listen = true}) {
     return provider.Provider.of<SignageProvider>(context, listen: listen);
@@ -46,13 +51,14 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     
     // Load initial data
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final signageProvider = _getSignageProvider(listen: false);
       signageProvider.loadVideoLists();
       signageProvider.loadDevices();
+      signageProvider.loadRichMessages();
     });
   }
 
@@ -89,6 +95,7 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
               tabs: const [
                 Tab(icon: Icon(Icons.playlist_play), text: 'Playlists'),
                 Tab(icon: Icon(Icons.devices), text: 'Devices'),
+                Tab(icon: Icon(Icons.campaign), text: 'Messages'),
               ],
             ),
           ),
@@ -98,6 +105,7 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
               children: [
                 _buildPlaylistsTab(),
                 _buildDevicesTab(),
+                _buildMessagesTab(),
               ],
             ),
           ),
@@ -672,6 +680,171 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
     );
   }
 
+  // ==================== Messages Tab ====================
+
+  Widget _buildMessagesTab() {
+    return provider.Consumer<SignageProvider>(
+      builder: (context, signageProvider, child) {
+        if (signageProvider.isLoadingRichMessages &&
+            signageProvider.richMessages.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (signageProvider.richMessagesError != null &&
+            signageProvider.richMessages.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+                const SizedBox(height: 16),
+                Text(signageProvider.richMessagesError!),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => signageProvider.loadRichMessages(),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Text(
+                          'Rich Messages',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const Spacer(),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _selectedRichMessage = null;
+                              _editingRichMessage = true;
+                            });
+                          },
+                          icon: const Icon(Icons.add),
+                          label: const Text('New message'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: signageProvider.richMessages.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No rich message templates yet',
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: signageProvider.richMessages.length,
+                            itemBuilder: (context, index) {
+                              final template =
+                                  signageProvider.richMessages[index];
+                              final selected =
+                                  _selectedRichMessage?.uuid == template.uuid;
+                              return ListTile(
+                                selected: selected,
+                                leading: const Icon(Icons.campaign),
+                                title: Text(template.name),
+                                subtitle: Text(
+                                  '${template.layout} · ${template.defaultDurationMs}ms',
+                                ),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.delete_outline),
+                                  onPressed: () =>
+                                      _confirmDeleteRichMessage(template),
+                                ),
+                                onTap: () {
+                                  setState(() {
+                                    _selectedRichMessage = template;
+                                    _editingRichMessage = true;
+                                  });
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            const VerticalDivider(width: 1),
+            Expanded(
+              flex: 3,
+              child: _editingRichMessage
+                  ? RichMessageTemplateEditor(
+                      key: ValueKey(
+                        _selectedRichMessage?.uuid ?? 'new-rich-message',
+                      ),
+                      signageProvider: signageProvider,
+                      template: _selectedRichMessage,
+                      inline: true,
+                      onSaved: () {
+                        setState(() {
+                          _editingRichMessage = false;
+                          _selectedRichMessage = null;
+                        });
+                        signageProvider.loadRichMessages();
+                      },
+                      onCancel: () {
+                        setState(() {
+                          _editingRichMessage = false;
+                          _selectedRichMessage = null;
+                        });
+                      },
+                    )
+                  : Center(
+                      child: Text(
+                        'Select a message or create a new one',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmDeleteRichMessage(RichMessageTemplate template) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete message?'),
+        content: Text('Delete "${template.name}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _getSignageProvider(listen: false)
+          .deleteRichMessage(template.uuid);
+      setState(() {
+        if (_selectedRichMessage?.uuid == template.uuid) {
+          _selectedRichMessage = null;
+          _editingRichMessage = false;
+        }
+      });
+    }
+  }
+
   // ==================== Actions ====================
 
   Future<void> _refreshAll() async {
@@ -679,6 +852,7 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
     await Future.wait([
       provider.loadVideoLists(),
       provider.refreshDevices(),
+      provider.loadRichMessages(),
     ]);
   }
 

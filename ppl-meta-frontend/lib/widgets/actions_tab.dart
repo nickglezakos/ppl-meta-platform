@@ -651,6 +651,9 @@ class ActionsTabState extends State<ActionsTab> {
         case 'digital_signage':
           final count = (cfg['device_ids'] as List?)?.length ?? 0;
           return '$count device${count == 1 ? '' : 's'}';
+        case 'signage_rich_message':
+          final count = (cfg['device_ids'] as List?)?.length ?? 0;
+          return 'Overlay · $count device${count == 1 ? '' : 's'}';
         case 'messaging_app':
           final platform = cfg['platform']?.toString() ?? '';
           return platform.isEmpty ? null : platform[0].toUpperCase() + platform.substring(1);
@@ -981,8 +984,11 @@ class _UserActionDialogState extends State<_UserActionDialog> {
   // Digital Signage specific fields
   List<SignageDevice> _availableDevices = [];
   List<VideoList> _availablePlaylists = [];
+  List<RichMessageTemplate> _availableRichMessages = [];
   List<String> _selectedDeviceIds = [];
   String? _selectedPlaylistId;
+  String? _selectedRichMessageId;
+  int _richMessageDurationMs = 15000;
   String _transitionMode = 'immediate';
   int _fadeDuration = 1000;
   bool _isLoadingSignageData = false;
@@ -1057,6 +1063,11 @@ class _UserActionDialogState extends State<_UserActionDialog> {
           _selectedPlaylistId = config['playlist_id'];
           _transitionMode = config['transition_mode'] ?? 'immediate';
           _fadeDuration = config['fade_duration_ms'] ?? 1000;
+        } else if (widget.action!.actionType == 'signage_rich_message') {
+          _selectedDeviceIds = List<String>.from(config['device_ids'] ?? []);
+          _selectedRichMessageId = config['template_id']?.toString();
+          _richMessageDurationMs =
+              (config['duration_ms'] as num?)?.toInt() ?? 15000;
         } else if (widget.action!.actionType == 'email') {
           _emailToController.text = config['to'] ?? '';
           _emailCcController.text = (config['cc'] as List<dynamic>?)?.join(', ') ?? '';
@@ -1090,8 +1101,9 @@ class _UserActionDialogState extends State<_UserActionDialog> {
       }
     }
     
-    // Load signage data if action type is digital_signage
-    if (_selectedActionType == 'digital_signage') {
+    // Load signage data if action type needs devices/templates
+    if (_selectedActionType == 'digital_signage' ||
+        _selectedActionType == 'signage_rich_message') {
       _loadSignageData();
     }
   }
@@ -1131,15 +1143,18 @@ class _UserActionDialogState extends State<_UserActionDialog> {
       final discoveryClient = DiscoveryServiceClient();
       final signageClient = SignageApiClient(apiClient, discoveryClient);
       
-      // Load devices and playlists in parallel
+      // Load devices, playlists, and rich message templates in parallel
       final results = await Future.wait([
         signageClient.getSignageDevices(),
         signageClient.getVideoLists(limit: 100),
+        signageClient.getRichMessages(limit: 100),
       ]);
       
       setState(() {
         _availableDevices = results[0] as List<SignageDevice>;
         _availablePlaylists = (results[1] as VideoListsResponse).results;
+        _availableRichMessages =
+            (results[2] as RichMessageTemplateListResponse).results;
       });
     } catch (e) {
       if (mounted) {
@@ -1181,6 +1196,18 @@ class _UserActionDialogState extends State<_UserActionDialog> {
           'playlist_id': _selectedPlaylistId,
           'transition_mode': _transitionMode,
           'fade_duration_ms': _fadeDuration,
+        });
+      } else if (_selectedActionType == 'signage_rich_message') {
+        if (_selectedDeviceIds.isEmpty) {
+          throw Exception('Please select at least one device');
+        }
+        if (_selectedRichMessageId == null || _selectedRichMessageId!.isEmpty) {
+          throw Exception('Please select a rich message template');
+        }
+        actionConfig = jsonEncode({
+          'device_ids': _selectedDeviceIds,
+          'template_id': _selectedRichMessageId,
+          'duration_ms': _richMessageDurationMs,
         });
       } else if (_selectedActionType == 'email') {
         // Validate email config
@@ -1479,6 +1506,121 @@ class _UserActionDialogState extends State<_UserActionDialog> {
               }
             },
           ),
+      ],
+    );
+  }
+
+  Widget _buildRichMessageConfig() {
+    if (_isLoadingSignageData) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Target Devices *',
+          style: TextStyle(
+            fontSize: 12,
+            color: AppColors.gray400,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.gray700),
+            borderRadius: BorderRadius.circular(AppRadius.chipBadge),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_availableDevices.isEmpty)
+                const Text('No signage devices found')
+              else
+                ..._availableDevices.map((device) {
+                  final isSelected = _selectedDeviceIds.contains(device.id);
+                  return CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(device.name),
+                    subtitle: Text(
+                      '${device.host}:${device.port} - ${device.isOnline ? "Online" : "Offline"}',
+                      style: TextStyle(
+                        color: device.isOnline
+                            ? AppColors.success
+                            : AppColors.error,
+                        fontSize: 12,
+                      ),
+                    ),
+                    value: isSelected,
+                    onChanged: (selected) {
+                      setState(() {
+                        if (selected == true) {
+                          _selectedDeviceIds.add(device.id);
+                        } else {
+                          _selectedDeviceIds.remove(device.id);
+                        }
+                      });
+                    },
+                  );
+                }),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          value: _availableRichMessages
+                  .any((t) => t.uuid == _selectedRichMessageId)
+              ? _selectedRichMessageId
+              : null,
+          decoration: const InputDecoration(
+            labelText: 'Rich Message Template *',
+            hintText: 'Select a template',
+          ),
+          items: _availableRichMessages
+              .map(
+                (t) => DropdownMenuItem(
+                  value: t.uuid,
+                  child: Text('${t.name} (${t.layout})'),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            setState(() {
+              _selectedRichMessageId = value;
+              final match = _availableRichMessages
+                  .where((t) => t.uuid == value)
+                  .toList();
+              if (match.isNotEmpty) {
+                _richMessageDurationMs = match.first.defaultDurationMs;
+              }
+            });
+          },
+          validator: (value) => value == null ? 'Required' : null,
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          initialValue: _richMessageDurationMs.toString(),
+          decoration: const InputDecoration(
+            labelText: 'Duration override (ms)',
+            hintText: '15000',
+            helperText: 'How long the overlay stays on screen',
+          ),
+          keyboardType: TextInputType.number,
+          onChanged: (value) {
+            final parsed = int.tryParse(value);
+            if (parsed != null) {
+              _richMessageDurationMs = parsed;
+            }
+          },
+        ),
       ],
     );
   }
@@ -1795,6 +1937,7 @@ class _UserActionDialogState extends State<_UserActionDialog> {
                 DropdownMenuItem(value: 'webhook', child: Text('Webhook')),
                 DropdownMenuItem(value: 'log', child: Text('Log')),
                 DropdownMenuItem(value: 'digital_signage', child: Text('Digital Signage')),
+                DropdownMenuItem(value: 'signage_rich_message', child: Text('Signage Rich Message')),
                 DropdownMenuItem(value: 'messaging_app', child: Text('Messaging App (Slack / Teams)')),
               ],
               selectedItemBuilder: (context) => const [
@@ -1803,11 +1946,14 @@ class _UserActionDialogState extends State<_UserActionDialog> {
                 Text('Webhook', overflow: TextOverflow.ellipsis),
                 Text('Log', overflow: TextOverflow.ellipsis),
                 Text('Digital Signage', overflow: TextOverflow.ellipsis),
+                Text('Signage Rich Message', overflow: TextOverflow.ellipsis),
                 Text('Messaging App (Slack / Teams)', overflow: TextOverflow.ellipsis),
               ],
               onChanged: (value) {
                 setState(() => _selectedActionType = value!);
-                if (value == 'digital_signage' && _availableDevices.isEmpty && _availablePlaylists.isEmpty) {
+                if ((value == 'digital_signage' ||
+                        value == 'signage_rich_message') &&
+                    _availableDevices.isEmpty) {
                   _loadSignageData();
                 }
               },
@@ -1817,6 +1963,8 @@ class _UserActionDialogState extends State<_UserActionDialog> {
             // Show different config UI based on action type
             if (_selectedActionType == 'digital_signage')
               _buildDigitalSignageConfig()
+            else if (_selectedActionType == 'signage_rich_message')
+              _buildRichMessageConfig()
             else if (_selectedActionType == 'email')
               _buildEmailConfig()
             else if (_selectedActionType == 'webhook')

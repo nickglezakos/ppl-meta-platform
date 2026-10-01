@@ -8,6 +8,7 @@ import 'package:signage_simple_player/database/playlist_database.dart';
 import 'package:signage_simple_player/services/player_engine.dart';
 import 'package:signage_simple_player/services/http_server.dart';
 import 'package:signage_simple_player/services/config_service.dart';
+import 'package:signage_simple_player/services/rich_message_overlay_service.dart';
 import 'package:signage_simple_player/models/playback_models.dart';
 import 'package:signage_simple_player/models/playback_history.dart';
 import 'package:signage_simple_player/models/video_list.dart' show VideoItem, LoopMode;
@@ -20,6 +21,7 @@ void main() {
   late MockPlaylistDatabase mockDatabase;
   late MockSignagePlayerEngine mockPlayerEngine;
   late MockConfigService mockConfigService;
+  late RichMessageOverlayService richMessageOverlay;
   late Logger logger;
 
   const testDeviceId = 'test-device-123';
@@ -30,11 +32,13 @@ void main() {
     mockPlayerEngine = MockSignagePlayerEngine();
     mockConfigService = MockConfigService();
     logger = Logger(level: Level.off);
+    richMessageOverlay = RichMessageOverlayService(logger: logger);
 
     server = SignageHttpServer(
       database: mockDatabase,
       playerEngine: mockPlayerEngine,
       configService: mockConfigService,
+      richMessageOverlay: richMessageOverlay,
       logger: logger,
       deviceId: testDeviceId,
       port: testPort,

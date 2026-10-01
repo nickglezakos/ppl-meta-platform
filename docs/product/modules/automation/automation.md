@@ -61,7 +61,7 @@ Routing is wired from [ppl-meta-frontend/lib/presentation/navigation/app_router.
 | **Cameras service** | Publishes demographic detection events to Redis. |
 | **vmeta service** | Face similarity checks for `ppl_match` triggers (`POST /api/v1/individual-groups/{group_id}/check-duplicates`), camera-search for `search` triggers (`POST /api/v1/individual-groups/{group_id}/camera-search`), and demographics aggregation for `search_demographic` triggers (`POST /api/v1/analytics/cameras/demographics-search`). |
 | **Communications service** | Downstream executor for `email`, `webhook`, `alert`, and `log` actions. |
-| **Signage service** | Downstream executor for `digital_signage` actions. |
+| **Signage service** | Downstream executor for `digital_signage` (playlist switch) and `signage_rich_message` (non-blocking overlay) actions. |
 
 ---
 
@@ -106,7 +106,7 @@ Routing is wired from [ppl-meta-frontend/lib/presentation/navigation/app_router.
 | `uuid` | UUID | auto | |
 | `name` | String(255) | — | Action name |
 | `description` | Text | null | |
-| `action_type` | String(50) | `"alert"` | One of: `alert`, `email`, `webhook`, `log`, `digital_signage`, `messaging_app` |
+| `action_type` | String(50) | `"alert"` | One of: `alert`, `email`, `webhook`, `log`, `digital_signage`, `signage_rich_message`, `messaging_app` |
 | `action_config` | Text (JSON) | null | Type-specific configuration (see Action Types) |
 | `is_active` | Boolean | `True` | |
 | `created_at` | DateTime(tz) | `now()` | |
@@ -179,6 +179,7 @@ All conditions are evaluated with **AND** semantics — every condition must pas
 | **`webhook`** | `{"url": "https://...", "method": "POST", "payload_data": {...}}` | POSTs to the specified URL via Communications Service (`POST /api/v1/webhook/send`). Payload is built programmatically (template variables are not interpolated in `payload_data`). |
 | **`log`** | `{"message": "...", "severity": "info", "data": {"category": "...", "tags": [...]}}` | Creates an audit log entry via Communications Service. `message` supports template variables. |
 | **`digital_signage`** | `{"device_ids": [...], "playlist_id": "uuid", "transition_mode": "immediate\|after_current\|fade", "fade_duration_ms": 2000}` | Sends a `START` playback command to signage devices to switch playlist. No text fields; template variables do not apply. |
+| **`signage_rich_message`** | `{"device_ids": [...], "template_id": "uuid", "duration_ms": 15000, "layout_override": null}` | Resolves a Signage rich-message template and sends `show_rich_message` to devices. Overlay renders above continuing playlist playback (does not pause/stop/switch the playlist). Optional sound plays via a separate audio path. Template `title` and `message` support template variables at fire time (HTML is rebuilt with substituted text). |
 | **`messaging_app`** | `{"platform": "slack\|teams", "webhook_url": "https://...", "message_template": "...", "title": "...", "mention": "@channel"}` | Sends a formatted message to Slack or Microsoft Teams. Slack sends `{"text": "..."}` natively. Teams sends an Adaptive Card when `title` is set, otherwise plain `{"text": "..."}`. `mention` (Slack only) is prepended to the message. `message_template` and `title` (Teams only) support template variables. |
 
 ### Template Variables
@@ -208,12 +209,15 @@ Template variables are substituted at fire time in supported text fields. They u
 | `messaging_app` | `message_template`, `title` (Teams only) |
 | `webhook` | _(none — payload is built programmatically)_ |
 | `digital_signage` | _(none — no text fields)_ |
+| `signage_rich_message` | Template `title`, `message` (authored in Signage → Messages; substituted at fire time) |
 
 #### Auto-Append Behaviour
 
 If a `ppl_match` or `search` trigger fires and the configured message text contains **no** template variables, the `{match_reason}` string is automatically appended to the message (separated by ` - `). This ensures match context always appears in notifications even when plain messages are used.
 
 Example: `"Motion detected"` → `"Motion detected - Matched John Doe — 89.3% similarity"`
+
+For `signage_rich_message`, auto-append applies to the template **message** only (not the title), so a plain title like `Welcome` stays unchanged while an empty or plain message still receives match context.
 
 ---
 

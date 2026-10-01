@@ -169,6 +169,8 @@ def _interpolate_action_message(
     trigger: Trigger,
     evaluation_reason: Optional[str],
     match_info: Optional[Dict[str, Any]],
+    *,
+    auto_append_match_reason: bool = True,
 ) -> str:
     message = base_message or ""
 
@@ -194,7 +196,8 @@ def _interpolate_action_message(
 
     match_mode = (match_info or {}).get("mode") if isinstance(match_info, dict) else None
     if (
-        not used_template_variable
+        auto_append_match_reason
+        and not used_template_variable
         and match_context.get("match_reason")
         and match_info
         and (
@@ -1489,6 +1492,66 @@ async def _dispatch_trigger_actions(
                 )
                 result = await playback_service.control_playback(control_request)
                 logger.info(f"  ✅ digital_signage action sent: {result}")
+
+            elif action.action_type == "signage_rich_message":
+                device_ids = config.get("device_ids", [])
+                template_id = config.get("template_id")
+                duration_ms = config.get("duration_ms")
+                layout_override = config.get("layout_override")
+
+                if not device_ids or not template_id:
+                    logger.error(
+                        f"  ❌ signage_rich_message action '{action.name}' missing device_ids or template_id"
+                    )
+                    continue
+
+                from uuid import UUID as _UUID
+                from src.services.signage_service import SignageService
+
+                signage_service = SignageService(db)
+                template = signage_service.get_rich_message_template(
+                    _UUID(str(template_id)), user_id=None
+                )
+                if not template:
+                    logger.error(
+                        f"  ❌ signage_rich_message template not found: {template_id}"
+                    )
+                    continue
+
+                interpolated_title = _interpolate_action_message(
+                    base_message=template.title or "",
+                    trigger=trigger,
+                    evaluation_reason=evaluation_reason,
+                    match_info=match_info,
+                    auto_append_match_reason=False,
+                )
+                interpolated_message = _interpolate_action_message(
+                    base_message=template.message or "",
+                    trigger=trigger,
+                    evaluation_reason=evaluation_reason,
+                    match_info=match_info,
+                )
+                message_override = (
+                    interpolated_message
+                    if (template.message is not None or interpolated_message)
+                    else None
+                )
+
+                overlay = signage_service.resolve_rich_message_overlay(
+                    _UUID(str(template_id)),
+                    duration_ms=duration_ms,
+                    layout_override=layout_override,
+                    title=interpolated_title,
+                    message=message_override,
+                )
+                playback_service = SignagePlaybackService(db)
+                control_request = PlaybackControlRequest(
+                    device_ids=[_UUID(d) for d in device_ids],
+                    command=PlaybackCommand.SHOW_RICH_MESSAGE,
+                    rich_message=overlay,
+                )
+                result = await playback_service.control_playback(control_request)
+                logger.info(f"  ✅ signage_rich_message action sent: {result}")
 
             elif action.action_type in ("alert", "log", "email", "webhook", "messaging_app"):
                 comms_client = _get_communications_client()

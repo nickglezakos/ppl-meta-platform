@@ -51,6 +51,10 @@ enum PlaybackCommand {
   next,
   @JsonValue('previous')
   previous,
+  @JsonValue('show_rich_message')
+  showRichMessage,
+  @JsonValue('dismiss_rich_message')
+  dismissRichMessage,
 }
 
 /// Playback state
@@ -689,4 +693,164 @@ class VideoListsResponse {
   factory VideoListsResponse.fromJson(Map<String, dynamic> json) => 
       _$VideoListsResponseFromJson(json);
   Map<String, dynamic> toJson() => _$VideoListsResponseToJson(this);
+}
+
+/// Layout for rich message overlays
+enum RichMessageLayout {
+  fullscreen,
+  banner,
+  card,
+}
+
+/// Reusable rich message template for signage overlays
+class RichMessageTemplate {
+  final int id;
+  final String uuid;
+  final String name;
+  final String title;
+  final String? message;
+  final String? htmlBody;
+  final int titleFontSize;
+  final int messageFontSize;
+  final String titleColor;
+  final String messageColor;
+  final String backgroundColor;
+  final int opacity;
+  final String layout;
+  final int? mediaId;
+  final String? mediaUuid;
+  final int? soundMediaId;
+  final String? soundMediaUuid;
+  final int defaultDurationMs;
+  final bool isActive;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  RichMessageTemplate({
+    required this.id,
+    required this.uuid,
+    required this.name,
+    this.title = '',
+    this.message,
+    this.htmlBody,
+    this.titleFontSize = 48,
+    this.messageFontSize = 28,
+    this.titleColor = '#FFFFFF',
+    this.messageColor = '#F0F0F0',
+    this.backgroundColor = '#000000',
+    this.opacity = 80,
+    this.layout = 'card',
+    this.mediaId,
+    this.mediaUuid,
+    this.soundMediaId,
+    this.soundMediaUuid,
+    this.defaultDurationMs = 15000,
+    this.isActive = true,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory RichMessageTemplate.fromJson(Map<String, dynamic> json) {
+    return RichMessageTemplate(
+      id: json['id'] as int,
+      uuid: json['uuid'].toString(),
+      name: (json['name'] ?? '').toString(),
+      title: (json['title'] ?? '').toString(),
+      message: json['message']?.toString(),
+      htmlBody: json['html_body']?.toString(),
+      titleFontSize: (json['title_font_size'] as num?)?.toInt() ?? 48,
+      messageFontSize: (json['message_font_size'] as num?)?.toInt() ?? 28,
+      titleColor: (json['title_color'] ?? '#FFFFFF').toString(),
+      messageColor: (json['message_color'] ?? '#F0F0F0').toString(),
+      backgroundColor: (json['background_color'] ?? '#000000').toString(),
+      opacity: (json['opacity'] as num?)?.toInt() ?? 80,
+      layout: (json['layout'] ?? 'card').toString(),
+      mediaId: (json['media_id'] as num?)?.toInt(),
+      mediaUuid: json['media_uuid']?.toString(),
+      soundMediaId: (json['sound_media_id'] as num?)?.toInt(),
+      soundMediaUuid: json['sound_media_uuid']?.toString(),
+      defaultDurationMs: (json['default_duration_ms'] as num?)?.toInt() ?? 15000,
+      isActive: json['is_active'] as bool? ?? true,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'].toString())
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.tryParse(json['updated_at'].toString())
+          : null,
+    );
+  }
+}
+
+class RichMessageTemplateListResponse {
+  final int totalCount;
+  final int page;
+  final int pageSize;
+  final List<RichMessageTemplate> results;
+
+  RichMessageTemplateListResponse({
+    required this.totalCount,
+    required this.page,
+    required this.pageSize,
+    required this.results,
+  });
+
+  factory RichMessageTemplateListResponse.fromJson(Map<String, dynamic> json) {
+    final results = (json['results'] as List<dynamic>? ?? [])
+        .map((e) => RichMessageTemplate.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return RichMessageTemplateListResponse(
+      totalCount: (json['total_count'] as num?)?.toInt() ?? results.length,
+      page: (json['page'] as num?)?.toInt() ?? 1,
+      pageSize: (json['page_size'] as num?)?.toInt() ?? 20,
+      results: results,
+    );
+  }
+}
+
+class CreateRichMessageTemplateRequest {
+  final String name;
+  final String title;
+  final String? message;
+  final int titleFontSize;
+  final int messageFontSize;
+  final String titleColor;
+  final String messageColor;
+  final String backgroundColor;
+  final int opacity;
+  final String layout;
+  final String? mediaUuid;
+  final String? soundMediaUuid;
+  final int defaultDurationMs;
+
+  CreateRichMessageTemplateRequest({
+    required this.name,
+    this.title = '',
+    this.message,
+    this.titleFontSize = 48,
+    this.messageFontSize = 28,
+    this.titleColor = '#FFFFFF',
+    this.messageColor = '#F0F0F0',
+    this.backgroundColor = '#000000',
+    this.opacity = 80,
+    this.layout = 'card',
+    this.mediaUuid,
+    this.soundMediaUuid,
+    this.defaultDurationMs = 15000,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'title': title,
+        'message': message,
+        'title_font_size': titleFontSize,
+        'message_font_size': messageFontSize,
+        'title_color': titleColor,
+        'message_color': messageColor,
+        'background_color': backgroundColor,
+        'opacity': opacity,
+        'layout': layout,
+        if (mediaUuid != null) 'media_uuid': mediaUuid,
+        if (soundMediaUuid != null) 'sound_media_uuid': soundMediaUuid,
+        'default_duration_ms': defaultDurationMs,
+      };
 }

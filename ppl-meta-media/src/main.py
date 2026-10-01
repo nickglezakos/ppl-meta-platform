@@ -60,6 +60,7 @@ from src.models.media import (
 )
 from src.models.signage import (
     SignageDevice,
+    SignageRichMessageTemplate,
     VideoList,
     VideoListItem,
     VideoListSyncHistory,
