@@ -25,7 +25,7 @@ _(none yet)_
 
 ### Notes
 
-- GHCR images for **2.25.94** (Mode D): rebuild media, gateway, frontend; retag-forward the other nine from `2.25.93`. Stage 3 on `lab-work-dual-64g` after publish.
+- GHCR images published for **2.25.94** (Mode D on `lab-work-dual-64g`): rebuilt media `2e2d4eef…`, gateway `4086453a…`, frontend `6c84f576…` from `cca8fb38`; retagged the other nine from `2.25.93`. Stage 3 on `lab-work-dual-64g` @ `192.168.9.13` (2026-10-01).
 
 ### Added
 
