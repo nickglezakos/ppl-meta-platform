@@ -110,6 +110,7 @@ class AuthService {
   // Register method
   Future<User> register(String username, String email, String password) async {
     try {
+      // Node /users/register expects JSON UserCreate (not form-urlencoded).
       final response = await _apiClient.post(
         '/api/v1/users/register',
         data: {
@@ -117,9 +118,6 @@ class AuthService {
           'email': email,
           'password': password,
         },
-        options: Options(
-          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        ),
       );
 
       if (response.data == null) {

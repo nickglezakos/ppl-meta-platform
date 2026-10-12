@@ -5,7 +5,7 @@
 set -euo pipefail
 
 ADVERTISE_HOST="${ADVERTISE_HOST:-$(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | head -1)}"
-RELEASE_TAG="${RELEASE_TAG:-2.25.94}"
+RELEASE_TAG="${RELEASE_TAG:-2.25.95}"
 REGISTRY="${REGISTRY:-ghcr.io/nickglezakos/ppl-meta-platform}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/eyenet-platform}"
 REPO_DIR="${REPO_DIR:-$HOME/ppl-meta-platform}"
@@ -206,7 +206,7 @@ if curl -fsSL "$TRAY_URL" -o "$TRAY_DIR/$TRAY_ASSET"; then
   "env_file": ".env",
   "ui_url": "http://127.0.0.1:3000",
   "version": "${RELEASE_TAG}",
-  "reregister_script": "${REPO_DIR}/deployment/windows-installer/reregister-discovery-services.sh"
+  "reregister_script": "${INSTALL_DIR}/reregister-discovery-services.sh"
 }
 EOF
   if [[ -x "$TRAY_BIN" ]]; then
@@ -218,9 +218,12 @@ EOF
 [Desktop Entry]
 Type=Application
 Name=EyeNet Tray
-Exec=${TRAY_BIN} ${TRAY_CFG}
+Comment=EyeNet platform status and control
+Exec="${TRAY_BIN}" "${TRAY_CFG}"
+Icon=applications-system
 Terminal=false
 X-GNOME-Autostart-enabled=true
+StartupNotify=false
 EOF
       nohup "$TRAY_BIN" "$TRAY_CFG" >/dev/null 2>&1 &
     fi

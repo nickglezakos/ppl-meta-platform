@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 :: ============================================================
 ::  EyeNet Platform Manager — launcher
-::  Version: 2.25.94
+::  Version: 2.25.95
 ::
 ::  Canonical installer is install-platform.ps1 (schema apply,
 ::  discovery reregister, ADVERTISE_HOST, tray). This .bat only

@@ -260,20 +260,12 @@ class AuthenticationService {
 
       // Parse the server URL and determine the authentication endpoint
       final baseUri = Uri.parse(targetServerUrl);
-      late Uri authUri;
-      
-      // Determine authentication endpoint based on URL pattern
-      if (baseUri.path.contains('/api/v1') || baseUri.port == 8001) {
-        // Node service authentication - correct endpoint is /api/v1/users/login
-        authUri = Uri.parse('$targetServerUrl/api/v1/users/login');
-      } else if (baseUri.port == 8080) {
-        // Gateway service authentication
-        authUri = Uri.parse('$targetServerUrl/auth/login');
-      } else {
-        // Default to node service pattern
-        final nodeServiceUrl = '${baseUri.scheme}://${baseUri.host}:8001';
-        authUri = Uri.parse('$nodeServiceUrl/api/v1/users/login');
-      }
+      // Always login via the gateway on :8080 (same path as the frontend).
+      // Hitting node :8001 directly fails over Tailscale / non-advertise IPs with
+      // HTTP 400 "Invalid host header" from TrustedHostMiddleware.
+      final loginBase =
+          '${baseUri.scheme}://${baseUri.host}:8080';
+      final authUri = Uri.parse('$loginBase/api/v1/users/login');
 
       print('🎯 Authentication endpoint: $authUri');
 
@@ -357,15 +349,27 @@ class AuthenticationService {
       } else {
         // Handle authentication errors
         String error = 'Authentication failed';
+        final rawBody = response.body.trim();
         try {
-          final errorData = json.decode(response.body);
-          if (errorData.containsKey('message')) {
-            error = errorData['message'];
-          } else if (errorData.containsKey('error')) {
-            error = errorData['error'];
+          final errorData = json.decode(rawBody);
+          if (errorData is Map) {
+            if (errorData.containsKey('detail')) {
+              error = errorData['detail'].toString();
+            } else if (errorData.containsKey('message')) {
+              error = errorData['message'].toString();
+            } else if (errorData.containsKey('error')) {
+              error = errorData['error'].toString();
+            }
           }
         } catch (e) {
-          error = 'Authentication failed (${response.statusCode})';
+          if (rawBody.toLowerCase().contains('invalid host header')) {
+            error =
+                'Invalid host header from node — use gateway :8080 or update ADVERTISE_HOST for Tailscale';
+          } else if (rawBody.isNotEmpty) {
+            error = rawBody;
+          } else {
+            error = 'Authentication failed (${response.statusCode})';
+          }
         }
 
         print('❌ Authentication failed: $error');

@@ -187,12 +187,20 @@ bool _isEnrolling = false;
         orElse: () => throw Exception('Node service not found in Discovery Service'),
       );
 
-      final nodeUrl = 'http://${nodeService.host}:${nodeService.port}';
+      // Prefer gateway for login (TrustedHost on node rejects Tailscale Host).
+      // Fall back to node host:8080 derived from discovery.
+      final gatewayMatches =
+          services.where((s) => s.name == 'ppl-meta-gateway');
+      final gatewayService =
+          gatewayMatches.isEmpty ? null : gatewayMatches.first;
+      final loginHost = gatewayService?.host ?? nodeService.host;
+      final loginPort = gatewayService?.port ?? 8080;
+      final loginUrl = 'http://$loginHost:$loginPort';
 
       final authProvider =
           Provider.of<AuthenticationProvider>(context, listen: false);
       final loginSuccess = await authProvider.login(
-        serverUrl: nodeUrl,
+        serverUrl: loginUrl,
         username: _usernameController.text.trim(),
         password: _passwordController.text.trim(),
       );

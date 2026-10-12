@@ -21,6 +21,29 @@ _(none yet)_
 
 ---
 
+## [2.25.95] — 2026-10-12
+
+### Notes
+
+- Stage 2 on `lab-work-dual-64g` (`eyenet-demo`): rebuild **node**, **gateway**, **frontend**; Mode D retag-forward the other nine from `2.25.94`. Stage 3 on `eyenet-demo` + Mac IDE local Python/Flutter after publish.
+
+### Fixed
+
+- Mobile camera login over Tailscale: authenticate via gateway `:8080` (avoids node `TrustedHost` `Invalid host header` on `:8001`).
+- Gateway converts Flutter signup `application/x-www-form-urlencoded` → JSON for Node `/users/register`.
+- Frontend register posts JSON `UserCreate` (not form-urlencoded).
+- Node validation error handler JSON-serializes `bytes` bodies (no 500 on bad form posts).
+- Gateway / node / MVR worker resolve `127.0.0.1` service URLs when not running in Docker (Mac “Start All Local Python Services”).
+- Cameras UI: narrow-screen master/detail navigation + deep-link `/cameras/:id` back to list.
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.94 → 2.25.95**.
+- Ubuntu installer tray autostart: use install-dir reregister script and quoted Exec paths.
+- Ops: `artifacts/lab-allow-tailscale-hosts.sh` keeps LAN `ADVERTISE_HOST` and adds Tailscale IP to `ALLOWED_HOSTS`.
+
+---
+
 ## [2.25.94] — 2026-10-01
 
 ### Notes

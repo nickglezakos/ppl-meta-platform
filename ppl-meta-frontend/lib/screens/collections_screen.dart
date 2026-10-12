@@ -162,25 +162,16 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         showHomeButton: false,
         onBackPressed: _selectedCollection != null
             ? () {
-                print('🔙 Back button pressed');
-                // If we arrived with an explicit collection id, "back" means
-                // returning to the collections list view.
+                // Mobile master/detail: back returns to the collection cards
+                // list, not home. Deep links also drop the collection query.
+                setState(() {
+                  _selectedCollection = null;
+                  _isSelectionMode = false;
+                  _selectedItems.clear();
+                  _showOrganizationWidget = false;
+                });
                 if (widget.initialCollectionId != null) {
-                  setState(() {
-                    _selectedCollection = null;
-                    _isSelectionMode = false;
-                    _selectedItems.clear();
-                    _showOrganizationWidget = false;
-                  });
                   context.go('/collections');
-                  return;
-                }
-                // Otherwise we landed directly on this screen: navigate to
-                // the previous screen in history (or home as fallback).
-                if (context.canPop()) {
-                  context.pop();
-                } else {
-                  context.go('/');
                 }
               }
             : null,

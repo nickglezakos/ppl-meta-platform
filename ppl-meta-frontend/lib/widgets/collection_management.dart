@@ -8,6 +8,7 @@ import '../core/api/api_client.dart';
 import '../models/media_models.dart';
 import '../services/media_api_client.dart';
 import '../core/providers/camera_providers.dart';
+import '../presentation/widgets/common/ux_breakpoints.dart';
 
 enum CollectionFilter { all, cameraOnly, userOnly }
 
@@ -111,10 +112,17 @@ class CollectionManagementState extends ConsumerState<CollectionManagement>
         if (widget.initialCollectionId != null && !_hasAutoSelected) {
           _autoSelectCollection(widget.initialCollectionId!);
           _hasAutoSelected = true;
-        } else if (_selectedCollection == null && _filteredCollections.isNotEmpty) {
-          // Default-select the first collection so the left sidebar highlights
-          // it and the right detail pane shows its content on load.
+        } else if (
+          !_hasAutoSelected &&
+          _selectedCollection == null &&
+          _filteredCollections.isNotEmpty &&
+          mounted &&
+          isWide(context)
+        ) {
+          // Desktop only: default-select the first collection so the right
+          // pane has content. On mobile the list must stay visible until tap.
           _autoSelectCollection(_filteredCollections.first.id);
+          _hasAutoSelected = true;
         }
       } else {
         setState(() {

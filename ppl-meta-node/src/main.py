@@ -674,13 +674,29 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 
+def _json_safe(value):
+    """Make RequestValidationError payloads JSON-serializable (bytes → str)."""
+    if isinstance(value, (bytes, bytearray)):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [_json_safe(v) for v in value]
+    return value
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(_request, exc):
     """Handle Pydantic validation errors."""
     logger.error("Validation error: %s", exc)
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors(), "body": exc.body},
+        content={
+            "detail": _json_safe(exc.errors()),
+            "body": _json_safe(exc.body),
+        },
     )
 
 

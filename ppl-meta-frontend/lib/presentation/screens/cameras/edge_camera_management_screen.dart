@@ -132,7 +132,7 @@ class _EdgeCameraManagementScreenState
           const SnackBar(content: Text('✅ Streaming started')),
         );
         
-        // Redirect to camera detail screen to view the stream
+        // Open cameras content pane for this device (analytics / settings)
         context.go('/cameras/${widget.deviceId}');
       }
     } else {

@@ -2,8 +2,11 @@
 API v1 Router - Main API Gateway Router
 """
 
+import json
+import logging
 import os
 import sys
+import urllib.parse
 from typing import Any, Dict, Optional
 
 import httpx
@@ -18,6 +21,7 @@ parent_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
 sys.path.append(parent_dir)
  
 api_router = APIRouter(redirect_slashes=False)
+logger = logging.getLogger(__name__)
 
 # JWT Configuration
 JWT_SECRET_KEY = os.getenv("SECRET_KEY", "ppl-meta-secret-key-development-only-change-in-production")
@@ -103,8 +107,42 @@ def extract_user_from_token(request: Request) -> Dict[str, Any]:
         raise HTTPException(status_code=401, detail=f"Token validation error: {str(e)}")
 
 
+def _running_in_docker() -> bool:
+    return os.path.exists("/.dockerenv") or os.getenv("RUNNING_IN_DOCKER", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+# Used only when no env override is set and this process is not in a container.
+# The Mac "Start All Local Python Services" task does not export these.
+_LOCAL_SERVICE_URLS = {
+    "USER_SERVICE_URL": "http://127.0.0.1:8001",
+    "MEDIA_SERVICE_URL": "http://127.0.0.1:8000",
+    "ORCHESTRATOR_SERVICE_URL": "http://127.0.0.1:8002",
+    "VISION_SERVICE_URL": "http://127.0.0.1:8003",
+    "CAMERAS_SERVICE_URL": "http://127.0.0.1:8005",
+    "DISCOVERY_SERVICE_URL": "http://127.0.0.1:8006",
+    "VMETA_SERVICE_URL": "http://127.0.0.1:8008",
+    "COMMUNICATIONS_SERVICE_URL": "http://127.0.0.1:8009",
+    "PRESENCE_SERVICE_URL": "http://127.0.0.1:8011",
+    "MODELS_SERVICE_URL": "http://127.0.0.1:8013",
+}
+
+
 def _service_url(env_name: str, fallback: str) -> str:
-    return (os.getenv(env_name) or fallback).rstrip("/")
+    explicit = (os.getenv(env_name) or "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    resolved = (fallback or "").strip()
+    # Compose DNS (ppl-meta-*) does not resolve on the Mac. Containers set the
+    # env vars, or run with /.dockerenv, and keep the compose hostname.
+    if not _running_in_docker() and "ppl-meta-" in resolved:
+        local = _LOCAL_SERVICE_URLS.get(env_name)
+        if local:
+            return local
+    return resolved.rstrip("/")
 
 
 _HOP_BY_HOP_HEADERS = frozenset(
@@ -269,6 +307,17 @@ async def validate_request(request: Request, data: Dict[str, Any]):
         )
 
 
+def _form_body_to_json_bytes(body: bytes) -> bytes:
+    """Parse application/x-www-form-urlencoded into a JSON object body."""
+    form_data = urllib.parse.parse_qs(body.decode("utf-8", errors="replace"))
+    request_data = {k: (v[0] if v else "") for k, v in form_data.items()}
+    if "email" in request_data and isinstance(request_data["email"], str):
+        request_data["email"] = request_data["email"].lower().strip()
+    if "username" in request_data and isinstance(request_data["username"], str):
+        request_data["username"] = request_data["username"].lower().strip()
+    return json.dumps(request_data).encode("utf-8")
+
+
 async def _proxy_to_node_service(request: Request) -> JSONResponse:
     """Helper function to proxy requests to the Node service."""
     try:
@@ -289,6 +338,18 @@ async def _proxy_to_node_service(request: Request) -> JSONResponse:
         headers.pop("host", None)
         # Node TrustedHostMiddleware allows localhost/127.0.0.1, not compose DNS.
         headers["host"] = "127.0.0.1"
+
+        # Flutter signup (auth_service.register) posts form-urlencoded; Node
+        # /users/register expects a JSON UserCreate body. Convert at the edge.
+        content_type = (headers.get("content-type") or "").lower()
+        if (
+            body
+            and path.rstrip("/").endswith("/users/register")
+            and "application/x-www-form-urlencoded" in content_type
+        ):
+            body = _form_body_to_json_bytes(body)
+            headers["content-type"] = "application/json"
+            headers.pop("content-length", None)
 
         # Make the proxy request
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:

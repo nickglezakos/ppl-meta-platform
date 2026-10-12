@@ -11,10 +11,27 @@ from core.redis_client import cache_client
 logger = logging.getLogger(__name__)
 
 
-# Service URLs from environment (compose DNS; not localhost)
-CAMERAS_SERVICE_URL = (os.getenv("CAMERAS_SERVICE_URL") or "http://ppl-meta-cameras:8005").rstrip("/")
-MEDIA_SERVICE_URL = (os.getenv("MEDIA_SERVICE_URL") or "http://ppl-meta-media:8000").rstrip("/")
-VMETA_SERVICE_URL = (os.getenv("VMETA_SERVICE_URL") or "http://ppl-meta-vmeta:8008").rstrip("/")
+def _local_or_compose(env_name: str, compose_url: str, local_url: str) -> str:
+    explicit = (os.getenv(env_name) or "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    in_docker = os.path.exists("/.dockerenv") or os.getenv("RUNNING_IN_DOCKER", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    return (compose_url if in_docker else local_url).rstrip("/")
+
+
+CAMERAS_SERVICE_URL = _local_or_compose(
+    "CAMERAS_SERVICE_URL", "http://ppl-meta-cameras:8005", "http://127.0.0.1:8005"
+)
+MEDIA_SERVICE_URL = _local_or_compose(
+    "MEDIA_SERVICE_URL", "http://ppl-meta-media:8000", "http://127.0.0.1:8000"
+)
+VMETA_SERVICE_URL = _local_or_compose(
+    "VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008", "http://127.0.0.1:8008"
+)
 
 
 class MVRCounterWorker:

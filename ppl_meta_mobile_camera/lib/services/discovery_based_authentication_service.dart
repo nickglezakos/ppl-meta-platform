@@ -30,30 +30,53 @@ class DiscoveryBasedAuthenticationService {
         print('  📱 ${service.name} at ${service.baseUrl}');
       }
       
-      // Step 2: Find Node service for authentication
-      print('🔍 Step 2: Locating Node service for authentication...');
-      final nodeService = services.where((s) => s.name == 'ppl-meta-node').firstOrNull;
-      
-      if (nodeService == null) {
-        throw AuthException('Node service not found in Discovery Service registry');
+      // Step 2: Prefer gateway for login (node TrustedHost rejects Tailscale Host).
+      print('🔍 Step 2: Locating Gateway/Node service for authentication...');
+      final gatewayService =
+          services.where((s) => s.name == 'ppl-meta-gateway').firstOrNull;
+      final nodeService =
+          services.where((s) => s.name == 'ppl-meta-node').firstOrNull;
+
+      if (gatewayService == null && nodeService == null) {
+        throw AuthException(
+          'Neither gateway nor node service found in Discovery Service registry',
+        );
       }
-      
-      print('🎯 Found Node service: ${nodeService.baseUrl}');
-      
-      // Step 3: Authenticate with Node service
-      print('📤 Step 3: Authenticating with Node service...');
-      final token = await _authenticateWithNodeService(nodeService, username, password);
+
+      final loginService = gatewayService ??
+          ServiceInfo(
+            serviceId: 'derived-gateway',
+            name: 'ppl-meta-gateway',
+            serviceType: 'backend',
+            version: nodeService!.version,
+            host: nodeService.host,
+            port: 8080,
+            healthEndpoint: '/health',
+            status: 'healthy',
+            capabilities: const ['api-gateway'],
+            metadata: const {},
+          );
+
+      print('🎯 Login via: ${loginService.baseUrl}');
+
+      // Step 3: Authenticate via gateway (rewrites Host for node)
+      print('📤 Step 3: Authenticating via gateway...');
+      final token =
+          await _authenticateWithNodeService(loginService, username, password);
       
       // Step 4: Return complete service discovery result
       print('✅ Authentication successful! Building service map...');
       final serviceMap = _buildServiceMap(services);
+      final nodeUrl =
+          nodeService?.baseUrl ?? 'http://${loginService.host}:8001';
       
       return AuthResult.success(
         token: token,
-        nodeURL: nodeService.baseUrl,
+        nodeURL: nodeUrl,
         services: PlatformServices(
-          nodeService: nodeService.baseUrl,
-          gatewayService: await getServiceUrl('ppl-meta-gateway'),
+          nodeService: nodeUrl,
+          gatewayService: await getServiceUrl('ppl-meta-gateway') ??
+              loginService.baseUrl,
           mediaService: await getServiceUrl('ppl-meta-media'),
           cameraService: await getServiceUrl('ppl-meta-cameras'),
           visionService: await getServiceUrl('ppl-meta-vision'),

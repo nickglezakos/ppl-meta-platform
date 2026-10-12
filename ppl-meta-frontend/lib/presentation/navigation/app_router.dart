@@ -16,7 +16,6 @@ import '../screens/users/users_screen.dart';
 import '../screens/roles/roles_screen.dart';
 import '../screens/roles/role_detail_screen.dart';
 import '../screens/cameras/cameras_screen.dart';
-import '../screens/cameras/camera_detail_screen.dart';
 import '../screens/cameras/edge_camera_management_screen.dart';
 import '../screens/camera/snapshot_gallery_screen.dart';
 import '../screens/settings/settings_screen.dart';
@@ -257,8 +256,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'camera-detail',
         builder: (context, state) {
           final cameraId = state.pathParameters['cameraId']!;
+          // Same content pane as desktop master/detail (not the legacy
+          // CameraDetailScreen stream/info page).
           return ProviderScreenWrapper(
-            child: CameraDetailScreen(cameraId: cameraId),
+            child: CamerasScreen(initialDeviceId: cameraId),
           );
         },
       ),

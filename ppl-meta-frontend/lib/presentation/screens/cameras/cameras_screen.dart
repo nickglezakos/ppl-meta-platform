@@ -19,7 +19,10 @@ import '../../../presentation/widgets/common/content_pane.dart';
 
 /// Enhanced cameras screen with real-time status monitoring
 class CamerasScreen extends ConsumerStatefulWidget {
-  const CamerasScreen({super.key});
+  const CamerasScreen({super.key, this.initialDeviceId});
+
+  /// When set (e.g. deep link `/cameras/:id`), open that camera's content pane.
+  final String? initialDeviceId;
 
   @override
   ConsumerState<CamerasScreen> createState() => _CamerasScreenState();
@@ -42,6 +45,24 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
     return state.cameras.first;
   }
 
+  void _selectCamera(String deviceId) {
+    setState(() {
+      _selectedDeviceId = deviceId;
+      _showCameraSettings = false;
+    });
+  }
+
+  void _clearMobileSelection() {
+    setState(() {
+      _selectedDeviceId = null;
+      _showCameraSettings = false;
+    });
+    // Deep links land on `/cameras/:id`; return to the list route.
+    if (widget.initialDeviceId != null) {
+      context.go('/cameras');
+    }
+  }
+
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   CameraType? _typeFilter; // null = All camera types
@@ -49,6 +70,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedDeviceId = widget.initialDeviceId;
     // Load cameras when screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(cameraListProvider.notifier).loadCameras(includeArchived: _showArchivedCameras);
@@ -73,10 +95,20 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
       return wsSaysActive || cameraSaysActive;
     }
 
+    final bool masterDetail = isWide(context);
+    final bool mobileDetailOpen =
+        !masterDetail && _selectedDeviceId != null && cameraListState.cameras.isNotEmpty;
+    final String appBarTitle = mobileDetailOpen
+        ? _selectedCamera(cameraListState).name
+        : 'Cameras';
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: CustomAppBar(
-        title: 'Cameras',
+        title: appBarTitle,
+        showBackButton: mobileDetailOpen,
+        showHomeButton: !mobileDetailOpen,
+        onBackPressed: mobileDetailOpen ? _clearMobileSelection : null,
         actions: [
           // Multi-stream viewer button
           IconButton(
@@ -238,9 +270,9 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
             const AutomaticFaceDetectionStatus(),
           ], */
           
-          // Master/detail split on wide (desktop) screens:
-          // list on the left, selected camera's content on the right.
-          if (isWide(context))
+          // Master/detail on wide screens; on narrow, tapping a card swaps the
+          // list for the same content pane (analytics ⇄ pipeline settings).
+          if (masterDetail)
             Expanded(
               child: Row(
                 children: [
@@ -258,7 +290,9 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
             )
           else
             Expanded(
-              child: _buildCamerasContent(cameraListState),
+              child: mobileDetailOpen
+                  ? _rightPane(cameraListState)
+                  : _buildCamerasContent(cameraListState),
             ),
         ],
       ),
@@ -355,14 +389,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
                                         camera: camera,
                                         selected: isMasterDetail &&
                                             camera.deviceId == effectiveSelectedId,
-                                        onTap: () {
-                                          final deviceId = camera.deviceId;
-                                          if (isMasterDetail) {
-                                            setState(() => _selectedDeviceId = deviceId);
-                                          } else {
-                                            context.go('/cameras/$deviceId');
-                                          }
-                                        },
+                                        onTap: () => _selectCamera(camera.deviceId),
                                       ),
                                     ),
                                 ],
@@ -382,14 +409,8 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
                                 camera: filtered[index],
                                 selected: isMasterDetail &&
                                     filtered[index].deviceId == effectiveSelectedId,
-                                onTap: () {
-                                  final deviceId = filtered[index].deviceId;
-                                  if (isMasterDetail) {
-                                    setState(() => _selectedDeviceId = deviceId);
-                                  } else {
-                                    context.go('/cameras/$deviceId');
-                                  }
-                                },
+                                onTap: () =>
+                                    _selectCamera(filtered[index].deviceId),
                               ),
                             ),
                             childCount: filtered.length,

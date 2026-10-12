@@ -16,8 +16,19 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # PPL Meta Discovery Service URL (Docker DNS in compose; localhost for bare-metal)
-DISCOVERY_SERVICE_URL = os.getenv(
-    "DISCOVERY_SERVICE_URL", "http://ppl-meta-discovery:8006"
+def _default_discovery_url() -> str:
+    """Compose DNS inside a container; localhost for the Mac local Python task."""
+    if os.path.exists("/.dockerenv") or os.getenv("RUNNING_IN_DOCKER", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        return "http://ppl-meta-discovery:8006"
+    return "http://127.0.0.1:8006"
+
+
+DISCOVERY_SERVICE_URL = (
+    os.getenv("DISCOVERY_SERVICE_URL") or _default_discovery_url()
 ).rstrip("/")
 
 # Service-token auth (Issue #8): must match shared/auth/service_auth.py / Discovery.
