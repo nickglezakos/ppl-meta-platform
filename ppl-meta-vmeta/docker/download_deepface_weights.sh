@@ -10,7 +10,7 @@ RETRIES="${DEEPFACE_WEIGHTS_RETRIES:-5}"
 
 mkdir -p "${WEIGHTS_DIR}"
 
-# name:min_bytes (files are ~513–539 MiB; reject truncated downloads)
+# name:min_bytes — facenet512 ~90.5 MiB; age/gender ~513–539 MiB. Reject truncations.
 download_one() {
   local name="$1"
   local min_bytes="$2"
@@ -54,7 +54,7 @@ download_one() {
   return 1
 }
 
-download_one "facenet512_weights.h5" 500000000
+download_one "facenet512_weights.h5" 90000000
 download_one "age_model_weights.h5" 500000000
 download_one "gender_model_weights.h5" 500000000
 
