@@ -25,7 +25,7 @@ _(none yet)_
 
 ### Notes
 
-- Stage 2 on `lab-work-dual-64g` (`eyenet-demo`): rebuild **node**, **gateway**, **frontend**; Mode D retag-forward the other nine from `2.25.94`. Stage 3 on `eyenet-demo` + Mac IDE local Python/Flutter after publish.
+- GHCR images published for **2.25.95** (Mode D on `lab-work-dual-64g` / `eyenet-demo`): rebuilt node `0e253bf9…`, gateway `37811045…`, frontend `0ce6a469…` from `054e0932`; retagged the other nine from `2.25.94`. Stage 3 on `eyenet-demo` @ `192.168.9.13` / `100.101.128.40` + Mac IDE local Python/Flutter (2026-10-12).
 
 ### Fixed
 
