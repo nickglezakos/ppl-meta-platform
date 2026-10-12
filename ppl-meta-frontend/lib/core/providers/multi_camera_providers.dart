@@ -308,6 +308,7 @@ class CameraActions {
     String? username,
     String? password,
     String streamPath = '/stream',
+    String? substreamPath,
   }) async {
     try {
       final camera = await _cameraService.addRTSPCamera(
@@ -317,6 +318,7 @@ class CameraActions {
         path: streamPath,
         username: username,
         password: password,
+        substreamPath: substreamPath,
       );
       
       // Refresh all camera providers
@@ -340,6 +342,7 @@ class CameraActions {
         username: updatedCamera.username,
         password: updatedCamera.password,
         path: updatedCamera.streamPath,
+        substreamPath: updatedCamera.substreamPath,
       );
       
       // Refresh all camera providers

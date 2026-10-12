@@ -15,9 +15,26 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+## [2.25.96] — 2026-10-12
+
+### Added
+
+- RTSP cameras: optional **substream path** (e.g. `/stream2`) for live view and instant detection; main path stays the recording stream. Single worker reconnects to main on record start and back to substream on stop.
+- VMeta image bake-in of DeepFace weights (`facenet512`, age, gender) so first face does not download from GitHub after install.
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.95 → 2.25.96**.
+- VMeta compose budget: `mem_limit` **5g** / `mem_reservation` **3g** (was 3g / 2g); Windows WSL guidance **14 GB** to fit Facenet + age/gender.
+
+### Fixed
+
+- Authority invitation accept: clear any prior admin session, auto-login the invitee after password set, and surface API validation errors as readable messages (no more opaque admin-plane toasts).
+
 ### Notes
 
-_(none yet)_
+- Stage 2 must rebuild at least **cameras**, **frontend**, and **vmeta-protected** (Facenet bake needs builder network; image ~+1.5 GB). Compose mem_limit applies on Stage 3 when install-dir compose is refreshed.
+- Known lab gap (not in this pin): VMeta persist can still 500 if DB `individuals` lacks `total_appearances` / `last_seen` vs code — separate schema follow-up.
 
 ---
 

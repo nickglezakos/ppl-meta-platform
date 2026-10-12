@@ -46,6 +46,8 @@ FROM python:3.11.11-slim-bookworm AS runtime
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
+    curl \
+    ca-certificates \
     libgl1 \
     libgl1-mesa-dri \
     libglx-mesa0 \
@@ -63,8 +65,15 @@ COPY --from=builder /usr/local /usr/local
 COPY --from=builder /app/src/ ./src/
 COPY --from=builder /app/setup_protected.py ./setup_protected.py
 
+# Bake DeepFace weights so first face never downloads from GitHub at runtime.
+COPY docker/download_deepface_weights.sh /tmp/download_deepface_weights.sh
+RUN chmod +x /tmp/download_deepface_weights.sh \
+ && /tmp/download_deepface_weights.sh \
+ && rm -f /tmp/download_deepface_weights.sh
+
 # /app/src so `shared.service_discovery` resolves (vendored under src/shared/)
-ENV PYTHONPATH=/app/src
+ENV PYTHONPATH=/app/src \
+    DEEPFACE_HOME=/root/.deepface
 
 # Do not delete the .py sources unless matching .so files are present.
 RUN python setup_protected.py verify \

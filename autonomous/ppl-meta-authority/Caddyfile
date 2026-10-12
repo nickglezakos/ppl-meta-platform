@@ -32,3 +32,11 @@ vpn.eyenet-vision.com:50443 {
         }
     }
 }
+
+# EyeNet online wiki (static). Source of truth also in autonomous/ppl-meta-wiki/Caddyfile.snippet
+wiki.eyenet-vision.com {
+	root * /home/deploy/apps/ppl-meta-wiki/html
+	encode gzip
+	file_server
+	try_files {path} {path}/ {path}.html /index.html
+}

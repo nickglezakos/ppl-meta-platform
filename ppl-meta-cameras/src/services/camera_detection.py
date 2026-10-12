@@ -1021,6 +1021,7 @@ class CameraDetectionService:
                 )
                 
                 is_mobile = camera and camera.camera_type == CameraType.MOBILE
+                is_rtsp = camera and camera.camera_type == CameraType.RTSP
             finally:
                 db.close()
 
@@ -1029,6 +1030,20 @@ class CameraDetectionService:
             
             # Determine if this is an edge camera
             is_edge = device_id.startswith('edge-camera-')
+
+            # RTSP: recording must use the main stream. Reconnect off substream if needed.
+            if is_rtsp and not is_edge:
+                from src.services.camera_service_queue import get_camera_service as get_queue_service
+
+                queue_service = get_queue_service()
+                switched = await queue_service.ensure_rtsp_stream_role(
+                    device_id, "record"
+                )
+                if not switched:
+                    logger.error(
+                        f"❌ [RECORDING_START] Failed to switch RTSP {device_id} to main stream"
+                    )
+                    return None
             
             # For mobile cameras, ensure queue worker is connected first
             if is_mobile:
@@ -1868,6 +1883,18 @@ class CameraDetectionService:
             # Detection is started/stopped independently via the eye button (POST /instant-detection/stop/{camera_id}).
             # The auto_stop_instant_detection parameter is deprecated and ignored.
             # See: docs/proposals/instant-detection-decoupling.md
+
+            # RTSP: after recording, return live/instant to the substream when configured.
+            try:
+                from src.services.camera_service_queue import get_camera_service as get_queue_service
+
+                await get_queue_service().ensure_rtsp_stream_role(device_id, "live")
+            except Exception as switch_exc:
+                logger.warning(
+                    "⚠️ Failed to restore RTSP live stream for %s after recording: %s",
+                    device_id,
+                    switch_exc,
+                )
             
             return result
 

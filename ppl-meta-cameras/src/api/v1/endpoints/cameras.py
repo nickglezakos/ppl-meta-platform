@@ -371,6 +371,9 @@ class RTSPCameraCreate(BaseModel):
     path: str = "/stream"
     username: Optional[str] = None
     password: Optional[str] = None
+    # Optional low-res path for live view / instant detection (e.g. /stream2).
+    # Main `path` stays the recording stream.
+    substream_path: Optional[str] = None
 
 
 class MobileCameraCreate(BaseModel):
@@ -420,6 +423,7 @@ async def list_cameras(
         # Get real-time worker status
         queue_service = get_camera_service()
         from src.services.mobile_streaming import mobile_streaming_service
+        from src.services.rtsp_url import get_rtsp_substream_path, parse_rtsp_host_path
 
         camera_list = []
         for camera in cameras:
@@ -440,6 +444,7 @@ async def list_cameras(
                 worker = await queue_service.get_camera_stream(camera.device_id)
                 realtime_status = worker.status.value if worker else "disconnected"
             
+            _, main_path = parse_rtsp_host_path(camera.connection_string)
             camera_dict = {
                 "id": camera.id,
                 "name": camera.name,
@@ -453,6 +458,13 @@ async def list_cameras(
                 "connection_string": camera.connection_string,  # Include for mobile cameras
                 "username": camera.username,
                 "port": camera.port,
+                "settings": camera.settings,
+                "path": main_path if camera.camera_type == CameraType.RTSP else None,
+                "substream_path": (
+                    get_rtsp_substream_path(camera.settings)
+                    if camera.camera_type == CameraType.RTSP
+                    else None
+                ),
                 "last_seen": camera.last_seen.isoformat() if camera.last_seen else None,
                 "created_at": (
                     camera.created_at.isoformat() if camera.created_at else None
@@ -1279,6 +1291,7 @@ async def add_rtsp_camera(
         path = camera_data["path"]
         username = camera_data.get("username")
         password = camera_data.get("password")
+        substream_path = camera_data.get("substream_path")
         
         # Validate camera name - if provided use it, otherwise auto-generate
         from src.services.name_validation import validate_camera_name_unique, sanitize_camera_name
@@ -1303,7 +1316,11 @@ async def add_rtsp_camera(
 
         # Build RTSP URL — quote user/pass so emails (user@domain) do not
         # break authority parsing; unquote first to avoid %2540 double-encoding.
-        from src.services.rtsp_url import build_rtsp_url
+        from src.services.rtsp_url import (
+            build_rtsp_url,
+            get_rtsp_substream_path,
+            merge_rtsp_substream_settings,
+        )
 
         rtsp_url = build_rtsp_url(
             host=host,
@@ -1312,6 +1329,7 @@ async def add_rtsp_camera(
             username=username,
             password=password,
         )
+        camera_settings = merge_rtsp_substream_settings(None, substream_path)
 
         # Check if camera already exists
         existing_camera = db.query(Camera).filter(Camera.device_id == device_id).first()
@@ -1338,6 +1356,7 @@ async def add_rtsp_camera(
             supports_recording=True,  # Enable RTSP camera recording
             supports_audio=False,
             supports_ptz=False,
+            settings=camera_settings or None,
             # Match mobile defaults so Connect → Instant Detection actually runs
             # face/body paths (Celery skips when auto_face_detection is False).
             auto_face_detection=True,
@@ -1350,6 +1369,7 @@ async def add_rtsp_camera(
         db.refresh(new_camera)
 
         logger.info(f"User {current_user.get('sub')} added RTSP camera: {name}")
+        stored_sub = get_rtsp_substream_path(new_camera.settings)
 
         return {
             "message": "RTSP camera added successfully",
@@ -1360,6 +1380,9 @@ async def add_rtsp_camera(
                 "camera_type": new_camera.camera_type.value,
                 "status": new_camera.status.value,
                 "rtsp_url": rtsp_url,
+                "path": path,
+                "substream_path": stored_sub,
+                "settings": new_camera.settings,
             },
         }
 
@@ -1569,7 +1592,12 @@ async def update_rtsp_camera(
         # Build RTSP URL with credentials (keep UUID device_id intact).
         # Preserve existing password when the form sends an empty password
         # (common on edit — password field left blank).
-        from src.services.rtsp_url import build_rtsp_url, normalize_credential
+        from src.services.rtsp_url import (
+            build_rtsp_url,
+            get_rtsp_substream_path,
+            merge_rtsp_substream_settings,
+            normalize_credential,
+        )
 
         effective_username = camera_update.username
         effective_password = camera_update.password
@@ -1590,6 +1618,13 @@ async def update_rtsp_camera(
         camera.username = normalize_credential(effective_username) or effective_username
         if camera_update.password:
             camera.password = normalize_credential(camera_update.password)
+        # Only touch substream when the client sent the field (preserve on old clients).
+        update_fields = camera_update.model_dump(exclude_unset=True)
+        if "substream_path" in update_fields:
+            camera.settings = merge_rtsp_substream_settings(
+                camera.settings if isinstance(camera.settings, dict) else None,
+                update_fields.get("substream_path"),
+            ) or None
         camera.supports_recording = True  # Enable RTSP camera recording
         camera.last_seen = datetime.utcnow()
 
@@ -1665,6 +1700,9 @@ async def update_rtsp_camera(
                 "camera_type": camera.camera_type.value,
                 "status": camera.status.value,
                 "rtsp_url": rtsp_url,
+                "path": camera_update.path,
+                "substream_path": get_rtsp_substream_path(camera.settings),
+                "settings": camera.settings,
             },
         }
 

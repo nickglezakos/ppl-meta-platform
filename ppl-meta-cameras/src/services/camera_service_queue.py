@@ -203,13 +203,20 @@ class CameraService:
         
         return cameras
     
-    async def connect_camera(self, device_id: str, camera_info: Optional[Dict] = None) -> bool:
+    async def connect_camera(
+        self,
+        device_id: str,
+        camera_info: Optional[Dict] = None,
+        stream_role: Optional[str] = None,
+    ) -> bool:
         """
         Connect to a camera using worker queue architecture.
         
         Args:
             device_id: Camera identifier
             camera_info: Camera configuration (optional, uses cached if not provided)
+            stream_role: For RTSP, "live" (substream when set) or "record" (main path).
+                Defaults to live / the role already on camera_info.
             
         Returns:
             True if connection successful
@@ -218,11 +225,23 @@ class CameraService:
         # Stale detected_cameras entries were keeping old /stream paths after PUT updates.
         db_info = await self._load_camera_from_database(device_id)
         if db_info:
+            role = stream_role or (camera_info or {}).get("rtsp_stream_role") or "live"
+            if db_info.get("camera_type") == CameraType.RTSP:
+                db_info = dict(db_info)
+                main_url = db_info.get("main_connection_string") or db_info.get(
+                    "connection_string"
+                )
+                if role == "record" and main_url:
+                    db_info["connection_string"] = main_url
+                    db_info["rtsp_stream_role"] = "record"
+                else:
+                    db_info["rtsp_stream_role"] = "live"
             camera_info = db_info
             self.detected_cameras[device_id] = db_info
             logger.info(
                 f"✅ Camera {device_id} loaded from database "
-                f"(type: {db_info.get('camera_type')})"
+                f"(type: {db_info.get('camera_type')}, role: "
+                f"{db_info.get('rtsp_stream_role', 'n/a')})"
             )
 
         # Get camera info from cache if not provided / not in DB
@@ -518,17 +537,32 @@ class CameraService:
                         connection_string = camera.connection_string
                         index = None
 
+                        main_connection_string = connection_string
+                        substream_path = None
                         if camera.camera_type == CameraType.RTSP:
-                            from src.services.rtsp_url import rebuild_rtsp_url_from_camera
+                            from src.services.rtsp_url import (
+                                get_rtsp_substream_path,
+                                live_connection_string,
+                                record_connection_string,
+                            )
 
-                            rebuilt = rebuild_rtsp_url_from_camera(
+                            main_connection_string = record_connection_string(
                                 camera.connection_string,
                                 camera.username,
                                 camera.password,
                                 camera.port,
+                            ) or camera.connection_string
+                            # Connect/live/instant use substream when configured.
+                            connection_string = live_connection_string(
+                                camera.connection_string,
+                                camera.username,
+                                camera.password,
+                                camera.port,
+                                camera.settings if isinstance(camera.settings, dict) else None,
+                            ) or main_connection_string
+                            substream_path = get_rtsp_substream_path(
+                                camera.settings if isinstance(camera.settings, dict) else None
                             )
-                            if rebuilt:
-                                connection_string = rebuilt
                         
                         # For USB cameras without connection_string, derive from device_id or use index 0
                         if camera.camera_type == CameraType.USB and not connection_string:
@@ -554,6 +588,13 @@ class CameraService:
                             "resolution_height": camera.resolution_height or 720,
                             "max_fps": camera.max_fps or 30,
                         }
+                        if camera.camera_type == CameraType.RTSP:
+                            camera_info["main_connection_string"] = main_connection_string
+                            camera_info["settings"] = (
+                                camera.settings if isinstance(camera.settings, dict) else {}
+                            )
+                            camera_info["substream_path"] = substream_path
+                            camera_info["rtsp_stream_role"] = "live"
                         
                         if index is not None:
                             camera_info["index"] = index
@@ -588,19 +629,37 @@ class CameraService:
                 try:
                     camera = db.query(Camera).filter(Camera.device_id == device_id).first()
                     if camera and camera.camera_type == CameraType.RTSP:
-                        from src.services.rtsp_url import rebuild_rtsp_url_from_camera
+                        from src.services.rtsp_url import (
+                            get_rtsp_substream_path,
+                            live_connection_string,
+                            record_connection_string,
+                        )
 
-                        connection_string = rebuild_rtsp_url_from_camera(
+                        settings = (
+                            camera.settings if isinstance(camera.settings, dict) else {}
+                        )
+                        main_connection_string = record_connection_string(
                             camera.connection_string,
                             camera.username,
                             camera.password,
                             camera.port,
                         ) or camera.connection_string
+                        connection_string = live_connection_string(
+                            camera.connection_string,
+                            camera.username,
+                            camera.password,
+                            camera.port,
+                            settings,
+                        ) or main_connection_string
                         return {
                             "device_id": camera.device_id,
                             "name": camera.name,
                             "camera_type": CameraType.RTSP,
                             "connection_string": connection_string,
+                            "main_connection_string": main_connection_string,
+                            "settings": settings,
+                            "substream_path": get_rtsp_substream_path(settings),
+                            "rtsp_stream_role": "live",
                             "resolution_width": camera.resolution_width,
                             "resolution_height": camera.resolution_height,
                             "max_fps": camera.max_fps,
@@ -622,6 +681,106 @@ class CameraService:
         except Exception as e:
             logger.error(f"❌ Error loading RTSP camera from database: {e}")
             return None
+
+    async def ensure_rtsp_stream_role(self, device_id: str, role: str) -> bool:
+        """
+        Ensure the RTSP worker is open on the live or record URL.
+
+        role: "live" (substream when configured) or "record" (main path).
+        Reconnects the single CameraWorker when the target URL differs.
+        """
+        if role not in ("live", "record"):
+            raise ValueError(f"Invalid RTSP stream role: {role}")
+
+        def load_urls():
+            from src.database import get_db
+            from src.models.camera import Camera
+            from src.services.rtsp_url import (
+                live_connection_string,
+                record_connection_string,
+            )
+
+            db = next(get_db())
+            try:
+                camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                if not camera or camera.camera_type != CameraType.RTSP:
+                    return None
+                settings = camera.settings if isinstance(camera.settings, dict) else {}
+                main_url = record_connection_string(
+                    camera.connection_string,
+                    camera.username,
+                    camera.password,
+                    camera.port,
+                ) or camera.connection_string
+                live_url = live_connection_string(
+                    camera.connection_string,
+                    camera.username,
+                    camera.password,
+                    camera.port,
+                    settings,
+                ) or main_url
+                return {
+                    "device_id": camera.device_id,
+                    "name": camera.name,
+                    "camera_type": CameraType.RTSP,
+                    "main_connection_string": main_url,
+                    "live_connection_string": live_url,
+                    "settings": settings,
+                    "resolution_width": camera.resolution_width or 1280,
+                    "resolution_height": camera.resolution_height or 720,
+                    "max_fps": camera.max_fps or 30,
+                }
+            finally:
+                db.close()
+
+        loop = asyncio.get_event_loop()
+        urls = await loop.run_in_executor(None, load_urls)
+        if not urls:
+            return True  # Non-RTSP or missing camera — nothing to switch
+
+        target_url = (
+            urls["main_connection_string"]
+            if role == "record"
+            else urls["live_connection_string"]
+        )
+        camera_info = {
+            "device_id": urls["device_id"],
+            "name": urls["name"],
+            "camera_type": CameraType.RTSP,
+            "connection_string": target_url,
+            "main_connection_string": urls["main_connection_string"],
+            "settings": urls["settings"],
+            "rtsp_stream_role": role,
+            "resolution_width": urls["resolution_width"],
+            "resolution_height": urls["resolution_height"],
+            "max_fps": urls["max_fps"],
+        }
+        self.detected_cameras[device_id] = camera_info
+
+        worker = await self.get_camera_stream(device_id)
+        current = None
+        if worker and isinstance(worker.camera_info, dict):
+            current = worker.camera_info.get("connection_string")
+        if (
+            worker
+            and worker.status == CameraStatus.CONNECTED
+            and current == target_url
+        ):
+            worker.camera_info = camera_info
+            logger.info(
+                "✅ RTSP %s already on %s URL — no reconnect", device_id, role
+            )
+            return True
+
+        logger.info(
+            "🔄 Switching RTSP %s to %s stream: %s",
+            device_id,
+            role,
+            target_url,
+        )
+        return await self.connect_camera(
+            device_id, camera_info, stream_role=role
+        )
 
 
 # Global camera service instance

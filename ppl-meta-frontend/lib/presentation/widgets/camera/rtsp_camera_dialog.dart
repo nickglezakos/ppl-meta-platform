@@ -28,6 +28,7 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _streamPathController = TextEditingController();
+  final _substreamPathController = TextEditingController();
   
   RTSPTransport _selectedTransport = RTSPTransport.tcp;
   RTSPProfile _selectedProfile = RTSPProfile.main;
@@ -45,6 +46,9 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
       final meta = widget.camera!.metadata ?? const <String, dynamic>{};
       final metaUser = meta['username']?.toString();
       final metaPort = meta['port']?.toString();
+      final metaPath = meta['path']?.toString();
+      final metaSub = meta['substream_path']?.toString()
+          ?? _substreamFromSettings(meta['settings']);
       final rtspUrl = _rtspUrlFromCamera(widget.camera!);
 
       if (metaUser != null && metaUser.isNotEmpty) {
@@ -53,16 +57,25 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
       if (metaPort != null && metaPort.isNotEmpty) {
         _portController.text = metaPort;
       }
+      if (metaPath != null && metaPath.isNotEmpty) {
+        _streamPathController.text = metaPath;
+      }
+      if (metaSub != null && metaSub.isNotEmpty) {
+        _substreamPathController.text = metaSub;
+      }
 
       if (rtspUrl != null && rtspUrl.startsWith('rtsp://')) {
         _populateFieldsFromRtspUrl(
           rtspUrl,
           fillUsername: _usernameController.text.isEmpty,
           fillPort: _portController.text.isEmpty,
+          fillPath: _streamPathController.text.isEmpty,
         );
       } else if (_portController.text.isEmpty) {
         _portController.text = '554';
-        _streamPathController.text = '/stream1';
+        if (_streamPathController.text.isEmpty) {
+          _streamPathController.text = '/stream1';
+        }
       }
       if (_streamPathController.text.isEmpty) {
         _streamPathController.text = '/stream1';
@@ -73,6 +86,15 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
       _portController.text = '554';
       _streamPathController.text = '/stream1';
     }
+  }
+
+  String? _substreamFromSettings(dynamic settings) {
+    if (settings is! Map) return null;
+    final rtsp = settings['rtsp'];
+    if (rtsp is! Map) return null;
+    final path = rtsp['substream_path']?.toString();
+    if (path == null || path.isEmpty) return null;
+    return path;
   }
 
   /// Prefer connection_string from API metadata; never parse deviceId/manufacturer.
@@ -89,6 +111,7 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
     String rtspUrl, {
     bool fillUsername = true,
     bool fillPort = true,
+    bool fillPath = true,
   }) {
     try {
       var remaining = rtspUrl.substring('rtsp://'.length);
@@ -110,8 +133,10 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
 
       final slash = remaining.indexOf('/');
       final hostPort = slash >= 0 ? remaining.substring(0, slash) : remaining;
-      _streamPathController.text =
-          slash >= 0 ? remaining.substring(slash) : '/stream1';
+      if (fillPath) {
+        _streamPathController.text =
+            slash >= 0 ? remaining.substring(slash) : '/stream1';
+      }
 
       final colon = hostPort.lastIndexOf(':');
       if (colon > 0 && !hostPort.contains(']')) {
@@ -127,7 +152,7 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
       }
     } catch (_) {
       if (fillPort) _portController.text = '554';
-      if (_streamPathController.text.isEmpty) {
+      if (fillPath && _streamPathController.text.isEmpty) {
         _streamPathController.text = '/stream1';
       }
     }
@@ -141,6 +166,7 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
     _usernameController.dispose();
     _passwordController.dispose();
     _streamPathController.dispose();
+    _substreamPathController.dispose();
     super.dispose();
   }
 
@@ -286,14 +312,30 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
           const SizedBox(height: 16),
           _buildTextField(
             controller: _streamPathController,
-            label: 'Stream Path',
-            hint: '/stream or /live/main',
+            label: 'Main stream path (recording)',
+            hint: '/stream1',
             icon: Icons.route,
             validator: (value) {
               if (value?.isEmpty ?? true) {
                 return 'Please enter stream path';
               }
               if (!value!.startsWith('/')) {
+                return 'Path must start with /';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 16),
+          _buildTextField(
+            controller: _substreamPathController,
+            label: 'Substream path (optional)',
+            hint: '/stream2 — live view and instant detection',
+            icon: Icons.low_priority,
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return null;
+              }
+              if (!value.trim().startsWith('/')) {
                 return 'Path must start with /';
               }
               return null;
@@ -335,11 +377,15 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
     final host = _hostController.text;
     final port = _portController.text;
     final path = _streamPathController.text;
+    final subPath = _substreamPathController.text.trim();
     final username = _usernameController.text;
     
     if (host.isEmpty) return const SizedBox.shrink();
     
-    final url = 'rtsp://${username.isNotEmpty ? "$username:****@" : ""}$host${port.isNotEmpty ? ":$port" : ""}$path';
+    final auth = username.isNotEmpty ? "$username:****@" : "";
+    final portPart = port.isNotEmpty ? ":$port" : "";
+    final mainUrl = 'rtsp://$auth$host$portPart$path';
+    final subUrl = subPath.isNotEmpty ? 'rtsp://$auth$host$portPart$subPath' : null;
     
     return Container(
       padding: const EdgeInsets.all(12),
@@ -352,18 +398,34 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'RTSP URL Preview:',
+            'Main (recording):',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Colors.grey,
             ),
           ),
           const SizedBox(height: 4),
           Text(
-            url,
+            mainUrl,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               fontFamily: 'monospace',
             ),
           ),
+          if (subUrl != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Substream (live / instant detection):',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subUrl,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontFamily: 'monospace',
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -406,6 +468,9 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
       final username = _usernameController.text.trim();
       final password = _passwordController.text.trim();
       final streamPath = _streamPathController.text.trim();
+      final substreamPath = _substreamPathController.text.trim();
+      final substreamOrNull =
+          substreamPath.isEmpty ? null : substreamPath;
 
       if (widget.isEditing && widget.camera != null) {
         // Update existing camera
@@ -423,6 +488,7 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
             username: username,
             password: password,
             streamPath: streamPath,
+            substreamPath: substreamOrNull,
             transport: _selectedTransport,
             profile: _selectedProfile,
           ),
@@ -451,6 +517,7 @@ class _RTSPCameraDialogState extends ConsumerState<RTSPCameraDialog> {
           username: username,
           password: password,
           streamPath: streamPath,
+          substreamPath: substreamOrNull,
         );
         
         if (camera != null) {

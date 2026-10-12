@@ -30,7 +30,7 @@ GitHub Container Registry (`ghcr.io/nickglezakos/ppl-meta-platform`) is the defa
 2. **Registry:** GHCR only for platform images.
 3. **Pipeline model:** Local Docker build/push scripts to GHCR for platform images (GitHub Actions later); keep Authority CI/deploy as-is when that path is active.
 4. **First-owner handoff:** Installer brings the stack up; Node/frontend bootstrap activates the owner.
-5. **Host standard:** ≥16GB physical RAM; Docker Desktop / WSL2 memory **12GB**.
+5. **Host standard:** ≥16GB physical RAM; Docker Desktop / WSL2 memory **14GB**.
 6. **Update promotion:** `dev → sandbox → pilot → stable`.
 7. **Online docs:** Two EyeNet wikis (distributors vs owners/admins) with decoupled CI/CD that always references the software lifecycle.
 
@@ -89,7 +89,7 @@ Platform release version comes from the repository root `VERSION` file.
 ## First Install Contract
 
 1. Operator installs Docker Desktop on Windows amd64.
-2. Installer enforces host ≥16GB RAM and WSL memory ≥12GB.
+2. Installer enforces host ≥16GB RAM and WSL memory ≥14GB.
 3. Installer authenticates to GHCR and pulls pinned images for `VERSION`.
 4. Compose starts the stack with per-service memory limits.
 5. Health checks pass.
@@ -105,18 +105,18 @@ Publishing images does not complete installation. Bootstrap completes first-owne
 | Layer | Requirement |
 |---|---|
 | Host | Windows amd64, ≥16GB physical RAM, ≥12GB free disk |
-| Docker Desktop / WSL2 | `memory=12GB`, `processors=6`, `swap=2GB` |
-| Installer gate | Fail if host RAM < 16GB or WSL memory < 12GB |
+| Docker Desktop / WSL2 | `memory=14GB`, `processors=6`, `swap=2GB` |
+| Installer gate | Fail if host RAM < 16GB or WSL memory < 14GB |
 | Compose | Every platform service declares `mem_limit` and `mem_reservation` |
 
-Default WSL allocation on a 16GB host leaves ~4GB for Windows and gives Docker 12GB.
+Default WSL allocation on a 16GB host leaves ~2GB for Windows and gives Docker 14GB (needed for Facenet + age/gender in vmeta).
 
-Initial per-service compose budget (limits sum ≈ 11.5GB inside the 12GB WSL pool):
+Initial per-service compose budget (limits sum ≈ 15.4GB hard caps; soft reservations must fit under the 14GB WSL pool with headroom):
 
 | Service | mem_limit | mem_reservation |
 |---|---|---|
 | `ppl-meta-vision` / vision-protected | 2.5G | 1.5G |
-| `ppl-meta-vmeta` / vmeta-protected | 2.0G | 1.0G |
+| `ppl-meta-vmeta` / vmeta-protected | 5.0G | 3.0G |
 | `postgres` | 1.0G | 512M |
 | `ppl-meta-media` | 1.0G | 512M |
 | `ppl-meta-node` | 768M | 384M |
@@ -127,7 +127,7 @@ Initial per-service compose budget (limits sum ≈ 11.5GB inside the 12GB WSL po
 | `redis` | 512M | 256M |
 | `ppl-meta-discovery` | 256M | 128M |
 
-Policy rule: limits must fit under WSL memory with ≥500MB headroom. Vision and vmeta must never be unbounded on the Windows stack.
+Policy rule: soft reservations must fit under WSL memory with ≥500MB headroom; hard limits may exceed the pool because services do not peak together. Vision and vmeta must never be unbounded on the Windows stack.
 
 ---
 
@@ -178,7 +178,7 @@ Publishing to GHCR does **not** mean customers update. Authority channel eligibi
 
 - Any pilot `failed` or `rolled_back`.
 - Emergency manual compose/image override required to stay operational.
-- Recurring OOM / restarts on vision or vmeta under the 12GB WSL budget.
+- Recurring OOM / restarts on vision or vmeta under the 14GB WSL budget.
 - Channel misconfiguration that would expose the release to non-pilot channels.
 - Missing sandbox gate evidence for this `VERSION`.
 
@@ -236,7 +236,7 @@ Every wiki release must declare:
 - referenced platform `VERSION`
 - referenced channels and a plain-language soak summary
 - referenced install path (Windows amd64 + Docker Desktop + GHCR)
-- referenced hardware budget (16GB host / 12GB WSL)
+- referenced hardware budget (16GB host / 14GB WSL)
 - referenced bootstrap handoff
 - policy revision stamp linking to this CI/CD policy
 

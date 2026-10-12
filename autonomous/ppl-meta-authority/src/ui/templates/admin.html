@@ -35,7 +35,7 @@
       <form id="acceptInvitationForm" class="compact-invitation-form invitation-view-form">
         <label>Token<input id="accept_invitation_token" type="text" autocomplete="one-time-code" placeholder="Invitation token"></label>
         <label>Display name<input id="accept_display_name" type="text" autocomplete="name" placeholder="Optional"></label>
-        <label>Password<input id="accept_password" type="password" autocomplete="new-password" placeholder="Set a password"></label>
+        <label>Password<input id="accept_password" type="password" autocomplete="new-password" minlength="8" required placeholder="Set a password (min 8 characters)"></label>
         <label class="inline-toggle compact-toggle"><input id="show_accept_password" type="checkbox">Show password</label>
         <div class="actions">
           <button type="submit" id="acceptInvitationButton">Accept</button>

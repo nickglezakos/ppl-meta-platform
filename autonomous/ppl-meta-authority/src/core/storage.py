@@ -570,12 +570,14 @@ def create_authority_user_from_invitation(
             reseller_uuid=invitation["reseller_uuid"],
         )
 
-    mark_invitation_accepted(invitation["invitation_uuid"], user["user_uuid"])
+    # Finish dependent setup before marking accepted so a failure leaves the
+    # invitation pending and the invitee can safely retry the same link.
     if invitation["role_name"] == "owner":
         ensure_owner_entitlement_for_user(
             user,
             actor_user_uuid=invitation.get("issued_by_user_uuid"),
         )
+    mark_invitation_accepted(invitation["invitation_uuid"], user["user_uuid"])
     return user
 
 

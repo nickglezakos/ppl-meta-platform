@@ -78,6 +78,10 @@ assert 'updateEntitlementDetails' in js_text
 assert 'setEntityPickerOpen' in js_text
 assert 'openEntityPickerForInput' in js_text
 assert 'bindUuidPickerInputs' in js_text
+assert 'entityPickerSuppressOpen' in js_text
+assert 'showInvitationAcceptForm' in js_text
+assert 'invitationAcceptUrl' in js_text
+assert 'id="closeEntityPickerButton">Close</button>' in admin_html
 assert 'matchingEntitlements' in js_text
 assert 'data-uuid-picker-kind' in js_text
 assert 'invite_reseller_uuid' in js_text
@@ -89,10 +93,18 @@ assert 'function confirmLicenceWizard()' in js_text
 assert 'TAB_ROLES' in js_text
 assert "owner: ['platform_admin', 'distributor', 'reseller', 'owner']" in js_text or "licences: ['platform_admin', 'distributor', 'reseller', 'owner']" in js_text
 assert 'requestedInvitationToken' in js_text
-assert "window.location.href = '/admin';" in js_text
-assert 'login_email=' in js_text
+assert 'formatApiErrorDetail' in js_text
+assert "persistSessionToken('')" in js_text
+assert "/api/v1/auth/login" in js_text
+assert 'Welcome ${session.user.email}. Invitation accepted.' in js_text
+assert "window.history.replaceState(null, '', '/admin')" in js_text
+assert 'preferredTabForRole(session.user.role_name)' in js_text
+assert 'showInvitationAcceptForm(requestedInvitationToken)' in js_text
+assert "if (requestedInvitationToken) return;" in js_text
+assert 'login_email' in js_text
 assert 'setChangePasswordModalOpen' in js_text
 assert 'loadMoreAuditEvents' in js_text
+assert 'minlength="8"' in admin_html
 
 assets_css = client.get('/admin/assets/admin.css')
 assert assets_css.status_code == 200

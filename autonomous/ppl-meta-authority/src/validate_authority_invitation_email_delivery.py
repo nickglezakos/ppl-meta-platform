@@ -82,7 +82,7 @@ try:
     last_sendmail = sendmail_events[-1][1]
     assert last_sendmail[0] == 'noreply@example.test'
     assert 'email-validated-owner@example.com' in last_sendmail[1]
-    assert 'https://authority.example.test/admin?view=session&invitation_token=' in last_sendmail[2]
+    assert 'https://authority.example.test/admin?invitation_token=' in last_sendmail[2]
     assert 'Eyenet Vision' in last_sendmail[2]
     print('Authority invitation email delivery validation passed.')
 finally:

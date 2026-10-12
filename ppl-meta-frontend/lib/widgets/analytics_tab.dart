@@ -27,7 +27,8 @@ class AnalyticsTab extends StatefulWidget {
   State<AnalyticsTab> createState() => _AnalyticsTabState();
 }
 
-class _AnalyticsTabState extends State<AnalyticsTab> {
+class _AnalyticsTabState extends State<AnalyticsTab>
+    with SingleTickerProviderStateMixin {
   static const _statusOptions = <String?>[null, 'sent', 'pending', 'failed'];
   static const _statusLabels = ['All', 'Sent', 'Pending', 'Failed'];
 
@@ -47,6 +48,8 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     'Push',
     'Audit',
   ];
+
+  late final TabController _compactPaneController;
 
   String? _selectedStatus;
   String? _selectedType;
@@ -71,7 +74,14 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   @override
   void initState() {
     super.initState();
+    _compactPaneController = TabController(length: 2, vsync: this);
     _loadTriggers();
+  }
+
+  @override
+  void dispose() {
+    _compactPaneController.dispose();
+    super.dispose();
   }
 
   void _addPeopleName(String raw) {
@@ -663,30 +673,49 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth > 900;
-        if (!wide) {
-          return Column(
+  Widget _buildCompactPaneTabs() {
+    return Column(
+      children: [
+        Material(
+          color: Theme.of(context).colorScheme.surface,
+          child: TabBar(
+            controller: _compactPaneController,
+            tabs: const [
+              Tab(icon: Icon(Icons.tune), text: 'Filters'),
+              Tab(icon: Icon(Icons.insights), text: 'Results'),
+            ],
+          ),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _compactPaneController,
+            // Avoid fighting the parent Automation TabBarView swipe gesture.
+            physics: const NeverScrollableScrollPhysics(),
             children: [
               _buildSidebar(),
-              const Divider(height: 1),
-              Expanded(child: _buildContent()),
+              _buildContent(),
             ],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(width: kMasterPaneWidth, child: _buildSidebar()),
-            const VerticalDivider(width: 1),
-            const SizedBox(width: 4),
-            Expanded(child: _buildContent()),
-          ],
-        );
-      },
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Desktop keeps the side-by-side master/detail split. Mobile + tablet
+    // use nested Filters / Results tabs so each pane gets a full viewport.
+    if (!isWide(context)) {
+      return _buildCompactPaneTabs();
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(width: kMasterPaneWidth, child: _buildSidebar()),
+        const VerticalDivider(width: 1),
+        const SizedBox(width: 4),
+        Expanded(child: _buildContent()),
+      ],
     );
   }
 }

@@ -10,6 +10,8 @@ class RTSPCamera {
   final String username;
   final String password;
   final String streamPath;
+  /// Optional low-res path for live view / instant detection (e.g. /stream2).
+  final String? substreamPath;
   final RTSPTransport transport;
   final RTSPProfile profile;
   final bool isActive;
@@ -24,6 +26,7 @@ class RTSPCamera {
     required this.username,
     required this.password,
     this.streamPath = '/stream',
+    this.substreamPath,
     this.transport = RTSPTransport.tcp,
     this.profile = RTSPProfile.main,
     this.isActive = false,
@@ -77,6 +80,7 @@ class RTSPCamera {
       username: json['username']?.toString() ?? '',
       password: json['password']?.toString() ?? '',
       streamPath: json['stream_path']?.toString() ?? '/stream',
+      substreamPath: json['substream_path']?.toString(),
       transport: RTSPTransport.values.firstWhere(
         (t) => t.name == json['transport']?.toString(),
         orElse: () => RTSPTransport.tcp,
@@ -102,6 +106,8 @@ class RTSPCamera {
       'username': username,
       'password': password,
       'stream_path': streamPath,
+      if (substreamPath != null && substreamPath!.isNotEmpty)
+        'substream_path': substreamPath,
       'transport': transport.name,
       'profile': profile.name,
       'is_active': isActive,
@@ -118,6 +124,7 @@ class RTSPCamera {
     String? username,
     String? password,
     String? streamPath,
+    String? substreamPath,
     RTSPTransport? transport,
     RTSPProfile? profile,
     bool? isActive,
@@ -132,6 +139,7 @@ class RTSPCamera {
       username: username ?? this.username,
       password: password ?? this.password,
       streamPath: streamPath ?? this.streamPath,
+      substreamPath: substreamPath ?? this.substreamPath,
       transport: transport ?? this.transport,
       profile: profile ?? this.profile,
       isActive: isActive ?? this.isActive,

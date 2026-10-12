@@ -37,7 +37,6 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   PresenceInstallationContext? _installationContext;
   List<PresenceAnalyticsBucket> _sessionModes = const [];
   List<PresenceAnalyticsBucket> _grantTypes = const [];
-  List<PresenceSessionTraceSummary> _recentSessions = const [];
   PresenceSessionTracePage _sessionsPage = const PresenceSessionTracePage(
     items: <PresenceSessionTraceSummary>[],
     total: 0,
@@ -131,7 +130,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _sessionsEndDate = DateTime.now();
     _sessionsStartDate = _sessionsEndDate.subtract(const Duration(days: 3));
     _userDayAwardsEndDate = DateTime.now();
@@ -171,7 +170,6 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       _apiClient.getInstallationContext(),
       _apiClient.getBySessionMode(),
       _apiClient.getByGrantType(),
-      _apiClient.getSessionTraces(limit: 12),
       _apiClient.getCameras(),
       _apiClient.getAvailableIndividualGroups(),
       _apiClient.getVideoReadiness(),
@@ -181,10 +179,9 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     final installationResponse = results[1] as ApiResponse<PresenceInstallationContext>;
     final modeResponse = results[2] as ApiResponse<List<PresenceAnalyticsBucket>>;
     final grantResponse = results[3] as ApiResponse<List<PresenceAnalyticsBucket>>;
-    final traceResponse = results[4] as ApiResponse<List<PresenceSessionTraceSummary>>;
-    final camerasResponse = results[5] as ApiResponse<List<PresenceCameraOption>>;
-    final availableGroupsResponse = results[6] as ApiResponse<List<PresenceIndividualGroupOption>>;
-    final videoReadinessResponse = results[7] as ApiResponse<PresenceVideoReadiness>;
+    final camerasResponse = results[4] as ApiResponse<List<PresenceCameraOption>>;
+    final availableGroupsResponse = results[5] as ApiResponse<List<PresenceIndividualGroupOption>>;
+    final videoReadinessResponse = results[6] as ApiResponse<PresenceVideoReadiness>;
 
     if (!mounted) {
       return;
@@ -203,20 +200,17 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       _installationContext = installationResponse.data;
       _sessionModes = modeResponse.data ?? const [];
       _grantTypes = grantResponse.data ?? const [];
-      _recentSessions = traceResponse.data ?? const [];
       _cameras = camerasResponse.data ?? const [];
       _availableIndividualGroups = availableGroupsResponse.data ?? const [];
       _videoReadiness = videoReadinessResponse.data;
       _error = installationResponse.success &&
               modeResponse.success &&
               grantResponse.success &&
-              traceResponse.success &&
               camerasResponse.success &&
               availableGroupsResponse.success &&
               videoReadinessResponse.success
           ? null
-          : traceResponse.error ??
-              modeResponse.error ??
+          : modeResponse.error ??
               grantResponse.error ??
               installationResponse.error ??
               camerasResponse.error ??
@@ -513,84 +507,6 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     }
   }
 
-  Future<void> _reserveCamera(PresenceCameraOption camera) async {
-    final installationUuid = _installationContext?.installationUuid;
-    if (installationUuid == null || installationUuid.isEmpty) {
-      return;
-    }
-
-    setState(() {
-      _isSubmittingAdminAction = true;
-    });
-
-    final response = await _apiClient.reserveCamera(
-      installationUuid: installationUuid,
-      resourceUuid: camera.deviceId,
-    );
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _isSubmittingAdminAction = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          response.success
-              ? 'Reserved camera ${camera.name} for presence.'
-              : (response.error ?? 'Failed to reserve camera'),
-        ),
-        backgroundColor: response.success ? null : Colors.red,
-      ),
-    );
-
-    if (response.success) {
-      await _loadPresenceDashboard();
-    }
-  }
-
-  Future<void> _unreserveCamera(PresenceCameraOption camera) async {
-    final installationUuid = _installationContext?.installationUuid;
-    if (installationUuid == null || installationUuid.isEmpty) {
-      return;
-    }
-
-    setState(() {
-      _isSubmittingAdminAction = true;
-    });
-
-    final response = await _apiClient.unreserveCamera(
-      installationUuid: installationUuid,
-      resourceUuid: camera.deviceId,
-    );
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _isSubmittingAdminAction = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          response.success
-              ? 'Released camera ${camera.name.isEmpty ? camera.deviceId : camera.name} from presence.'
-              : (response.error ?? 'Failed to unreserve camera'),
-        ),
-        backgroundColor: response.success ? null : Colors.red,
-      ),
-    );
-
-    if (response.success) {
-      await _loadPresenceDashboard();
-    }
-  }
-
   Future<void> _showSessionInspector(PresenceSessionTraceSummary session) async {
     showModalBottomSheet<void>(
       context: context,
@@ -809,7 +725,9 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Reserve a platform camera in Actions before scanning owner QR.'),
+          content: Text(
+            'No presence camera is available. Link a camera via a Presence action on a Vprofile/people-match trigger, then retry.',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -1119,7 +1037,6 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
           child: TabBar(
             controller: _tabController,
             tabs: const [
-              Tab(icon: Icon(Icons.dashboard_outlined), text: 'Overview'),
               Tab(icon: Icon(Icons.play_circle_outline), text: 'Actions'),
               Tab(icon: Icon(Icons.analytics_outlined), text: 'Analytics'),
               Tab(icon: Icon(Icons.list_alt_outlined), text: 'Sessions'),
@@ -1132,7 +1049,6 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
           child: TabBarView(
             controller: _tabController,
             children: [
-              _buildOverviewTab(context),
               _buildActionsTab(context),
               _buildAnalyticsTab(context),
               _buildSessionsTab(context),
@@ -1166,28 +1082,6 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     );
   }
 
-  Widget _buildOverviewTab(BuildContext context) {
-    return _buildTabbedList([
-      Text(
-        'Presence operations overview',
-        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-      ),
-      const SizedBox(height: 8),
-      Text(
-        'This module consumes the presence backend directly for operator analytics and recent session visibility.',
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey[400],
-            ),
-      ),
-      const SizedBox(height: 20),
-      _buildSummaryGrid(context),
-      const SizedBox(height: 20),
-      _buildRecentSessions(context),
-    ]);
-  }
-
   Widget _buildActionsTab(BuildContext context) {
     return _buildTabbedList([
       _buildExecutionSection(context),
@@ -1196,6 +1090,8 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
 
   Widget _buildAnalyticsTab(BuildContext context) {
     return _buildTabbedList([
+      _buildSummaryGrid(context),
+      const SizedBox(height: 20),
       _buildUserDayAwardsHierarchySection(context),
       const SizedBox(height: 20),
       _buildDistributionSection(
@@ -1577,54 +1473,61 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'People Profiles',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Manage person identity profiles (PPP) linked to group members.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
-                    ),
-                  ],
-                ),
-              ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.end,
+          Builder(
+            builder: (context) {
+              // Desktop only — these labels wrap awkwardly on phone/tablet widths.
+              final showPeopleHeaderCopy = MediaQuery.sizeOf(context).width >= 1024;
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  OutlinedButton.icon(
-                    icon: _isPeopleSyncing
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.sync, size: 18),
-                    label: const Text('Sync with user accounts'),
-                    onPressed: (_isPeopleSaving || _isPeopleSyncing)
-                        ? null
-                        : _syncPeopleWithUsers,
-                  ),
-                  FilledButton.icon(
-                    icon: const Icon(Icons.person_add, size: 18),
-                    label: const Text('New Profile'),
-                    onPressed: (_isPeopleSaving || _isPeopleSyncing)
-                        ? null
-                        : () => _showPeopleProfileDialog(context),
+                  if (showPeopleHeaderCopy)
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'People Profiles',
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Manage person identity profiles (PPP) linked to group members.',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      OutlinedButton.icon(
+                        icon: _isPeopleSyncing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.sync, size: 18),
+                        label: const Text('Sync with user accounts'),
+                        onPressed: (_isPeopleSaving || _isPeopleSyncing)
+                            ? null
+                            : _syncPeopleWithUsers,
+                      ),
+                      FilledButton.icon(
+                        icon: const Icon(Icons.person_add, size: 18),
+                        label: const Text('New Profile'),
+                        onPressed: (_isPeopleSaving || _isPeopleSyncing)
+                            ? null
+                            : () => _showPeopleProfileDialog(context),
+                      ),
+                    ],
                   ),
                 ],
-              ),
-            ],
+              );
+            },
           ),
           if (_peopleLastSyncLabel != null) ...[
             const SizedBox(height: 8),
@@ -2015,16 +1918,6 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
             }),
         ],
       ),
-    );
-  }
-
-  Widget _buildRecentSessions(BuildContext context) {
-    return _buildSessionListPanel(
-      context,
-      title: 'Recent Sessions',
-      subtitle: 'Latest presence interactions rendered as operator-readable logs.',
-      sessions: _recentSessions,
-      emptyMessage: 'No recent presence sessions found.',
     );
   }
 
@@ -2838,54 +2731,10 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
 
   Widget _buildExecutionSection(BuildContext context) {
     final outlinedBorderColor = Theme.of(context).colorScheme.outline.withValues(alpha: 0.5);
-    final reservedCamera = _reservedPresenceCamera();
-    final reservedCameraId = _reservedPresenceCameraId();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Presence Camera',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Assign one platform camera (USB, RTSP, or edge) for Scan Owner QR, QR + Video, and Video Match. QR is decoded on that camera by the cameras service — not the browser.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[400]),
-        ),
-        const SizedBox(height: 12),
-        if (reservedCameraId != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _TraceChip(
-              label: 'Assigned ${reservedCamera == null ? reservedCameraId : (reservedCamera.name.isEmpty ? reservedCamera.deviceId : reservedCamera.name)}',
-            ),
-          ),
-        if (_cameras.isEmpty)
-          Text(
-            'No cameras available from the presence backend.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          )
-        else
-          ..._cameras.map((camera) => Card(
-                margin: const EdgeInsets.only(bottom: 10),
-                child: ListTile(
-                  title: Text(camera.name.isEmpty ? camera.deviceId : camera.name),
-                  subtitle: Text('${camera.cameraType} • ${camera.status}'),
-                  trailing: camera.reservedForPresence
-                      ? (camera.reservedResourceUuid != null && camera.reservedResourceUuid!.isNotEmpty
-                          ? TextButton(
-                              onPressed: _isSubmittingAdminAction ? null : () => _unreserveCamera(camera),
-                              child: const Text('Unreserve'),
-                            )
-                          : const Text('Reserved'))
-                      : TextButton(
-                          onPressed: _isSubmittingAdminAction ? null : () => _reserveCamera(camera),
-                          child: const Text('Reserve'),
-                        ),
-                ),
-              )),
-        const SizedBox(height: 16),
         if (_isSubmittingAdminAction)
           const Padding(
             padding: EdgeInsets.only(bottom: 12),

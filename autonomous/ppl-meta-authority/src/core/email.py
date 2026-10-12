@@ -79,7 +79,7 @@ def send_invitation_email(invitation: dict[str, object], issuer_email: str | Non
             message="Email delivery skipped because the invitation payload is incomplete.",
         )
 
-    accept_url = f"{settings.public_base_url}/admin?view=session&invitation_token={invitation_token}"
+    accept_url = f"{settings.public_base_url}/admin?invitation_token={invitation_token}"
     issuer_line = f"This invitation was issued by {issuer_email}.\n\n" if issuer_email else ""
     subject = f"Eyenet Vision invitation for {role_name} access"
     text_body = (

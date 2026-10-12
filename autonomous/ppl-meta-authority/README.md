@@ -132,7 +132,7 @@ Optional environment settings:
 
 When these settings are present, admin, distributor, and reseller invitation actions send an email that includes:
 
-- an invitation acceptance link to `/admin?view=session&invitation_token=...`
+- an invitation acceptance link to `/admin?invitation_token=...`
 - the raw invitation token as a fallback
 
 If mail settings are not configured, authority still creates invitation records and tokens, but email delivery is skipped.

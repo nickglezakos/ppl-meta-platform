@@ -542,6 +542,7 @@ class CameraService {
     required String path,
     String? username,
     String? password,
+    String? substreamPath,
   }) async {
     try {
       final response = await _cameraApiClient.post(
@@ -553,6 +554,8 @@ class CameraService {
           'path': path,
           if (username != null && username.isNotEmpty) 'username': username,
           if (password != null && password.isNotEmpty) 'password': password,
+          if (substreamPath != null && substreamPath.isNotEmpty)
+            'substream_path': substreamPath,
         },
       );
 
@@ -577,6 +580,9 @@ class CameraService {
         supportsRecording: cameraData['supports_recording'] ?? false,
         metadata: {
           'rtsp_url': cameraData['rtsp_url'],
+          'path': cameraData['path'],
+          'substream_path': cameraData['substream_path'],
+          'settings': cameraData['settings'],
           'supports_streaming': cameraData['supports_streaming'] ?? true,
           'supports_recording': cameraData['supports_recording'] ?? false,
           'max_fps': cameraData['max_fps'] ?? 30,
@@ -599,6 +605,7 @@ class CameraService {
     required String path,
     String? username,
     String? password,
+    String? substreamPath,
   }) async {
     try {
       final response = await _cameraApiClient.put(
@@ -610,6 +617,8 @@ class CameraService {
           'path': path,
           if (username != null && username.isNotEmpty) 'username': username,
           if (password != null && password.isNotEmpty) 'password': password,
+          // Always send so clearing the field removes the stored substream.
+          'substream_path': substreamPath ?? '',
         },
       );
 
@@ -634,6 +643,9 @@ class CameraService {
         supportsRecording: cameraData['supports_recording'] ?? false,
         metadata: {
           'rtsp_url': cameraData['rtsp_url'],
+          'path': cameraData['path'],
+          'substream_path': cameraData['substream_path'],
+          'settings': cameraData['settings'],
           'supports_streaming': cameraData['supports_streaming'] ?? true,
           'supports_recording': cameraData['supports_recording'] ?? false,
           'max_fps': cameraData['max_fps'] ?? 30,

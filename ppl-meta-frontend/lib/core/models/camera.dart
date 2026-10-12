@@ -93,6 +93,15 @@ class Camera {
     if (json['username'] != null) {
       metadata['username'] = json['username'];
     }
+    if (json['path'] != null) {
+      metadata['path'] = json['path'];
+    }
+    if (json['substream_path'] != null) {
+      metadata['substream_path'] = json['substream_path'];
+    }
+    if (json['settings'] != null) {
+      metadata['settings'] = json['settings'];
+    }
     
     // Determine camera type with mobile and edge detection
     CameraType cameraType;

@@ -602,6 +602,10 @@ button:disabled {
   justify-items: center;
 }
 
+#entityPickerModal {
+  z-index: 70;
+}
+
 .sheet {
   width: min(560px, 100%);
   margin: 0 auto;

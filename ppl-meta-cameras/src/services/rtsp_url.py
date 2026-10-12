@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import quote, unquote
 
 
@@ -20,6 +20,18 @@ def normalize_credential(value: Optional[str]) -> str:
     return text
 
 
+def normalize_stream_path(path: Optional[str], default: str = "/stream1") -> str:
+    """Ensure a stream path starts with / and is non-empty."""
+    if path is None:
+        return default
+    text = str(path).strip()
+    if not text:
+        return default
+    if not text.startswith("/"):
+        text = "/" + text
+    return text
+
+
 def build_rtsp_url(
     host: str,
     port: int,
@@ -28,9 +40,7 @@ def build_rtsp_url(
     password: Optional[str] = None,
 ) -> str:
     """Build rtsp://user:pass@host:port/path with single-encoded credentials."""
-    stream_path = path or "/stream1"
-    if not stream_path.startswith("/"):
-        stream_path = "/" + stream_path
+    stream_path = normalize_stream_path(path, default="/stream1")
 
     credentials = ""
     user = normalize_credential(username)
@@ -89,6 +99,92 @@ def rebuild_rtsp_url_from_camera(
         host=host,
         port=port or 554,
         path=path,
+        username=username,
+        password=password,
+    )
+
+
+def get_rtsp_substream_path(settings: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Return optional RTSP substream path from cameras.settings, or None."""
+    if not isinstance(settings, dict):
+        return None
+    rtsp = settings.get("rtsp")
+    if not isinstance(rtsp, dict):
+        return None
+    raw = rtsp.get("substream_path")
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    return normalize_stream_path(text)
+
+
+def merge_rtsp_substream_settings(
+    settings: Optional[Dict[str, Any]],
+    substream_path: Optional[str],
+) -> Dict[str, Any]:
+    """
+    Merge optional substream_path into cameras.settings without wiping other keys.
+
+    Empty / None substream_path removes the stored substream path.
+    """
+    merged: Dict[str, Any] = dict(settings) if isinstance(settings, dict) else {}
+    rtsp: Dict[str, Any] = (
+        dict(merged["rtsp"]) if isinstance(merged.get("rtsp"), dict) else {}
+    )
+
+    text = (substream_path or "").strip()
+    if text:
+        rtsp["substream_path"] = normalize_stream_path(text)
+        merged["rtsp"] = rtsp
+    else:
+        rtsp.pop("substream_path", None)
+        if rtsp:
+            merged["rtsp"] = rtsp
+        else:
+            merged.pop("rtsp", None)
+
+    return merged
+
+
+def record_connection_string(
+    connection_string: Optional[str],
+    username: Optional[str],
+    password: Optional[str],
+    port: Optional[int],
+) -> Optional[str]:
+    """Main / recording URL — always the path stored in connection_string."""
+    return rebuild_rtsp_url_from_camera(
+        connection_string, username, password, port
+    )
+
+
+def live_connection_string(
+    connection_string: Optional[str],
+    username: Optional[str],
+    password: Optional[str],
+    port: Optional[int],
+    settings: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """
+    Live-view / instant-detection URL.
+
+    Uses settings.rtsp.substream_path when set; otherwise the main path.
+    """
+    main = record_connection_string(
+        connection_string, username, password, port
+    )
+    sub = get_rtsp_substream_path(settings)
+    if not sub:
+        return main
+    host, _ = parse_rtsp_host_path(connection_string or main)
+    if not host:
+        return main
+    return build_rtsp_url(
+        host=host,
+        port=port or 554,
+        path=sub,
         username=username,
         password=password,
     )

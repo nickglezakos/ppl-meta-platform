@@ -2,7 +2,7 @@ $ErrorActionPreference = "Continue"
 
 $wslConfig = @"
 [wsl2]
-memory=12GB
+memory=14GB
 processors=6
 swap=2GB
 localhostForwarding=true

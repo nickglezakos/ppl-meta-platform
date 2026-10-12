@@ -21,6 +21,7 @@ let selectedPersonUuid = '';
 let selectedLicenceUuid = '';
 let changePasswordReturnFocus = null;
 let entityPickerReturnFocus = null;
+let entityPickerSuppressOpen = false;
 let entityPickerState = { targetInputId: '', kind: '' };
 let auditState = {
   items: [],
@@ -111,6 +112,41 @@ function setStatus(message, isError = false) {
   }
 }
 
+function formatApiErrorDetail(detail, fallbackText = '') {
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (!item || typeof item !== 'object') return '';
+        const msg = item.msg || item.message || '';
+        const loc = Array.isArray(item.loc)
+          ? item.loc.filter((part) => part !== 'body').join('.')
+          : '';
+        if (msg && loc) return `${loc}: ${msg}`;
+        return msg || loc || '';
+      })
+      .filter(Boolean);
+    if (messages.length) {
+      return messages.join('; ');
+    }
+  }
+  if (detail && typeof detail === 'object') {
+    if (typeof detail.message === 'string' && detail.message.trim()) {
+      return detail.message;
+    }
+    if (typeof detail.detail === 'string' && detail.detail.trim()) {
+      return detail.detail;
+    }
+  }
+  if (typeof fallbackText === 'string' && fallbackText.trim()) {
+    return fallbackText;
+  }
+  return 'Request failed';
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   const text = await response.text();
@@ -122,7 +158,9 @@ async function api(path, options = {}) {
   }
   if (!response.ok) {
     const detail = payload && typeof payload === 'object' ? payload.detail : payload;
-    throw new Error(detail || text || `Request failed: ${response.status}`);
+    throw new Error(
+      formatApiErrorDetail(detail, text) || `Request failed: ${response.status}`,
+    );
   }
   return payload;
 }
@@ -233,9 +271,29 @@ function syncInviteScopeFields() {
   }
 }
 
+function invitationAcceptUrl(token = requestedInvitationToken) {
+  if (!token) return '/admin';
+  return `/admin?invitation_token=${encodeURIComponent(token)}`;
+}
+
+function showInvitationAcceptForm(token = requestedInvitationToken) {
+  if (!token || !element('accept_invitation_token')) return;
+  element('accept_invitation_token').value = token;
+  element('loggedOutPanel')?.classList.add('hidden');
+  element('acceptInvitationCard')?.classList.remove('hidden');
+  element('authenticatedShell')?.classList.add('hidden');
+  document.querySelectorAll('[data-auth-visibility="logged-out"]').forEach((node) => {
+    node.classList.remove('hidden');
+  });
+  window.history.replaceState(null, '', invitationAcceptUrl(token));
+}
+
 function persistTabState(tabId) {
+  // Invitation accept links must stay on the password form; do not rewrite them to tab=home.
+  if (requestedInvitationToken) return;
   const next = new URLSearchParams(window.location.search);
   next.delete('view');
+  next.delete('invitation_token');
   next.set('tab', tabId);
   if (selectedPersonUuid && tabId === 'person') {
     next.set('person', selectedPersonUuid);
@@ -298,6 +356,11 @@ function setOverflowOpen(isOpen) {
   if (toggle) toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
 }
 
+function isOverlayVisible(overlayId) {
+  const node = element(overlayId);
+  return node instanceof HTMLElement && !node.classList.contains('hidden');
+}
+
 function setSheetOpen(sheetId, isOpen) {
   const sheet = element(sheetId);
   if (!(sheet instanceof HTMLElement)) return;
@@ -327,17 +390,31 @@ function setEntityPickerOpen(isOpen) {
   const modal = element('entityPickerModal');
   if (!(modal instanceof HTMLElement)) return;
   if (isOpen) {
-    entityPickerReturnFocus = document.activeElement;
+    if (!isOverlayVisible('entityPickerModal')) {
+      entityPickerReturnFocus = document.activeElement;
+    }
     modal.classList.remove('hidden');
     modal.setAttribute('aria-hidden', 'false');
     element('entityPickerSearchInput')?.focus();
-  } else {
-    modal.classList.add('hidden');
-    modal.setAttribute('aria-hidden', 'true');
-    if (entityPickerReturnFocus instanceof HTMLElement) {
-      entityPickerReturnFocus.focus();
-    }
+    return;
   }
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+  const restore = entityPickerReturnFocus;
+  entityPickerReturnFocus = null;
+  if (!(restore instanceof HTMLElement)) return;
+  // Closing restores focus to the UUID field. Suppress the picker-open
+  // listeners so restore (and any trailing mobile tap) cannot reopen it.
+  entityPickerSuppressOpen = true;
+  window.setTimeout(() => {
+    try {
+      restore.focus({ preventScroll: true });
+    } finally {
+      window.setTimeout(() => {
+        entityPickerSuppressOpen = false;
+      }, 350);
+    }
+  }, 0);
 }
 
 function renderEmpty(containerId, message) {
@@ -846,18 +923,46 @@ async function handleLogin() {
 }
 
 async function handleAcceptInvitation() {
+  const invitationToken = element('accept_invitation_token')?.value.trim() || '';
+  const displayName = element('accept_display_name')?.value.trim() || null;
+  const password = element('accept_password')?.value || '';
+  if (!invitationToken) {
+    setStatus('Invitation token is required.', true);
+    return;
+  }
+  if (password.length < 8) {
+    setStatus('Password must be at least 8 characters long.', true);
+    return;
+  }
   try {
     const payload = await api('/api/v1/auth/accept-invitation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        invitation_token: element('accept_invitation_token').value.trim(),
-        display_name: element('accept_display_name').value.trim() || null,
-        password: element('accept_password').value,
+        invitation_token: invitationToken,
+        display_name: displayName,
+        password,
       }),
     });
-    showToast(`Invitation accepted for ${payload.email}.`, 'success');
-    window.location.href = `/admin?login_email=${encodeURIComponent(payload.email)}`;
+    // Drop any prior admin/operator session before signing the invitee in.
+    persistSessionToken('');
+    sessionToken = '';
+    currentUser = null;
+
+    const session = await api('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: payload.email,
+        password,
+      }),
+    });
+    setSession(session.user, session.session_token);
+    showToast(`Welcome ${session.user.email}. Invitation accepted.`, 'success');
+    // Leave the invitation URL so refresh does not reopen the accept form.
+    window.history.replaceState(null, '', '/admin');
+    activateTab(preferredTabForRole(session.user.role_name));
+    setStatus(`Signed in as ${session.user.email}`);
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -1309,7 +1414,9 @@ function renderEntityPickerResults() {
   }
   renderListRows('entityPickerResults', rows, 'No matches.');
   element('entityPickerResults')?.querySelectorAll('[data-picker-value]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       const input = element(entityPickerState.targetInputId);
       if (input instanceof HTMLInputElement) {
         input.value = button.dataset.pickerValue || '';
@@ -1323,7 +1430,9 @@ function renderEntityPickerResults() {
 function bindUuidPickerInputs() {
   document.querySelectorAll('[data-uuid-picker-kind]').forEach((input) => {
     if (!(input instanceof HTMLInputElement)) return;
-    input.addEventListener('focus', () => {
+    const openPicker = () => {
+      if (entityPickerSuppressOpen) return;
+      if (isOverlayVisible('entityPickerModal') && entityPickerState.targetInputId === input.id) return;
       if (!usersCache.length && roleAllowsTab('people')) {
         loadUsersForRole().catch(() => {});
       }
@@ -1331,7 +1440,9 @@ function bindUuidPickerInputs() {
         loadLicencesForRole().catch(() => {});
       }
       openEntityPickerForInput(input);
-    });
+    };
+    input.addEventListener('focus', openPicker);
+    input.addEventListener('click', openPicker);
   });
 }
 
@@ -1448,17 +1559,33 @@ function wireUi() {
   });
 
   bindClick('closeEntityPickerButton', () => setEntityPickerOpen(false));
+  element('entityPickerModal')?.addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) {
+      setEntityPickerOpen(false);
+    }
+  });
   element('entityPickerSearchInput')?.addEventListener('input', renderEntityPickerResults);
   bindUuidPickerInputs();
 
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      setOverflowOpen(false);
-      setSheetOpen('inviteSheet', false);
-      setSheetOpen('licenceWizard', false);
-      setChangePasswordModalOpen(false);
+    if (event.key !== 'Escape') return;
+    if (isOverlayVisible('entityPickerModal')) {
       setEntityPickerOpen(false);
+      return;
     }
+    if (isOverlayVisible('changePasswordModal')) {
+      setChangePasswordModalOpen(false);
+      return;
+    }
+    if (isOverlayVisible('inviteSheet')) {
+      setSheetOpen('inviteSheet', false);
+      return;
+    }
+    if (isOverlayVisible('licenceWizard')) {
+      setSheetOpen('licenceWizard', false);
+      return;
+    }
+    setOverflowOpen(false);
   });
 }
 
@@ -1468,10 +1595,15 @@ async function boot() {
   if (loginEmailHint && element('login_email')) {
     element('login_email').value = loginEmailHint;
   }
-  if (requestedInvitationToken && element('accept_invitation_token')) {
-    element('accept_invitation_token').value = requestedInvitationToken;
-    element('loggedOutPanel')?.classList.add('hidden');
-    element('acceptInvitationCard')?.classList.remove('hidden');
+
+  // Invitation links must show the accept form even if a previous admin session
+  // is still stored in this browser (common when testing invites on the same device).
+  if (requestedInvitationToken) {
+    persistSessionToken('');
+    sessionToken = '';
+    currentUser = null;
+    showInvitationAcceptForm(requestedInvitationToken);
+    return;
   }
 
   sessionToken = persistedSessionToken();

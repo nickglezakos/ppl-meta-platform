@@ -14,7 +14,7 @@ Current release pin (tracks repository root `VERSION`):
 - registry: `ghcr.io/nickglezakos/ppl-meta-platform`
 - architecture: **`linux/amd64`** (Intel/AMD Windows PCs via WSL Docker Engine)
 - host standard: **≥16 GB physical RAM**
-- WSL / Docker Desktop memory: **12 GB** (`processors=6`, `swap=2GB`)
+- WSL / Docker Desktop memory: **14 GB** (`processors=6`, `swap=2GB`)
 - compose: per-service `mem_limit` / `mem_reservation` per CI/CD policy
 
 Release verification:
@@ -47,7 +47,7 @@ Verify that each manifest shows `"architecture": "amd64"` and `"os": "linux"`.
 - pull exact image tags from GHCR (not Docker Hub)
 - target **AMD64 (Intel/AMD)** architecture for Windows PC compatibility
 - avoid local image builds on customer machines
-- enforce the 16 GB host / 12 GB WSL resource policy
+- enforce the 16 GB host / 14 GB WSL resource policy
 - hand off first-owner activation to frontend `/bootstrap`
 - include cameras, presence, models for full-product (no-USB) demos
 
