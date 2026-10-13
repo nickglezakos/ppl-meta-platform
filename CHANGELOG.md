@@ -34,8 +34,8 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Notes
 
 - GHCR images published for **2.25.96** (Mode D on `lab-work-dual-64g` / `eyenet-demo`): rebuilt cameras `9e4fd04f…`, frontend `9db3d148…`, vmeta-protected `6b2e9727…` (Facenet bake; size-gate fix `222bcd4`); retagged the other nine from `2.25.95`. Manifest finalized 2026-10-13.
+- Stage 3 on `lab-work-dual-64g` (`eyenet-demo` @ `192.168.9.13` / `100.101.128.40`): compose pull/recreate to `:2.25.96`; VMeta mem 5g/3g; digests match manifest (2026-10-13).
 - Known lab gap (not in this pin): VMeta persist can still 500 if DB `individuals` lacks `total_appearances` / `last_seen` vs code — separate schema follow-up.
-- Compose `mem_limit` 5g/3g applies on Stage 3 when install-dir compose is refreshed.
 
 ---
 
