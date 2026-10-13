@@ -1047,6 +1047,8 @@ class IndividualGroupsManager:
         SELECT 
             gm.individual_id,
             gm.added_at,
+            gm.added_by,
+            gm.member_number,
             COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid)::text AS mvr_person_uuid,
             COALESCE(
                 NULLIF(m_direct.name, ''),

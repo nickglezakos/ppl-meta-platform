@@ -78,6 +78,7 @@ add "$VMETA/020_add_identity_group_uuid.sql"
 add "$VMETA/021_add_unmerged_action_to_audit_log.sql"
 add "$VMETA/022_mvr_people_body.sql"
 add "$VMETA/023_stable_group_member_numbers.sql"
+add "$VMETA/024_renumber_group_members_oldest_first.sql"
 add "$VMETA/add_individual_caching_support.sql"
 
 # --- Cameras (skip rollbacks / #comment SQL) ---

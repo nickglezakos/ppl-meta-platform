@@ -18,16 +18,17 @@
 ALTER TABLE group_memberships
     ADD COLUMN IF NOT EXISTS member_number INTEGER;
 
--- Backfill existing rows to match the previous UI ordering (newest-first),
--- so currently displayed labels do not shuffle on upgrade. Only rows still
--- NULL are updated so re-running the migration is safe. After this, numbers
--- are stable and new members always get max+1.
+-- Backfill existing rows oldest-first (first join = Member 01). Only rows
+-- still NULL are updated so re-running the migration is safe. After this,
+-- numbers are stable and new members always get max+1.
+-- Note: labs that already ran an older 023 with newest-first are corrected
+-- by migration 024_renumber_group_members_oldest_first.sql.
 WITH ranked AS (
     SELECT
         id,
         ROW_NUMBER() OVER (
             PARTITION BY group_id
-            ORDER BY added_at DESC, individual_id DESC
+            ORDER BY added_at ASC, individual_id ASC
         ) AS rn
     FROM group_memberships
     WHERE member_number IS NULL

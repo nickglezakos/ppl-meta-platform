@@ -17,7 +17,13 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-_(none)_
+### 2026-10-13 — Group member numbers oldest-first + API field leak
+- **Status:** Pending → releasing as **2.25.100** (Stage 1–3 in progress)
+- **VERSION / pin:** `2.25.100`
+- **Lab hotfix (pre-release):** `lab-work-dual-64g` @ `100.101.128.40` — SQL 024 + docker-cp vmeta SELECT fix (verified UI)
+- **Source:** `024_renumber_group_members_oldest_first.sql`; `023` ASC backfill; `get_group_members` outer SELECT includes `member_number`/`added_by`
+- **Stage 2 plan:** Mode D — rebuild `vmeta` only; retag-forward eleven from `2.25.99`
+- **Verify:** Hard-refresh group members UI — oldest MVR is Member 01.
 
 ---
 
@@ -29,7 +35,7 @@ _(none)_
 - **Stage 1:** `a3a808dc` (feature) + `f08aba91` (release-manifest)
 - **Stage 2:** Mode D on `lab-work-dual-64g` — rebuilt vmeta-protected `5ebe506f8f0c…`, gateway `55ff36d242f9…`, presence `6250b5480e76…`, frontend `b68e70251e39…`; retagged the other eight from `2.25.98`
 - **Stage 3:** `lab-work-dual-64g` (`eyenet-demo` @ `192.168.9.13` / `100.101.128.40`) — 2026-10-13; compose pull/recreate to `:2.25.99`; schema `033_023_stable_group_member_numbers.sql` applied (`member_number` + reservations)
-- **Summary:** Stable membership ordinals; private-group link/delete gated on media ACL (same as face thumbnail). Replaces lab docker-cp hotfix path.
+- **Summary:** Stable membership ordinals; private-group link/delete gated on media ACL (same as face thumbnail). Replaces lab docker-cp hotfix path. Note: initial 023 backfill was newest-first; corrected on lab by pending SQL 024.
 
 ### 2026-10-07 — Users register form-urlencoded → JSON (signup 500)
 - **Status:** Completed (source since 2.25.95; lab overlays cleared by Stage 3 of **2.25.99**)

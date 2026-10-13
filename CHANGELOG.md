@@ -15,6 +15,23 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+## [2.25.100] — 2026-10-13
+
+### Fixed
+
+- Individual groups: `get_group_members` now returns stored `group_member_number` (outer SELECT had dropped the column, so the UI fell back to newest-first list index).
+- Individual groups: existing membership numbers rebackfilled oldest-first (first join = Member 01) via schema `024_renumber_group_members_oldest_first.sql`.
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.99 → 2.25.100**.
+- Schema pack includes `024_renumber_group_members_oldest_first.sql`; greenfield `023` backfill is oldest-first.
+
+### Notes
+
+- Affects `ppl-meta-vmeta` only for images. Mode D: rebuild vmeta; retag-forward the other eleven from `2.25.99`.
+- Stage 3 must apply schema pack (024) so labs that never ran the hotfix get chronological numbers.
+
 ## [2.25.99] — 2026-10-13
 
 ### Fixed
