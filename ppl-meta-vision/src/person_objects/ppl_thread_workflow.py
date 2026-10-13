@@ -45,6 +45,10 @@ except ImportError:
 # Core algorithm imports (Phase 2 integration)
 from .face_grouping_engine import VisionFaceGroupingEngine
 from .quality_analyzer import PersonQualityAnalyzer
+from .route_contamination_filter import (
+    filter_contaminated_person_tracks,
+    infer_sample_frame_step,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +88,41 @@ class PPLThreadWorkflowController:
         self.batch_size = 100
         self._velocity_sensitivity_cache = None
         self._cache_timestamp = None
+
+    def _apply_route_contamination_filter(
+        self,
+        grouping_results: Dict[str, Any],
+        face_detections: List[Dict[str, Any]],
+        sample_frame_step: Optional[int] = None,
+        video_fps: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Hard-drop contaminated person tracks before persist (bulk path only).
+
+        Builds route points from face_mappings + detections; does not rely on
+        all_faces_route_data (written later during quality analysis).
+        """
+        step = sample_frame_step or infer_sample_frame_step(face_detections)
+        fps = float(video_fps) if video_fps and video_fps > 0 else 30.0
+        before = len(grouping_results.get("person_objects") or [])
+        filter_contaminated_person_tracks(
+            grouping_results,
+            face_detections,
+            sample_frame_step=step,
+            video_fps=fps,
+        )
+        after = len(grouping_results.get("person_objects") or [])
+        dropped = before - after
+        if dropped:
+            logger.info(
+                "Route contamination filter dropped %d/%d person tracks "
+                "(sample_frame_step=%s video_fps=%s)",
+                dropped,
+                before,
+                step,
+                fps,
+            )
+        return grouping_results
 
     def _build_embedding_extractor(self) -> Optional[Callable]:
         """
@@ -510,6 +549,11 @@ class PPLThreadWorkflowController:
             else:
                 logger.error("Invalid grouping_results structure: %s", grouping_results)
 
+            # Step 3b: Hard-drop contaminated tracks before persist (bulk only)
+            grouping_results = self._apply_route_contamination_filter(
+                grouping_results, face_detections
+            )
+
             # Step 4: Store person objects and mappings in database (Phase 1 schema)
             logger.info(
                 "About to store person objects and mappings for workflow %s",
@@ -718,6 +762,11 @@ class PPLThreadWorkflowController:
                 "Face grouping complete: %d faces → %d persons",
                 len(face_detections),
                 len(grouping_results["person_objects"]),
+            )
+
+            # Step 4b: Hard-drop contaminated tracks before persist (bulk only)
+            grouping_results = self._apply_route_contamination_filter(
+                grouping_results, face_detections
             )
 
             # Step 5: Store person objects and mappings in database (Phase 1 schema)

@@ -260,6 +260,36 @@ class TestTier3LazyExtractor(unittest.TestCase):
         self.assertEqual(len(result["person_objects"]), 1)
         self.assertEqual(result["statistics"]["tier3_embedding_rejected"], 0)
 
+class TestTemporalGapWithCascade(unittest.TestCase):
+    """Temporal max-gap interacts safely with velocity / embedding tiers."""
+
+    def setUp(self):
+        self.engine = VisionFaceGroupingEngine()
+        self.engine.sample_frame_step = 10
+        self.engine.use_size_based_tolerance = True
+        self.engine.size_tolerance_factor = 0.5
+        self.engine.embedding_gate_enabled = False
+
+    def test_gap_rejects_before_position_merge(self):
+        faces = [
+            make_face("early", 10, 100.0, 100.0, bbox_w=40.0),
+            make_face("late", 500, 100.0, 100.0, bbox_w=40.0),
+        ]
+        result = asyncio.run(self.engine.apply_percentage_based_tracking(faces, 20.0))
+        self.assertEqual(len(result["person_objects"]), 2)
+        self.assertGreater(result["statistics"]["temporal_gap_rejected"], 0)
+
+    def test_continuous_track_still_merges_across_tiers(self):
+        faces = [
+            make_face("f1", 0, 100.0, 100.0, bbox_w=40.0),
+            make_face("f2", 10, 102.0, 101.0, bbox_w=40.0),
+            make_face("f3", 20, 104.0, 102.0, bbox_w=40.0),
+            make_face("f4", 30, 106.0, 103.0, bbox_w=40.0),
+        ]
+        result = asyncio.run(self.engine.apply_percentage_based_tracking(faces, 20.0))
+        self.assertEqual(len(result["person_objects"]), 1)
+
+
 class TestBackwardCompatibility(unittest.TestCase):
     """Default config must preserve the original percentage-based behavior."""
 

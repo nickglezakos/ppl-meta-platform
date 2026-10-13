@@ -15,6 +15,21 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+## [2.25.97] — 2026-10-13
+
+### Added
+
+- Route-based face contamination filter: hard-drop scattered / blink false-positive person tracks before MVR creation (longest consecutive run + occupancy on route data).
+- Temporal max-gap when linking face detections to tracks (Vision) and IoU+time grouping on Orchestrator video regroup path.
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.96 → 2.25.97**.
+
+### Notes
+
+- Affects bulk / recording person-objects path (`ppl-meta-vision`, `ppl-meta-orchestrator`). Instant detection keeps temporal gap but does not hard-drop short cycles.
+
 ## [2.25.96] — 2026-10-12
 
 ### Added

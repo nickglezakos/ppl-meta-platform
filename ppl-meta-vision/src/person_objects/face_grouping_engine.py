@@ -105,6 +105,14 @@ class VisionFaceGroupingEngine:
         self.embedding_gate_enabled = True  # safe because it self-gates on missing embeddings
         self.embedding_similarity_threshold = 0.6  # minimum cosine similarity
 
+        # Temporal max-gap: refuse to link a face to a track that has been
+        # unseen longer than max_track_gap_s (or 2 * sample_frame_step frames).
+        # Prevents scattered false positives at the same location from becoming
+        # one long person track across a whole video.
+        self.sample_frame_step = 10
+        self.max_track_gap_s = 1.0
+        self._assumed_video_fps = 30.0
+
         # Tracking state (reset per session)
         self.active_tracks = {}
         self.next_person_id = 1
@@ -116,6 +124,7 @@ class VisionFaceGroupingEngine:
             "tier1_position_matched": 0,
             "tier2_velocity_rejected": 0,
             "tier3_embedding_rejected": 0,
+            "temporal_gap_rejected": 0,
         }
 
     def calculate_position_distance(self, pos1: Dict, pos2: Dict) -> Dict[str, float]:
@@ -204,7 +213,37 @@ class VisionFaceGroupingEngine:
             "tier1_position_matched": 0,
             "tier2_velocity_rejected": 0,
             "tier3_embedding_rejected": 0,
+            "temporal_gap_rejected": 0,
         }
+
+    def _track_exceeds_temporal_gap(
+        self,
+        track_info: Dict,
+        face_record: Optional[Dict],
+        frame_number: int,
+    ) -> bool:
+        """
+        Return True when the track is too stale to accept a new match.
+
+        Prefer frame-gap when sample_frame_step is known:
+            frame_number - last_seen_frame > 2 * sample_frame_step
+        Otherwise fall back to elapsed wall time vs max_track_gap_s.
+        """
+        last_seen_frame = track_info.get("last_seen_frame")
+        step = max(int(self.sample_frame_step or 0), 0)
+        if step > 0 and last_seen_frame is not None:
+            frame_gap = int(frame_number) - int(last_seen_frame)
+            # Frame-primary when sample step is known (avoids coarse timestamps).
+            return frame_gap > 2 * step
+
+        last_seen_at = track_info.get("last_seen_at")
+        dt_ms = self._elapsed_ms_between(
+            last_seen_at,
+            face_record,
+            last_seen_frame,
+            frame_number,
+        )
+        return dt_ms > (self.max_track_gap_s * 1000.0)
 
     def _extract_face_position(self, face_record: Dict) -> Dict[str, float]:
         """
@@ -287,6 +326,12 @@ class VisionFaceGroupingEngine:
         best_distance = float("inf")
 
         for track_id, track_info in self.active_tracks.items():
+            # Temporal max-gap: do not resurrect a stale track with a later hit
+            # at the same location (scattered false positives).
+            if self._track_exceeds_temporal_gap(track_info, face_record, frame_number):
+                self.processing_stats["temporal_gap_rejected"] += 1
+                continue
+
             track_position = track_info["position"]
             track_size = track_info.get("size", 0.0)
 
@@ -946,6 +991,7 @@ class VisionFaceGroupingEngine:
             "tier3_embedding_rejected": self.processing_stats[
                 "tier3_embedding_rejected"
             ],
+            "temporal_gap_rejected": self.processing_stats["temporal_gap_rejected"],
             "discrimination": {
                 "use_size_based_tolerance": self.use_size_based_tolerance,
                 "size_tolerance_factor": self.size_tolerance_factor,

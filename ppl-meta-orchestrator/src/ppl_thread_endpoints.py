@@ -23,6 +23,19 @@ from workflow_orchestrator import (
 
 logger = logging.getLogger(__name__)
 
+try:
+    from route_contamination_filter import (
+        DEFAULT_MAX_LINK_FRAME_GAP,
+        DEFAULT_SAMPLE_FRAME_STEP,
+        should_keep_person_group,
+    )
+except ImportError:  # pragma: no cover - package-style import fallback
+    from .route_contamination_filter import (
+        DEFAULT_MAX_LINK_FRAME_GAP,
+        DEFAULT_SAMPLE_FRAME_STEP,
+        should_keep_person_group,
+    )
+
 # Security setup
 security = HTTPBearer()
 
@@ -256,8 +269,19 @@ class PPLThreadEndpoints:
         groups = set(find(i) for i in range(n))
         return len(groups)
 
-    def _extract_face_groups(self, face_bboxes, faces_data):
-        """Extract face groups using Union-Find results."""
+    def _extract_face_groups(
+        self,
+        face_bboxes,
+        faces_data,
+        iou_threshold: float = 0.3,
+        max_link_frame_gap: int = DEFAULT_MAX_LINK_FRAME_GAP,
+    ):
+        """
+        Extract face groups using Union-Find with IoU + temporal proximity.
+
+        Faces are unioned only when IoU >= threshold AND their frame numbers
+        differ by at most max_link_frame_gap (default 20 ≈ 2 sample steps).
+        """
         if not face_bboxes or not faces_data:
             return {}
 
@@ -281,11 +305,18 @@ class PPLThreadEndpoints:
             if px != py:
                 parent[px] = py
 
-        # Group faces by overlap
+        frames = [
+            int(face.get("frame_number") or 0) if isinstance(face, dict) else 0
+            for face in faces_data
+        ]
+
+        # Group faces by overlap + temporal proximity
         for i in range(n):
             for j in range(i + 1, n):
+                if abs(frames[i] - frames[j]) > max_link_frame_gap:
+                    continue
                 iou = self._calculate_iou(face_bboxes[i], face_bboxes[j])
-                if iou >= 0.3:  # Default threshold
+                if iou >= iou_threshold:
                     union(i, j)
 
         # Extract groups
@@ -1028,17 +1059,46 @@ class PPLThreadEndpoints:
             "duration_seconds": max(timestamps) - min(timestamps),
         }
 
-    def _group_faces_by_rectangle_overlap_detailed(self, face_bboxes, faces_data):
+    def _group_faces_by_rectangle_overlap_detailed(
+        self,
+        face_bboxes,
+        faces_data,
+        max_link_frame_gap: int = DEFAULT_MAX_LINK_FRAME_GAP,
+        sample_frame_step: int = DEFAULT_SAMPLE_FRAME_STEP,
+        video_fps: float = 30.0,
+    ):
         """Enhanced grouping with detailed person object creation."""
         if not face_bboxes or not faces_data:
             return []
 
-        # Extract face groups using Union-Find
-        groups = self._extract_face_groups(face_bboxes, faces_data)
+        # Extract face groups using Union-Find (IoU + temporal proximity)
+        groups = self._extract_face_groups(
+            face_bboxes,
+            faces_data,
+            max_link_frame_gap=max_link_frame_gap,
+        )
 
         person_groups = []
+        dropped = 0
 
         for group_faces in groups.values():
+            movement_tracking = self._generate_movement_tracking(group_faces)
+            decision = should_keep_person_group(
+                group_faces=group_faces,
+                route_points=movement_tracking.get("route_points") or [],
+                sample_frame_step=sample_frame_step,
+                video_fps=video_fps,
+            )
+            if not decision["keep"]:
+                dropped += 1
+                logger.info(
+                    "route_contaminant_dropped person_group reason=%s face_count=%s metrics=%s",
+                    decision["reason"],
+                    len(group_faces),
+                    decision["metrics"],
+                )
+                continue
+
             # Generate person UUID and ID
             person_uuid = str(uuid.uuid4())
             person_id = f"person_{len(person_groups) + 1}"
@@ -1053,7 +1113,6 @@ class PPLThreadEndpoints:
 
             spatial_bounds = self._calculate_spatial_bounds(group_faces)
             temporal_span = self._calculate_temporal_span(group_faces)
-            movement_tracking = self._generate_movement_tracking(group_faces)
 
             # Quality metrics
             quality_scores = [
@@ -1095,6 +1154,12 @@ class PPLThreadEndpoints:
             )
 
             person_groups.append(person_group)
+
+        if dropped:
+            logger.info(
+                "Orchestrator route contamination filter dropped %d person groups",
+                dropped,
+            )
 
         return person_groups
 

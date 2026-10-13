@@ -684,6 +684,91 @@ class TestPhase2Integration(unittest.TestCase):
         asyncio.run(run_test())
 
 
+class TestTemporalMaxGap(unittest.TestCase):
+    """Temporal max-gap gate: do not glue scattered hits across large frame gaps."""
+
+    def setUp(self):
+        self.engine = VisionFaceGroupingEngine()
+        self.engine.sample_frame_step = 10
+        # Disable embedding gate so only temporal + position matter.
+        self.engine.embedding_gate_enabled = False
+
+    def test_scattered_same_position_creates_separate_tracks(self):
+        """FP at frame 10 and frame 500 at the same position must not merge."""
+        faces = [
+            {
+                "id": "fp_early",
+                "frame_number": 10,
+                "position_x": 200.0,
+                "position_y": 200.0,
+                "bbox_x1": 180,
+                "bbox_y1": 180,
+                "bbox_x2": 220,
+                "bbox_y2": 220,
+                "detection_confidence": 0.9,
+            },
+            {
+                "id": "fp_late",
+                "frame_number": 500,
+                "position_x": 200.0,
+                "position_y": 200.0,
+                "bbox_x1": 180,
+                "bbox_y1": 180,
+                "bbox_x2": 220,
+                "bbox_y2": 220,
+                "detection_confidence": 0.9,
+            },
+        ]
+
+        async def run_test():
+            result = await self.engine.apply_percentage_based_tracking(faces, 20.0)
+            self.assertEqual(len(result["person_objects"]), 2)
+            self.assertGreater(result["statistics"]["temporal_gap_rejected"], 0)
+
+        asyncio.run(run_test())
+
+    def test_nearby_frames_still_link(self):
+        """Detections within 2 sample steps at the same place still form one track."""
+        faces = [
+            {
+                "id": "a",
+                "frame_number": 0,
+                "position_x": 200.0,
+                "position_y": 200.0,
+                "bbox_x1": 180,
+                "bbox_y1": 180,
+                "bbox_x2": 220,
+                "bbox_y2": 220,
+            },
+            {
+                "id": "b",
+                "frame_number": 10,
+                "position_x": 202.0,
+                "position_y": 201.0,
+                "bbox_x1": 182,
+                "bbox_y1": 181,
+                "bbox_x2": 222,
+                "bbox_y2": 221,
+            },
+            {
+                "id": "c",
+                "frame_number": 20,
+                "position_x": 204.0,
+                "position_y": 202.0,
+                "bbox_x1": 184,
+                "bbox_y1": 182,
+                "bbox_x2": 224,
+                "bbox_y2": 222,
+            },
+        ]
+
+        async def run_test():
+            result = await self.engine.apply_percentage_based_tracking(faces, 20.0)
+            self.assertEqual(len(result["person_objects"]), 1)
+
+        asyncio.run(run_test())
+
+
 def run_phase2_tests():
     """
     Run all Phase 2 tests and return comprehensive results.
@@ -702,6 +787,7 @@ def run_phase2_tests():
         TestVisionFaceGroupingEngine,
         TestPersonQualityAnalyzer,
         TestPhase2Integration,
+        TestTemporalMaxGap,
     ]
 
     for test_class in test_classes:
