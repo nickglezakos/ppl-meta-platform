@@ -15,6 +15,24 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+## [2.25.99] — 2026-10-13
+
+### Fixed
+
+- Individual groups: membership numbers (`Group Member 01`, `02`, …) stay stable across add/remove; deleted numbers are reserved for the same MVR uuid only.
+- Individual groups (private): link-to-people and remove are allowed only when the caller can access that member’s source media (same ACL as the face thumbnail).
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.98 → 2.25.99**.
+- Schema pack includes `023_stable_group_member_numbers.sql` (`member_number` + reservations).
+
+### Notes
+
+- Affects `ppl-meta-vmeta`, `ppl-meta-gateway`, `ppl-meta-presence`, `ppl-meta-frontend`. Rebuild those four; Mode D retag-forward the other eight from `2.25.98`.
+- Also clears any remaining lab docker-cp overlays for the signup form→JSON path (source already on `main` since 2.25.95).
+- GHCR images for **2.25.99** (Mode D): rebuild vmeta + gateway + presence + frontend; retag-forward the other eight from `2.25.98`. Stage 3 on `lab-work-dual-64g` after publish.
+
 ## [2.25.98] — 2026-10-13
 
 ### Added

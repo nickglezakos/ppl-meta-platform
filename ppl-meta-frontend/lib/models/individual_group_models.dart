@@ -77,6 +77,12 @@ class IndividualSummary {
   final int groupCount;
   @JsonKey(name: 'confidence_score')
   final double confidenceScore;
+  @JsonKey(name: 'added_by')
+  final String? addedBy;
+  /// Private groups: false when the caller cannot access this member's face
+  /// media (same ACL as the thumbnail). Hide link/delete when false.
+  @JsonKey(name: 'can_manage_member')
+  final bool? canManageMember;
   
   // Individual naming (v2.21.0)
   final String? name;
@@ -94,10 +100,14 @@ class IndividualSummary {
     this.lastSeen,
     required this.groupCount,
     required this.confidenceScore,
+    this.addedBy,
+    this.canManageMember,
     this.name,
     this.nameUpdatedAt,
     this.nameUpdatedBy,
   });
+
+  bool get canManage => canManageMember ?? true;
 
   factory IndividualSummary.fromJson(Map<String, dynamic> json) =>
       _$IndividualSummaryFromJson(json);

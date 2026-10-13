@@ -11,6 +11,8 @@ class PeopleProfilePicker extends StatefulWidget {
   final String individualId;
   final PresenceApiClient apiClient;
   final VoidCallback? onChanged;
+  /// When false, show current profile state but block Link/Change.
+  final bool enabled;
 
   const PeopleProfilePicker({
     super.key,
@@ -18,6 +20,7 @@ class PeopleProfilePicker extends StatefulWidget {
     required this.individualId,
     required this.apiClient,
     this.onChanged,
+    this.enabled = true,
   });
 
   @override
@@ -91,11 +94,20 @@ class _PeopleProfilePickerState extends State<PeopleProfilePicker> {
             Text(label, style: TextStyle(color: color, fontSize: 13)),
           ],
         ),
-        OutlinedButton.icon(
-          icon: const Icon(Icons.link, size: 16),
-          label: Text(profile != null ? 'Change' : 'Link / Create'),
-          onPressed: _pick,
-        ),
+        if (widget.enabled)
+          OutlinedButton.icon(
+            icon: const Icon(Icons.link, size: 16),
+            label: Text(profile != null ? 'Change' : 'Link / Create'),
+            onPressed: _pick,
+          )
+        else
+          Text(
+            'Linking unavailable (private member)',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
+          ),
         if (_error != null)
           Text(_error!, style: const TextStyle(color: Colors.orangeAccent, fontSize: 12)),
       ],

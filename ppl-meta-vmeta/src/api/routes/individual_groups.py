@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from api.dependencies import get_groups_manager
+from api.dependencies import get_current_user, get_groups_manager, get_optional_user
 from models.individual_group import (
     AddGroupMembersRequest,
     AddMembersResponse,
@@ -44,10 +44,24 @@ router = APIRouter(prefix="/individual-groups", tags=["individual-groups"])
 # Group Management Endpoints
 # ================================================================
 
+def _user_identity(user: Optional[dict]) -> str:
+    if not user:
+        return "default_user"
+    return str(
+        user.get("user_uuid")
+        or user.get("user_id")
+        or user.get("email")
+        or user.get("sub")
+        or "default_user"
+    )
+
+
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=IndividualGroupResponse)
 async def create_group(
     request: CreateIndividualGroupRequest,
+    http_request: Request,
     manager: IndividualGroupsManager = Depends(get_groups_manager),
+    current_user: dict = Depends(get_current_user),
 ) -> IndividualGroupResponse:
     """
     Create a new individual group.
@@ -63,7 +77,7 @@ async def create_group(
         group = await manager.create_group(
             name=request.name,
             description=request.description,
-            created_by="default_user",  # TODO: Get from auth context
+            created_by=_user_identity(current_user),
             visibility=request.visibility,
             tags=request.tags,
             initial_member_ids=request.initial_member_ids,
@@ -71,7 +85,11 @@ async def create_group(
         
         # Get member preview
         members_preview, _ = await manager.get_group_members(
-            group.id, skip=0, limit=5
+            group.id,
+            skip=0,
+            limit=5,
+            acting_user=current_user,
+            auth_header=http_request.headers.get("Authorization"),
         )
         
         return IndividualGroupResponse(
@@ -254,10 +272,12 @@ async def delete_group(
 @router.get("/{group_id}/members", response_model=ListMembersResponse)
 async def get_group_members(
     group_id: str,
+    http_request: Request,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     sort: str = Query("added_date", regex="^(added_date|appearances|last_seen)$"),
     manager: IndividualGroupsManager = Depends(get_groups_manager),
+    current_user: Optional[dict] = Depends(get_optional_user),
 ) -> ListMembersResponse:
     """
     Get members of a group.
@@ -274,7 +294,12 @@ async def get_group_members(
     """
     try:
         members, total = await manager.get_group_members(
-            group_id, skip=skip, limit=limit, sort=sort
+            group_id,
+            skip=skip,
+            limit=limit,
+            sort=sort,
+            acting_user=current_user,
+            auth_header=http_request.headers.get("Authorization"),
         )
         
         return ListMembersResponse(
@@ -291,11 +316,34 @@ async def get_group_members(
         )
 
 
+@router.get("/{group_id}/members/{individual_id}/permissions")
+async def get_member_permissions(
+    group_id: str,
+    individual_id: str,
+    http_request: Request,
+    manager: IndividualGroupsManager = Depends(get_groups_manager),
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Return whether the caller may link/remove this private-group member."""
+    allowed = await manager.user_can_manage_member(
+        group_id,
+        individual_id,
+        acting_user=current_user,
+        auth_header=http_request.headers.get("Authorization"),
+    )
+    return {
+        "group_id": group_id,
+        "individual_id": individual_id,
+        "can_manage_member": allowed,
+    }
+
+
 @router.post("/{group_id}/members", response_model=AddMembersResponse)
 async def add_members(
     group_id: str,
     request: AddGroupMembersRequest,
     manager: IndividualGroupsManager = Depends(get_groups_manager),
+    current_user: dict = Depends(get_current_user),
 ) -> AddMembersResponse:
     """
     Add members to a group.
@@ -312,7 +360,7 @@ async def add_members(
         response = await manager.add_members(
             group_id=group_id,
             individual_ids=request.individual_ids,
-            added_by="default_user",  # TODO: Get from auth context
+            added_by=_user_identity(current_user),
             notes=request.notes,
         )
         
@@ -334,7 +382,9 @@ async def add_members(
 async def remove_members(
     group_id: str,
     request: RemoveGroupMembersRequest,
+    http_request: Request,
     manager: IndividualGroupsManager = Depends(get_groups_manager),
+    current_user: dict = Depends(get_current_user),
 ) -> RemoveMembersResponse:
     """
     Remove members from a group.
@@ -351,9 +401,16 @@ async def remove_members(
         response = await manager.remove_members(
             group_id=group_id,
             individual_ids=request.individual_ids,
+            acting_user=current_user,
+            auth_header=http_request.headers.get("Authorization"),
         )
         
         return response
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        )
     except Exception as e:
         logger.error(f"Error removing members from group {group_id}: {e}")
         raise HTTPException(
@@ -400,6 +457,7 @@ async def get_individual_groups(
 async def bulk_add_members(
     request: BulkAddMembersRequest,
     manager: IndividualGroupsManager = Depends(get_groups_manager),
+    current_user: dict = Depends(get_current_user),
 ) -> BulkAddMembersResponse:
     """
     Bulk add individuals to a group.
@@ -415,7 +473,7 @@ async def bulk_add_members(
         response = await manager.add_members(
             group_id=request.group_id,
             individual_ids=request.individual_ids,
-            added_by="default_user",  # TODO: Get from auth context
+            added_by=_user_identity(current_user),
         )
         
         return BulkAddMembersResponse(
@@ -435,6 +493,7 @@ async def bulk_add_members(
 async def bulk_assign_groups(
     request: BulkAssignGroupsRequest,
     manager: IndividualGroupsManager = Depends(get_groups_manager),
+    current_user: dict = Depends(get_current_user),
 ) -> BulkAssignGroupsResponse:
     """
     Bulk assign individuals to multiple groups.
@@ -453,7 +512,7 @@ async def bulk_assign_groups(
             response = await manager.add_members(
                 group_id=group_id,
                 individual_ids=request.individual_ids,
-                added_by="default_user",  # TODO: Get from auth context
+                added_by=_user_identity(current_user),
             )
             total_assignments += response.added_count
         

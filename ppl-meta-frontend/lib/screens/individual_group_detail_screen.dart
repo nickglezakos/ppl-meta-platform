@@ -191,6 +191,23 @@ class _IndividualGroupDetailScreenState
   }
 
   void _toggleSelection(String individualId) {
+    IndividualSummary? member;
+    for (final m in _members) {
+      if (m.id == individualId) {
+        member = m;
+        break;
+      }
+    }
+    if (member != null && !member.canManage) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Cannot select this member — private media you do not own',
+          ),
+        ),
+      );
+      return;
+    }
     setState(() {
       if (_selectedMembers.contains(individualId)) {
         _selectedMembers.remove(individualId);
@@ -223,6 +240,7 @@ class _IndividualGroupDetailScreenState
                 groupId: widget.groupId,
                 individualId: member.mvrPersonUuid!,
                 apiClient: PresenceApiClient(ref.read(apiClientProvider)),
+                enabled: member.canManage,
                 onChanged: () {
                   _loadGroupData();
                 },
@@ -295,14 +313,15 @@ class _IndividualGroupDetailScreenState
             },
             child: const Text('Analyse'),
           ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _removeSingleMember(member);
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Remove'),
-          ),
+          if (member.canManage)
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await _removeSingleMember(member);
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Remove'),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
@@ -903,53 +922,55 @@ class _IndividualGroupDetailScreenState
                       children: [
                         _buildMemberThumbnail(member.id),
 
-                        // People-profile link — same row/height as the top-right
-                        // selection control (top: 4), larger hit target.
-                        Positioned(
-                          top: 4,
-                          left: 4,
-                          child: Tooltip(
-                            message: 'Member details / People profile',
-                            child: Material(
-                              color: Colors.black.withOpacity(0.65),
-                              shape: const CircleBorder(),
-                              child: InkWell(
-                                customBorder: const CircleBorder(),
-                                onTap: () => _showMemberDetail(member),
-                                child: const Padding(
-                                  padding: EdgeInsets.all(6),
-                                  child: Icon(
-                                    Icons.link,
-                                    color: Colors.white,
-                                    size: 28,
+                        // People-profile link — only when caller can manage
+                        // this private-group member (same ACL as thumbnail).
+                        if (member.canManage)
+                          Positioned(
+                            top: 4,
+                            left: 4,
+                            child: Tooltip(
+                              message: 'Member details / People profile',
+                              child: Material(
+                                color: Colors.black.withOpacity(0.65),
+                                shape: const CircleBorder(),
+                                child: InkWell(
+                                  customBorder: const CircleBorder(),
+                                  onTap: () => _showMemberDetail(member),
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(6),
+                                    child: Icon(
+                                      Icons.link,
+                                      color: Colors.white,
+                                      size: 28,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
                         
-                        // Selection checkbox (always visible in top-right corner)
-                        Positioned(
-                          top: 4,
-                          right: 4,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.65),
-                              shape: BoxShape.circle,
-                            ),
-                            padding: const EdgeInsets.all(2),
-                            child: Icon(
-                              isSelected
-                                  ? Icons.check_circle
-                                  : Icons.circle_outlined,
-                              color: isSelected
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Colors.white,
-                              size: 28,
+                        // Selection checkbox — only for manageable members
+                        if (member.canManage)
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.65),
+                                shape: BoxShape.circle,
+                              ),
+                              padding: const EdgeInsets.all(2),
+                              child: Icon(
+                                isSelected
+                                    ? Icons.check_circle
+                                    : Icons.circle_outlined,
+                                color: isSelected
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Colors.white,
+                                size: 28,
+                              ),
                             ),
                           ),
-                        ),
                         
                         // Selection overlay
                         if (isSelected)

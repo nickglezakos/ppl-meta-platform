@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+import httpx
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from presence_auth import get_current_user, require_admin_user
 from config import config
@@ -522,8 +524,52 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     async def link_member(
         ppp_uuid: str,
         request: LinkMemberRequest,
+        http_request: Request,
         current_user: dict = Depends(get_current_user),
     ):
+        # Private individual-group members: only the owner (same ACL as the
+        # face thumbnail) may link a people profile.
+        gateway = (
+            os.getenv("GATEWAY_SERVICE_URL")
+            or os.getenv("PPL_GATEWAY_URL")
+            or "http://ppl-meta-gateway:8080"
+        ).rstrip("/")
+        auth_header = http_request.headers.get("Authorization")
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                perm_resp = await client.get(
+                    f"{gateway}/api/v1/individual-groups/"
+                    f"{request.group_id}/members/{request.individual_id}/permissions",
+                    headers={"Authorization": auth_header} if auth_header else {},
+                )
+            if perm_resp.status_code == 200:
+                payload = perm_resp.json() if perm_resp.content else {}
+                if payload.get("can_manage_member") is False:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=(
+                            "Cannot link a private group member whose media "
+                            "you do not own"
+                        ),
+                    )
+            elif perm_resp.status_code == 403:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Cannot link a private group member whose media "
+                        "you do not own"
+                    ),
+                )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "Member manage permission check failed group=%s member=%s: %s",
+                request.group_id,
+                request.individual_id,
+                exc,
+            )
+
         profile = service.link_member(
             ppp_uuid=ppp_uuid,
             group_id=request.group_id,
@@ -535,7 +581,53 @@ def build_presence_router(service: PresenceService) -> APIRouter:
         return {"success": True, "data": profile.model_dump(mode="json")}
 
     @router.post("/people-profiles/{ppp_uuid}/unlink")
-    async def unlink_member(ppp_uuid: str, request: UnlinkMemberRequest):
+    async def unlink_member(
+        ppp_uuid: str,
+        request: UnlinkMemberRequest,
+        http_request: Request,
+        current_user: dict = Depends(get_current_user),
+    ):
+        gateway = (
+            os.getenv("GATEWAY_SERVICE_URL")
+            or os.getenv("PPL_GATEWAY_URL")
+            or "http://ppl-meta-gateway:8080"
+        ).rstrip("/")
+        auth_header = http_request.headers.get("Authorization")
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                perm_resp = await client.get(
+                    f"{gateway}/api/v1/individual-groups/"
+                    f"{request.group_id}/members/{request.individual_id}/permissions",
+                    headers={"Authorization": auth_header} if auth_header else {},
+                )
+            if perm_resp.status_code == 200:
+                payload = perm_resp.json() if perm_resp.content else {}
+                if payload.get("can_manage_member") is False:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=(
+                            "Cannot unlink a private group member whose media "
+                            "you do not own"
+                        ),
+                    )
+            elif perm_resp.status_code == 403:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Cannot unlink a private group member whose media "
+                        "you do not own"
+                    ),
+                )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "Member manage permission check failed on unlink group=%s member=%s: %s",
+                request.group_id,
+                request.individual_id,
+                exc,
+            )
+
         changed = service.unlink_member(ppp_uuid, request.group_id, request.individual_id)
         if not changed:
             raise HTTPException(status_code=404, detail="link not found")

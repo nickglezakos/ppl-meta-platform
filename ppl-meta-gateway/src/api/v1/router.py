@@ -1243,6 +1243,12 @@ async def register_signage_device(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.get("/signage/devices/{device_uuid}/status")
+async def get_signage_device_playback_status(request: Request):
+    """Proxy live playback status from Media → signage player."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.get("/signage/devices/{device_uuid}")
 async def get_signage_device(request: Request):
     """Proxy get signage device details to Media service."""
@@ -2969,6 +2975,12 @@ async def delete_individual_group(request: Request):
 @api_router.get("/individual-groups/{group_id}/members")
 async def get_group_members(request: Request):
     """Proxy get group members to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/individual-groups/{group_id}/members/{individual_id}/permissions")
+async def get_group_member_permissions(request: Request):
+    """Proxy private-group member manage permissions to vmeta service."""
     return await _proxy_to_vmeta_service(request)
 
 

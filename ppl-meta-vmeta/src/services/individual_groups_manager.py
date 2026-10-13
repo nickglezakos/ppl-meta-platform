@@ -3,6 +3,7 @@ Individual Groups Manager Service
 Manages CRUD operations for individual groups and their members.
 """
 
+import asyncio
 import json
 import logging
 import httpx
@@ -10,7 +11,7 @@ import os
 import numpy as np
 from uuid import UUID
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from models.individual_group import (
     AddGroupMembersRequest,
@@ -118,6 +119,269 @@ class IndividualGroupsManager:
             return str(person_object_row["mvr_people_uuid"])
 
         return None
+
+    async def _allocate_member_number(
+        self, conn, group_id: str, individual_id: str
+    ) -> tuple[int, bool]:
+        """
+        Allocate a stable membership number for (group_id, individual_id).
+
+        Reclaims a previously reserved number for the same MVR uuid when present.
+        Otherwise assigns max(active + reserved) + 1 so gaps are never filled by
+        a different individual.
+
+        Returns (member_number, from_reservation). Caller must delete the
+        reservation only after the membership insert succeeds.
+        """
+        reserved = await conn.fetchval(
+            """
+            SELECT member_number
+            FROM group_member_number_reservations
+            WHERE group_id = $1 AND individual_id = $2
+            """,
+            group_id,
+            individual_id,
+        )
+        if reserved is not None:
+            return int(reserved), True
+
+        next_number = await conn.fetchval(
+            """
+            SELECT COALESCE(MAX(n), 0) + 1
+            FROM (
+                SELECT member_number AS n
+                FROM group_memberships
+                WHERE group_id = $1
+                UNION ALL
+                SELECT member_number AS n
+                FROM group_member_number_reservations
+                WHERE group_id = $1
+            ) numbers
+            """,
+            group_id,
+        )
+        return int(next_number), False
+
+    async def _reserve_member_numbers(
+        self, conn, group_id: str, individual_ids: List[str]
+    ) -> None:
+        """
+        Persist freed membership numbers so only the same MVR uuid can reclaim them.
+        """
+        if not individual_ids:
+            return
+        await conn.execute(
+            """
+            INSERT INTO group_member_number_reservations (
+                group_id, individual_id, member_number, reserved_at
+            )
+            SELECT group_id, individual_id, member_number, NOW()
+            FROM group_memberships
+            WHERE group_id = $1 AND individual_id = ANY($2::text[])
+            ON CONFLICT (group_id, individual_id) DO UPDATE
+            SET member_number = EXCLUDED.member_number,
+                reserved_at = NOW()
+            """,
+            group_id,
+            individual_ids,
+        )
+
+    @staticmethod
+    def _acting_user_identity(user: Optional[Dict[str, Any]]) -> Optional[str]:
+        if not user:
+            return None
+        for key in ("user_uuid", "user_id", "email", "sub"):
+            value = user.get(key)
+            if value:
+                return str(value)
+        return None
+
+    async def _resolve_member_source_media_id(
+        self, conn, individual_id: str
+    ) -> Optional[str]:
+        """Best-effort source media UUID for a group member (MVR root or mapped)."""
+        try:
+            individual_uuid = UUID(individual_id)
+        except ValueError:
+            return None
+
+        row = await conn.fetchrow(
+            """
+            SELECT COALESCE(m.source_media_uuid, m.featured_video_uuid)::text AS media_id
+            FROM mvr_people m
+            WHERE m.mvr_people_uuid = $1
+            LIMIT 1
+            """,
+            individual_uuid,
+        )
+        if row and row.get("media_id"):
+            return str(row["media_id"])
+
+        mapped = await conn.fetchrow(
+            """
+            SELECT COALESCE(m.source_media_uuid, m.featured_video_uuid)::text AS media_id
+            FROM individual_mvr_mapping imm
+            JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
+            WHERE imm.individual_uuid = $1
+            ORDER BY imm.is_representative DESC, imm.linked_at DESC
+            LIMIT 1
+            """,
+            individual_uuid,
+        )
+        if mapped and mapped.get("media_id"):
+            return str(mapped["media_id"])
+        return None
+
+    async def _user_can_access_media(
+        self, media_id: str, auth_header: Optional[str]
+    ) -> bool:
+        """Mirror media ACL used for face thumbnails (owner or public)."""
+        if not media_id or not auth_header:
+            return False
+        gateway_url = (
+            os.getenv("GATEWAY_SERVICE_URL")
+            or os.getenv("PPL_GATEWAY_URL")
+            or self.media_service_url.replace("ppl-meta-media:8000", "ppl-meta-gateway:8080")
+            or "http://ppl-meta-gateway:8080"
+        )
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.get(
+                    f"{gateway_url.rstrip('/')}/api/v1/media/{media_id}",
+                    headers={"Authorization": auth_header},
+                )
+            return response.status_code == 200
+        except Exception as exc:
+            logger.warning(
+                "Media access check failed for media_id=%s: %s", media_id, exc
+            )
+            return False
+
+    async def user_can_manage_member(
+        self,
+        group_id: str,
+        individual_id: str,
+        *,
+        acting_user: Optional[Dict[str, Any]] = None,
+        auth_header: Optional[str] = None,
+    ) -> bool:
+        """
+        Whether the acting user may link/remove this member.
+
+        Private groups: only when the user can access the member's source media
+        (same ACL that hides the face thumbnail from non-owners). Shared/public
+        groups remain manageable by authenticated callers.
+        """
+        async with self.db.pool.acquire() as conn:
+            group = await conn.fetchrow(
+                """
+                SELECT visibility, created_by
+                FROM individual_groups
+                WHERE id = $1
+                """,
+                group_id,
+            )
+            if not group:
+                return False
+
+            visibility = str(group["visibility"] or "private").lower()
+            if visibility != "private":
+                return True
+
+            membership = await conn.fetchrow(
+                """
+                SELECT added_by
+                FROM group_memberships
+                WHERE group_id = $1 AND individual_id = $2
+                """,
+                group_id,
+                individual_id,
+            )
+            if not membership:
+                return False
+
+            acting_id = self._acting_user_identity(acting_user)
+            added_by = str(membership["added_by"] or "")
+            if (
+                acting_id
+                and added_by
+                and added_by not in ("default_user", "unknown")
+                and acting_id == added_by
+            ):
+                return True
+
+            media_id = await self._resolve_member_source_media_id(conn, individual_id)
+            if not media_id:
+                return False
+            return await self._user_can_access_media(media_id, auth_header)
+
+    async def _compute_can_manage_for_members(
+        self,
+        conn,
+        group_id: str,
+        member_ids: List[str],
+        *,
+        acting_user: Optional[Dict[str, Any]] = None,
+        auth_header: Optional[str] = None,
+    ) -> Dict[str, bool]:
+        if not member_ids:
+            return {}
+
+        group = await conn.fetchrow(
+            "SELECT visibility FROM individual_groups WHERE id = $1",
+            group_id,
+        )
+        visibility = str((group or {}).get("visibility") or "private").lower()
+        if visibility != "private":
+            return {mid: True for mid in member_ids}
+
+        acting_id = self._acting_user_identity(acting_user)
+        rows = await conn.fetch(
+            """
+            SELECT individual_id, added_by
+            FROM group_memberships
+            WHERE group_id = $1 AND individual_id = ANY($2::text[])
+            """,
+            group_id,
+            member_ids,
+        )
+        added_by_map = {
+            str(row["individual_id"]): str(row["added_by"] or "") for row in rows
+        }
+
+        result: Dict[str, bool] = {}
+        to_check: List[Tuple[str, str]] = []
+        for mid in member_ids:
+            added_by = added_by_map.get(mid, "")
+            if (
+                acting_id
+                and added_by
+                and added_by not in ("default_user", "unknown")
+                and acting_id == added_by
+            ):
+                result[mid] = True
+                continue
+            media_id = await self._resolve_member_source_media_id(conn, mid)
+            if not media_id:
+                result[mid] = False
+            else:
+                to_check.append((mid, media_id))
+
+        if to_check:
+            sem = asyncio.Semaphore(8)
+
+            async def _check(mid: str, media_id: str) -> Tuple[str, bool]:
+                async with sem:
+                    ok = await self._user_can_access_media(media_id, auth_header)
+                    return mid, ok
+
+            checked = await asyncio.gather(
+                *[_check(mid, media_id) for mid, media_id in to_check]
+            )
+            for mid, ok in checked:
+                result[mid] = ok
+
+        return result
     
     # ================================================================
     # Group CRUD Operations
@@ -470,9 +734,10 @@ class IndividualGroupsManager:
         
         async with self.db.pool.acquire() as conn:
             async with conn.transaction():
-                # Get current members
+                # Lock the group row so concurrent adds cannot allocate the same
+                # next member_number.
                 current_members = await conn.fetchval(
-                    "SELECT member_ids FROM individual_groups WHERE id = $1",
+                    "SELECT member_ids FROM individual_groups WHERE id = $1 FOR UPDATE",
                     group_id
                 )
                 
@@ -585,19 +850,24 @@ class IndividualGroupsManager:
                             f"Proceeding with group membership."
                         )
                     
+                    member_number, from_reservation = await self._allocate_member_number(
+                        conn, group_id, resolved_member_uuid
+                    )
                     membership = GroupMembership(
                         group_id=group_id,
                         individual_id=resolved_member_uuid,
                         added_by=added_by,
                         notes=notes,
+                        member_number=member_number,
                     )
                     
-                    await conn.execute(
+                    inserted = await conn.fetchrow(
                         """
                         INSERT INTO group_memberships (
-                            id, group_id, individual_id, added_by, added_at, notes
-                        ) VALUES ($1, $2, $3, $4, $5, $6)
+                            id, group_id, individual_id, added_by, added_at, notes, member_number
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
                         ON CONFLICT (group_id, individual_id) DO NOTHING
+                        RETURNING id
                         """,
                         membership.id,
                         membership.group_id,
@@ -605,8 +875,23 @@ class IndividualGroupsManager:
                         membership.added_by,
                         membership.added_at,
                         membership.notes,
+                        membership.member_number,
                     )
                     
+                    if not inserted:
+                        skipped_count += 1
+                        continue
+
+                    if from_reservation:
+                        await conn.execute(
+                            """
+                            DELETE FROM group_member_number_reservations
+                            WHERE group_id = $1 AND individual_id = $2
+                            """,
+                            group_id,
+                            resolved_member_uuid,
+                        )
+
                     current_members_set.add(resolved_member_uuid)
                     added_count += 1
                 
@@ -633,7 +918,12 @@ class IndividualGroupsManager:
         )
     
     async def remove_members(
-        self, group_id: str, individual_ids: List[str]
+        self,
+        group_id: str,
+        individual_ids: List[str],
+        *,
+        acting_user: Optional[Dict[str, Any]] = None,
+        auth_header: Optional[str] = None,
     ) -> RemoveMembersResponse:
         """
         Remove members from a group.
@@ -641,14 +931,37 @@ class IndividualGroupsManager:
         Args:
             group_id: Group identifier
             individual_ids: List of individual IDs to remove
+            acting_user: Authenticated user performing the removal
+            auth_header: Forwarded Bearer token for media ACL checks
             
         Returns:
             RemoveMembersResponse with count
         """
         logger.info(f"Removing {len(individual_ids)} members from group {group_id}")
+
+        forbidden: List[str] = []
+        for individual_id in individual_ids:
+            allowed = await self.user_can_manage_member(
+                group_id,
+                individual_id,
+                acting_user=acting_user,
+                auth_header=auth_header,
+            )
+            if not allowed:
+                forbidden.append(individual_id)
+        if forbidden:
+            raise PermissionError(
+                "Cannot remove member(s) you do not own in a private group: "
+                + ", ".join(forbidden[:5])
+            )
         
         async with self.db.pool.acquire() as conn:
             async with conn.transaction():
+                # Reserve freed numbers for these MVR uuids before deleting so
+                # no other member can take the label unless re-added with the
+                # same individual_id.
+                await self._reserve_member_numbers(conn, group_id, individual_ids)
+
                 # Delete memberships
                 result = await conn.execute(
                     """
@@ -692,7 +1005,14 @@ class IndividualGroupsManager:
         )
     
     async def get_group_members(
-        self, group_id: str, skip: int = 0, limit: int = 50, sort: str = "added_date"
+        self,
+        group_id: str,
+        skip: int = 0,
+        limit: int = 50,
+        sort: str = "added_date",
+        *,
+        acting_user: Optional[Dict[str, Any]] = None,
+        auth_header: Optional[str] = None,
     ) -> tuple[List[IndividualSummary], int]:
         """
         Get members of a group.
@@ -705,6 +1025,8 @@ class IndividualGroupsManager:
             skip: Number of records to skip
             limit: Maximum number of records to return
             sort: Sort field (added_date, appearances, last_seen)
+            acting_user: Authenticated caller (used for can_manage_member)
+            auth_header: Forwarded Bearer token for private-group media ACL
             
         Returns:
             Tuple of (members list, total count)
@@ -749,6 +1071,8 @@ class IndividualGroupsManager:
                 gm.group_id,
                 gm.individual_id,
                 gm.added_at,
+                gm.added_by,
+                gm.member_number,
                 CASE 
                     WHEN gm.individual_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
                     THEN gm.individual_id::uuid
@@ -869,7 +1193,7 @@ class IndividualGroupsManager:
         # Skip members that could not be resolved to an MVR identity. These are
         # stale/corrupt shell memberships; returning them yields frontend members
         # with null mvr_person_uuid that cannot be analysed or displayed.
-        members = []
+        resolvable_rows = []
         for index, row in enumerate(rows):
             if not row.get("mvr_person_uuid"):
                 logger.warning(
@@ -888,15 +1212,33 @@ class IndividualGroupsManager:
                 row.get("name_updated_at"),
                 row.get("name_updated_by"),
             )
+            resolvable_rows.append(row)
+
+        can_manage_map: Dict[str, bool] = {}
+        if resolvable_rows:
+            async with self.db.pool.acquire() as conn:
+                can_manage_map = await self._compute_can_manage_for_members(
+                    conn,
+                    group_id,
+                    [str(r["individual_id"]) for r in resolvable_rows],
+                    acting_user=acting_user,
+                    auth_header=auth_header,
+                )
+
+        members = []
+        for row in resolvable_rows:
+            member_id = str(row["individual_id"])
             members.append(
                 IndividualSummary(
-                    id=row["individual_id"],
+                    id=member_id,
                     mvr_person_uuid=row.get("mvr_person_uuid"),
                     thumbnail_url=None,
                     total_appearances=0,
                     last_seen=None,
                     group_count=1,
-                    group_member_number=skip + len(members) + 1,
+                    group_member_number=int(row["member_number"]) if row.get("member_number") is not None else None,
+                    added_by=row.get("added_by"),
+                    can_manage_member=can_manage_map.get(member_id, False),
                     name=row.get("name"),
                     name_updated_at=row.get("name_updated_at"),
                     name_updated_by=row.get("name_updated_by"),
@@ -981,7 +1323,9 @@ class IndividualGroupsManager:
                     continue
                 
                 if existing:
-                    # Super-individual already exists, just remove the orphaned one
+                    # Super-individual already exists, just remove the orphaned one.
+                    # Reserve the orphan's number so it stays tied to that MVR uuid.
+                    await self._reserve_member_numbers(conn, group_id, [orphaned_id])
                     await conn.execute("""
                         DELETE FROM group_memberships 
                         WHERE group_id = $1 AND individual_id = $2
@@ -991,12 +1335,21 @@ class IndividualGroupsManager:
                         f"(super-individual {super_id[:8]} already exists)"
                     )
                 else:
-                    # Replace orphaned member with super-individual
+                    # Replace orphaned member with super-individual; keep the same
+                    # member_number. Drop any stale reservation for the super.
                     await conn.execute("""
                         UPDATE group_memberships 
                         SET individual_id = $1
                         WHERE group_id = $2 AND individual_id = $3
                     """, super_id, group_id, orphaned_id)
+                    await conn.execute(
+                        """
+                        DELETE FROM group_member_number_reservations
+                        WHERE group_id = $1 AND individual_id = $2
+                        """,
+                        group_id,
+                        super_id,
+                    )
                     logger.info(
                         f"Replaced orphaned member {orphaned_id[:8]} with "
                         f"super-individual {super_id[:8]} in group {group_id}"
@@ -2130,6 +2483,7 @@ class IndividualGroupsManager:
                     SELECT
                         gm.individual_id,
                         gm.added_at,
+                        gm.member_number,
                         CASE
                             WHEN gm.individual_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
                             THEN gm.individual_id::uuid
@@ -2151,7 +2505,7 @@ class IndividualGroupsManager:
                     COALESCE(m_direct.age_max, m_mapped.age_max) AS age_max,
                     COALESCE(m_direct.gender, m_mapped.gender) AS gender,
                     gm.individual_id,
-                    ROW_NUMBER() OVER (ORDER BY gm.added_at DESC, gm.individual_id DESC) AS group_member_number
+                    gm.member_number AS group_member_number
                 FROM group_members gm
                 LEFT JOIN LATERAL (
                     SELECT
@@ -2299,8 +2653,10 @@ class IndividualGroupsManager:
             
             super_individual_uuid = merge_result['winner_mvr_uuid']
             
-            # Update group membership: remove source, keep target
-            # If target was replaced by super-individual, update to super-individual
+            # Update group membership: remove source (reserving its number), keep
+            # target. If target was replaced by super-individual, update identity
+            # while preserving the target's member_number.
+            await self._reserve_member_numbers(conn, group_id, [source_mvr_uuid])
             await conn.execute(
                 """
                 DELETE FROM group_memberships
@@ -2321,6 +2677,14 @@ class IndividualGroupsManager:
                     str(super_individual_uuid),
                     group_id,
                     target_mvr_uuid
+                )
+                await conn.execute(
+                    """
+                    DELETE FROM group_member_number_reservations
+                    WHERE group_id = $1 AND individual_id = $2
+                    """,
+                    group_id,
+                    str(super_individual_uuid),
                 )
             
             # Get final merge count
@@ -2482,7 +2846,7 @@ class IndividualGroupsManager:
                     COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid)::text as mvr_people_uuid,
                     COALESCE(m_direct.face_embedding, m_mapped.face_embedding)::text as face_embedding_text,
                     COALESCE(m_direct.name, m_mapped.name) as member_name,
-                    ROW_NUMBER() OVER (PARTITION BY gm.group_id ORDER BY gm.added_at, gm.individual_id) AS member_number,
+                    gm.member_number AS member_number,
                     COALESCE(m_direct.age_min, m_mapped.age_min) as age_min,
                     COALESCE(m_direct.age_max, m_mapped.age_max) as age_max,
                     COALESCE(m_direct.gender, m_mapped.gender) as gender
@@ -2504,7 +2868,7 @@ class IndividualGroupsManager:
                 ) m_mapped ON TRUE
                 WHERE gm.group_id = ANY($1::text[])
                   AND COALESCE(m_direct.face_embedding, m_mapped.face_embedding) IS NOT NULL
-                ORDER BY gm.group_id, member_number
+                ORDER BY gm.group_id, gm.member_number
             """
 
             rows = await conn.fetch(query, group_ids)

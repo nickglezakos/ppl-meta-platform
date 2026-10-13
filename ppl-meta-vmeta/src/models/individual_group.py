@@ -123,6 +123,14 @@ class GroupMembership(BaseModel):
         default_factory=datetime.utcnow,
         description="Membership creation timestamp"
     )
+
+    # Stable per-(group, individual) display ordinal. Assigned once on insert
+    # (or reclaimed from a reservation for the same MVR uuid) and never
+    # renumbered when other members are added/removed.
+    member_number: Optional[int] = Field(
+        None,
+        description="Stable group membership number for this individual"
+    )
     
     # Optional notes
     notes: Optional[str] = Field(
@@ -179,6 +187,10 @@ class IndividualSummary(BaseModel):
     group_count: int = 0
     confidence_score: float = 0.0
     group_member_number: Optional[int] = None
+    added_by: Optional[str] = None
+    # For private groups: true only when the acting user can access this
+    # member's source media (same ACL that gates the face thumbnail).
+    can_manage_member: Optional[bool] = None
     
     # Individual naming (v2.21.0)
     name: Optional[str] = None

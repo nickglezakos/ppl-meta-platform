@@ -805,6 +805,7 @@ class _MembersGridState extends ConsumerState<_MembersGrid> {
                 groupId: widget.groupId,
                 individualId: member.mvrPersonUuid!,
                 apiClient: PresenceApiClient(ref.read(apiClientProvider)),
+                enabled: member.canManage,
                 onChanged: () {
                   _load();
                 },
@@ -897,53 +898,56 @@ class _MembersGridState extends ConsumerState<_MembersGrid> {
                     )
                   else
                     _avatarFallback(scheme),
-                  // People-profile link — same height as trash (top: 6)
-                  Positioned(
-                    top: 6,
-                    left: 6,
-                    child: Tooltip(
-                      message: 'Member details / People profile',
-                      child: Material(
-                        color: Colors.black54,
-                        shape: const CircleBorder(),
-                        child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: () => _showMemberPeopleProfile(member),
-                          child: const Padding(
-                            padding: EdgeInsets.all(6),
-                            child: Icon(
-                              Icons.link,
-                              size: 22,
-                              color: Colors.white,
+                  // People-profile link / remove — only when this user can
+                  // manage the member (private groups: same ACL as thumbnail).
+                  if (member.canManage) ...[
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: Tooltip(
+                        message: 'Member details / People profile',
+                        child: Material(
+                          color: Colors.black54,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () => _showMemberPeopleProfile(member),
+                            child: const Padding(
+                              padding: EdgeInsets.all(6),
+                              child: Icon(
+                                Icons.link,
+                                size: 22,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: Tooltip(
-                      message: 'Remove from group',
-                      child: Material(
-                        color: Colors.black54,
-                        shape: const CircleBorder(),
-                        child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: () => _removeMember(member),
-                          child: const Padding(
-                            padding: EdgeInsets.all(6),
-                            child: Icon(
-                              Icons.delete_outline,
-                              size: 22,
-                              color: Colors.white,
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Tooltip(
+                        message: 'Remove from group',
+                        child: Material(
+                          color: Colors.black54,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () => _removeMember(member),
+                            child: const Padding(
+                              padding: EdgeInsets.all(6),
+                              child: Icon(
+                                Icons.delete_outline,
+                                size: 22,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

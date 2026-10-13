@@ -77,6 +77,7 @@ add "$VMETA/019_instant_detection_storage.sql"
 add "$VMETA/020_add_identity_group_uuid.sql"
 add "$VMETA/021_add_unmerged_action_to_audit_log.sql"
 add "$VMETA/022_mvr_people_body.sql"
+add "$VMETA/023_stable_group_member_numbers.sql"
 add "$VMETA/add_individual_caching_support.sql"
 
 # --- Cameras (skip rollbacks / #comment SQL) ---
@@ -94,6 +95,7 @@ add "$CAM/increase_model_serial_number_sizes.sql"
 
 # --- Media ---
 add "$REPO_ROOT/ppl-meta-media/migrations/add_recording_timestamps.sql"
+add "$REPO_ROOT/ppl-meta-media/migrations/add_signage_rich_message_templates.sql"
 
 # --- Installer ORM clash fixes only ---
 add "$COMPAT/012_recording_sessions_cameras_compat.sql"

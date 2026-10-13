@@ -58,6 +58,8 @@ IndividualSummary _$IndividualSummaryFromJson(Map<String, dynamic> json) =>
           : DateTime.parse(json['last_seen'] as String),
       groupCount: (json['group_count'] as num).toInt(),
       confidenceScore: (json['confidence_score'] as num).toDouble(),
+      addedBy: json['added_by'] as String?,
+      canManageMember: json['can_manage_member'] as bool?,
       name: json['name'] as String?,
       nameUpdatedAt: json['name_updated_at'] == null
           ? null
@@ -75,6 +77,8 @@ Map<String, dynamic> _$IndividualSummaryToJson(IndividualSummary instance) =>
       'last_seen': instance.lastSeen?.toIso8601String(),
       'group_count': instance.groupCount,
       'confidence_score': instance.confidenceScore,
+      'added_by': instance.addedBy,
+      'can_manage_member': instance.canManageMember,
       'name': instance.name,
       'name_updated_at': instance.nameUpdatedAt?.toIso8601String(),
       'name_updated_by': instance.nameUpdatedBy,
