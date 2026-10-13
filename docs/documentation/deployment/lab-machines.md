@@ -25,14 +25,14 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 
 ## Fleet status (vs GHCR)
 
-**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.97`** (Mode D; last finalized **2026-10-13** — orchestrator `09279411…`, vision `fa842c74…`).  
+**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.98`** (Mode D; last finalized **2026-10-13** — media `03da47c3…`, frontend `e5cfadcc…`).  
 **Rule:** After every **Stage 3** on a named lab, update this table (pin, match state, date, short notes). Do not treat a matching *tag* as current — compare **running container Image ID** (and ideally `main.dart.js` sha256) to the manifest. Tag RepoDigests alone can lie if the container was not recreated.
 
 | Lab ID | Pin | Match GHCR? | Last Stage 3 | Notes |
 |---|---|---|---|---|
 | `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. |
 | `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Prior digests had Gateway URL but not these follow-ups. |
-| `lab-work-dual-64g` | `2.25.97` | **Yes** (orchestrator `09279411…`, vision `fa842c74…`) | 2026-10-13 | Ubuntu `eyenet-demo` @ `192.168.9.13` / Tailscale `100.101.128.40`; route contamination filter on bulk person-objects. |
+| `lab-work-dual-64g` | `2.25.98` | **Yes** (media `03da47c3…`, frontend `e5cfadcc…`) | 2026-10-13 | Ubuntu `eyenet-demo` @ `192.168.9.13` / Tailscale `100.101.128.40`; digital signage optional second playlist. |
 | `lab-work-eyenet2` | `2.25.93` | **Yes** (fresh Ubuntu Stage 3) | 2026-09-29 | Hostname `eyenet2` @ `192.168.9.8` / Tailscale `100.116.59.7`; empty UUID/key → `/bootstrap`. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
