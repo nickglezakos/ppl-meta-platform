@@ -30,6 +30,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 - Affects bulk / recording person-objects path (`ppl-meta-vision`, `ppl-meta-orchestrator`). Instant detection keeps temporal gap but does not hard-drop short cycles.
 - GHCR images published for **2.25.97** (Mode D on `lab-work-dual-64g` / `eyenet-demo`): rebuilt orchestrator `09279411…`, vision-protected `fa842c74…`; retagged the other ten from `2.25.96`. Manifest finalized 2026-10-13.
+- Stage 3 on `lab-work-dual-64g` (`eyenet-demo` @ `192.168.9.13` / `100.101.128.40`): compose pull/recreate to `:2.25.97`; digests match manifest (2026-10-13).
 
 ## [2.25.96] — 2026-10-12
 
