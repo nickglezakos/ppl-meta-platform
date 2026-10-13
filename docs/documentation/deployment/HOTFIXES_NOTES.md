@@ -17,34 +17,26 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-### 2026-10-13 — Individual group MVR membership numbers + private member manage ACL
-- **Status:** Pending (Stage 1 in progress for pin **2.25.99**; Stage 2–3 next)
-- **Lab:** `lab-work-dual-64g` / `eyenet-demo` @ Tailscale `100.101.128.40` (LAN `192.168.9.13`)
-- **VERSION / pin:** **2.25.99** (rebuild vmeta, gateway, presence, frontend)
-- **Files (source):**
-  - `ppl-meta-vmeta/migrations/023_stable_group_member_numbers.sql` — persist `member_number` on `group_memberships` + `group_member_number_reservations`
-  - `ppl-meta-vmeta/src/services/individual_groups_manager.py` — stable numbers; `can_manage_member` via media ACL for private groups
-  - `ppl-meta-vmeta/src/api/routes/individual_groups.py` — real JWT `added_by` / `created_by`; gate remove; permissions endpoint
-  - `ppl-meta-vmeta/src/models/individual_group.py` — `member_number`, `added_by`, `can_manage_member`
-  - `ppl-meta-gateway/src/api/v1/router.py` — proxy member permissions
-  - `ppl-meta-presence/src/api/presence_routes.py` — refuse PPP link/unlink when `can_manage_member` is false
-  - `ppl-meta-frontend/lib/screens/individual_groups_screen.dart` / `individual_group_detail_screen.dart` / `people_profile_picker.dart` / models — hide link/delete when not manageable
-  - `deployment/mac-lima/sync-schema-pack.sh` — pack includes `033_023_stable_group_member_numbers.sql`
-- **Symptom (numbers):** With members 01 and 02, adding a new MVR made the newest **Group Member 01**; deletes also shifted labels.
-- **Symptom (ACL):** In a private group, user A sees own member faces but not user B’s face (correct media ACL), yet could still **link people** / **delete** B’s member (incorrect).
-- **Summary:** Persist membership ordinals; for private groups, link/delete only when the caller can access that member’s source media (same rule as the thumbnail).
-- **Release next:** Stage 2 Mode D (`artifacts/lab-stage2-3-ig-acl-2.25.99.sh`) → Stage 3 → move to Completed
-
-### 2026-10-07 — Users register form-urlencoded → JSON (signup 500)
-- **Status:** Pending (source on `main` since **2.25.95**; lab may still have docker-cp overlay until Stage 3 of **2.25.99** recreates gateway/node/frontend)
-- **Lab:** `lab-work-dual-64g` / `eyenet-demo` @ Tailscale `100.101.128.40` (LAN `192.168.9.13`)
-- **Applied (debug):** 2026-10-07 via `artifacts/lab-hotfix-users-register-form-json.sh`
-- **Files (source):** already in `main` — gateway form→JSON, node `_json_safe`, frontend JSON register
-- **Release next:** Stage 3 of **2.25.99** clears overlays; then move to Completed
+_(none)_
 
 ---
 
 ## Completed
+
+### 2026-10-13 — Individual group MVR membership numbers + private member manage ACL
+- **Status:** Completed
+- **VERSION / pin:** `2.25.99` (source Stage 1 `a3a808dc`, manifest `f08aba91`)
+- **Stage 1:** `a3a808dc` (feature) + `f08aba91` (release-manifest)
+- **Stage 2:** Mode D on `lab-work-dual-64g` — rebuilt vmeta-protected `5ebe506f8f0c…`, gateway `55ff36d242f9…`, presence `6250b5480e76…`, frontend `b68e70251e39…`; retagged the other eight from `2.25.98`
+- **Stage 3:** `lab-work-dual-64g` (`eyenet-demo` @ `192.168.9.13` / `100.101.128.40`) — 2026-10-13; compose pull/recreate to `:2.25.99`; schema `033_023_stable_group_member_numbers.sql` applied (`member_number` + reservations)
+- **Summary:** Stable membership ordinals; private-group link/delete gated on media ACL (same as face thumbnail). Replaces lab docker-cp hotfix path.
+
+### 2026-10-07 — Users register form-urlencoded → JSON (signup 500)
+- **Status:** Completed (source since 2.25.95; lab overlays cleared by Stage 3 of **2.25.99**)
+- **VERSION / pin:** `2.25.99` (gateway/frontend recreate; node already carried `_json_safe` via retag)
+- **Stage 1:** originally `054e0932` (2.25.95)
+- **Stage 3:** `lab-work-dual-64g` @ `192.168.9.13` — 2026-10-13 with pin 2.25.99
+- **Summary:** Gateway form→JSON for signup; node validation errors stay serializable; frontend registers with JSON.
 
 ### 2026-10-01 — Signage rich media message overlay
 - **Status:** Completed
