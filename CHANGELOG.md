@@ -28,7 +28,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Notes
 
 - Affects `ppl-meta-media` (delayed second `START`) and `ppl-meta-frontend` (action form). Existing actions without a second playlist keep prior permanent first-playlist behavior.
-- GHCR images for **2.25.98** (Mode D): rebuild media + frontend; retag-forward the other ten from `2.25.97`. Stage 3 on `lab-work-dual-64g` after publish.
+- GHCR images published for **2.25.98** (Mode D on `lab-work-dual-64g` / `eyenet-demo`): rebuilt media `03da47c3b9b0…`, frontend `e5cfadcca42e…`; retagged the other ten from `2.25.97`. Manifest finalized 2026-10-13.
 
 
 ## [2.25.97] — 2026-10-13
