@@ -15,6 +15,22 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+## [2.25.98] — 2026-10-13
+
+### Added
+
+- Digital Signage automation action: optional **second playlist** and **duration (seconds)**. Plays the first playlist for the duration (default **10s** if duration omitted), then switches to the second playlist.
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.97 → 2.25.98**.
+
+### Notes
+
+- Affects `ppl-meta-media` (delayed second `START`) and `ppl-meta-frontend` (action form). Existing actions without a second playlist keep prior permanent first-playlist behavior.
+- GHCR images for **2.25.98** (Mode D): rebuild media + frontend; retag-forward the other ten from `2.25.97`. Stage 3 on `lab-work-dual-64g` after publish.
+
+
 ## [2.25.97] — 2026-10-13
 
 ### Added

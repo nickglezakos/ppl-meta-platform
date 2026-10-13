@@ -1207,15 +1207,30 @@ class InstantDetectionSubscriber:
             
             device_ids = config.get("device_ids", [])
             playlist_id = config.get("playlist_id")
+            second_playlist_id = config.get("second_playlist_id")
+            second_playlist_duration_seconds = config.get(
+                "second_playlist_duration_seconds"
+            )
             transition_mode = config.get("transition_mode", "immediate")
             
             logger.info(f"     Target Playlist UUID: {playlist_id}")
+            logger.info(f"     Second Playlist UUID: {second_playlist_id}")
             logger.info(f"     Transition Mode: {transition_mode}")
             logger.info(f"     Target Device IDs: {device_ids}")
             
             if not device_ids or not playlist_id:
                 logger.error(f"     ❌ Missing device_ids or playlist_id in action config")
                 return
+
+            from src.services.signage_delayed_switch import (
+                cancel_pending_second_playlist_switches,
+                schedule_second_playlist_switch,
+            )
+
+            # New digital_signage action replaces any pending delayed switch
+            cancel_pending_second_playlist_switches(
+                [str(d) for d in device_ids]
+            )
             
             playback_service = SignagePlaybackService(db)
             
@@ -1271,6 +1286,8 @@ class InstantDetectionSubscriber:
                         "signage": {
                             "device_id": str(device_uuid),
                             "playlist_id": playlist_id,
+                            "second_playlist_id": second_playlist_id,
+                            "second_playlist_duration_seconds": second_playlist_duration_seconds,
                             "transition_mode": transition_mode,
                             "command": "start",
                             "success": command_success,
@@ -1294,6 +1311,12 @@ class InstantDetectionSubscriber:
                     logger.error(f"Invalid device UUID {device_uuid_str}: {e}")
                 except Exception as e:
                     logger.error(f"Error switching playlist for device {device_uuid_str}: {e}")
+
+            schedule_second_playlist_switch(
+                device_ids=[str(d) for d in device_ids],
+                second_playlist_id=second_playlist_id,
+                duration_seconds=second_playlist_duration_seconds,
+            )
         
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse action_config: {e}")

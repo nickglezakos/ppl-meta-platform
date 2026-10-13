@@ -987,6 +987,8 @@ class _UserActionDialogState extends State<_UserActionDialog> {
   List<RichMessageTemplate> _availableRichMessages = [];
   List<String> _selectedDeviceIds = [];
   String? _selectedPlaylistId;
+  String? _selectedSecondPlaylistId;
+  late TextEditingController _secondPlaylistDurationController;
   String? _selectedRichMessageId;
   int _richMessageDurationMs = 15000;
   String _transitionMode = 'immediate';
@@ -1052,6 +1054,9 @@ class _UserActionDialogState extends State<_UserActionDialog> {
     _messagingMessageController = TextEditingController();
     _messagingTitleController = TextEditingController();
     _messagingMentionController = TextEditingController();
+
+    // Initialize digital signage second-playlist duration field
+    _secondPlaylistDurationController = TextEditingController();
     
     // Parse existing config if editing
     if (widget.action?.actionConfig != null) {
@@ -1061,6 +1066,15 @@ class _UserActionDialogState extends State<_UserActionDialog> {
         if (widget.action!.actionType == 'digital_signage') {
           _selectedDeviceIds = List<String>.from(config['device_ids'] ?? []);
           _selectedPlaylistId = config['playlist_id'];
+          final secondPlaylist = config['second_playlist_id']?.toString();
+          _selectedSecondPlaylistId =
+              (secondPlaylist != null && secondPlaylist.isNotEmpty)
+                  ? secondPlaylist
+                  : null;
+          final durationValue = config['second_playlist_duration_seconds'];
+          if (durationValue != null) {
+            _secondPlaylistDurationController.text = durationValue.toString();
+          }
           _transitionMode = config['transition_mode'] ?? 'immediate';
           _fadeDuration = config['fade_duration_ms'] ?? 1000;
         } else if (widget.action!.actionType == 'signage_rich_message') {
@@ -1113,6 +1127,7 @@ class _UserActionDialogState extends State<_UserActionDialog> {
     _nameController.dispose();
     _descriptionController.dispose();
     _configController.dispose();
+    _secondPlaylistDurationController.dispose();
     _emailToController.dispose();
     _emailCcController.dispose();
     _emailSubjectController.dispose();
@@ -1191,12 +1206,24 @@ class _UserActionDialogState extends State<_UserActionDialog> {
         }
         
         // Build digital signage config JSON
-        actionConfig = jsonEncode({
+        final signageConfig = <String, dynamic>{
           'device_ids': _selectedDeviceIds,
           'playlist_id': _selectedPlaylistId,
           'transition_mode': _transitionMode,
           'fade_duration_ms': _fadeDuration,
-        });
+        };
+        if (_selectedSecondPlaylistId != null &&
+            _selectedSecondPlaylistId!.isNotEmpty) {
+          signageConfig['second_playlist_id'] = _selectedSecondPlaylistId;
+          final durationText = _secondPlaylistDurationController.text.trim();
+          if (durationText.isNotEmpty) {
+            final parsedDuration = int.tryParse(durationText);
+            if (parsedDuration != null && parsedDuration > 0) {
+              signageConfig['second_playlist_duration_seconds'] = parsedDuration;
+            }
+          }
+        }
+        actionConfig = jsonEncode(signageConfig);
       } else if (_selectedActionType == 'signage_rich_message') {
         if (_selectedDeviceIds.isEmpty) {
           throw Exception('Please select at least one device');
@@ -1473,6 +1500,51 @@ class _UserActionDialogState extends State<_UserActionDialog> {
           onChanged: (value) => setState(() => _selectedPlaylistId = value),
           validator: (value) => value == null ? 'Required' : null,
         ),
+        const SizedBox(height: 16),
+
+        // Optional second playlist (play first for duration, then switch)
+        DropdownButtonFormField<String?>(
+          value: _availablePlaylists.any((p) => p.id == _selectedSecondPlaylistId)
+              ? _selectedSecondPlaylistId
+              : null,
+          decoration: const InputDecoration(
+            labelText: 'Second Playlist (optional)',
+            hintText: 'None',
+            helperText:
+                'After the duration, switch from the first playlist to this one',
+          ),
+          items: [
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('None'),
+            ),
+            ..._availablePlaylists.map((playlist) {
+              return DropdownMenuItem<String?>(
+                value: playlist.id,
+                child: Text('${playlist.name} (${playlist.videoCount ?? 0} videos)'),
+              );
+            }),
+          ],
+          onChanged: (value) => setState(() {
+            _selectedSecondPlaylistId = value;
+            if (value == null) {
+              _secondPlaylistDurationController.clear();
+            }
+          }),
+        ),
+        if (_selectedSecondPlaylistId != null) ...[
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _secondPlaylistDurationController,
+            decoration: const InputDecoration(
+              labelText: 'Duration (seconds)',
+              hintText: '10',
+              helperText:
+                  'How long the first playlist plays before switching. Empty = 10 seconds.',
+            ),
+            keyboardType: TextInputType.number,
+          ),
+        ],
         const SizedBox(height: 16),
         
         // Transition mode

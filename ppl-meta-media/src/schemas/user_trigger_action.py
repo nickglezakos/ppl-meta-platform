@@ -18,7 +18,7 @@ class UserTriggerActionBase(BaseModel):
         None, 
         description=(
             "JSON configuration for action.\n"
-            "- digital_signage: {\"device_ids\": [...], \"playlist_id\": \"...\", \"transition_mode\": \"immediate|after_current|fade\", \"fade_duration_ms\": 2000}\n"
+            "- digital_signage: {\"device_ids\": [...], \"playlist_id\": \"...\", \"second_playlist_id\": \"...\" (optional), \"second_playlist_duration_seconds\": 10 (optional; default 10 when second_playlist_id set), \"transition_mode\": \"immediate|after_current|fade\", \"fade_duration_ms\": 2000}\n"
             "- signage_rich_message: {\"device_ids\": [...], \"template_id\": \"...\", \"duration_ms\": 15000, \"layout_override\": null}\n"
             "- email: {\"recipients\": [\"email1@example.com\", \"email2@example.com\"], \"subject\": \"Alert: {trigger_name} - {match_reason}\", \"body\": \"Trigger fired: {reason}\"}\n"
             "- webhook: {\"url\": \"https://webhook.site/...\", \"method\": \"POST\", \"payload_data\": {\"custom_field\": \"value\"}}\n"

@@ -1473,6 +1473,10 @@ async def _dispatch_trigger_actions(
             if action.action_type == "digital_signage":
                 device_ids = config.get("device_ids", [])
                 playlist_id = config.get("playlist_id")
+                second_playlist_id = config.get("second_playlist_id")
+                second_playlist_duration_seconds = config.get(
+                    "second_playlist_duration_seconds"
+                )
                 transition_mode = config.get("transition_mode", "immediate")
                 fade_duration_ms = config.get("fade_duration_ms", 1000)
 
@@ -1483,6 +1487,15 @@ async def _dispatch_trigger_actions(
                     continue
 
                 from uuid import UUID as _UUID
+                from ..services.signage_delayed_switch import (
+                    cancel_pending_second_playlist_switches,
+                    schedule_second_playlist_switch,
+                )
+
+                cancel_pending_second_playlist_switches(
+                    [str(d) for d in device_ids]
+                )
+
                 playback_service = SignagePlaybackService(db)
                 control_request = PlaybackControlRequest(
                     device_ids=[_UUID(d) for d in device_ids],
@@ -1492,6 +1505,20 @@ async def _dispatch_trigger_actions(
                 )
                 result = await playback_service.control_playback(control_request)
                 logger.info(f"  ✅ digital_signage action sent: {result}")
+                logger.info(
+                    "  digital_signage second playlist=%s duration_seconds=%s "
+                    "transition_mode=%s fade_duration_ms=%s",
+                    second_playlist_id,
+                    second_playlist_duration_seconds,
+                    transition_mode,
+                    fade_duration_ms,
+                )
+
+                schedule_second_playlist_switch(
+                    device_ids=[str(d) for d in device_ids],
+                    second_playlist_id=second_playlist_id,
+                    duration_seconds=second_playlist_duration_seconds,
+                )
 
             elif action.action_type == "signage_rich_message":
                 device_ids = config.get("device_ids", [])
