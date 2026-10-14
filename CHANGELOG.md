@@ -30,6 +30,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Notes
 
 - GHCR images published for **2.25.100** (Mode D on `lab-work-dual-64g` / `eyenet-demo`): thin vmeta-protected on 2.25.99 + SELECT fix `3afa092bc2af…`; retagged the other eleven from `2.25.99`. Manifest finalized 2026-10-14.
+- Stage 3 on `lab-work-dual-64g` (`eyenet-demo` @ `192.168.9.13` / `100.101.128.40`): compose pull/recreate to `:2.25.100`; schema pack through `034_024_renumber_group_members_oldest_first.sql`; ui/gw 200 (2026-10-14).
 - Stage 3 must apply schema pack (024) so labs that never ran the hotfix get chronological numbers.
 
 ## [2.25.99] — 2026-10-13

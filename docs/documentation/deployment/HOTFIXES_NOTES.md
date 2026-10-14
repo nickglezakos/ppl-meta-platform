@@ -17,17 +17,19 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-### 2026-10-13 — Group member numbers oldest-first + API field leak
-- **Status:** Pending → releasing as **2.25.100** (Stage 1–3 in progress)
-- **VERSION / pin:** `2.25.100`
-- **Lab hotfix (pre-release):** `lab-work-dual-64g` @ `100.101.128.40` — SQL 024 + docker-cp vmeta SELECT fix (verified UI)
-- **Source:** `024_renumber_group_members_oldest_first.sql`; `023` ASC backfill; `get_group_members` outer SELECT includes `member_number`/`added_by`
-- **Stage 2 plan:** Mode D — rebuild `vmeta` only; retag-forward eleven from `2.25.99`
-- **Verify:** Hard-refresh group members UI — oldest MVR is Member 01.
+_(none)_
 
 ---
 
 ## Completed
+
+### 2026-10-14 — Group member numbers oldest-first + API field leak
+- **Status:** Completed
+- **VERSION / pin:** `2.25.100` (source Stage 1 `3cc18a7a`, manifest `44016433`)
+- **Stage 1:** `3cc18a7a` (feature) + `44016433` (release-manifest)
+- **Stage 2:** Mode D on `lab-work-dual-64g` — thin vmeta-protected on 2.25.99 (`3afa092bc2af…`); retagged eleven from `2.25.99`
+- **Stage 3:** `lab-work-dual-64g` (`eyenet-demo` @ `100.101.128.40`) — 2026-10-14; compose to `:2.25.100`; schema `034_024_renumber_group_members_oldest_first.sql`
+- **Summary:** Oldest join = Member 01; `get_group_members` returns stored `group_member_number`.
 
 ### 2026-10-13 — Individual group MVR membership numbers + private member manage ACL
 - **Status:** Completed
