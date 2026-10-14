@@ -29,7 +29,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- Affects `ppl-meta-vmeta` only for images. Mode D: rebuild vmeta; retag-forward the other eleven from `2.25.99`.
+- GHCR images published for **2.25.100** (Mode D on `lab-work-dual-64g` / `eyenet-demo`): thin vmeta-protected on 2.25.99 + SELECT fix `3afa092bc2af…`; retagged the other eleven from `2.25.99`. Manifest finalized 2026-10-14.
 - Stage 3 must apply schema pack (024) so labs that never ran the hotfix get chronological numbers.
 
 ## [2.25.99] — 2026-10-13
