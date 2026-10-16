@@ -30,6 +30,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Notes
 
 - GHCR images published for **2.25.101** (Mode D on `lab-work-dual-64g` / `eyenet-demo`): rebuilt media `e930d882…`, vision-protected `06d7cdd3…`, cameras `e28ebabe…`, frontend `b9117a5c…`; retagged the other eight from `2.25.100`. Manifest finalized 2026-10-16.
+- Stage 3 on `lab-work-dual-64g` (`eyenet-demo` @ `192.168.9.13`): compose pull/recreate to `:2.25.101`; ui/gw/media 200 (2026-10-16).
 - Edge camera app on RPi is outside Stage 2 (manual ship); platform images above are required for Record → faces → Details/MVR.
 
 ## [2.25.100] — 2026-10-13
