@@ -1771,7 +1771,13 @@ class MediaService:
             cap.release()
 
     def _user_can_access_media(self, media: Media, user_id: UUID) -> bool:
-        """Check if user can access media (owns it or it's public)."""
+        """Check if user can access media (owns it, public, or internal service)."""
+        # Internal service-to-service calls authenticate as the nil system UUID.
+        # Must match get_media() and get_media_access_check bypasses, otherwise
+        # frame/crop extraction silently 403s and MVR people never materialize.
+        system_user_uuid = UUID("00000000-0000-0000-0000-000000000000")
+        if user_id == system_user_uuid:
+            return True
         return media.is_public or media.uploaded_by == user_id
 
     # ========================================================================

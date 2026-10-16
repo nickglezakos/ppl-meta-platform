@@ -335,8 +335,10 @@ async def video_stream(
             db.close()
         
         is_mobile = camera_type == CameraType.MOBILE
-        is_edge = device_id.startswith('edge-camera-')
-        camera_type_name = camera_type.value if camera_type else ("EDGE" if is_edge else "UNKNOWN")
+        # Detect EDGE by DB type — device_id is a UUID after register-edge,
+        # so prefix checks like "edge-camera-" miss real edge cameras.
+        is_edge = camera_type == CameraType.EDGE
+        camera_type_name = camera_type.value if camera_type else "UNKNOWN"
         
         if is_mobile:
             # 🎯 UNIFIED QUEUE ARCHITECTURE: Mobile cameras now use queue workers too
@@ -374,27 +376,44 @@ async def video_stream(
             from src.services.edge_camera_processor import get_edge_processor
             from src.services.edge_camera_ws_manager import get_ws_manager
             
-            # Check if edge camera is connected via WebSocket
-            ws_manager = get_ws_manager()
-            if not ws_manager.is_connected(device_id):
-                logger.error(f"❌ [VIDEO_STREAM] Edge camera {device_id} not connected via WebSocket")
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=f"Edge camera {device_id} not connected. Please connect via WebSocket first",
-                )
-            
-            # Check if edge camera has a worker (created when frames start arriving)
             edge_processor = get_edge_processor()
             worker = edge_processor.get_worker(device_id)
-            
-            if not worker:
-                logger.error(f"❌ [VIDEO_STREAM] Edge camera {device_id} worker not created yet (no frames received)")
+            ws_connected = get_ws_manager().is_connected(device_id)
+
+            # Prefer live frames over WS liveness — frames can keep flowing
+            # briefly if the command socket flaps, and UUID edge devices are
+            # often already uploading before the UI opens /video.
+            if worker and worker.get_latest_frame() is not None:
+                logger.info(
+                    f"✅ [VIDEO_STREAM] Edge camera {device_id} worker has frames "
+                    f"(ws_connected={ws_connected})"
+                )
+            elif not ws_connected and not worker:
+                logger.error(
+                    f"❌ [VIDEO_STREAM] Edge camera {device_id} not connected "
+                    f"and no worker/frames yet"
+                )
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=f"Edge camera {device_id} not streaming. Please start streaming from edge device first",
+                    detail=(
+                        f"Edge camera {device_id} not connected. "
+                        "Connect the camera and start streaming first"
+                    ),
                 )
-            
-            logger.info(f"✅ [VIDEO_STREAM] Edge camera {device_id} worker ready")
+            elif not worker:
+                logger.error(
+                    f"❌ [VIDEO_STREAM] Edge camera {device_id} worker not created yet "
+                    "(no frames received)"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=(
+                        f"Edge camera {device_id} not streaming yet. "
+                        "Wait for frames or tap Connect again"
+                    ),
+                )
+            else:
+                logger.info(f"✅ [VIDEO_STREAM] Edge camera {device_id} worker ready")
         else:
             # USB/RTSP cameras use worker queue architecture
             logger.info(f"🎥 [VIDEO_STREAM] USB/RTSP camera detected: {device_id}")
@@ -453,7 +472,7 @@ async def capture_snapshot(request: Request, device_id: str) -> Dict:
             db.close()
 
         is_mobile = camera_type == CameraType.MOBILE
-        is_edge = device_id.startswith('edge-camera-')
+        is_edge = camera_type == CameraType.EDGE
 
         frame = None
 
@@ -559,7 +578,7 @@ async def stop_stream(
 @router.post("/{device_id}/record/start")
 async def start_recording(
     device_id: str,
-    enable_instant_detection: bool = True,
+    enable_instant_detection: bool = False,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     current_user: Dict = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -568,7 +587,8 @@ async def start_recording(
     """Start recording from a specific camera with session tracking.
     
     Args:
-        enable_instant_detection: Whether to automatically start instant detection
+        enable_instant_detection: Legacy flag (ignored). Instant detection is
+            started only via POST /instant-detection/start (eye button).
     """
 
     try:
@@ -607,7 +627,7 @@ async def start_recording(
             )
         
         # Auto-start streaming for edge cameras (they need active stream to send frames)
-        is_edge = device_id.startswith('edge-camera-')
+        is_edge = camera.camera_type == CameraType.EDGE
         if is_edge:
             from src.services.edge_camera_ws_manager import get_ws_manager
             ws_manager = get_ws_manager()

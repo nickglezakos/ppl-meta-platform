@@ -375,14 +375,14 @@ class SignageApiClient {
     }
   }
 
-  /// Get device status
-  /// Note: Device host and port should already be cached from discovery service discovery
+  /// Get device status via the media/gateway proxy.
+  ///
+  /// Direct LAN calls from the APK often fail (AP isolation / NAT) even while
+  /// the player is healthy — playback control already goes through the
+  /// gateway, and status polling must do the same.
   Future<PlaybackStatus> getDeviceStatus(String deviceId) async {
-    // Get device endpoint from discovery service with fallback caching
-    final deviceEndpoint = await _getDeviceEndpoint(deviceId);
-    
     final response = await _apiClient.get(
-      '$deviceEndpoint/api/v1/status',
+      '/api/v1/signage/devices/$deviceId/status',
     );
 
     return PlaybackStatus.fromJson(response.data);

@@ -60,9 +60,15 @@ def _discovery_base_url() -> str:
     Inside Docker, ``localhost:8006`` is the media container itself — use the
     compose service hostname (``DISCOVERY_SERVICE_URL``) instead.
     """
-    return os.getenv(
-        "DISCOVERY_SERVICE_URL", "http://ppl-meta-discovery:8006"
-    ).rstrip("/")
+    explicit = (os.getenv("DISCOVERY_SERVICE_URL") or "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    in_docker = os.path.exists("/.dockerenv") or os.getenv("RUNNING_IN_DOCKER", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    return ("http://ppl-meta-discovery:8006" if in_docker else "http://127.0.0.1:8006").rstrip("/")
 
 
 def _endpoint_candidates(
@@ -2281,6 +2287,62 @@ class SignagePlaybackService:
                 f"Fallback sync before START retry failed for device {device_id}: {e}"
             )
             return False
+
+    async def get_playback_status(self, device_id: UUID) -> dict:
+        """Fetch live playback status from a signage device (VPN then LAN).
+
+        Frontend clients often cannot reach the player directly (AP isolation,
+        NAT, off-LAN phones). Playback control already proxies through this
+        service; status polling must do the same.
+        """
+        device_info = await self._get_device_from_discovery(device_id)
+        if not device_info:
+            raise ValueError("Device not found or offline")
+
+        endpoints = _endpoint_candidates(device_info, None, None)
+        if not endpoints:
+            raise ValueError("No reachable endpoints for device")
+
+        last_error: Optional[str] = None
+        for host, port, label in endpoints:
+            url = f"http://{host}:{port}/api/v1/status"
+            logger.info(
+                f"Fetching playback status for {device_info['name']} "
+                f"via {label} ({host}:{port})"
+            )
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    return response.json()
+            except httpx.HTTPStatusError as e:
+                last_error = f"{label} HTTP {e.response.status_code}"
+                logger.warning(
+                    f"Status via {label} ({host}:{port}) returned "
+                    f"{e.response.status_code}; trying next"
+                )
+            except httpx.RequestError as e:
+                last_error = f"{label} {e}"
+                logger.warning(
+                    f"Status via {label} ({host}:{port}) unreachable via httpx: "
+                    f"{e}; trying curl fallback"
+                )
+                try:
+                    body = await _request_via_curl("GET", url, timeout=5.0)
+                    return json.loads(body) if body else {}
+                except Exception as ce:
+                    last_error = f"{label} curl {ce}"
+                    logger.warning(
+                        f"Status via {label} ({host}:{port}) curl fallback failed: "
+                        f"{ce}; trying next"
+                    )
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(
+                    f"Status via {label} ({host}:{port}) failed: {e}; trying next"
+                )
+
+        raise ValueError(last_error or "Failed to fetch device playback status")
 
     async def _send_control_command_to_endpoint(
         self, host: str, port: int, device_name: str, request: PlaybackControlRequest

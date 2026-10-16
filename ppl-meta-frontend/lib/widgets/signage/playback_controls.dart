@@ -1,6 +1,7 @@
 /// Playback Controls Widget
 /// Detailed remote control interface for signage devices
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/signage_models.dart';
@@ -21,6 +22,8 @@ class PlaybackControls extends StatefulWidget {
 class _PlaybackControlsState extends State<PlaybackControls> {
   double _volume = 100.0;
   bool _autoRefresh = true;
+  bool _isSelectingPlaylist = false;
+  bool _pauseStatusRefresh = false;
 
   @override
   void initState() {
@@ -43,7 +46,7 @@ class _PlaybackControlsState extends State<PlaybackControls> {
     Future.doWhile(() async {
       if (!_autoRefresh || !mounted) return false;
       await Future.delayed(const Duration(seconds: 3));
-      if (_autoRefresh && mounted) {
+      if (_autoRefresh && mounted && !_pauseStatusRefresh) {
         await _loadStatus();
       }
       return _autoRefresh;
@@ -299,64 +302,60 @@ class _PlaybackControlsState extends State<PlaybackControls> {
     final isPaused = status?.playbackState == PlaybackState.paused;
     final hasPlaylist = status?.playlist != null;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // Previous
-        _buildControlButton(
-          icon: Icons.skip_previous,
-          tooltip: 'Previous',
-          enabled: isOnline && hasPlaylist,
-          onPressed: () => provider.previousVideo(widget.device.id),
-        ),
-        const SizedBox(width: 16),
-        
-        // Stop
-        _buildControlButton(
-          icon: Icons.stop,
-          tooltip: 'Stop',
-          enabled: isOnline && (isPlaying || isPaused),
-          onPressed: () => provider.stopPlayback(widget.device.id),
-          color: Colors.red,
-        ),
-        const SizedBox(width: 24),
-        
-        // Play/Pause
-        _buildControlButton(
-          icon: isPlaying ? Icons.pause : Icons.play_arrow,
-          tooltip: isPlaying ? 'Pause' : (isPaused ? 'Resume' : 'Play'),
-          enabled: isOnline,
-          onPressed: () {
-            if (isPlaying) {
-              provider.pausePlayback(widget.device.id);
-            } else if (isPaused) {
-              provider.resumePlayback(widget.device.id);
-            } else {
-              _showPlaylistSelector(provider, status);
-            }
-          },
-          color: Colors.green,
-          size: 64,
-        ),
-        const SizedBox(width: 24),
-        
-        // Replay
-        _buildControlButton(
-          icon: Icons.replay,
-          tooltip: 'Restart',
-          enabled: isOnline && hasPlaylist,
-          onPressed: () => _restartPlaylist(provider, status!),
-        ),
-        const SizedBox(width: 16),
-        
-        // Next
-        _buildControlButton(
-          icon: Icons.skip_next,
-          tooltip: 'Next',
-          enabled: isOnline && hasPlaylist,
-          onPressed: () => provider.nextVideo(widget.device.id),
-        ),
-      ],
+    // Horizontal scroll keeps transport controls tappable on narrow Android
+    // screens where a fixed Row overflows and can steal hit-tests below.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _buildControlButton(
+            icon: Icons.skip_previous,
+            tooltip: 'Previous',
+            enabled: isOnline && hasPlaylist,
+            onPressed: () => provider.previousVideo(widget.device.id),
+          ),
+          const SizedBox(width: 16),
+          _buildControlButton(
+            icon: Icons.stop,
+            tooltip: 'Stop',
+            enabled: isOnline && (isPlaying || isPaused),
+            onPressed: () => provider.stopPlayback(widget.device.id),
+            color: Colors.red,
+          ),
+          const SizedBox(width: 24),
+          _buildControlButton(
+            icon: isPlaying ? Icons.pause : Icons.play_arrow,
+            tooltip: isPlaying ? 'Pause' : (isPaused ? 'Resume' : 'Play'),
+            enabled: isOnline && !_isSelectingPlaylist,
+            onPressed: () {
+              if (isPlaying) {
+                provider.pausePlayback(widget.device.id);
+              } else if (isPaused) {
+                provider.resumePlayback(widget.device.id);
+              } else {
+                _showPlaylistSelector(provider, status);
+              }
+            },
+            color: Colors.green,
+            size: 64,
+          ),
+          const SizedBox(width: 24),
+          _buildControlButton(
+            icon: Icons.replay,
+            tooltip: 'Restart',
+            enabled: isOnline && hasPlaylist,
+            onPressed: () => _restartPlaylist(provider, status!),
+          ),
+          const SizedBox(width: 16),
+          _buildControlButton(
+            icon: Icons.skip_next,
+            tooltip: 'Next',
+            enabled: isOnline && hasPlaylist,
+            onPressed: () => provider.nextVideo(widget.device.id),
+          ),
+        ],
+      ),
     );
   }
 
@@ -397,6 +396,7 @@ class _PlaybackControlsState extends State<PlaybackControls> {
     PlaybackStatus? status,
     bool isOnline,
   ) {
+    final canOpen = !_isSelectingPlaylist;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -406,9 +406,25 @@ class _PlaybackControlsState extends State<PlaybackControls> {
         ),
         const SizedBox(height: 8),
         ElevatedButton.icon(
-          onPressed: isOnline ? () => _showPlaylistSelector(provider, status) : null,
-          icon: const Icon(Icons.playlist_play),
-          label: const Text('Select & Play Playlist'),
+          // Keep the button tappable even when discovery marks the device
+          // briefly offline; we re-check reachability when starting playback.
+          onPressed: canOpen
+              ? () => _showPlaylistSelector(provider, status)
+              : null,
+          icon: _isSelectingPlaylist
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.playlist_play),
+          label: Text(
+            _isSelectingPlaylist
+                ? 'Loading playlists…'
+                : (isOnline
+                    ? 'Select & Play Playlist'
+                    : 'Select & Play Playlist (device may be offline)'),
+          ),
         ),
       ],
     );
@@ -545,91 +561,233 @@ class _PlaybackControlsState extends State<PlaybackControls> {
     SignageProvider provider,
     PlaybackStatus? status,
   ) async {
-    final syncedPlaylists = await provider.loadSyncedVideoListsForDevice(
-      widget.device.id,
-    );
-
-    var candidatePlaylists = List<VideoList>.from(syncedPlaylists);
-
-    var currentStatus = status;
-    if (currentStatus == null) {
-      await provider.loadDeviceStatus(widget.device.id);
-      currentStatus = provider.deviceStatuses[widget.device.id];
+    if (_isSelectingPlaylist) {
+      return;
     }
 
-    final currentPlaylist = currentStatus?.playlist;
-    if (currentPlaylist != null &&
-        candidatePlaylists.every((list) => list.id != (currentPlaylist.videoListId ?? currentPlaylist.id))) {
-      if (provider.videoLists.isEmpty) {
-        await provider.loadVideoLists(limit: 200);
+    setState(() {
+      _isSelectingPlaylist = true;
+      _pauseStatusRefresh = true;
+    });
+
+    try {
+      final syncedPlaylists = await provider.loadSyncedVideoListsForDevice(
+        widget.device.id,
+      );
+
+      var candidatePlaylists = List<VideoList>.from(syncedPlaylists);
+      var showingFallback = false;
+
+      var currentStatus = status ?? provider.deviceStatuses[widget.device.id];
+      if (currentStatus == null) {
+        await provider.loadDeviceStatus(widget.device.id);
+        if (!mounted) return;
+        currentStatus = provider.deviceStatuses[widget.device.id];
       }
 
-      final currentListId = currentPlaylist.videoListId ?? currentPlaylist.id;
-      final existingCurrent = provider.videoLists.where((list) => list.id == currentListId);
-      if (existingCurrent.isNotEmpty) {
-        candidatePlaylists.insert(0, existingCurrent.first);
-      }
-    }
+      final currentPlaylist = currentStatus?.playlist;
+      if (currentPlaylist != null &&
+          candidatePlaylists.every(
+            (list) =>
+                list.id != (currentPlaylist.videoListId ?? currentPlaylist.id),
+          )) {
+        if (provider.videoLists.isEmpty) {
+          await provider.loadVideoLists(limit: 200);
+          if (!mounted) return;
+        }
 
-    if (candidatePlaylists.isEmpty) {
+        final currentListId =
+            currentPlaylist.videoListId ?? currentPlaylist.id;
+        final existingCurrent = provider.videoLists
+            .where((list) => list.id == currentListId);
+        if (existingCurrent.isNotEmpty) {
+          candidatePlaylists.insert(0, existingCurrent.first);
+        }
+      }
+
+      // Android APK users often hit an empty synced list when sync-history
+      // mapping fails or is stale; fall back to all playlists so the picker
+      // still opens (web felt "working" because that path usually succeeded).
+      if (candidatePlaylists.isEmpty) {
+        if (provider.videoLists.isEmpty) {
+          await provider.loadVideoLists(limit: 200);
+          if (!mounted) return;
+        }
+        candidatePlaylists = List<VideoList>.from(provider.videoLists);
+        showingFallback = candidatePlaylists.isNotEmpty;
+      }
+
+      if (candidatePlaylists.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No playlists available. Sync a playlist to this device first.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      final playlistId = await _pickPlaylist(
+        candidatePlaylists: candidatePlaylists,
+        currentPlaylist: currentPlaylist,
+        showingFallback: showingFallback,
+      );
+
+      if (playlistId != null && mounted) {
+        final started = await provider.startPlayback(
+          deviceId: widget.device.id,
+          videoListId: playlistId,
+          volume: _volume.toInt(),
+        );
+        if (!started && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                provider.playbackError ??
+                    'Failed to start playback on ${widget.device.name}',
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No synced playlists found for this device'),
-          ),
+          SnackBar(content: Text('Could not open playlist picker: $e')),
         );
       }
-      return;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSelectingPlaylist = false;
+          _pauseStatusRefresh = false;
+        });
+      }
+    }
+  }
+
+  Future<String?> _pickPlaylist({
+    required List<VideoList> candidatePlaylists,
+    required PlaylistInfo? currentPlaylist,
+    required bool showingFallback,
+  }) async {
+    final title = showingFallback
+        ? 'Select Playlist'
+        : 'Select Synced Playlist';
+    final subtitle = showingFallback
+        ? 'No sync history for this device — showing all playlists'
+        : null;
+
+    Widget buildList({required bool shrinkWrap}) {
+      return ListView.builder(
+        shrinkWrap: shrinkWrap,
+        physics: shrinkWrap
+            ? const NeverScrollableScrollPhysics()
+            : const AlwaysScrollableScrollPhysics(),
+        itemCount: candidatePlaylists.length,
+        itemBuilder: (context, index) {
+          final item = candidatePlaylists[index];
+          final isCurrent = currentPlaylist != null &&
+              item.id == (currentPlaylist.videoListId ?? currentPlaylist.id);
+          final videoCount = item.videoCount ?? item.videoItems?.length ?? 0;
+
+          return ListTile(
+            leading: const Icon(Icons.playlist_play),
+            title: Text(item.name),
+            subtitle: Text(
+              isCurrent
+                  ? 'Currently active on this device\n$videoCount videos'
+                  : '$videoCount videos',
+            ),
+            onTap: () =>
+                Navigator.of(context, rootNavigator: true).pop(item.id),
+          );
+        },
+      );
     }
 
-    if (!mounted) {
-      return;
+    // Touch layouts: bottom sheet is reliable on Android. AlertDialog +
+    // unbounded ListView often fails to lay out / receive taps on APK.
+    final useBottomSheet = !kIsWeb &&
+        MediaQuery.sizeOf(context).shortestSide < 900;
+
+    if (useBottomSheet) {
+      return showModalBottomSheet<String>(
+        context: context,
+        useRootNavigator: true,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (context) {
+          final height = MediaQuery.sizeOf(context).height * 0.65;
+          return SafeArea(
+            child: SizedBox(
+              height: height,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  if (subtitle != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  const Divider(height: 1),
+                  Expanded(child: buildList(shrinkWrap: false)),
+                ],
+              ),
+            ),
+          );
+        },
+      );
     }
 
-    final playlist = await showDialog<String>(
+    return showDialog<String>(
       context: context,
+      useRootNavigator: true,
       builder: (context) => AlertDialog(
-        title: const Text('Select Synced Playlist'),
+        title: Text(title),
         content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: candidatePlaylists.length,
-            itemBuilder: (context, index) {
-              final list = candidatePlaylists[index];
-              final isCurrent = currentPlaylist != null &&
-                  list.id == (currentPlaylist.videoListId ?? currentPlaylist.id);
-              final videoCount = list.videoCount ?? list.videoItems?.length ?? 0;
-
-              return ListTile(
-                leading: const Icon(Icons.playlist_play),
-                title: Text(list.name),
-                subtitle: Text(
-                  isCurrent
-                      ? 'Currently active on this device\n$videoCount videos'
-                      : '$videoCount videos',
+          width: 420,
+          height: 360,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (subtitle != null) ...[
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-                onTap: () => Navigator.pop(context, list.id),
-              );
-            },
+                const SizedBox(height: 8),
+              ],
+              Expanded(child: buildList(shrinkWrap: false)),
+            ],
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () =>
+                Navigator.of(context, rootNavigator: true).pop(),
             child: const Text('Cancel'),
           ),
         ],
       ),
     );
-
-    if (playlist != null && mounted) {
-      await provider.startPlayback(
-        deviceId: widget.device.id,
-        videoListId: playlist,
-        volume: _volume.toInt(),
-      );
-    }
   }
 
   Future<void> _restartPlaylist(

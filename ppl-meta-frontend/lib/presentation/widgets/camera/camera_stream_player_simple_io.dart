@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/models/camera.dart';
 import '../../../core/providers/camera_providers.dart';
 
 class CameraStreamPlayerSimple extends ConsumerStatefulWidget {
@@ -41,6 +42,29 @@ class _CameraStreamPlayerSimpleState
   void initState() {
     super.initState();
     _startStreaming();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureEdgeStreamingIfNeeded();
+    });
+  }
+
+  Future<void> _ensureEdgeStreamingIfNeeded() async {
+    if (!mounted) return;
+    final camera = ref.read(cameraByIdProvider(widget.cameraId)).asData?.value;
+    if (camera == null || camera.type != CameraType.edge) return;
+
+    final already = ref.read(edgeCameraStreamingProvider(widget.cameraId));
+    if (already) return;
+
+    try {
+      final cameraService = ref.read(cameraServiceProvider);
+      final started =
+          await cameraService.startEdgeCameraStream(widget.cameraId);
+      if (!mounted) return;
+      ref.read(edgeCameraStreamingProvider(widget.cameraId).notifier).state =
+          started;
+    } catch (e) {
+      debugPrint('⚠️ [IO_STREAM] Edge auto start-stream failed: $e');
+    }
   }
 
   @override

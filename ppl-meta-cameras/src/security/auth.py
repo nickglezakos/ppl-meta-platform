@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 
 import jwt
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from passlib.context import CryptContext
@@ -22,6 +22,13 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT Bearer security scheme
 security = HTTPBearer()
+security_optional = HTTPBearer(auto_error=False)
+
+# Shared internal service token (same default as shared/auth/service_auth.py)
+INTERNAL_SERVICE_TOKEN = os.getenv(
+    "INTERNAL_SERVICE_TOKEN",
+    "ppl-meta-internal-service-secret-key-change-in-production",
+)
 
 
 class CameraPermission:
@@ -266,6 +273,32 @@ async def get_current_user(
         )
 
     return auth_service.verify_token(credentials.credentials)
+
+
+async def get_current_user_or_internal_service(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
+    x_service_name: Optional[str] = Header(None, alias="X-Service-Name"),
+) -> Dict:
+    """Allow either a normal user JWT or the shared internal service token."""
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = credentials.credentials
+    if token == INTERNAL_SERVICE_TOKEN:
+        return {
+            "sub": f"service:{x_service_name or 'internal-service'}",
+            "email": f"{x_service_name or 'internal-service'}@internal",
+            "service": x_service_name or "internal",
+            "auth_type": "internal_service",
+            "permissions": list(CameraRole.ADMINISTRATOR),
+            "is_admin": True,
+        }
+
+    return auth_service.verify_token(token)
 
 
 async def get_current_user_flexible(

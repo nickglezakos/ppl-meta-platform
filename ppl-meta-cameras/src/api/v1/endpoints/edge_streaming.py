@@ -49,17 +49,27 @@ async def edge_camera_websocket(
                 name=f"Edge Camera - {device_id}",
                 connection_string=f"edge://{device_id}",
                 is_active=True,
-                status=CameraStatus.CONNECTED  # WebSocket connected = camera available
+                # Command channel up ≠ operator-connected; user Connect sets CONNECTED.
+                status=CameraStatus.AVAILABLE,
             )
             db.add(camera)
             db.commit()
             db.refresh(camera)
             logger.info(f"✅ Auto-created edge camera in database: {device_id}")
         else:
-            # Update status to connected
-            camera.status = CameraStatus.CONNECTED
-            db.commit()
-            logger.info(f"✅ Edge camera {device_id} WebSocket connected, status updated")
+            # Long-lived command WebSocket (re)connect must not clear an
+            # operator Disconnect. Keep DISCONNECTED sticky until Connect.
+            # Only heal ERROR/MAINTENANCE back to AVAILABLE (device online).
+            if camera.status in (
+                CameraStatus.ERROR,
+                CameraStatus.MAINTENANCE,
+            ):
+                camera.status = CameraStatus.AVAILABLE
+                db.commit()
+            logger.info(
+                f"✅ Edge camera {device_id} WebSocket connected "
+                f"(db_status={camera.status.value})"
+            )
         
         await ws_manager.connect(device_id, websocket)
         
@@ -116,6 +126,21 @@ async def receive_edge_camera_frame(
             )
             .first()
         )
+
+        # Operator disconnect must stick: reject uploads so the worker cannot
+        # flip back to CONNECTED while the UI shows disconnected.
+        if camera and camera.status == CameraStatus.DISCONNECTED:
+            logger.info(
+                f"⛔ [EDGE-FRAME] Rejecting frame #{frame_number} from {device_id} "
+                "(camera is DISCONNECTED)"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Edge camera {device_id} is disconnected. "
+                    "Connect from the platform before streaming."
+                ),
+            )
 
         # Auto-create camera from discovery service if not exists
         if not camera:
@@ -204,17 +229,16 @@ async def receive_edge_camera_frame(
             }
         }
         
-        # Process frame - this integrates edge camera with full pipeline
-        # - Instant detection (face detection every 5 seconds)
-        # - Video recording (if recording session active)
-        # - Vision service integration (demographics, tracking)
-        # - Triggers (demographic-based actions)
+        # Process frame into the worker pipeline (stream + optional recording).
+        # Instant detection is operator-controlled via the eye button
+        # (POST /instant-detection/start) — do NOT auto-start it on frame ingest
+        # or Record, or Connect+Record will light ID without the user asking.
         success = edge_processor.process_frame(
             device_id=device_id,
             frame_bytes=frame_bytes,
             frame_number=frame_number,  # Pass frame_number for de-duplication
             camera_info=camera_info,
-            enable_instant_detection=True  # Enable instant detection by default
+            enable_instant_detection=False,
         )
         
         if not success:
@@ -291,7 +315,7 @@ async def connect_edge_camera(
             )
         
         # Mark camera as connected
-        camera.status = "connected"
+        camera.status = CameraStatus.CONNECTED
         from datetime import datetime
         camera.last_seen = datetime.utcnow()
         db.commit()
@@ -351,8 +375,8 @@ async def disconnect_edge_camera(
         # Stop camera worker (stops instant detection, recording, etc.)
         edge_processor.stop_worker(device_id)
         
-        # Mark camera as disconnected
-        camera.status = "available"
+        # Mark camera as disconnected (operator intent — sticky until Connect)
+        camera.status = CameraStatus.DISCONNECTED
         db.commit()
         
         logger.info(f"Disconnected edge camera: {device_id}")

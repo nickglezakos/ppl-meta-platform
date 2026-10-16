@@ -702,19 +702,17 @@ class CameraService {
     }
   }
 
-  /// Start recording for a camera
-  Future<RecordingResult> startRecording(String deviceId, {bool enableInstantDetection = true}) async {
+  /// Start recording for a camera.
+  /// Instant detection is decoupled — use [startInstantDetection] (eye button).
+  Future<RecordingResult> startRecording(String deviceId, {bool enableInstantDetection = false}) async {
     print('🔥 DEBUG CORE: startRecording called for deviceId: $deviceId');
     print('🔥 DEBUG CORE: Using Gateway client for recording operations');
     print('🔥 DEBUG CORE: enableInstantDetection: $enableInstantDetection');
     
     try {
-      // ✅ USE APPROPRIATE TIMEOUTS
       // Backend needs:
       // - 2-5s: Create session, start recording loop
-      // - 5-10s: Initialize instant detection (if enabled)
       // - 2-5s: Network latency, processing overhead
-      // Total: 15-20s safe margin, using 30s for reliability
       final response = await _cameraApiClient.post(
         '/api/v1/streaming/$deviceId/record/start',
         queryParameters: {

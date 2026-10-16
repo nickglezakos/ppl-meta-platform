@@ -6,9 +6,9 @@ from pydantic import BaseModel
 import httpx
 from sqlalchemy.orm import Session
 
-from src.security.auth import get_current_user
+from src.security.auth import get_current_user, get_current_user_or_internal_service
 from src.database import get_db
-from src.models.camera import Camera, CameraType
+from src.models.camera import Camera, CameraStatus, CameraType
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +48,9 @@ class RegisterEdgeCameraRequest(BaseModel):
 async def register_edge_camera(
     request: RegisterEdgeCameraRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user_or_internal_service),
 ):
-    """Register a new edge camera in the database."""
+    """Register a new edge camera (user JWT or INTERNAL_SERVICE_TOKEN)."""
     try:
         # Validate and ensure proper UUID format
         from src.services.name_validation import validate_camera_name_unique, sanitize_camera_name
@@ -93,8 +93,8 @@ async def register_edge_camera(
             device_id=device_id,  # Use validated UUID
             camera_type=CameraType.EDGE,
             connection_string=connection_string,
-            status="active",
-            is_active=True
+            status=CameraStatus.AVAILABLE,
+            is_active=True,
         )
         
         db.add(new_camera)

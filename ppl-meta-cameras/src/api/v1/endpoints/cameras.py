@@ -919,6 +919,61 @@ async def disconnect_camera(
                 "stream_session_id": None,
             }
 
+        # Edge: mark disconnected first so in-flight frames get 409, then
+        # stop worker + tell the device to stop uploading.
+        if camera and camera.camera_type == CameraType.EDGE:
+            camera.status = CameraStatus.DISCONNECTED
+            camera.last_seen = datetime.utcnow()
+            db.commit()
+            db.refresh(camera)
+
+            try:
+                from src.services.edge_camera_ws_manager import get_ws_manager
+                from src.services.edge_camera_processor import get_edge_processor
+
+                get_edge_processor().stop_worker(device_id)
+                ws_manager = get_ws_manager()
+                if ws_manager.is_connected(device_id):
+                    await ws_manager.send_command(device_id, "stop-stream")
+                    await ws_manager.send_command(device_id, "disconnect")
+            except Exception as edge_err:
+                logger.warning(
+                    "⚠️ [DISCONNECT] Edge cleanup for %s: %s",
+                    device_id,
+                    edge_err,
+                )
+
+            # Push WS status so the UI drops Play/Disconnect immediately
+            # (old clients OR in WS "connected" from the device command channel).
+            try:
+                from src.services.status_notification_service import (
+                    CameraStatusEvent,
+                    get_status_service,
+                )
+
+                await get_status_service().publish_status_change(
+                    device_id,
+                    CameraStatusEvent.DISCONNECTED,
+                    {"source": "edge_disconnect_api"},
+                )
+            except Exception as pub_err:
+                logger.debug("Edge disconnect status publish skipped: %s", pub_err)
+
+            logger.info(
+                "User %s disconnected edge camera %s, cleaned %d sessions",
+                current_user.get("sub"),
+                device_id,
+                cleaned_sessions,
+            )
+            return {
+                "device_id": device_id,
+                "status": "disconnected",
+                "message": f"Successfully disconnected from camera {device_id}",
+                "sessions_cleaned": cleaned_sessions,
+                "camera_type": "edge",
+                "success": True,
+            }
+
         # Disconnect from camera using queue service (if currently connected)
         queue_service = get_camera_service()
         success = await queue_service.disconnect_camera(device_id)

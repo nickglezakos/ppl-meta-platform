@@ -52,6 +52,30 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
     _elementId = 'camera-stream-${widget.cameraId}-${DateTime.now().millisecondsSinceEpoch}';
     _isActive = true;
     _startStreaming();
+    // Edge frames require explicit start-stream; ensure it when opening the player.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureEdgeStreamingIfNeeded();
+    });
+  }
+
+  Future<void> _ensureEdgeStreamingIfNeeded() async {
+    if (!mounted || !_isActive) return;
+    final camera = ref.read(cameraByIdProvider(widget.cameraId)).asData?.value;
+    if (camera == null || camera.type != CameraType.edge) return;
+
+    final already = ref.read(edgeCameraStreamingProvider(widget.cameraId));
+    if (already) return;
+
+    try {
+      final cameraService = ref.read(cameraServiceProvider);
+      final started =
+          await cameraService.startEdgeCameraStream(widget.cameraId);
+      if (!mounted) return;
+      ref.read(edgeCameraStreamingProvider(widget.cameraId).notifier).state =
+          started;
+    } catch (e) {
+      print('⚠️ [EDGE_STREAM] Auto start-stream failed: $e');
+    }
   }
 
   @override
@@ -862,11 +886,19 @@ class _EdgeStreamControls extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isStreaming = ref.watch(edgeCameraStreamingProvider(cameraId));
+    final camera = ref.watch(cameraByIdProvider(cameraId)).asData?.value;
+    final status = (camera?.status ?? '').toLowerCase();
+    final cameraSaysLive = status == 'connected' ||
+        status == 'streaming' ||
+        status == 'in_use';
+    // Prefer provider, but don't block the MJPEG view when the card already
+    // connected/started the edge upload.
+    final showAsStreaming = isStreaming || cameraSaysLive;
     
     return Stack(
       children: [
         // Start stream button (center overlay) - only show when NOT streaming
-        if (!isStreaming)
+        if (!showAsStreaming)
           Positioned(
             top: 0,
             left: 0,
@@ -877,7 +909,7 @@ class _EdgeStreamControls extends ConsumerWidget {
             ),
           ),
         // Stop stream button (bottom right) - only show when streaming
-        if (isStreaming)
+        if (showAsStreaming)
           Positioned(
             bottom: 50, // Above the video player's stop button
             right: 8,

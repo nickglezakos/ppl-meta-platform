@@ -1022,14 +1022,16 @@ class CameraDetectionService:
                 
                 is_mobile = camera and camera.camera_type == CameraType.MOBILE
                 is_rtsp = camera and camera.camera_type == CameraType.RTSP
+                # device_id is a UUID after register-edge — never use an edge- prefix.
+                is_edge = camera is not None and camera.camera_type == CameraType.EDGE
             finally:
                 db.close()
 
             # 🎯 UNIFIED QUEUE ARCHITECTURE: All cameras (USB, RTSP, MOBILE, EDGE) use workers
-            logger.info(f"🎯 [RECORDING_START] Using queue-based worker for {device_id} (mobile: {is_mobile})")
-            
-            # Determine if this is an edge camera
-            is_edge = device_id.startswith('edge-camera-')
+            logger.info(
+                f"🎯 [RECORDING_START] Using worker for {device_id} "
+                f"(mobile={is_mobile}, edge={is_edge}, rtsp={is_rtsp})"
+            )
 
             # RTSP: recording must use the main stream. Reconnect off substream if needed.
             if is_rtsp and not is_edge:
@@ -1075,16 +1077,28 @@ class CameraDetectionService:
             from src.services.camera_service_queue import get_camera_service as get_queue_service
             
             if is_edge:
-                # Edge cameras use EdgeCameraFrameProcessor
+                # Edge cameras use EdgeCameraFrameProcessor (created on first frame).
                 logger.info(f"📹 [EDGE] Getting worker from EdgeCameraFrameProcessor for {device_id}")
+                import asyncio
                 from src.services.edge_camera_processor import get_edge_processor
+
                 edge_processor = get_edge_processor()
                 worker = edge_processor.get_worker(device_id)
-                
+                # Record can race start-stream — wait briefly for first frames.
                 if not worker:
-                    logger.error(f"❌ [EDGE] No worker found for edge camera {device_id}")
+                    for _ in range(20):  # ~2s
+                        await asyncio.sleep(0.1)
+                        worker = edge_processor.get_worker(device_id)
+                        if worker:
+                            break
+
+                if not worker:
+                    logger.error(
+                        f"❌ [EDGE] No worker found for edge camera {device_id} "
+                        "(is the device streaming frames?)"
+                    )
                     return None
-                
+
                 logger.info(f"✅ [EDGE] Worker found for {device_id}")
             else:
                 # USB/RTSP/Mobile cameras use queue service

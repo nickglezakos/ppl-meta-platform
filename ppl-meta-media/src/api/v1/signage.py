@@ -4,6 +4,7 @@ Signage Simple Player API Routes
 REST API endpoints for video list management, device control, and synchronization.
 """
 
+import asyncio
 import logging
 from typing import List, Optional
 from uuid import UUID
@@ -773,6 +774,39 @@ async def list_devices(
 
 
 @router.get(
+    "/devices/{device_id}/status",
+    summary="Get live playback status from a signage device",
+    description=(
+        "Proxy the device's /api/v1/status endpoint through the media service "
+        "so clients that cannot reach the player on the LAN still see playback."
+    ),
+)
+async def get_device_playback_status(
+    device_id: UUID,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Fetch live playback status from the signage player (VPN then LAN)."""
+    try:
+        service = SignagePlaybackService(db)
+        return await service.get_playback_status(device_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(
+            f"Error getting playback status for {device_id}: {str(e)}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get device playback status",
+        )
+
+
+@router.get(
     "/devices/{device_id}",
     response_model=SignageDeviceResponse,
     summary="Get device details",
@@ -1141,7 +1175,29 @@ async def stream_signage_media(
         file_path = Path(media.file_path)
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Media file not found on disk")
-        
+
+        mime_type = media.mime_type or "application/octet-stream"
+        suffix = file_path.suffix.lower()
+        is_video = mime_type.startswith("video/") or suffix in {
+            ".mp4",
+            ".mov",
+            ".mkv",
+            ".webm",
+            ".m4v",
+            ".avi",
+        }
+        if is_video:
+            from ...services.signage_video_compat import get_signage_playable_file
+
+            original_path = file_path
+            file_path = await asyncio.to_thread(
+                get_signage_playable_file, original_path, str(media.id)
+            )
+            if file_path != original_path:
+                mime_type = "video/mp4"
+                if not file_path.exists():
+                    raise HTTPException(status_code=404, detail="Media file not found on disk")
+
         file_size = file_path.stat().st_size
         range_header = request.headers.get("Range")
         
@@ -1170,7 +1226,7 @@ async def stream_signage_media(
                 "Content-Range": f"bytes {start}-{end}/{file_size}",
                 "Accept-Ranges": "bytes",
                 "Content-Length": str(content_length),
-                "Content-Type": media.mime_type or "video/mp4",
+                "Content-Type": mime_type if mime_type.startswith("video/") else "video/mp4",
             }
             
             return StreamingResponse(
@@ -1183,7 +1239,7 @@ async def stream_signage_media(
         headers = {
             "Accept-Ranges": "bytes",
             "Content-Length": str(file_size),
-            "Content-Type": media.mime_type or "video/mp4",
+            "Content-Type": mime_type if mime_type.startswith("video/") else "video/mp4",
         }
         
         return StreamingResponse(
@@ -1191,6 +1247,8 @@ async def stream_signage_media(
             headers=headers,
         )
         
+    except HTTPException:
+        raise
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid media ID")
     except Exception as e:

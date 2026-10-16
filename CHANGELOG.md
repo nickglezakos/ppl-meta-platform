@@ -15,6 +15,23 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+## [2.25.101] — 2026-10-16
+
+### Fixed
+
+- Media frame extraction: internal service token (nil system UUID) can fetch video frames for MVR face-crop enrichment (was 403 after access-check bypass).
+- Vision route contamination: infer FPS from route timestamps so low-FPS edge recordings are not dropped as sparse tracks.
+- Cameras / frontend: Record no longer auto-starts instant detection; ID is only via the eye control. Edge cameras get a reliable Record path (EDGE type + worker wait).
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.100 → 2.25.101**.
+
+### Notes
+
+- Affects `ppl-meta-media`, `ppl-meta-vision`, `ppl-meta-cameras`, `ppl-meta-frontend`. Mode D: rebuild those four; retag-forward the other eight from `2.25.100`.
+- Edge camera app on RPi is outside Stage 2 (manual ship); platform images above are required for Record → faces → Details/MVR.
+
 ## [2.25.100] — 2026-10-13
 
 ### Fixed

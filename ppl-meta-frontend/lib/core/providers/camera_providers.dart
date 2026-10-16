@@ -134,6 +134,15 @@ class CameraListNotifier extends StateNotifier<CameraListState> {
     state = state.copyWith(cameras: updatedCameras);
   }
 
+  /// Optimistically set connection status by deviceId (e.g. after Disconnect).
+  void markCameraStatus(String deviceId, String status) {
+    final updatedCameras = state.cameras.map((camera) {
+      if (camera.deviceId != deviceId) return camera;
+      return camera.copyWith(status: status);
+    }).toList();
+    state = state.copyWith(cameras: updatedCameras);
+  }
+
   /// Remove a camera from the list
   void removeCamera(String cameraId) {
     final updatedCameras = state.cameras.where((camera) => camera.id != cameraId).toList();

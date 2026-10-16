@@ -63,9 +63,11 @@ class CameraCard extends ConsumerWidget {
       return cameraSaysActive;
     }
 
-    // Edge cameras can be streamable without websocket connected state.
+    // Edge: trust REST list status only. The device keeps a long-lived
+    // command WebSocket, so WS "connected" must not keep Play/Disconnect
+    // lit after the operator disconnects.
     if (camera.type == CameraType.edge) {
-      return cameraSaysActive || wsSaysActive;
+      return cameraSaysActive;
     }
 
     return wsSaysActive || cameraSaysActive;
@@ -244,26 +246,36 @@ Widget _buildActionFooter(
       runSpacing: actionSpacingMedium,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-          decoration: BoxDecoration(
-            color: camera.isActive
-                ? AppColors.success.withValues(alpha: 0.1)
-                : AppColors.textDisabled.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(
-              color: camera.isActive
-                  ? AppColors.success.withValues(alpha: 0.3)
-                  : AppColors.textDisabled.withValues(alpha: 0.3),
-            ),
-          ),
-          child: Text(
-            camera.isActive ? 'Active' : 'Inactive',
-            style: AppTextStyles.caption.copyWith(
-              color: camera.isActive ? AppColors.success : AppColors.textDisabled,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+        Builder(
+          builder: (_) {
+            // Prefer live connection state over the static is_active flag so
+            // Disconnect visibly clears the green "Active" chip.
+            final connected = isConnected;
+            final label = connected
+                ? 'Connected'
+                : (camera.isActive ? 'Ready' : 'Inactive');
+            final color = connected
+                ? AppColors.success
+                : AppColors.textDisabled;
+            return Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.xs,
+              ),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(color: color.withValues(alpha: 0.3)),
+              ),
+              child: Text(
+                label,
+                style: AppTextStyles.caption.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            );
+          },
         ),
         if (updatedCamera.type == CameraType.rtsp) ...[
           IconButton(
@@ -322,11 +334,9 @@ Widget _buildActionFooter(
         ),
         SizedBox(width: actionSpacingMedium),
         if (isConnected) ...[
-          if (updatedCamera.type != CameraType.edge) ...[
-            InstantDetectionControls(cameraId: updatedCamera.deviceId),
-            _RecordingControls(cameraId: updatedCamera.deviceId),
-            SizedBox(width: actionSpacingMedium),
-          ],
+          InstantDetectionControls(cameraId: updatedCamera.deviceId),
+          _RecordingControls(cameraId: updatedCamera.deviceId),
+          SizedBox(width: actionSpacingMedium),
           IconButton(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (context) => CameraStreamPage(camera: updatedCamera)),
@@ -416,14 +426,31 @@ class _StatusIndicator extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Watch WebSocket status for this camera
+    // Prefer list status for edge/mobile — device command WS stays up after
+    // operator Disconnect and must not keep the green dot lit.
+    final listCamera = ref.watch(cameraListProvider).cameras.firstWhere(
+          (c) => c.deviceId == camera.deviceId,
+          orElse: () => camera,
+        );
     final status = ref.watch(cameraStatusProvider(camera.deviceId));
+    final listConnected = CameraCard._isCameraConnectedForUi(listCamera, status);
     
     Color statusColor;
     IconData statusIcon;
     String tooltip;
 
-    if (status == null) {
+    if (listCamera.type == CameraType.edge ||
+        listCamera.type == CameraType.mobile) {
+      if (listConnected) {
+        statusColor = Colors.green;
+        statusIcon = Icons.circle;
+        tooltip = 'Connected';
+      } else {
+        statusColor = Colors.grey;
+        statusIcon = Icons.circle;
+        tooltip = 'Disconnected';
+      }
+    } else if (status == null) {
       statusColor = Colors.grey;
       statusIcon = Icons.circle;
       tooltip = 'Unknown';
@@ -784,12 +811,34 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
     }
 
     debugPrint('🔌 [ConnectionButton] Starting disconnect for ${widget.camera.deviceId}');
+
+    // Edge: stop frame upload before marking disconnected.
+    if (widget.camera.type == CameraType.edge) {
+      try {
+        await cameraService.stopEdgeCameraStream(widget.camera.deviceId);
+      } catch (e) {
+        debugPrint('⚠️ [ConnectionButton] Edge stop-stream before disconnect: $e');
+      }
+      ref.read(edgeCameraStreamingProvider(widget.camera.deviceId).notifier).state =
+          false;
+    }
+
     await cameraService.disconnectCamera(widget.camera.deviceId);
     debugPrint('🔌 [ConnectionButton] Disconnect API call completed');
 
     // Clear stale WS "connected" immediately so the button does not stay on Disconnect.
     ref.read(cameraStatusNotifierProvider.notifier).markDisconnected(widget.camera.deviceId);
     _setPhase(MobileConnectPhase.idle);
+    if (widget.camera.type == CameraType.edge) {
+      ref.read(edgeCameraStreamingProvider(widget.camera.deviceId).notifier).state =
+          false;
+    }
+
+    // Optimistic list update so the card flips off Connected before reload.
+    ref.read(cameraListProvider.notifier).markCameraStatus(
+          widget.camera.deviceId,
+          'disconnected',
+        );
 
     await Future.delayed(const Duration(milliseconds: 500));
     await ref.read(cameraListProvider.notifier).loadCameras();
@@ -812,6 +861,21 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
       _setPhase(
         isReEnsure ? MobileConnectPhase.attached : MobileConnectPhase.leaseOpen,
       );
+    }
+
+    // Edge: connect also starts frame upload so Play/ID/recording work immediately.
+    if (widget.camera.type == CameraType.edge) {
+      try {
+        final started =
+            await cameraService.startEdgeCameraStream(widget.camera.deviceId);
+        ref.read(edgeCameraStreamingProvider(widget.camera.deviceId).notifier).state =
+            started;
+        debugPrint('🔷 [ConnectionButton] Edge start-stream: $started');
+      } catch (e) {
+        debugPrint('⚠️ [ConnectionButton] Edge start-stream failed: $e');
+        ref.read(edgeCameraStreamingProvider(widget.camera.deviceId).notifier).state =
+            false;
+      }
     }
 
     await Future.delayed(const Duration(milliseconds: 500));

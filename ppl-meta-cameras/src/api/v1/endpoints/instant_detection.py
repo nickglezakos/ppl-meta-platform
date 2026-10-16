@@ -230,6 +230,110 @@ async def start_instant_detection(
     # Get camera path
     camera_path = camera.connection_string or f"/dev/video{camera.device_index or 0}"
 
+    # Edge: detection runs inside the edge CameraWorker (frame buffer path).
+    # Do not start the queue sample loop — it only sees USB/RTSP/mobile workers
+    # and would immediately stop. Operator eye button → worker.start_detection.
+    if camera.camera_type == CameraType.EDGE:
+        from src.services.edge_camera_processor import get_edge_processor
+        from src.services.instant_detection import (
+            CameraSamplerState,
+            _clamp_sampling_interval,
+        )
+
+        edge_processor = get_edge_processor()
+        worker = edge_processor.get_worker(camera_id)
+        if not worker:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"Edge camera {camera_id} is not streaming. "
+                    "Connect the camera before starting instant detection."
+                ),
+            )
+
+        storage_multiple = (
+            camera.storage_multiple if camera.storage_multiple is not None else 1
+        )
+        session_duration = (
+            camera.tracking_session_duration_minutes
+            if camera.tracking_session_duration_minutes is not None
+            else 0
+        )
+        sampling_interval = _clamp_sampling_interval(
+            getattr(camera, "instant_detection_interval_seconds", None),
+            default=manager.sampling_interval,
+        )
+
+        session_uuid = str(uuid.uuid4())
+        vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008")
+        internal_service_token = os.getenv(
+            "INTERNAL_SERVICE_TOKEN",
+            "ppl-meta-internal-service-secret-key-change-in-production",
+        )
+        svc_headers = {
+            "Authorization": f"Bearer {internal_service_token}",
+            "Content-Type": "application/json",
+            "X-Service-Name": "cameras-service",
+        }
+        try:
+            resp = http_requests.post(
+                f"{vmeta_url}/api/v1/instant-detection/create-session",
+                json={
+                    "session_uuid": session_uuid,
+                    "camera_id": camera_id,
+                    "source_type": "instant_detection",
+                    "user_id": "system",
+                },
+                headers=svc_headers,
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                logger.info(
+                    f"✅ Created tracking session {session_uuid[:8]}... for edge {camera_id}"
+                )
+            else:
+                logger.warning(
+                    f"⚠️ VMeta create-session returned {resp.status_code}: {resp.text[:200]}"
+                )
+        except Exception as e:
+            logger.warning(f"⚠️ Could not create tracking session in VMeta: {e}")
+
+        worker.start_detection(
+            {
+                "interval_seconds": sampling_interval,
+                "sampling_interval": sampling_interval,
+            }
+        )
+
+        # FE status sync reads manager._samplers — register without a queue thread.
+        with manager._lock:
+            state = CameraSamplerState(
+                camera_id=camera_id,
+                stagger_offset=0.0,
+                sampling_interval=sampling_interval,
+            )
+            state.running = True
+            state.thread = None
+            state.session_uuid = session_uuid
+            state.session_started_at = datetime.utcnow()
+            state.storage_multiple = storage_multiple
+            state.session_duration_minutes = session_duration
+            state.cycle_counter = 0
+            state.auth_token = internal_service_token
+            manager._samplers[camera_id] = state
+
+        return {
+            "success": True,
+            "message": f"Instant detection started for camera {camera_id}",
+            "camera_id": camera_id,
+            "sampling_interval": sampling_interval,
+            "temporal_window": manager.temporal_window,
+            "session_uuid": session_uuid,
+            "storage_multiple": storage_multiple,
+            "tracking_session_duration_minutes": session_duration,
+            "mode": "edge_worker",
+        }
+
     # For mobile cameras, ensure queue worker is connected before starting sampling.
     # The _sample_loop checks get_camera_stream() on its first iteration and stops
     # immediately if no connected worker is found — this auto-connects it so that
@@ -411,6 +515,18 @@ async def stop_instant_detection_for_camera(
     try:
         with manager._lock:
             state = manager._samplers.get(camera_id)
+
+        # Edge worker owns its own sampler — stop it regardless of manager state.
+        try:
+            from src.services.edge_camera_processor import get_edge_processor
+
+            edge_worker = get_edge_processor().get_worker(camera_id)
+            if edge_worker is not None:
+                edge_worker.stop_detection()
+        except Exception as edge_stop_err:
+            logger.debug(
+                "Edge worker stop_detection for %s: %s", camera_id, edge_stop_err
+            )
 
         if state and state.running:
             # Complete tracking session in VMeta before stopping

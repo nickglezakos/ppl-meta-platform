@@ -53,6 +53,34 @@ def _point_frame(point: Dict[str, Any]) -> int:
     return int(point.get("frame_number") or 0)
 
 
+def infer_video_fps_from_points(
+    route_points: Sequence[Dict[str, Any]],
+    default: float = DEFAULT_VIDEO_FPS,
+) -> float:
+    """Infer FPS from (frame_number, timestamp) pairs when metadata is missing."""
+    samples: List[Tuple[int, float]] = []
+    for point in route_points:
+        ts = point.get("timestamp")
+        if ts is None:
+            continue
+        try:
+            samples.append((_point_frame(point), float(ts)))
+        except (TypeError, ValueError):
+            continue
+    if len(samples) < 2:
+        return default
+    samples.sort(key=lambda item: item[0])
+    rates: List[float] = []
+    for i in range(1, len(samples)):
+        d_frame = samples[i][0] - samples[i - 1][0]
+        d_time = samples[i][1] - samples[i - 1][1]
+        if d_frame > 0 and d_time > 1e-3:
+            rates.append(d_frame / d_time)
+    if not rates:
+        return default
+    return max(float(statistics.median(rates)), 0.1)
+
+
 def compute_route_metrics(
     route_points: Sequence[Dict[str, Any]],
     sample_frame_step: int = DEFAULT_SAMPLE_FRAME_STEP,
@@ -68,6 +96,10 @@ def compute_route_metrics(
     """
     step = max(int(sample_frame_step or DEFAULT_SAMPLE_FRAME_STEP), 1)
     fps = float(video_fps) if video_fps and video_fps > 0 else DEFAULT_VIDEO_FPS
+    # Prefer real timestamps over an assumed 30fps — low-FPS edge recordings
+    # otherwise look "too short" and get dropped as contamination.
+    if fps == DEFAULT_VIDEO_FPS:
+        fps = infer_video_fps_from_points(route_points, default=fps)
 
     if not route_points:
         return {
@@ -89,28 +121,64 @@ def compute_route_metrics(
     start_frame = frames[0]
     end_frame = frames[-1]
     span_frames = max(end_frame - start_frame, 0)
-    span_seconds = span_frames / fps
+
+    timestamps: List[Optional[float]] = []
+    for p in sorted_pts:
+        ts = p.get("timestamp")
+        try:
+            timestamps.append(float(ts) if ts is not None else None)
+        except (TypeError, ValueError):
+            timestamps.append(None)
+    has_timestamps = sum(1 for t in timestamps if t is not None) >= 2
+
+    if has_timestamps:
+        first_ts = next(t for t in timestamps if t is not None)
+        last_ts = next(t for t in reversed(timestamps) if t is not None)
+        span_seconds = max(last_ts - first_ts, 0.0)
+    else:
+        span_seconds = span_frames / fps
 
     max_gap = RUN_GAP_FACTOR * step
     longest_run_frames = 1
     longest_wall_frames = 0
-    run_start = frames[0]
-    run_end = frames[0]
+    longest_run_seconds = 0.0
+    run_start_idx = 0
+    run_end_idx = 0
     for i in range(1, len(frames)):
         gap = frames[i] - frames[i - 1]
         if gap <= max_gap:
-            run_end = frames[i]
+            run_end_idx = i
         else:
-            longest_run_frames = max(longest_run_frames, run_end - run_start + 1)
-            longest_wall_frames = max(longest_wall_frames, run_end - run_start)
-            run_start = frames[i]
-            run_end = frames[i]
-    longest_run_frames = max(longest_run_frames, run_end - run_start + 1)
-    longest_wall_frames = max(longest_wall_frames, run_end - run_start)
-    # Single-sample runs have wall span 0; credit one sample interval.
-    longest_run_seconds = (
-        longest_wall_frames / fps if longest_wall_frames > 0 else step / fps
+            wall = frames[run_end_idx] - frames[run_start_idx]
+            longest_run_frames = max(
+                longest_run_frames, frames[run_end_idx] - frames[run_start_idx] + 1
+            )
+            longest_wall_frames = max(longest_wall_frames, wall)
+            if has_timestamps:
+                t0 = timestamps[run_start_idx]
+                t1 = timestamps[run_end_idx]
+                if t0 is not None and t1 is not None:
+                    longest_run_seconds = max(longest_run_seconds, max(t1 - t0, 0.0))
+            run_start_idx = i
+            run_end_idx = i
+    wall = frames[run_end_idx] - frames[run_start_idx]
+    longest_run_frames = max(
+        longest_run_frames, frames[run_end_idx] - frames[run_start_idx] + 1
     )
+    longest_wall_frames = max(longest_wall_frames, wall)
+    if has_timestamps:
+        t0 = timestamps[run_start_idx]
+        t1 = timestamps[run_end_idx]
+        if t0 is not None and t1 is not None:
+            longest_run_seconds = max(longest_run_seconds, max(t1 - t0, 0.0))
+        # Single-sample run: credit one sample interval from FPS.
+        if longest_run_seconds <= 0:
+            longest_run_seconds = step / fps
+    else:
+        # Single-sample runs have wall span 0; credit one sample interval.
+        longest_run_seconds = (
+            longest_wall_frames / fps if longest_wall_frames > 0 else step / fps
+        )
 
     expected_samples = (span_frames / step) + 1.0 if span_frames > 0 else 1.0
     occupancy = len(sorted_pts) / expected_samples if expected_samples > 0 else 0.0

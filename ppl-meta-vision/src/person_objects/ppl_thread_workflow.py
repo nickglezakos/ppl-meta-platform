@@ -103,7 +103,26 @@ class PPLThreadWorkflowController:
         all_faces_route_data (written later during quality analysis).
         """
         step = sample_frame_step or infer_sample_frame_step(face_detections)
-        fps = float(video_fps) if video_fps and video_fps > 0 else 30.0
+        if video_fps and video_fps > 0:
+            fps = float(video_fps)
+        else:
+            # Infer from face timestamps when callers omit FPS (common for
+            # edge/low-FPS clips). Falling back to 30fps wrongly drops real tracks.
+            from .route_contamination_filter import (
+                build_route_points_for_person,
+                infer_video_fps_from_points,
+            )
+
+            probe_points = []
+            for person in grouping_results.get("person_objects") or []:
+                probe_points.extend(
+                    build_route_points_for_person(
+                        str(person.get("person_id")),
+                        grouping_results.get("face_mappings") or [],
+                        face_detections,
+                    )
+                )
+            fps = infer_video_fps_from_points(probe_points, default=30.0)
         before = len(grouping_results.get("person_objects") or [])
         filter_contaminated_person_tracks(
             grouping_results,
