@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Presence Settings — HubSpot CRM</title>
+  <style>
+:root {
+  --bg:#0a0a0f; --fill:#050509; --card:#12121a; --text:#fff; --muted:#9aa4b2;
+  --accent:#22d3ee; --outline:rgba(141,144,153,.35); --ok:#4caf50;
+}
+* { box-sizing:border-box; }
+body {
+  margin:0; padding:28px; background:#1a1a1a; color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+.figure {
+  width:980px; background:var(--bg); border:1px solid var(--outline);
+  border-radius:12px; overflow:hidden;
+}
+.appbar {
+  height:56px; display:flex; align-items:center; padding:0 12px;
+  border-bottom:1px solid rgba(141,144,153,.18); position:relative;
+}
+.appbar .title {
+  position:absolute; left:0; right:0; text-align:center;
+  font-size:18px; font-weight:500; pointer-events:none;
+}
+.tabs { display:flex; border-bottom:1px solid #333; }
+.tab {
+  flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;
+  padding:10px 2px 8px; color:#888; font-size:11px; font-weight:500;
+  border-bottom:2px solid transparent;
+}
+.tab.on { color:var(--accent); border-bottom-color:var(--accent); }
+.body { padding:18px 20px 24px; background:var(--fill); }
+.panel {
+  background:var(--card); border:1px solid var(--outline); border-radius:16px;
+  padding:16px; margin-bottom:16px;
+}
+h2 { margin:0 0 6px; font-size:20px; font-weight:700; }
+.muted { color:var(--muted); font-size:13px; line-height:1.4; margin:0 0 14px; }
+h3 { margin:0 0 8px; font-size:15px; font-weight:600; }
+.row { display:flex; align-items:center; gap:10px; margin:10px 0; }
+.switch {
+  width:42px; height:24px; border-radius:999px; background:rgba(34,211,238,.35);
+  border:1px solid rgba(34,211,238,.55); position:relative; flex:0 0 auto;
+}
+.switch::after {
+  content:""; position:absolute; top:2px; right:2px; width:18px; height:18px;
+  border-radius:50%; background:var(--accent);
+}
+.field {
+  margin:10px 0; padding:12px 14px; border-radius:8px;
+  border:1px solid rgba(141,144,153,.4); background:#0a0a0f;
+  color:var(--muted); font-size:13px;
+}
+.chips { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 14px; }
+.chip {
+  border-radius:999px; padding:6px 12px; font-size:12px;
+  border:1px solid rgba(34,211,238,.45); background:rgba(34,211,238,.12); color:var(--accent);
+}
+.chip.off { color:#888; border-color:#444; background:#1a1a1a; }
+.actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
+.btn {
+  border:0; border-radius:8px; padding:10px 16px; font-size:13px; font-weight:600;
+  background:#1976d2; color:#fff;
+}
+.btn.outline {
+  background:transparent; color:#fff; border:1px solid rgba(141,144,153,.5);
+}
+.status { margin-top:12px; color:var(--ok); font-size:12px; }
+.ready {
+  display:flex; align-items:center; gap:8px; color:#ffab40; font-size:14px; font-weight:600;
+}
+  </style>
+</head>
+<body>
+  <div class="figure" id="shot">
+    <div class="appbar"><div class="title">Presence</div></div>
+    <div class="tabs">
+      <div class="tab">Overview</div>
+      <div class="tab">Actions</div>
+      <div class="tab">Analytics</div>
+      <div class="tab">Sessions</div>
+      <div class="tab">People</div>
+      <div class="tab on">Settings</div>
+    </div>
+    <div class="body">
+      <div class="panel">
+        <h2>Presence Settings</h2>
+        <p class="muted">Video Match and QR + Video require an active people-match or Vprofile-match trigger with camera, group, and a Presence action.</p>
+        <h3>Video readiness</h3>
+        <div class="ready">Ready for Video Match / QR + Video</div>
+      </div>
+      <div class="panel">
+        <h2>HubSpot CRM</h2>
+        <p class="muted">Import contacts into People profiles and post Presence grants to HubSpot in real time.</p>
+        <div class="row"><div class="switch"></div><div>Enable HubSpot sync</div></div>
+        <div class="row"><div class="switch"></div><div>Post grants to HubSpot</div></div>
+        <div class="field">Private App access token · Token saved — paste to replace</div>
+        <div class="field">Hub ID (optional)</div>
+        <div class="field">List ID (optional — import this list only)</div>
+        <div class="muted" style="margin-top:12px;">Grant types to post</div>
+        <div class="chips">
+          <span class="chip">Check-in</span>
+          <span class="chip">Presence match</span>
+          <span class="chip">Verified presence</span>
+        </div>
+        <div class="status">Token configured · Last sync: ok</div>
+        <div class="actions">
+          <button class="btn">Save</button>
+          <button class="btn outline">Test connection</button>
+          <button class="btn outline">Sync contacts now</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
