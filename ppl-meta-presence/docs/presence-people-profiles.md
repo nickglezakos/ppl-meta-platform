@@ -284,7 +284,7 @@ Installation **user accounts** (ppl-meta-node) associate with PPPs by **normaliz
 |---|---|
 | Source of truth | User account wins for PPP `name` when emails match (`given_name` → `name` → `username`) |
 | Durable link | PPP stores `linked_user_uuid` (user `guid`) |
-| Sync triggers | Presence startup, interval (`PEOPLE_USER_SYNC_INTERVAL_SECONDS`, default 300), People tab **Sync with user accounts**, PPP create/update, node user create/update notify |
+| Sync triggers | Presence startup (background, retries ~0–30s if node is not up yet), interval (`PEOPLE_USER_SYNC_INTERVAL_SECONDS`, default 300), People tab **Sync with user accounts**, PPP create/update, node user create/update notify |
 | Missing PPP for user | Auto-create PPP |
 | Create PPP with user email | Name forced from user; link set |
 | Create/update user with PPP email | Presence sync updates PPP name + link |

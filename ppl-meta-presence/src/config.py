@@ -80,6 +80,13 @@ class Config:
     PEOPLE_USER_SYNC_INTERVAL_SECONDS: int = int(
         os.getenv("PEOPLE_USER_SYNC_INTERVAL_SECONDS", "300")
     )
+    VMETA_SERVICE_URL: str = os.getenv(
+        "VMETA_SERVICE_URL",
+        "http://ppl-meta-vmeta:8008",
+    ).rstrip("/")
+    AUTHENTICATOR_VERIFY_SIMILARITY_THRESHOLD: float = float(
+        os.getenv("PRESENCE_AUTHENTICATOR_VERIFY_THRESHOLD", "0.7")
+    )
 
 
 config = Config()

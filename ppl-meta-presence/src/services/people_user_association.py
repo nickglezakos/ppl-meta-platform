@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from models.presence_models import (
     PresencePeopleProfile,
@@ -12,6 +14,43 @@ from models.presence_models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Immediate attempt, then short backoff so a parallel node boot can finish
+# without waiting for the regular interval (default 300s).
+PEOPLE_USER_STARTUP_RETRY_DELAYS_SECONDS: tuple[int, ...] = (0, 2, 5, 10, 20, 30)
+
+
+async def retry_people_user_sync_until_ok(
+    sync: Callable[[], Awaitable[PeopleUserSyncReport]],
+    *,
+    delays: Sequence[int] = PEOPLE_USER_STARTUP_RETRY_DELAYS_SECONDS,
+    sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
+) -> PeopleUserSyncReport | None:
+    """Retry a people-user sync until it has no errors, or delays are exhausted."""
+    last_report: PeopleUserSyncReport | None = None
+    total = len(delays)
+    for attempt, delay in enumerate(delays, start=1):
+        if delay:
+            await sleep(delay)
+        try:
+            last_report = await sync()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "people-user startup sync attempt %s/%s raised: %s",
+                attempt,
+                total,
+                exc,
+            )
+            continue
+        if not last_report.errors:
+            return last_report
+        logger.warning(
+            "people-user startup sync attempt %s/%s failed: %s",
+            attempt,
+            total,
+            "; ".join(last_report.errors),
+        )
+    return last_report
 
 
 def normalize_email(email: Optional[str]) -> Optional[str]:
@@ -22,17 +61,24 @@ def normalize_email(email: Optional[str]) -> Optional[str]:
 
 
 def user_display_name(user: dict[str, Any]) -> str:
+    """People-profile display name from account fields.
+
+    Prefer real-name fields; if none are set, use the full email (not username
+    and not the local-part). Username is only a last resort when email is missing.
+    """
     given = (user.get("given_name") or "").strip()
     if given:
         return given
     full = (user.get("name") or "").strip()
     if full:
         return full
+    email = normalize_email(user.get("email"))
+    if email:
+        return email
     username = (user.get("username") or "").strip()
     if username:
         return username
-    email = normalize_email(user.get("email")) or "user"
-    return email.split("@", 1)[0]
+    return "user"
 
 
 def user_is_eligible(user: dict[str, Any]) -> bool:
@@ -136,6 +182,38 @@ class PeopleUserAssociationService:
             name_before=name_before,
             name_after=profile.name,
         )
+
+    def ensure_profile_for_user(
+        self,
+        user: dict[str, Any],
+        *,
+        reason: str = "user_create",
+        installation_uuid: str = "local-installation",
+    ) -> PresencePeopleProfile:
+        """Create or update the active PPP for one user account (register path)."""
+        report = PeopleUserSyncReport(reason=reason, started_at=datetime.utcnow())
+        if not user_is_eligible(user):
+            report.errors.append("user_not_eligible")
+            report.finished_at = datetime.utcnow()
+            self.last_report = report
+            raise ValueError("User is not eligible for a people profile (need active email)")
+
+        email = normalize_email(user.get("email"))
+        existing = self.find_active_by_email(email)
+        if existing is None:
+            profile = self.create_profile_for_user(
+                user,
+                reason=reason,
+                report=report,
+                installation_uuid=installation_uuid,
+            )
+        else:
+            self.apply_user_to_profile(existing, user, reason=reason, report=report)
+            profile = existing
+
+        report.finished_at = datetime.utcnow()
+        self.last_report = report
+        return profile
 
     def create_profile_for_user(
         self,

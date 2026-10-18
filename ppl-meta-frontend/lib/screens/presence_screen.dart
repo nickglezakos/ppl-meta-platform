@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:excel/excel.dart' hide Border;
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +21,7 @@ import '../services/presence_api_client.dart';
 import '../utils/platform_file_download.dart';
 import '../widgets/custom_app_bar.dart';
 import '../core/providers/camera_providers.dart';
+import '../presentation/widgets/camera/camera_stream_player_simple.dart';
 
 class PresenceScreen extends ConsumerStatefulWidget {
   final bool stationMode;
@@ -37,6 +39,13 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   PresenceInstallationContext? _installationContext;
   List<PresenceAnalyticsBucket> _sessionModes = const [];
   List<PresenceAnalyticsBucket> _grantTypes = const [];
+  List<PresenceAnalyticsBucket> _analyticsOutcomes = const [];
+  List<PresenceAnalyticsBucket> _analyticsFailureReasons = const [];
+  List<PresenceAnalyticsBucket> _analyticsPolicySources = const [];
+  List<PresenceAnalyticsBucket> _analyticsClientOrigins = const [];
+  List<PresenceModeSuccessBucket> _analyticsModeSuccess = const [];
+  late DateTime _analyticsStartDate;
+  late DateTime _analyticsEndDate;
   PresenceSessionTracePage _sessionsPage = const PresenceSessionTracePage(
     items: <PresenceSessionTraceSummary>[],
     total: 0,
@@ -97,6 +106,40 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   final TextEditingController _peopleSearchController = TextEditingController();
   String _peopleSearchQuery = '';
   Timer? _peopleSearchDebounce;
+  final Set<String> _peopleTagFilters = <String>{};
+
+  HubSpotCrmConfig? _hubspotConfig;
+  bool _hubspotEnabled = false;
+  bool _hubspotPostGrants = true;
+  bool _hubspotLoading = false;
+  bool _hubspotSaving = false;
+  bool _hubspotTesting = false;
+  bool _hubspotSyncing = false;
+  String? _hubspotStatusMessage;
+  String? _hubspotError;
+  final Set<String> _hubspotGrantTypes = <String>{
+    'check_in',
+    'presence_match',
+    'verified_presence',
+  };
+  final TextEditingController _hubspotTokenController = TextEditingController();
+  final TextEditingController _hubspotHubIdController = TextEditingController();
+  final TextEditingController _hubspotListIdController = TextEditingController();
+
+  static const List<({String key, String label})> _peopleCategoryTags = [
+    (key: 'active', label: 'Active'),
+    (key: 'inactive', label: 'Inactive'),
+    (key: 'linked', label: 'Linked'),
+    (key: 'unlinked', label: 'Unlinked'),
+    (key: 'linked_to_account', label: 'Linked to account'),
+    (key: 'not_linked_to_account', label: 'Not linked to account'),
+  ];
+
+  static const List<Set<String>> _peopleTagExclusiveGroups = [
+    {'active', 'inactive'},
+    {'linked', 'unlinked'},
+    {'linked_to_account', 'not_linked_to_account'},
+  ];
   List<SessionFilter> _sessionMemberFilterOptions = const [];
   bool _sessionMemberOptionsLoading = false;
 
@@ -133,6 +176,8 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     _tabController = TabController(length: 5, vsync: this);
     _sessionsEndDate = DateTime.now();
     _sessionsStartDate = _sessionsEndDate.subtract(const Duration(days: 3));
+    _analyticsEndDate = DateTime.now();
+    _analyticsStartDate = _analyticsEndDate.subtract(const Duration(days: 3));
     _userDayAwardsEndDate = DateTime.now();
     _userDayAwardsStartDate = _userDayAwardsEndDate.subtract(const Duration(days: 3));
     _deviceDisplayNameController.text = widget.stationMode ? 'Presence Web Station' : 'Presence Web Console';
@@ -140,6 +185,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       _loadPresenceDashboard();
       _loadSessionsPage();
       _loadPeopleProfiles();
+      _loadHubSpotCrmConfig();
       if (widget.stationMode) {
         _refreshExecutionState(renderIfMissing: true);
       }
@@ -156,6 +202,9 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     _userDayAwardUserController.dispose();
     _peopleSearchController.dispose();
     _peopleSearchDebounce?.cancel();
+    _hubspotTokenController.dispose();
+    _hubspotHubIdController.dispose();
+    _hubspotListIdController.dispose();
     super.dispose();
   }
 
@@ -165,54 +214,84 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       _error = null;
     });
 
+    final analyticsStart = DateTime(
+      _analyticsStartDate.year,
+      _analyticsStartDate.month,
+      _analyticsStartDate.day,
+    );
+    final analyticsEnd = DateTime(
+      _analyticsEndDate.year,
+      _analyticsEndDate.month,
+      _analyticsEndDate.day,
+      23,
+      59,
+      59,
+    );
+
     final results = await Future.wait([
-      _apiClient.getAnalyticsSummary(),
+      _apiClient.getAnalyticsDashboard(startDate: analyticsStart, endDate: analyticsEnd),
       _apiClient.getInstallationContext(),
-      _apiClient.getBySessionMode(),
-      _apiClient.getByGrantType(),
       _apiClient.getCameras(),
       _apiClient.getAvailableIndividualGroups(),
       _apiClient.getVideoReadiness(),
     ]);
 
-    final summaryResponse = results[0] as ApiResponse<PresenceAnalyticsSummary>;
+    var dashboardResponse = results[0] as ApiResponse<PresenceAnalyticsDashboard>;
     final installationResponse = results[1] as ApiResponse<PresenceInstallationContext>;
-    final modeResponse = results[2] as ApiResponse<List<PresenceAnalyticsBucket>>;
-    final grantResponse = results[3] as ApiResponse<List<PresenceAnalyticsBucket>>;
-    final camerasResponse = results[4] as ApiResponse<List<PresenceCameraOption>>;
-    final availableGroupsResponse = results[5] as ApiResponse<List<PresenceIndividualGroupOption>>;
-    final videoReadinessResponse = results[6] as ApiResponse<PresenceVideoReadiness>;
+    final camerasResponse = results[2] as ApiResponse<List<PresenceCameraOption>>;
+    final availableGroupsResponse = results[3] as ApiResponse<List<PresenceIndividualGroupOption>>;
+    final videoReadinessResponse = results[4] as ApiResponse<PresenceVideoReadiness>;
 
     if (!mounted) {
       return;
     }
 
-    if (!summaryResponse.success) {
-      setState(() {
-        _error = summaryResponse.error ?? 'Failed to load presence dashboard';
-        _isLoading = false;
-      });
-      return;
+    // Older Presence builds may not expose /analytics/dashboard yet.
+    if (!dashboardResponse.success || dashboardResponse.data == null) {
+      final legacy = await Future.wait([
+        _apiClient.getAnalyticsSummary(startDate: analyticsStart, endDate: analyticsEnd),
+        _apiClient.getBySessionMode(),
+        _apiClient.getByGrantType(),
+      ]);
+      final summaryResponse = legacy[0] as ApiResponse<PresenceAnalyticsSummary>;
+      final modeResponse = legacy[1] as ApiResponse<List<PresenceAnalyticsBucket>>;
+      final grantResponse = legacy[2] as ApiResponse<List<PresenceAnalyticsBucket>>;
+      if (!summaryResponse.success || summaryResponse.data == null) {
+        setState(() {
+          _error = dashboardResponse.error ?? summaryResponse.error ?? 'Failed to load presence dashboard';
+          _isLoading = false;
+        });
+        return;
+      }
+      dashboardResponse = ApiResponse.success(
+        PresenceAnalyticsDashboard(
+          summary: summaryResponse.data!,
+          sessionModes: modeResponse.data ?? const [],
+          grantTypes: grantResponse.data ?? const [],
+        ),
+      );
     }
 
+    final dashboard = dashboardResponse.data!;
     setState(() {
-      _summary = summaryResponse.data;
+      _summary = dashboard.summary;
+      _sessionModes = dashboard.sessionModes;
+      _grantTypes = dashboard.grantTypes;
+      _analyticsOutcomes = dashboard.outcomes;
+      _analyticsFailureReasons = dashboard.failureReasons;
+      _analyticsPolicySources = dashboard.policySources;
+      _analyticsClientOrigins = dashboard.clientOrigins;
+      _analyticsModeSuccess = dashboard.modeSuccess;
       _installationContext = installationResponse.data;
-      _sessionModes = modeResponse.data ?? const [];
-      _grantTypes = grantResponse.data ?? const [];
       _cameras = camerasResponse.data ?? const [];
       _availableIndividualGroups = availableGroupsResponse.data ?? const [];
       _videoReadiness = videoReadinessResponse.data;
       _error = installationResponse.success &&
-              modeResponse.success &&
-              grantResponse.success &&
               camerasResponse.success &&
               availableGroupsResponse.success &&
               videoReadinessResponse.success
           ? null
-          : modeResponse.error ??
-              grantResponse.error ??
-              installationResponse.error ??
+          : installationResponse.error ??
               camerasResponse.error ??
               availableGroupsResponse.error ??
               videoReadinessResponse.error;
@@ -221,6 +300,166 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
 
     unawaited(_loadSessionsPage());
     unawaited(_loadUserDayAwardPage(offset: 0));
+    unawaited(_loadHubSpotCrmConfig());
+  }
+
+  Future<void> _loadHubSpotCrmConfig() async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _hubspotLoading = true;
+      _hubspotError = null;
+    });
+    final response = await _apiClient.getHubSpotCrmConfig();
+    if (!mounted) {
+      return;
+    }
+    if (!response.success || response.data == null) {
+      setState(() {
+        _hubspotLoading = false;
+        _hubspotError = response.error;
+        _hubspotConfig = null;
+      });
+      return;
+    }
+    final config = response.data!;
+    setState(() {
+      _hubspotConfig = config;
+      _hubspotEnabled = config.enabled;
+      _hubspotPostGrants = config.postGrants;
+      _hubspotGrantTypes
+        ..clear()
+        ..addAll(config.grantTypes);
+      _hubspotHubIdController.text = config.hubId;
+      _hubspotListIdController.text = config.listId ?? '';
+      _hubspotTokenController.clear();
+      _hubspotLoading = false;
+      _hubspotError = null;
+      _hubspotStatusMessage = _formatHubSpotStatus(config);
+    });
+  }
+
+  String _formatHubSpotStatus(HubSpotCrmConfig config) {
+    final parts = <String>[];
+    if (config.tokenConfigured) {
+      parts.add('Token configured');
+    } else {
+      parts.add('No token');
+    }
+    if (config.lastSyncAt != null) {
+      parts.add('Last sync: ${config.lastSyncAt!.toLocal()} (${config.lastSyncStatus ?? 'n/a'})');
+    }
+    if (config.lastError != null && config.lastError!.isNotEmpty) {
+      parts.add('Last error: ${config.lastError}');
+    }
+    return parts.join(' · ');
+  }
+
+  Future<void> _saveHubSpotCrmConfig() async {
+    final installationUuid = _installationContext?.installationUuid;
+    if (installationUuid == null || installationUuid.isEmpty) {
+      setState(() => _hubspotError = 'Installation context is not loaded yet.');
+      return;
+    }
+    setState(() {
+      _hubspotSaving = true;
+      _hubspotError = null;
+    });
+    final response = await _apiClient.updateHubSpotCrmConfig(
+      installationUuid: installationUuid,
+      enabled: _hubspotEnabled,
+      accessToken: _hubspotTokenController.text.trim().isEmpty
+          ? null
+          : _hubspotTokenController.text.trim(),
+      hubId: _hubspotHubIdController.text.trim(),
+      listId: _hubspotListIdController.text.trim(),
+      postGrants: _hubspotPostGrants,
+      grantTypes: _hubspotGrantTypes.toList(),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _hubspotSaving = false);
+    if (!response.success || response.data == null) {
+      setState(() => _hubspotError = response.error ?? 'Failed to save HubSpot settings.');
+      return;
+    }
+    final config = response.data!;
+    setState(() {
+      _hubspotConfig = config;
+      _hubspotTokenController.clear();
+      _hubspotStatusMessage = _formatHubSpotStatus(config);
+      _hubspotError = null;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('HubSpot settings saved.')),
+      );
+    }
+  }
+
+  Future<void> _testHubSpotCrmConnection() async {
+    setState(() {
+      _hubspotTesting = true;
+      _hubspotError = null;
+    });
+    // Persist token first if the operator typed a new one
+    if (_hubspotTokenController.text.trim().isNotEmpty || _hubspotConfig == null) {
+      await _saveHubSpotCrmConfig();
+    }
+    final response = await _apiClient.testHubSpotCrmConnection();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _hubspotTesting = false);
+    if (!response.success || response.data == null) {
+      setState(() => _hubspotError = response.error ?? 'HubSpot connection test failed.');
+      return;
+    }
+    final result = response.data!;
+    setState(() {
+      _hubspotStatusMessage = result.message;
+      _hubspotError = result.ok ? null : result.message;
+      if (result.hubId != null && result.hubId!.isNotEmpty) {
+        _hubspotHubIdController.text = result.hubId!;
+      }
+    });
+    await _loadHubSpotCrmConfig();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.ok ? 'HubSpot connection OK.' : result.message)),
+      );
+    }
+  }
+
+  Future<void> _syncHubSpotCrmContacts() async {
+    setState(() {
+      _hubspotSyncing = true;
+      _hubspotError = null;
+    });
+    final response = await _apiClient.syncHubSpotCrmContacts();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _hubspotSyncing = false);
+    if (!response.success || response.data == null) {
+      setState(() => _hubspotError = response.error ?? 'HubSpot sync failed.');
+      return;
+    }
+    final report = response.data!;
+    final summary =
+        'Synced ${report.contactsSeen} contact(s): ${report.created} created, '
+        '${report.updated} updated, ${report.skipped} skipped.';
+    setState(() {
+      _hubspotStatusMessage = summary;
+      _hubspotError = report.errors.isEmpty ? null : report.errors.take(3).join('; ');
+    });
+    await _loadHubSpotCrmConfig();
+    await _loadPeopleProfiles();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(summary)));
+    }
   }
 
   Future<void> _loadUserDayAwardPage({int? offset}) async {
@@ -341,6 +580,9 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       groupNames: _filterValues('group'),
       memberNames: _filterValues('member'),
       profileNames: _filterValues('profile'),
+      policySources: _filterValues('policy_source'),
+      failureReasonCodes: _filterValues('failure_reason'),
+      clientOrigins: _filterValues('client_origin'),
       startDate: DateTime(_sessionsStartDate.year, _sessionsStartDate.month, _sessionsStartDate.day),
       endDate: DateTime(_sessionsEndDate.year, _sessionsEndDate.month, _sessionsEndDate.day, 23, 59, 59),
     );
@@ -374,6 +616,9 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
         groupNames: _filterValues('group'),
         memberNames: _filterValues('member'),
         profileNames: _filterValues('profile'),
+        policySources: _filterValues('policy_source'),
+        failureReasonCodes: _filterValues('failure_reason'),
+        clientOrigins: _filterValues('client_origin'),
         startDate: DateTime(_sessionsStartDate.year, _sessionsStartDate.month, _sessionsStartDate.day),
         endDate: DateTime(_sessionsEndDate.year, _sessionsEndDate.month, _sessionsEndDate.day, 23, 59, 59),
       );
@@ -554,6 +799,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       deviceName: currentUser?.username ?? 'presence-web-operator',
       devicePlatform: 'web',
       appVersion: 'presence-web-console',
+      clientOrigin: widget.stationMode ? 'station' : 'console',
     );
 
     if (!mounted) {
@@ -670,7 +916,8 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   }
 
   Future<void> _openOwnerQrScanner() async {
-    await _runPlatformOwnerQrScan(sessionMode: 'qr_only');
+    // Action Tab "Scan Owner QR" always uses Connected (USB) cameras.
+    await _runConnectedCameraOwnerQrScan();
   }
 
   Future<void> _openOwnerQrVideoScanner() async {
@@ -683,7 +930,204 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       );
       return;
     }
+    // QR + Video keeps the reserved presence camera path unchanged.
     await _runPlatformOwnerQrScan(sessionMode: 'qr_plus_camera');
+  }
+
+  bool _isConnectedCameraType(String cameraType) {
+    final normalized = cameraType.trim().toUpperCase();
+    return normalized == 'USB' || normalized == 'WEBCAM';
+  }
+
+  List<PresenceCameraOption> _connectedCameras() {
+    return _cameras.where((c) => _isConnectedCameraType(c.cameraType)).toList();
+  }
+
+  Future<PresenceCameraOption?> _pickConnectedCameraForOwnerQr(
+    List<PresenceCameraOption> connected,
+  ) async {
+    if (connected.isEmpty) {
+      return null;
+    }
+    if (connected.length == 1) {
+      return connected.first;
+    }
+
+    return showDialog<PresenceCameraOption>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Choose Connected Camera'),
+          content: SizedBox(
+            width: 420,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: connected.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final camera = connected[index];
+                final label = camera.name.isEmpty ? camera.deviceId : camera.name;
+                return ListTile(
+                  leading: const Icon(Icons.videocam),
+                  title: Text(label),
+                  subtitle: Text(
+                    camera.status.isEmpty
+                        ? camera.deviceId
+                        : '${camera.deviceId} · ${camera.status}',
+                  ),
+                  onTap: () => Navigator.of(context).pop(camera),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Scan Owner QR: connect a Connected camera → decode QR → disconnect.
+  Future<void> _runConnectedCameraOwnerQrScan() async {
+    final installationUuid = _installationContext?.installationUuid;
+    if (installationUuid == null || installationUuid.isEmpty) {
+      return;
+    }
+
+    final connected = _connectedCameras();
+    if (connected.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No Connected cameras available. Open Cameras, tap refresh to scan '
+            'for local cameras, then retry Scan Owner QR.',
+          ),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
+
+    final selected = await _pickConnectedCameraForOwnerQr(connected);
+    if (selected == null || !mounted) {
+      return;
+    }
+
+    final session = await _ensureExecutionSession(sessionMode: 'qr_only');
+    if (session == null || !mounted) {
+      return;
+    }
+
+    final label = selected.name.isEmpty ? selected.deviceId : selected.name;
+
+    // Connect + start streaming before the dialog so MJPEG preview has frames.
+    // Also refresh the global camera list so CameraStreamPlayerSimple can resolve
+    // the device (it looks up cameraByIdProvider).
+    setState(() {
+      _isSubmittingAdminAction = true;
+    });
+    try {
+      await ref.read(cameraListProvider.notifier).loadCameras();
+      final connectedOk = await ref
+          .read(cameraServiceProvider)
+          .connectCamera(selected.deviceId);
+      if (!connectedOk) {
+        if (!mounted) {
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Could not connect Connected camera ($label). Check Cameras and retry.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+      // Brief settle so the worker has frames before the <img> attaches.
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to prepare Connected camera: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmittingAdminAction = false;
+        });
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    final scanResult = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _PresencePlatformQrScanSheet(
+        apiClient: _apiClient,
+        sessionUuid: session.sessionUuid,
+        installationUuid: installationUuid,
+        cameraDeviceId: selected.deviceId,
+        cameraLabel: label,
+        authService: ref.read(authServiceProvider),
+        oneshotConnectedCamera: true,
+      ),
+    );
+
+    if (!mounted || scanResult == null) {
+      return;
+    }
+
+    final found = scanResult['found'] == true;
+    final sessionJson = scanResult['session'];
+    if (sessionJson is Map<String, dynamic>) {
+      setState(() {
+        _activeSession = PresenceLiveSession.fromJson(sessionJson);
+      });
+    }
+
+    final reason = scanResult['reason']?.toString();
+    String failureMessage = 'No owner QR detected on the Connected camera before timeout.';
+    if (reason == 'not_connected_camera' || reason == 'camera_not_found') {
+      failureMessage =
+          'Selected camera is not available as a Connected camera. Refresh Cameras and retry.';
+    } else if (reason == 'scan_failed') {
+      failureMessage = 'Connected camera QR scan failed. Check the camera and retry.';
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          found
+              ? 'Owner QR scanned from Connected camera ($label).'
+              : failureMessage,
+        ),
+        backgroundColor: found ? null : Colors.red,
+      ),
+    );
+
+    if (found) {
+      await _refreshExecutionState();
+      await _loadPresenceDashboard();
+    }
   }
 
   String? _reservedPresenceCameraId() {
@@ -712,6 +1156,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     return null;
   }
 
+  /// Reserved presence camera path (used by Scan Owner QR + Video).
   Future<void> _runPlatformOwnerQrScan({required String sessionMode}) async {
     final installationUuid = _installationContext?.installationUuid;
     if (installationUuid == null || installationUuid.isEmpty) {
@@ -1090,15 +1535,38 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
 
   Widget _buildAnalyticsTab(BuildContext context) {
     return _buildTabbedList([
+      _buildAnalyticsDateRangeRow(context),
+      const SizedBox(height: 16),
+      _buildUserDayAwardsHierarchySection(context),
+      const SizedBox(height: 20),
       _buildSummaryGrid(context),
       const SizedBox(height: 20),
-      _buildUserDayAwardsHierarchySection(context),
+      _buildAnalyticsDonutPair(context),
+      const SizedBox(height: 20),
+      _buildDistributionSection(
+        context,
+        title: 'Failure Reasons',
+        subtitle: 'Top failure_reason_code values (expires, attempt limits, face mismatch, …).',
+        buckets: _analyticsFailureReasons,
+        filterCategory: 'failure_reason',
+      ),
+      const SizedBox(height: 20),
+      _buildDistributionSection(
+        context,
+        title: 'Policy Sources',
+        subtitle: 'How grants were authorized (authenticator MVR, platform trigger, default policy, …).',
+        buckets: _analyticsPolicySources,
+        filterCategory: 'policy_source',
+      ),
+      const SizedBox(height: 20),
+      _buildModeSuccessSection(context),
       const SizedBox(height: 20),
       _buildDistributionSection(
         context,
         title: 'Session Modes',
         subtitle: 'How presence flows are being requested across qr_only, camera_only, and qr_plus_camera.',
         buckets: _sessionModes,
+        filterCategory: 'session_mode',
       ),
       const SizedBox(height: 20),
       _buildDistributionSection(
@@ -1106,8 +1574,369 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
         title: 'Grant Types',
         subtitle: 'Resulting assurance-oriented grants returned by the presence service.',
         buckets: _grantTypes,
+        filterCategory: 'grant_type',
       ),
     ]);
+  }
+
+  Widget _buildAnalyticsDateRangeRow(BuildContext context) {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(
+          'Analytics range',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        _buildDateFilterButton(
+          context,
+          label: 'Start',
+          value: _analyticsStartDate,
+          onPicked: (value) {
+            setState(() {
+              _analyticsStartDate = value;
+              if (_analyticsEndDate.isBefore(value)) {
+                _analyticsEndDate = value;
+              }
+            });
+            _loadPresenceDashboard();
+          },
+        ),
+        _buildDateFilterButton(
+          context,
+          label: 'End',
+          value: _analyticsEndDate,
+          onPicked: (value) {
+            setState(() {
+              _analyticsEndDate = value;
+              if (_analyticsStartDate.isAfter(value)) {
+                _analyticsStartDate = value;
+              }
+            });
+            _loadPresenceDashboard();
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openSessionsWithFilters(List<SessionFilter> filters) async {
+    setState(() {
+      _selectedSessionFilters = filters;
+      _sessionsStartDate = _analyticsStartDate;
+      _sessionsEndDate = _analyticsEndDate;
+    });
+    _tabController.animateTo(2);
+    await _loadSessionsPage(offset: 0);
+  }
+
+  static const List<Color> _analyticsChartPalette = [
+    Color(0xFF4CAF50),
+    Color(0xFF2196F3),
+    Color(0xFFFF9800),
+    Color(0xFFE53935),
+    Color(0xFF9C27B0),
+    Color(0xFF00BCD4),
+    Color(0xFF8BC34A),
+    Color(0xFF607D8B),
+  ];
+
+  Color _analyticsBucketColor(String key, int index) {
+    switch (key.toLowerCase()) {
+      case 'granted':
+        return const Color(0xFF4CAF50);
+      case 'denied':
+        return const Color(0xFFE53935);
+      case 'failed':
+        return const Color(0xFFFF9800);
+      case 'pending':
+        return const Color(0xFF90A4AE);
+      case 'retry_required':
+        return const Color(0xFFFFC107);
+      case 'authenticator':
+        return const Color(0xFF2196F3);
+      case 'mobile_camera':
+        return const Color(0xFF00BCD4);
+      case 'console':
+        return const Color(0xFF9C27B0);
+      case 'station':
+        return const Color(0xFF8BC34A);
+      case 'trigger':
+        return const Color(0xFFFF9800);
+      case 'unknown':
+        return const Color(0xFF607D8B);
+      default:
+        return _analyticsChartPalette[index % _analyticsChartPalette.length];
+    }
+  }
+
+  Widget _buildAnalyticsDonutPair(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final sideBySide = constraints.maxWidth >= 900;
+        final outcomes = _buildDonutSection(
+          context,
+          title: 'Outcomes',
+          subtitle: 'Granted, denied, failed, and pending mix. Tap a legend item to open Sessions.',
+          buckets: _analyticsOutcomes,
+          filterCategory: 'decision',
+        );
+        final origins = _buildDonutSection(
+          context,
+          title: 'Client Origin',
+          subtitle: 'Authenticator vs mobile camera vs console/station vs trigger. Tap a legend item to open Sessions.',
+          buckets: _analyticsClientOrigins,
+          filterCategory: 'client_origin',
+        );
+        if (!sideBySide) {
+          return Column(
+            children: [
+              outcomes,
+              const SizedBox(height: 20),
+              origins,
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: outcomes),
+            const SizedBox(width: 16),
+            Expanded(child: origins),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDonutSection(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required List<PresenceAnalyticsBucket> buckets,
+    required String filterCategory,
+  }) {
+    final total = buckets.fold<int>(0, (sum, item) => sum + item.count);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
+          ),
+          const SizedBox(height: 16),
+          if (buckets.isEmpty || total == 0)
+            Text('No data available yet.', style: Theme.of(context).textTheme.bodyMedium)
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final stacked = constraints.maxWidth < 420;
+                final chart = SizedBox(
+                  height: 200,
+                  width: stacked ? double.infinity : 200,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      PieChart(
+                        PieChartData(
+                          sectionsSpace: 2,
+                          centerSpaceRadius: 52,
+                          sections: [
+                            for (var i = 0; i < buckets.length; i++)
+                              PieChartSectionData(
+                                value: buckets[i].count.toDouble(),
+                                title: buckets[i].count / total >= 0.08
+                                    ? '${((buckets[i].count / total) * 100).round()}%'
+                                    : '',
+                                radius: 42,
+                                color: _analyticsBucketColor(buckets[i].key, i),
+                                titleStyle: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                          ],
+                          pieTouchData: PieTouchData(
+                            touchCallback: (event, response) {
+                              // Legend is the primary hit target; only honor explicit taps on wedges.
+                              if (event is! FlTapUpEvent) return;
+                              final index = response?.touchedSection?.touchedSectionIndex;
+                              if (index == null || index < 0 || index >= buckets.length) return;
+                              final bucket = buckets[index];
+                              _openSessionsWithFilters([
+                                SessionFilter(
+                                  category: filterCategory,
+                                  value: bucket.key,
+                                  label: bucket.label,
+                                ),
+                              ]);
+                            },
+                          ),
+                        ),
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '$total',
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                          ),
+                          Text(
+                            'sessions',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Colors.grey[500],
+                                ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+                final legend = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var i = 0; i < buckets.length; i++)
+                      InkWell(
+                        onTap: () => _openSessionsWithFilters([
+                          SessionFilter(
+                            category: filterCategory,
+                            value: buckets[i].key,
+                            label: buckets[i].label,
+                          ),
+                        ]),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _analyticsBucketColor(buckets[i].key, i),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(child: Text(buckets[i].label)),
+                              Text(
+                                '${buckets[i].count} · ${((buckets[i].count / total) * 100).round()}%',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Colors.grey[400],
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+                if (stacked) {
+                  return Column(
+                    children: [
+                      chart,
+                      const SizedBox(height: 12),
+                      legend,
+                    ],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    chart,
+                    const SizedBox(width: 20),
+                    Expanded(child: legend),
+                  ],
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeSuccessSection(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Mode Success Rate',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Grant / fail / expire rates per session mode. Tap a row to inspect Sessions.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
+          ),
+          const SizedBox(height: 16),
+          if (_analyticsModeSuccess.isEmpty)
+            Text('No data available yet.', style: Theme.of(context).textTheme.bodyMedium)
+          else
+            ..._analyticsModeSuccess.map((item) {
+              final grantPct = (item.grantRate * 100).toStringAsFixed(0);
+              final expirePct = (item.expireRate * 100).toStringAsFixed(0);
+              return InkWell(
+                onTap: () => _openSessionsWithFilters([
+                  SessionFilter(category: 'session_mode', value: item.sessionMode, label: item.label),
+                ]),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(child: Text(item.label)),
+                          Text('${item.granted}/${item.total} granted · $grantPct%'),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: item.total == 0 ? 0 : item.grantRate.clamp(0.0, 1.0),
+                          minHeight: 10,
+                          backgroundColor: Colors.white10,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Failed ${item.failed} · Expired $expirePct% (${item.expired}) · Pending ${item.pending}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[500]),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+    );
   }
 
   Widget _buildUserDayAwardsHierarchySection(BuildContext context) {
@@ -1391,6 +2220,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     final effectiveQuery = (query ?? _peopleSearchQuery).trim();
     final resp = await _apiClient.listPeopleProfiles(
       query: effectiveQuery.isEmpty ? null : effectiveQuery,
+      tags: _peopleTagFilters.isEmpty ? null : _peopleTagFilters.toList(),
       limit: 200,
     );
     if (!mounted) return;
@@ -1410,6 +2240,53 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
       setState(() => _peopleSearchQuery = value.trim());
       _loadPeopleProfiles(query: value.trim());
     });
+  }
+
+  void _togglePeopleTagFilter(String tagKey) {
+    setState(() {
+      if (_peopleTagFilters.contains(tagKey)) {
+        _peopleTagFilters.remove(tagKey);
+      } else {
+        for (final group in _peopleTagExclusiveGroups) {
+          if (group.contains(tagKey)) {
+            _peopleTagFilters.removeAll(group);
+          }
+        }
+        _peopleTagFilters.add(tagKey);
+      }
+    });
+    _loadPeopleProfiles();
+  }
+
+  Widget _buildPeopleTagStrip(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Filter by tags',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[500]),
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (var i = 0; i < _peopleCategoryTags.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                FilterChip(
+                  label: Text(_peopleCategoryTags[i].label),
+                  selected: _peopleTagFilters.contains(_peopleCategoryTags[i].key),
+                  onSelected: (_) => _togglePeopleTagFilter(_peopleCategoryTags[i].key),
+                  showCheckmark: false,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _syncPeopleWithUsers() async {
@@ -1450,8 +2327,10 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     } else if (_peopleError != null) {
       body = [Text(_peopleError!, style: const TextStyle(color: Colors.orangeAccent))];
     } else if (_peopleProfiles.isEmpty) {
-      final emptyMessage = _peopleSearchQuery.isNotEmpty
-          ? 'No people profiles match "${_peopleSearchQuery}".'
+      final hasFilters =
+          _peopleSearchQuery.isNotEmpty || _peopleTagFilters.isNotEmpty;
+      final emptyMessage = hasFilters
+          ? 'No people profiles match the current search or tags.'
           : 'No people profiles yet. Create one to represent a person across groups.';
       body = [
         Center(
@@ -1541,7 +2420,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
             controller: _peopleSearchController,
             decoration: InputDecoration(
               labelText: 'Search profiles',
-              hintText: 'Name, email, phone, external ref\u2026',
+              hintText: 'Name, email, phone, tags (active, linked\u2026)',
               prefixIcon: const Icon(Icons.search),
               border: const OutlineInputBorder(),
               isDense: true,
@@ -1558,10 +2437,16 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
             ),
             onChanged: _onPeopleSearchChanged,
           ),
-          if (_peopleSearchQuery.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _buildPeopleTagStrip(context),
+          if (_peopleSearchQuery.isNotEmpty || _peopleTagFilters.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
-              'Showing results for "$_peopleSearchQuery".',
+              [
+                if (_peopleSearchQuery.isNotEmpty) 'Search: "$_peopleSearchQuery"',
+                if (_peopleTagFilters.isNotEmpty)
+                  'Tags: ${_peopleCategoryTags.where((t) => _peopleTagFilters.contains(t.key)).map((t) => t.label).join(', ')}',
+              ].join(' · '),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[500]),
             ),
           ],
@@ -1574,8 +2459,15 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
 
   Widget _buildPeopleCard(BuildContext context, PresencePeopleProfile profile) {
     final chips = <Widget>[
-      _TraceChip(label: '${profile.linkedMemberCount} linked'),
-      if (profile.isLinkedToUser) _TraceChip(label: 'Linked to account'),
+      _TraceChip(label: profile.status == 'active' ? 'Active' : profile.status),
+      _TraceChip(
+        label: profile.linkedMemberCount > 0
+            ? '${profile.linkedMemberCount} linked'
+            : 'Unlinked',
+      ),
+      _TraceChip(
+        label: profile.isLinkedToUser ? 'Linked to account' : 'Not linked to account',
+      ),
       if (profile.email != null && profile.email!.isNotEmpty) _TraceChip(label: profile.email!),
       if (profile.phone != null && profile.phone!.isNotEmpty) _TraceChip(label: profile.phone!),
       if (profile.externalRef != null && profile.externalRef!.isNotEmpty)
@@ -1595,20 +2487,10 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              profile.name,
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (profile.status != 'active') ...[
-                            const SizedBox(width: 8),
-                            _TraceChip(label: profile.status),
-                          ],
-                        ],
+                      Text(
+                        profile.name,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
                       ),
                       if (profile.pppUuid.isNotEmpty)
                         Text(
@@ -1795,6 +2677,8 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   Widget _buildSettingsTab(BuildContext context) {
     return _buildTabbedList([
       _buildAdminSection(context),
+      const SizedBox(height: 16),
+      _buildHubSpotCrmSection(context),
     ]);
   }
 
@@ -1835,11 +2719,61 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
   Widget _buildSummaryGrid(BuildContext context) {
     final summary = _summary!;
     final cards = [
-      _MetricCard(title: 'Total Sessions', value: summary.totalSessions.toString(), icon: Icons.how_to_reg),
-      _MetricCard(title: 'Completed', value: summary.completedSessions.toString(), icon: Icons.verified),
-      _MetricCard(title: 'Pending', value: summary.pendingSessions.toString(), icon: Icons.timelapse),
-      _MetricCard(title: 'Granted', value: summary.grantedSessions.toString(), icon: Icons.check_circle),
-      _MetricCard(title: 'Denied', value: summary.deniedSessions.toString(), icon: Icons.cancel),
+      _MetricCard(
+        title: 'Total Sessions',
+        value: summary.totalSessions.toString(),
+        icon: Icons.how_to_reg,
+        onTap: () => _openSessionsWithFilters(const []),
+      ),
+      _MetricCard(
+        title: 'Completed',
+        value: summary.completedSessions.toString(),
+        icon: Icons.verified,
+      ),
+      _MetricCard(
+        title: 'Pending',
+        value: summary.pendingSessions.toString(),
+        icon: Icons.timelapse,
+        onTap: () => _openSessionsWithFilters([
+          const SessionFilter(category: 'decision', value: 'pending', label: 'Pending'),
+        ]),
+      ),
+      _MetricCard(
+        title: 'Granted',
+        value: summary.grantedSessions.toString(),
+        icon: Icons.check_circle,
+        onTap: () => _openSessionsWithFilters([
+          const SessionFilter(category: 'decision', value: 'granted', label: 'Granted'),
+        ]),
+      ),
+      _MetricCard(
+        title: 'Denied',
+        value: summary.deniedSessions.toString(),
+        icon: Icons.cancel,
+        onTap: () => _openSessionsWithFilters([
+          const SessionFilter(category: 'decision', value: 'denied', label: 'Denied'),
+        ]),
+      ),
+      _MetricCard(
+        title: 'Failed',
+        value: summary.failedSessions.toString(),
+        icon: Icons.error_outline,
+        onTap: () => _openSessionsWithFilters([
+          const SessionFilter(category: 'decision', value: 'failed', label: 'Failed'),
+        ]),
+      ),
+      _MetricCard(
+        title: 'Expired',
+        value: summary.expiredSessions.toString(),
+        icon: Icons.timer_off_outlined,
+        onTap: () => _openSessionsWithFilters([
+          const SessionFilter(
+            category: 'failure_reason',
+            value: 'presence_session_expired',
+            label: 'presence_session_expired',
+          ),
+        ]),
+      ),
     ];
 
     return Wrap(
@@ -1861,6 +2795,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     required String title,
     required String subtitle,
     required List<PresenceAnalyticsBucket> buckets,
+    String? filterCategory,
   }) {
     final total = buckets.fold<int>(0, (sum, item) => sum + item.count);
 
@@ -1892,27 +2827,44 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
           else
             ...buckets.map((bucket) {
               final percent = total == 0 ? 0.0 : bucket.count / total;
+              final row = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: Text(bucket.label)),
+                      Text('${bucket.count}'),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: percent,
+                      minHeight: 10,
+                      backgroundColor: Colors.white10,
+                    ),
+                  ),
+                ],
+              );
+              if (filterCategory == null) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: row,
+                );
+              }
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(child: Text(bucket.label)),
-                        Text('${bucket.count}'),
-                      ],
+                child: InkWell(
+                  onTap: () => _openSessionsWithFilters([
+                    SessionFilter(
+                      category: filterCategory,
+                      value: bucket.key,
+                      label: bucket.label,
                     ),
-                    const SizedBox(height: 6),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        value: percent,
-                        minHeight: 10,
-                        backgroundColor: Colors.white10,
-                      ),
-                    ),
-                  ],
+                  ]),
+                  borderRadius: BorderRadius.circular(8),
+                  child: row,
                 ),
               );
             }),
@@ -2275,6 +3227,15 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     for (final decision in decisions) {
       list.add(SessionFilter(category: 'decision', value: decision.$1, label: decision.$2));
     }
+    for (final policy in _analyticsPolicySources) {
+      list.add(SessionFilter(category: 'policy_source', value: policy.key, label: policy.label));
+    }
+    for (final reason in _analyticsFailureReasons) {
+      list.add(SessionFilter(category: 'failure_reason', value: reason.key, label: reason.label));
+    }
+    for (final origin in _analyticsClientOrigins) {
+      list.add(SessionFilter(category: 'client_origin', value: origin.key, label: origin.label));
+    }
     for (final camera in _cameras) {
       if (camera.deviceId.isNotEmpty) {
         list.add(SessionFilter(category: 'camera', value: camera.deviceId, label: camera.name));
@@ -2306,6 +3267,12 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
         return 'Mode';
       case 'decision':
         return 'Decision';
+      case 'policy_source':
+        return 'Policy';
+      case 'failure_reason':
+        return 'Failure';
+      case 'client_origin':
+        return 'Origin';
       case 'camera':
         return 'Camera';
       case 'group':
@@ -2724,6 +3691,161 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
                 ),
             ],
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHubSpotCrmSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final busy = _hubspotSaving || _hubspotTesting || _hubspotSyncing || _hubspotLoading;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'HubSpot CRM',
+                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Import contacts into People profiles and post Presence grants to HubSpot in real time.',
+                      style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
+                    ),
+                  ],
+                ),
+              ),
+              if (busy)
+                const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (_hubspotError != null) ...[
+            Text(
+              _hubspotError!,
+              style: theme.textTheme.bodySmall?.copyWith(color: Colors.orangeAccent),
+            ),
+            const SizedBox(height: 12),
+          ],
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Enable HubSpot sync'),
+            value: _hubspotEnabled,
+            onChanged: busy
+                ? null
+                : (value) => setState(() => _hubspotEnabled = value),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Post grants to HubSpot'),
+            subtitle: const Text('Create a Note and update last_presence_* properties on grant'),
+            value: _hubspotPostGrants,
+            onChanged: busy
+                ? null
+                : (value) => setState(() => _hubspotPostGrants = value),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _hubspotTokenController,
+            obscureText: true,
+            enabled: !busy,
+            decoration: InputDecoration(
+              labelText: 'Private App access token',
+              hintText: _hubspotConfig?.tokenConfigured == true
+                  ? 'Token saved — paste to replace'
+                  : 'Paste HubSpot Private App token',
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _hubspotHubIdController,
+            enabled: !busy,
+            decoration: const InputDecoration(
+              labelText: 'Hub ID (optional)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _hubspotListIdController,
+            enabled: !busy,
+            decoration: const InputDecoration(
+              labelText: 'List ID (optional — import this list only)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text('Grant types to post', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final entry in const [
+                ('check_in', 'Check-in'),
+                ('presence_match', 'Presence match'),
+                ('verified_presence', 'Verified presence'),
+              ])
+                FilterChip(
+                  label: Text(entry.$2),
+                  selected: _hubspotGrantTypes.contains(entry.$1),
+                  onSelected: busy
+                      ? null
+                      : (selected) {
+                          setState(() {
+                            if (selected) {
+                              _hubspotGrantTypes.add(entry.$1);
+                            } else {
+                              _hubspotGrantTypes.remove(entry.$1);
+                            }
+                          });
+                        },
+                ),
+            ],
+          ),
+          if (_hubspotStatusMessage != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _hubspotStatusMessage!,
+              style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey[400]),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              FilledButton(
+                onPressed: busy ? null : _saveHubSpotCrmConfig,
+                child: const Text('Save'),
+              ),
+              OutlinedButton(
+                onPressed: busy ? null : _testHubSpotCrmConnection,
+                child: const Text('Test connection'),
+              ),
+              OutlinedButton(
+                onPressed: busy || !_hubspotEnabled ? null : _syncHubSpotCrmContacts,
+                child: const Text('Sync contacts now'),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -3437,6 +4559,9 @@ class _PresencePlatformQrScanSheet extends StatefulWidget {
   final String cameraDeviceId;
   final String cameraLabel;
   final AuthService authService;
+  /// When true, pass [cameraDeviceId] so presence connects/scans/disconnects
+  /// a Connected (USB) camera without binding the session reserved camera.
+  final bool oneshotConnectedCamera;
 
   const _PresencePlatformQrScanSheet({
     required this.apiClient,
@@ -3445,6 +4570,7 @@ class _PresencePlatformQrScanSheet extends StatefulWidget {
     required this.cameraDeviceId,
     required this.cameraLabel,
     required this.authService,
+    this.oneshotConnectedCamera = false,
   });
 
   @override
@@ -3458,13 +4584,14 @@ class _PresencePlatformQrScanSheetState extends State<_PresencePlatformQrScanShe
   String? _statusMessage;
   String? _previewUrl;
   bool _cancelled = false;
+  /// Bumps Image.network / player rebuild after connect for reserved-camera path.
+  int _previewGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_preparePreview());
-      unawaited(_startScan());
+      unawaited(_bootstrap());
     });
   }
 
@@ -3474,6 +4601,29 @@ class _PresencePlatformQrScanSheetState extends State<_PresencePlatformQrScanShe
     super.dispose();
   }
 
+  Future<void> _bootstrap() async {
+    if (widget.oneshotConnectedCamera) {
+      // Parent already connected + started streaming; show live player then scan.
+      if (!mounted || _cancelled) {
+        return;
+      }
+      setState(() {
+        _previewGeneration++;
+        _statusMessage =
+            'Live preview on ${widget.cameraLabel}. Scanning for owner QR…';
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (!mounted || _cancelled) {
+        return;
+      }
+      await _startScan();
+      return;
+    }
+
+    unawaited(_preparePreview());
+    await _startScan();
+  }
+
   Future<void> _preparePreview() async {
     try {
       final token = await widget.authService.getToken();
@@ -3481,8 +4631,11 @@ class _PresencePlatformQrScanSheetState extends State<_PresencePlatformQrScanShe
         return;
       }
       final base = AppConfig.instance.apiBaseUrl;
+      final bust = DateTime.now().millisecondsSinceEpoch;
       setState(() {
-        _previewUrl = '$base/api/v1/streaming/${widget.cameraDeviceId}/video?token=$token';
+        _previewGeneration++;
+        _previewUrl =
+            '$base/api/v1/streaming/${widget.cameraDeviceId}/video?token=$token&_=$bust';
       });
     } catch (_) {
       // Preview is optional aiming UX; scan still runs without it.
@@ -3495,13 +4648,17 @@ class _PresencePlatformQrScanSheetState extends State<_PresencePlatformQrScanShe
     }
     setState(() {
       _isScanning = true;
-      _statusMessage = 'Scanning for owner QR on ${widget.cameraLabel}…';
+      _statusMessage = widget.oneshotConnectedCamera
+          ? 'Scanning for owner QR on ${widget.cameraLabel}…'
+          : 'Scanning for owner QR on ${widget.cameraLabel}…';
     });
 
     final response = await widget.apiClient.scanOwnerQr(
       sessionUuid: widget.sessionUuid,
       installationUuid: widget.installationUuid,
       timeoutSeconds: _scanTimeoutSeconds,
+      cameraDeviceId:
+          widget.oneshotConnectedCamera ? widget.cameraDeviceId : null,
     );
 
     if (!mounted || _cancelled) {
@@ -3527,9 +4684,19 @@ class _PresencePlatformQrScanSheetState extends State<_PresencePlatformQrScanShe
 
     final reason = data['reason']?.toString() ?? 'timeout';
     setState(() {
-      _statusMessage = reason == 'camera_unbound'
-          ? 'No reserved presence camera is bound to this session.'
-          : 'No owner QR detected before timeout. Hold the QR in view of the platform camera and retry.';
+      if (reason == 'camera_unbound') {
+        _statusMessage = 'No reserved presence camera is bound to this session.';
+      } else if (reason == 'not_connected_camera' || reason == 'camera_not_found') {
+        _statusMessage =
+            'Selected camera is not available as a Connected camera.';
+      } else if (reason == 'scan_failed') {
+        _statusMessage =
+            'Connected camera QR scan failed. Check the camera and retry.';
+      } else {
+        _statusMessage = widget.oneshotConnectedCamera
+            ? 'No owner QR detected before timeout. Hold the QR in view of the Connected camera and retry.'
+            : 'No owner QR detected before timeout. Hold the QR in view of the platform camera and retry.';
+      }
     });
   }
 
@@ -3544,12 +4711,16 @@ class _PresencePlatformQrScanSheetState extends State<_PresencePlatformQrScanShe
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Platform Camera QR Scan',
+              widget.oneshotConnectedCamera
+                  ? 'Connected Camera QR Scan'
+                  : 'Platform Camera QR Scan',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             Text(
-              'Decoding runs on the reserved platform camera (${widget.cameraLabel}). Aim the owner QR at that camera — the browser camera is not used.',
+              widget.oneshotConnectedCamera
+                  ? 'Connects ${widget.cameraLabel}, scans the owner QR, then disconnects. Aim the QR at that camera — the browser camera is not used.'
+                  : 'Decoding runs on the reserved platform camera (${widget.cameraLabel}). Aim the owner QR at that camera — the browser camera is not used.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 12),
@@ -3560,30 +4731,40 @@ class _PresencePlatformQrScanSheetState extends State<_PresencePlatformQrScanShe
                 width: double.infinity,
                 child: ColoredBox(
                   color: Colors.black,
-                  child: _previewUrl == null
-                      ? const Center(
-                          child: Text(
-                            'Preview unavailable',
-                            style: TextStyle(color: Colors.white70),
+                  child: widget.oneshotConnectedCamera
+                      ? CameraStreamPlayerSimple(
+                          key: ValueKey(
+                            'owner-qr-preview-${widget.cameraDeviceId}-$_previewGeneration',
                           ),
+                          cameraId: widget.cameraDeviceId,
+                          width: double.infinity,
+                          height: 240,
                         )
-                      : Image.network(
-                          _previewUrl!,
-                          fit: BoxFit.contain,
-                          gaplessPlayback: true,
-                          errorBuilder: (context, error, stackTrace) {
-                            return const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Text(
-                                  'Live preview could not start. Scanning still runs on the platform camera.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: Colors.white70),
-                                ),
+                      : (_previewUrl == null
+                          ? const Center(
+                              child: Text(
+                                'Preview unavailable',
+                                style: TextStyle(color: Colors.white70),
                               ),
-                            );
-                          },
-                        ),
+                            )
+                          : Image.network(
+                              _previewUrl!,
+                              key: ValueKey('preview-$_previewGeneration'),
+                              fit: BoxFit.contain,
+                              gaplessPlayback: true,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(16),
+                                    child: Text(
+                                      'Live preview could not start. Scanning still runs on the platform camera.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(color: Colors.white70),
+                                    ),
+                                  ),
+                                );
+                              },
+                            )),
                 ),
               ),
             ),
@@ -3625,16 +4806,18 @@ class _MetricCard extends StatelessWidget {
   final String title;
   final String value;
   final IconData icon;
+  final VoidCallback? onTap;
 
   const _MetricCard({
     required this.title,
     required this.value,
     required this.icon,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -3654,6 +4837,14 @@ class _MetricCard extends StatelessWidget {
           Text(title, style: Theme.of(context).textTheme.bodyMedium),
         ],
       ),
+    );
+    if (onTap == null) {
+      return card;
+    }
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: card,
     );
   }
 }
@@ -3683,6 +4874,12 @@ String _filterCategoryLabelFor(String category) {
       return 'Mode';
     case 'decision':
       return 'Decision';
+    case 'policy_source':
+      return 'Policy';
+    case 'failure_reason':
+      return 'Failure';
+    case 'client_origin':
+      return 'Origin';
     case 'camera':
       return 'Camera';
     case 'group':

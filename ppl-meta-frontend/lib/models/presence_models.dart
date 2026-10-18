@@ -4,6 +4,8 @@ class PresenceAnalyticsSummary {
   final int pendingSessions;
   final int grantedSessions;
   final int deniedSessions;
+  final int failedSessions;
+  final int expiredSessions;
 
   const PresenceAnalyticsSummary({
     required this.totalSessions,
@@ -11,6 +13,8 @@ class PresenceAnalyticsSummary {
     required this.pendingSessions,
     required this.grantedSessions,
     required this.deniedSessions,
+    this.failedSessions = 0,
+    this.expiredSessions = 0,
   });
 
   factory PresenceAnalyticsSummary.fromJson(Map<String, dynamic> json) {
@@ -31,6 +35,7 @@ class PresenceAnalyticsSummary {
     final grantedSessions = readInt(['granted_sessions', 'sessions_granted', 'granted']);
     final deniedSessions = readInt(['denied_sessions', 'sessions_denied', 'denied']);
     final failedSessions = readInt(['failed_sessions', 'sessions_failed', 'failed']);
+    final expiredSessions = readInt(['expired_sessions', 'sessions_expired', 'expired']);
     final completedSessions = readInt(['completed_sessions', 'sessions_completed']);
     final resolvedCompletedSessions = completedSessions > 0
         ? completedSessions
@@ -46,6 +51,127 @@ class PresenceAnalyticsSummary {
       pendingSessions: resolvedPendingSessions,
       grantedSessions: grantedSessions,
       deniedSessions: deniedSessions,
+      failedSessions: failedSessions,
+      expiredSessions: expiredSessions,
+    );
+  }
+}
+
+class PresenceModeSuccessBucket {
+  final String sessionMode;
+  final int total;
+  final int granted;
+  final int denied;
+  final int failed;
+  final int pending;
+  final int expired;
+  final double grantRate;
+  final double failRate;
+  final double expireRate;
+
+  const PresenceModeSuccessBucket({
+    required this.sessionMode,
+    required this.total,
+    required this.granted,
+    required this.denied,
+    required this.failed,
+    required this.pending,
+    required this.expired,
+    required this.grantRate,
+    required this.failRate,
+    required this.expireRate,
+  });
+
+  String get label {
+    return sessionMode
+        .split('_')
+        .where((part) => part.isNotEmpty)
+        .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+        .join(' ');
+  }
+
+  factory PresenceModeSuccessBucket.fromJson(Map<String, dynamic> json) {
+    int readInt(String key) {
+      final value = json[key];
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      return 0;
+    }
+
+    double readRate(String key) {
+      final value = json[key];
+      if (value is num) return value.toDouble();
+      return 0.0;
+    }
+
+    return PresenceModeSuccessBucket(
+      sessionMode: (json['session_mode'] ?? 'unknown').toString(),
+      total: readInt('total') > 0 ? readInt('total') : readInt('count'),
+      granted: readInt('granted'),
+      denied: readInt('denied'),
+      failed: readInt('failed'),
+      pending: readInt('pending'),
+      expired: readInt('expired'),
+      grantRate: readRate('grant_rate'),
+      failRate: readRate('fail_rate'),
+      expireRate: readRate('expire_rate'),
+    );
+  }
+}
+
+class PresenceAnalyticsDashboard {
+  final PresenceAnalyticsSummary summary;
+  final List<PresenceAnalyticsBucket> outcomes;
+  final List<PresenceAnalyticsBucket> failureReasons;
+  final List<PresenceAnalyticsBucket> policySources;
+  final List<PresenceAnalyticsBucket> clientOrigins;
+  final List<PresenceModeSuccessBucket> modeSuccess;
+  final List<PresenceAnalyticsBucket> sessionModes;
+  final List<PresenceAnalyticsBucket> grantTypes;
+
+  const PresenceAnalyticsDashboard({
+    required this.summary,
+    this.outcomes = const [],
+    this.failureReasons = const [],
+    this.policySources = const [],
+    this.clientOrigins = const [],
+    this.modeSuccess = const [],
+    this.sessionModes = const [],
+    this.grantTypes = const [],
+  });
+
+  factory PresenceAnalyticsDashboard.fromJson(Map<String, dynamic> json) {
+    List<PresenceAnalyticsBucket> readBuckets(String key) {
+      final raw = json[key];
+      if (raw is! List) return const [];
+      return raw
+          .whereType<Map>()
+          .map((item) => PresenceAnalyticsBucket.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+
+    final summaryRaw = json['summary'];
+    final summary = summaryRaw is Map
+        ? PresenceAnalyticsSummary.fromJson(Map<String, dynamic>.from(summaryRaw))
+        : PresenceAnalyticsSummary.fromJson(json);
+
+    final modeRaw = json['mode_success'];
+    final modeSuccess = modeRaw is List
+        ? modeRaw
+            .whereType<Map>()
+            .map((item) => PresenceModeSuccessBucket.fromJson(Map<String, dynamic>.from(item)))
+            .toList()
+        : const <PresenceModeSuccessBucket>[];
+
+    return PresenceAnalyticsDashboard(
+      summary: summary,
+      outcomes: readBuckets('outcomes'),
+      failureReasons: readBuckets('failure_reasons'),
+      policySources: readBuckets('policy_sources'),
+      clientOrigins: readBuckets('client_origins'),
+      modeSuccess: modeSuccess,
+      sessionModes: readBuckets('by_session_mode'),
+      grantTypes: readBuckets('by_grant_type'),
     );
   }
 }
@@ -157,6 +283,122 @@ class PresenceSessionSettings {
       maxUnsuccessfulAttempts: readInt('max_unsuccessful_attempts', 3),
       allowConcurrentTriggerOperations: json['allow_concurrent_trigger_operations'] != false,
       qrToCameraTransitionWindowMinutes: readInt('qr_to_camera_transition_window_minutes', 10),
+    );
+  }
+}
+
+class HubSpotCrmConfig {
+  final bool enabled;
+  final bool tokenConfigured;
+  final String hubId;
+  final String? listId;
+  final bool postGrants;
+  final List<String> grantTypes;
+  final DateTime? lastSyncAt;
+  final String? lastSyncStatus;
+  final String? lastError;
+
+  const HubSpotCrmConfig({
+    required this.enabled,
+    required this.tokenConfigured,
+    required this.hubId,
+    required this.listId,
+    required this.postGrants,
+    required this.grantTypes,
+    required this.lastSyncAt,
+    required this.lastSyncStatus,
+    required this.lastError,
+  });
+
+  factory HubSpotCrmConfig.defaults() => const HubSpotCrmConfig(
+        enabled: false,
+        tokenConfigured: false,
+        hubId: '',
+        listId: null,
+        postGrants: true,
+        grantTypes: ['check_in', 'presence_match', 'verified_presence'],
+        lastSyncAt: null,
+        lastSyncStatus: null,
+        lastError: null,
+      );
+
+  factory HubSpotCrmConfig.fromJson(Map<String, dynamic> json) {
+    final grantTypes = (json['grant_types'] as List<dynamic>? ?? const [])
+        .map((e) => e.toString())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    DateTime? parseDate(dynamic value) {
+      if (value == null) {
+        return null;
+      }
+      return DateTime.tryParse(value.toString());
+    }
+
+    return HubSpotCrmConfig(
+      enabled: json['enabled'] == true,
+      tokenConfigured: json['token_configured'] == true,
+      hubId: (json['hub_id'] ?? '').toString(),
+      listId: json['list_id']?.toString(),
+      postGrants: json['post_grants'] != false,
+      grantTypes: grantTypes.isEmpty
+          ? const ['check_in', 'presence_match', 'verified_presence']
+          : grantTypes,
+      lastSyncAt: parseDate(json['last_sync_at']),
+      lastSyncStatus: json['last_sync_status']?.toString(),
+      lastError: json['last_error']?.toString(),
+    );
+  }
+}
+
+class HubSpotConnectionTestResult {
+  final bool ok;
+  final String message;
+  final String? hubId;
+
+  const HubSpotConnectionTestResult({
+    required this.ok,
+    required this.message,
+    this.hubId,
+  });
+
+  factory HubSpotConnectionTestResult.fromJson(Map<String, dynamic> json) {
+    return HubSpotConnectionTestResult(
+      ok: json['ok'] == true,
+      message: (json['message'] ?? '').toString(),
+      hubId: json['hub_id']?.toString(),
+    );
+  }
+}
+
+class HubSpotSyncReport {
+  final int created;
+  final int updated;
+  final int skipped;
+  final int contactsSeen;
+  final List<String> errors;
+  final DateTime? finishedAt;
+
+  const HubSpotSyncReport({
+    required this.created,
+    required this.updated,
+    required this.skipped,
+    required this.contactsSeen,
+    required this.errors,
+    this.finishedAt,
+  });
+
+  factory HubSpotSyncReport.fromJson(Map<String, dynamic> json) {
+    return HubSpotSyncReport(
+      created: (json['created'] as num?)?.toInt() ?? 0,
+      updated: (json['updated'] as num?)?.toInt() ?? 0,
+      skipped: (json['skipped'] as num?)?.toInt() ?? 0,
+      contactsSeen: (json['contacts_seen'] as num?)?.toInt() ?? 0,
+      errors: (json['errors'] as List<dynamic>? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      finishedAt: json['finished_at'] != null
+          ? DateTime.tryParse(json['finished_at'].toString())
+          : null,
     );
   }
 }
@@ -347,6 +589,10 @@ class PresenceAnalyticsBucket {
   factory PresenceAnalyticsBucket.fromJson(Map<String, dynamic> json) {
     final rawKey = json['session_mode'] ??
         json['grant_type'] ??
+        json['outcome'] ??
+        json['failure_reason_code'] ??
+        json['policy_source'] ??
+        json['client_origin'] ??
         json['key'] ??
         json['name'] ??
         'unknown';
@@ -1154,7 +1400,8 @@ class PresencePeopleProfileLink {
 }
 
 /// A single selected session filter chip.
-/// [category] is one of: grant_type | session_mode | decision | camera | date.
+/// [category] is one of: grant_type | session_mode | decision | policy_source |
+/// failure_reason | client_origin | camera | group | member | profile.
 class SessionFilter {
   final String category;
   final String value;

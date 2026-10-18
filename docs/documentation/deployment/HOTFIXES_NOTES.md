@@ -17,6 +17,17 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
+### 2026-10-18 — HubSpot ↔ Presence CRM (eyenet-demo)
+- **Status:** Pending (lab docker-cp hotfix only; not in GHCR release)
+- **Lab:** `lab-work-dual-64g` / `eyenet-demo` @ `100.101.128.40`
+- **Script:** `artifacts/lab-hotfix-hubspot-crm.sh`
+- **Summary:** Presence Settings HubSpot card; contact import → PPP `external_ref`; real-time grant Notes + `last_presence_*` properties. Applied on top of `eyenet-local/ppl-meta-presence:authenticator-hotfix` + frontend `main.dart.js` overlay.
+- **Files:**
+  - `ppl-meta-presence`: `hubspot_crm.py`, `presence_models.py`, `presence_service.py`, `presence_routes.py`
+  - `ppl-meta-frontend`: Presence Settings HubSpot UI + API client/models
+- **Verify:** Hard-refresh http://100.101.128.40:3000/ → Presence → Settings → **HubSpot CRM**. Unauth `GET /api/v1/presence/installations/current/crm/hubspot` → **401** (not 404).
+- **Next:** Stage 1 commit on `main` → Stage 2 rebuild presence + frontend → Stage 3 lab pull
+
 ### 2026-10-18 — Web login session survives refresh (eyenet-demo)
 - **Status:** Pending (Stage 1 source on `main`; not in GHCR release)
 - **Summary:** Flutter web no longer races to `/login` before persisted JWT restore finishes. Auth starts in `restoring`; router defers login redirect; profile 401 does not wipe a silently refreshed token.

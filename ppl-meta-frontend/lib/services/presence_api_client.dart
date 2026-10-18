@@ -12,11 +12,41 @@ class PresenceApiClient {
     _apiClient = apiClient ?? ApiClient(AppConfig.instance);
   }
 
-  Future<ApiResponse<PresenceAnalyticsSummary>> getAnalyticsSummary() async {
+  Future<ApiResponse<PresenceAnalyticsSummary>> getAnalyticsSummary({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
     try {
-      final response = await _apiClient.get('/api/v1/presence/analytics/summary');
+      final response = await _apiClient.get(
+        '/api/v1/presence/analytics/summary',
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate.toUtc().toIso8601String(),
+          if (endDate != null) 'end_date': endDate.toUtc().toIso8601String(),
+        },
+      );
       final data = _unwrapData(response.data);
       return ApiResponse.success(PresenceAnalyticsSummary.fromJson(data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<PresenceAnalyticsDashboard>> getAnalyticsDashboard({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/presence/analytics/dashboard',
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate.toUtc().toIso8601String(),
+          if (endDate != null) 'end_date': endDate.toUtc().toIso8601String(),
+        },
+      );
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(PresenceAnalyticsDashboard.fromJson(data));
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
@@ -55,6 +85,9 @@ class PresenceApiClient {
     List<String>? groupNames,
     List<String>? memberNames,
     List<String>? profileNames,
+    List<String>? policySources,
+    List<String>? failureReasonCodes,
+    List<String>? clientOrigins,
     DateTime? startDate,
     DateTime? endDate,
   }) async {
@@ -74,6 +107,10 @@ class PresenceApiClient {
           if (groupNames != null && groupNames.isNotEmpty) 'group_names': groupNames.join(','),
           if (memberNames != null && memberNames.isNotEmpty) 'member_names': memberNames.join(','),
           if (profileNames != null && profileNames.isNotEmpty) 'profile_names': profileNames.join(','),
+          if (policySources != null && policySources.isNotEmpty) 'policy_sources': policySources.join(','),
+          if (failureReasonCodes != null && failureReasonCodes.isNotEmpty)
+            'failure_reason_codes': failureReasonCodes.join(','),
+          if (clientOrigins != null && clientOrigins.isNotEmpty) 'client_origins': clientOrigins.join(','),
           if (startDate != null) 'start_date': startDate.toUtc().toIso8601String(),
           if (endDate != null) 'end_date': endDate.toUtc().toIso8601String(),
         },
@@ -160,6 +197,7 @@ class PresenceApiClient {
     required String deviceName,
     required String devicePlatform,
     required String appVersion,
+    String? clientOrigin,
   }) async {
     try {
       final response = await _apiClient.post(
@@ -170,6 +208,7 @@ class PresenceApiClient {
           'device_name': deviceName,
           'device_platform': devicePlatform,
           'app_version': appVersion,
+          if (clientOrigin != null && clientOrigin.isNotEmpty) 'client_origin': clientOrigin,
         },
       );
       final data = _unwrapData(response.data);
@@ -367,11 +406,16 @@ class PresenceApiClient {
     }
   }
 
-  /// Decode owner QR from the reserved platform camera (cameras-service scan-qr).
+  /// Decode owner QR from a platform camera (cameras-service scan-qr).
+  ///
+  /// When [cameraDeviceId] is set (Connected / USB camera for Action Tab
+  /// "Scan Owner QR"), presence connects → scans → disconnects that device
+  /// without replacing the session reserved camera.
   Future<ApiResponse<Map<String, dynamic>>> scanOwnerQr({
     required String sessionUuid,
     required String installationUuid,
     double timeoutSeconds = 30,
+    String? cameraDeviceId,
   }) async {
     try {
       final response = await _apiClient.post(
@@ -379,6 +423,8 @@ class PresenceApiClient {
         data: {
           'installation_uuid': installationUuid,
           'timeout_seconds': timeoutSeconds,
+          if (cameraDeviceId != null && cameraDeviceId.isNotEmpty)
+            'camera_device_id': cameraDeviceId,
         },
         // Scan blocks until QR found or timeout; leave headroom for HTTP.
         options: Options(receiveTimeout: Duration(seconds: (timeoutSeconds + 20).ceil())),
@@ -533,6 +579,75 @@ class PresenceApiClient {
     }
   }
 
+  Future<ApiResponse<HubSpotCrmConfig>> getHubSpotCrmConfig() async {
+    try {
+      final response = await _apiClient.get('/api/v1/presence/installations/current/crm/hubspot');
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(HubSpotCrmConfig.fromJson(data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<HubSpotCrmConfig>> updateHubSpotCrmConfig({
+    required String installationUuid,
+    required bool enabled,
+    String? accessToken,
+    String? hubId,
+    String? listId,
+    required bool postGrants,
+    required List<String> grantTypes,
+    bool clearAccessToken = false,
+  }) async {
+    try {
+      final response = await _apiClient.put(
+        '/api/v1/presence/installations/current/crm/hubspot',
+        data: {
+          'installation_uuid': installationUuid,
+          'enabled': enabled,
+          if (accessToken != null && accessToken.isNotEmpty) 'access_token': accessToken,
+          if (hubId != null) 'hub_id': hubId,
+          if (listId != null) 'list_id': listId,
+          'post_grants': postGrants,
+          'grant_types': grantTypes,
+          if (clearAccessToken) 'clear_access_token': true,
+        },
+      );
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(HubSpotCrmConfig.fromJson(data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<HubSpotConnectionTestResult>> testHubSpotCrmConnection() async {
+    try {
+      final response = await _apiClient.post('/api/v1/presence/installations/current/crm/hubspot/test');
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(HubSpotConnectionTestResult.fromJson(data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<HubSpotSyncReport>> syncHubSpotCrmContacts() async {
+    try {
+      final response = await _apiClient.post('/api/v1/presence/installations/current/crm/hubspot/sync');
+      final data = _unwrapData(response.data);
+      return ApiResponse.success(HubSpotSyncReport.fromJson(data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
   Future<ApiResponse<PresenceInstallationContext>> updateActivePresenceGroup({
     required String installationUuid,
     String? individualGroupId,
@@ -625,16 +740,21 @@ class PresenceApiClient {
 
   Future<ApiResponse<List<PresencePeopleProfile>>> listPeopleProfiles({
     String? query,
+    List<String>? tags,
     int limit = 50,
     int offset = 0,
   }) async {
     try {
+      final tagParam = tags == null || tags.isEmpty
+          ? null
+          : tags.map((t) => t.trim()).where((t) => t.isNotEmpty).join(',');
       final response = await _apiClient.get(
         '/api/v1/presence/people-profiles',
         queryParameters: {
           'limit': limit,
           'offset': offset,
           if (query != null && query.isNotEmpty) 'query': query,
+          if (tagParam != null && tagParam.isNotEmpty) 'tags': tagParam,
         },
       );
       final data = response.data;

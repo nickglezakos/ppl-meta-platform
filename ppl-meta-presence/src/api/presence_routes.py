@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 
 from presence_auth import get_current_user, require_admin_user
 from config import config
@@ -29,7 +29,9 @@ from models.presence_models import (
     UpdateActivePresenceGroupRequest,
     UpdateInstallationSettingsRequest,
     UpdateInstallationPolicyRequest,
+    UpdateHubSpotCrmConfigRequest,
     UpdatePeopleProfileRequest,
+    PeopleFromUserRequest,
 )
 from services.presence_service import PresenceService
 
@@ -103,6 +105,27 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     async def update_current_installation_settings(request: UpdateInstallationSettingsRequest):
         return {"success": True, "data": service.update_installation_settings(request)}
 
+    @router.get("/installations/current/crm/hubspot")
+    async def get_hubspot_crm_config(current_user: dict = Depends(require_admin_user)):
+        return {"success": True, "data": service.get_hubspot_crm_config().model_dump(mode="json")}
+
+    @router.put("/installations/current/crm/hubspot")
+    async def update_hubspot_crm_config(
+        request: UpdateHubSpotCrmConfigRequest,
+        current_user: dict = Depends(require_admin_user),
+    ):
+        return {"success": True, "data": service.update_hubspot_crm_config(request).model_dump(mode="json")}
+
+    @router.post("/installations/current/crm/hubspot/test")
+    async def test_hubspot_crm_connection(current_user: dict = Depends(require_admin_user)):
+        result = await service.test_hubspot_connection()
+        return {"success": True, "data": result.model_dump(mode="json")}
+
+    @router.post("/installations/current/crm/hubspot/sync")
+    async def sync_hubspot_crm_contacts(current_user: dict = Depends(require_admin_user)):
+        report = await service.sync_hubspot_contacts()
+        return {"success": True, "data": report.model_dump(mode="json")}
+
     @router.get("/profiles/me")
     async def get_current_user_profile(current_user: dict = Depends(get_current_user)):
         return {"success": True, "data": service.get_current_user_profile(current_user)}
@@ -161,6 +184,9 @@ def build_presence_router(service: PresenceService) -> APIRouter:
         user_uuid: str | None = None,
         installation_uuid: str | None = None,
         policy_source: str | None = None,
+        policy_sources: str | None = None,
+        failure_reason_codes: str | None = None,
+        client_origins: str | None = None,
         user_query: str | None = None,
         camera_uuid: str | None = None,
         camera_uuids: str | None = None,
@@ -185,6 +211,9 @@ def build_presence_router(service: PresenceService) -> APIRouter:
             user_uuid=user_uuid,
             installation_uuid=installation_uuid,
             policy_source=policy_source,
+            policy_sources=_split_csv(policy_sources),
+            failure_reason_codes=_split_csv(failure_reason_codes),
+            client_origins=_split_csv(client_origins),
             user_query=user_query,
             camera_uuid=camera_uuid,
             camera_uuids=_split_csv(camera_uuids),
@@ -235,6 +264,57 @@ def build_presence_router(service: PresenceService) -> APIRouter:
             },
         }
 
+    @router.get("/authenticator/enrollment")
+    async def get_authenticator_enrollment(current_user: dict = Depends(get_current_user)):
+        data = service.get_authenticator_enrollment(current_user)
+        return {"success": True, "data": data.model_dump()}
+
+    @router.post("/authenticator/enroll-face")
+    async def enroll_authenticator_face(
+        current_user: dict = Depends(get_current_user),
+        file: UploadFile = File(..., description="Face enrollment image (JPEG/PNG)"),
+    ):
+        try:
+            image_bytes = await file.read()
+            data = await service.enroll_authenticator_face(
+                current_user,
+                image_bytes,
+                filename=file.filename or "face.jpg",
+                content_type=file.content_type or "image/jpeg",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Authenticator enroll-face failed: %s", exc)
+            raise HTTPException(status_code=502, detail=f"Enrollment failed: {exc}") from exc
+        return {"success": True, "data": data.model_dump()}
+
+    @router.post("/authenticator/verify-face")
+    async def verify_authenticator_face(
+        current_user: dict = Depends(get_current_user),
+        file: UploadFile = File(..., description="Live face verify image (JPEG/PNG)"),
+        session_uuid: str | None = None,
+    ):
+        try:
+            image_bytes = await file.read()
+            data = await service.verify_authenticator_face(
+                current_user,
+                image_bytes,
+                session_uuid=session_uuid,
+                filename=file.filename or "face.jpg",
+                content_type=file.content_type or "image/jpeg",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Authenticator verify-face failed: %s", exc)
+            raise HTTPException(status_code=502, detail=f"Verify failed: {exc}") from exc
+        return {"success": True, "data": data.model_dump()}
+
     @router.post("/mobile/sessions")
     async def create_session(
         request: CreatePresenceSessionRequest,
@@ -280,11 +360,15 @@ def build_presence_router(service: PresenceService) -> APIRouter:
         return {"success": True, "data": await service.get_detection_status(session_uuid)}
 
     @router.post("/mobile/sessions/{session_uuid}/qr-hit")
-    async def submit_qr_hit(session_uuid: str, request: PresenceQrHitRequest):
+    async def submit_qr_hit(
+        session_uuid: str,
+        request: PresenceQrHitRequest,
+        current_user: dict = Depends(get_current_user),
+    ):
         if session_uuid not in service.sessions:
             raise HTTPException(status_code=404, detail="Presence session not found")
         try:
-            session = service.qr_hit(session_uuid, request)
+            session = await service.qr_hit_complete(session_uuid, request, current_user)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"success": True, "data": session.model_dump()}
@@ -403,8 +487,30 @@ def build_presence_router(service: PresenceService) -> APIRouter:
         return {"success": True, "data": resource.model_dump()}
 
     @router.get("/analytics/summary")
-    async def analytics_summary():
-        return {"success": True, "data": service.analytics_summary()}
+    async def analytics_summary(
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ):
+        return {
+            "success": True,
+            "data": service.analytics_summary(
+                start_date=_parse_filter_datetime(start_date),
+                end_date=_parse_filter_datetime(end_date),
+            ),
+        }
+
+    @router.get("/analytics/dashboard")
+    async def analytics_dashboard(
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ):
+        return {
+            "success": True,
+            "data": service.analytics_dashboard(
+                start_date=_parse_filter_datetime(start_date),
+                end_date=_parse_filter_datetime(end_date),
+            ),
+        }
 
     @router.get("/analytics/by-user")
     async def analytics_by_user():
@@ -459,12 +565,20 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     @router.get("/people-profiles")
     async def list_people_profiles(
         query: str | None = None,
+        tags: str | None = None,
         installation_uuid: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ):
+        tag_list = None
+        if tags:
+            tag_list = [part.strip() for part in tags.split(",") if part.strip()]
         return {"success": True, "data": service.list_people_profiles(
-            query=query, installation_uuid=installation_uuid, limit=limit, offset=offset,
+            query=query,
+            tags=tag_list,
+            installation_uuid=installation_uuid,
+            limit=limit,
+            offset=offset,
         )}
 
     @router.get("/people-profiles/lookup")
@@ -684,6 +798,25 @@ def build_internal_router(service: PresenceService) -> APIRouter:
             raise HTTPException(status_code=401, detail="Invalid service authorization")
         report = await service.sync_people_with_users(reason=reason)
         return {"success": True, "data": report.model_dump(mode="json")}
+
+    @router.post("/internal/people-from-user")
+    async def internal_people_from_user(
+        request: PeopleFromUserRequest,
+        authorization: str | None = Header(None),
+    ):
+        """Create/link one people profile for a newly registered platform user."""
+        expected = config.SERVICE_SECRET
+        if not expected or not authorization or authorization != f"Bearer {expected}":
+            raise HTTPException(status_code=401, detail="Invalid service authorization")
+        try:
+            profile = service.ensure_people_profile_for_user(
+                request.model_dump(exclude={"reason", "installation_uuid"}),
+                reason=request.reason or "user_create",
+                installation_uuid=request.installation_uuid,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"success": True, "data": profile.model_dump(mode="json")}
 
     return router
 

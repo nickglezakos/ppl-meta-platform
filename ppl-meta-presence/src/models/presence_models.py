@@ -70,6 +70,65 @@ class UpdateInstallationSettingsRequest(BaseModel):
     session_settings: PresenceSessionSettings
 
 
+DEFAULT_HUBSPOT_GRANT_TYPES = [
+    PresenceGrantType.CHECK_IN.value,
+    PresenceGrantType.PRESENCE_MATCH.value,
+    PresenceGrantType.VERIFIED_PRESENCE.value,
+]
+
+
+class HubSpotCrmConfig(BaseModel):
+    enabled: bool = False
+    access_token: str = ""
+    hub_id: str = ""
+    list_id: Optional[str] = None
+    post_grants: bool = True
+    grant_types: List[str] = Field(default_factory=lambda: list(DEFAULT_HUBSPOT_GRANT_TYPES))
+    last_sync_at: Optional[datetime] = None
+    last_sync_status: Optional[str] = None
+    last_error: Optional[str] = None
+
+
+class HubSpotCrmConfigPublic(BaseModel):
+    """Safe config returned to clients — never includes the raw access token."""
+
+    enabled: bool = False
+    token_configured: bool = False
+    hub_id: str = ""
+    list_id: Optional[str] = None
+    post_grants: bool = True
+    grant_types: List[str] = Field(default_factory=lambda: list(DEFAULT_HUBSPOT_GRANT_TYPES))
+    last_sync_at: Optional[datetime] = None
+    last_sync_status: Optional[str] = None
+    last_error: Optional[str] = None
+
+
+class UpdateHubSpotCrmConfigRequest(BaseModel):
+    installation_uuid: str = "local-installation"
+    enabled: Optional[bool] = None
+    access_token: Optional[str] = None
+    hub_id: Optional[str] = None
+    list_id: Optional[str] = None
+    post_grants: Optional[bool] = None
+    grant_types: Optional[List[str]] = None
+    clear_access_token: bool = False
+
+
+class HubSpotSyncReport(BaseModel):
+    created: int = 0
+    updated: int = 0
+    skipped: int = 0
+    errors: List[str] = Field(default_factory=list)
+    contacts_seen: int = 0
+    finished_at: Optional[datetime] = None
+
+
+class HubSpotConnectionTestResult(BaseModel):
+    ok: bool
+    message: str
+    hub_id: Optional[str] = None
+
+
 class UpdateInstallationPolicyRequest(BaseModel):
     installation_uuid: str = "local-installation"
     group_policy: PresenceGroupPolicy
@@ -120,6 +179,34 @@ class CreatePresenceSessionRequest(BaseModel):
     device_name: str
     device_platform: str
     app_version: str
+    # "authenticator" skips installation camera/trigger video readiness and
+    # uses enrolled-MVR verify-face instead of instant detection.
+    client_origin: Optional[str] = None
+
+
+class AuthenticatorEnrollmentResponse(BaseModel):
+    enrolled: bool
+    mvr_people_uuid: Optional[str] = None
+    ppp_uuid: Optional[str] = None
+    enrolled_at: Optional[str] = None
+
+
+class AuthenticatorEnrollFaceResponse(BaseModel):
+    mvr_people_uuid: str
+    ppp_uuid: str
+    enrolled_at: str
+    created_new: bool = False
+    similarity_score: float = 0.0
+
+
+class AuthenticatorVerifyFaceResponse(BaseModel):
+    verified: bool
+    mvr_people_uuid: Optional[str] = None
+    similarity_score: float = 0.0
+    session_uuid: Optional[str] = None
+    decision: Optional[str] = None
+    session_status: Optional[str] = None
+    message: Optional[str] = None
 
 
 class PresenceSession(BaseModel):
@@ -160,6 +247,8 @@ class PresenceSession(BaseModel):
     executed_at: Optional[datetime] = None
     external_assets: Optional[PresenceExternalAssets] = None
     failure_reason_code: Optional[str] = None
+    # "authenticator" | "mobile_camera" | "console" | etc. Soft client hint for analytics.
+    client_origin: Optional[str] = None
 
 
 class PresenceFramePayload(BaseModel):
@@ -227,6 +316,10 @@ class PresenceOwnerQrHitRequest(BaseModel):
 class PresenceScanOwnerQrRequest(BaseModel):
     installation_uuid: str
     timeout_seconds: float = 30
+    # Optional one-shot Connected (USB) camera for Action Tab "Scan Owner QR".
+    # When set, presence connects → scans → disconnects that device without
+    # replacing the session's reserved presence camera.
+    camera_device_id: Optional[str] = None
 
 
 class BindResourcesRequest(BaseModel):
@@ -336,6 +429,21 @@ class PeopleUserSyncReport(BaseModel):
     users_seen: int = 0
 
 
+class PeopleFromUserRequest(BaseModel):
+    """Create/link a Presence people profile for one newly registered user."""
+
+    email: str
+    guid: Optional[str] = None
+    given_name: Optional[str] = None
+    family_name: Optional[str] = None
+    name: Optional[str] = None
+    username: Optional[str] = None
+    is_active: bool = True
+    blocked: bool = False
+    reason: str = "user_create"
+    installation_uuid: str = "local-installation"
+
+
 class LinkMemberRequest(BaseModel):
     group_id: str
     individual_id: str
@@ -350,6 +458,9 @@ class PresenceExternalAssets(BaseModel):
     individual_group_id: Optional[str] = None
     trigger_uuid: Optional[str] = None
     action_uuid: Optional[str] = None
+    hubspot_posted: Optional[bool] = None
+    hubspot_note_id: Optional[str] = None
+    hubspot_contact_id: Optional[str] = None
 
 
 class PresenceTriggerObservation(BaseModel):
@@ -462,4 +573,5 @@ class PresenceAnalyticsEvent(BaseModel):
     action_execution_status: Optional[str] = None
     resolved_camera_uuid: Optional[str] = None
     resolved_collection_uuid: Optional[str] = None
+    client_origin: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

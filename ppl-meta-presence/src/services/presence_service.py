@@ -18,6 +18,9 @@ from models.presence_models import (
     PresenceActionPlan,
     PresenceAssuranceLevel,
     PresenceAuditLogTrace,
+    AuthenticatorEnrollFaceResponse,
+    AuthenticatorEnrollmentResponse,
+    AuthenticatorVerifyFaceResponse,
     BindResourcesRequest,
     CreatePresenceSessionRequest,
     PresenceIndividualGroupOption,
@@ -55,12 +58,19 @@ from models.presence_models import (
     UpdateActivePresenceGroupRequest,
     UpdateInstallationSettingsRequest,
     UpdateInstallationPolicyRequest,
+    HubSpotCrmConfig,
+    HubSpotCrmConfigPublic,
+    UpdateHubSpotCrmConfigRequest,
+    HubSpotSyncReport,
+    HubSpotConnectionTestResult,
+    DEFAULT_HUBSPOT_GRANT_TYPES,
 )
 from .platform_clients import PlatformClients
 from .presence_repository import PresenceRepository
 from .people_user_association import (
     PeopleUserAssociationService,
     normalize_email,
+    retry_people_user_sync_until_ok,
     user_display_name,
 )
 from .video_readiness import (
@@ -68,6 +78,7 @@ from .video_readiness import (
     first_qualifying_camera_id,
     first_qualifying_group_id,
 )
+from .hubspot_crm import HubSpotCrmClient, grant_note_body
 
 
 class PresenceService:
@@ -244,6 +255,9 @@ class PresenceService:
         user_uuid: str | None = None,
         installation_uuid: str | None = None,
         policy_source: str | None = None,
+        policy_sources: list | None = None,
+        failure_reason_codes: list | None = None,
+        client_origins: list | None = None,
         user_query: str | None = None,
         camera_uuid: str | None = None,
         camera_uuids: list | None = None,
@@ -276,6 +290,10 @@ class PresenceService:
             grant_types = list(grant_types) + [grant_type]
         elif grant_type:
             grant_types = [grant_type]
+        if policy_sources and policy_source:
+            policy_sources = list(policy_sources) + [policy_source]
+        elif policy_source:
+            policy_sources = [policy_source]
 
         matched_sessions = []
         for session in sessions:
@@ -285,8 +303,18 @@ class PresenceService:
                 continue
             if installation_uuid and session.installation_uuid != installation_uuid:
                 continue
-            if policy_source and session.policy_source != policy_source:
-                continue
+            if policy_sources:
+                session_policy = session.policy_source or "unknown"
+                if session_policy not in policy_sources:
+                    continue
+            if failure_reason_codes:
+                reason = session.failure_reason_code or ""
+                if reason not in failure_reason_codes:
+                    continue
+            if client_origins:
+                origin = self._session_client_origin(session)
+                if origin not in client_origins:
+                    continue
             if grant_types:
                 session_grant_type = session.grant_type.value if hasattr(session.grant_type, "value") else str(session.grant_type)
                 if session_grant_type not in grant_types:
@@ -533,7 +561,6 @@ class PresenceService:
         await self.platform_clients.startup()
         self._schedule_existing_session_timeouts()
         if config.PEOPLE_USER_SYNC_ENABLED:
-            await self.sync_people_with_users(reason="startup")
             self._people_user_sync_task = asyncio.create_task(self._people_user_sync_loop())
 
     async def shutdown(self) -> None:
@@ -547,6 +574,9 @@ class PresenceService:
         await self.platform_clients.shutdown()
 
     async def _people_user_sync_loop(self) -> None:
+        await retry_people_user_sync_until_ok(
+            lambda: self.sync_people_with_users(reason="startup"),
+        )
         interval = max(30, int(config.PEOPLE_USER_SYNC_INTERVAL_SECONDS or 300))
         while True:
             await asyncio.sleep(interval)
@@ -554,6 +584,26 @@ class PresenceService:
                 await self.sync_people_with_users(reason="interval")
             except Exception as exc:  # noqa: BLE001
                 logger.exception("people-user interval sync failed: %s", exc)
+
+    def ensure_people_profile_for_user(
+        self,
+        user: dict,
+        *,
+        reason: str = "user_create",
+        installation_uuid: str = "local-installation",
+    ):
+        """Immediate create/link of a PPP for one user (register / bootstrap)."""
+        profile = self.people_user_association.ensure_profile_for_user(
+            user,
+            reason=reason,
+            installation_uuid=installation_uuid
+            or self.installation_profile.installation_uuid
+            or "local-installation",
+        )
+        email = normalize_email(user.get("email"))
+        if email:
+            self._users_by_email_cache[email] = dict(user)
+        return profile
 
     async def sync_people_with_users(self, reason: str = "manual") -> PeopleUserSyncReport:
         report = await self.people_user_association.sync(reason=reason)
@@ -572,6 +622,386 @@ class PresenceService:
     def last_people_user_sync_report(self) -> dict | None:
         report = self.people_user_association.last_report
         return report.model_dump(mode="json") if report else None
+
+    # ------------------------------------------------------------------
+    # Authenticator (enroll-once MVR + live verify, no camera registration)
+    # ------------------------------------------------------------------
+
+    def _ppp_for_current_user(self, current_user: dict) -> PresencePeopleProfile | None:
+        user_uuid = str(
+            current_user.get("guid")
+            or current_user.get("user_uuid")
+            or current_user.get("sub")
+            or ""
+        ).strip()
+        email = normalize_email(current_user.get("email"))
+        if user_uuid:
+            for profile in self.people_profiles.values():
+                if profile.status == "active" and profile.linked_user_uuid == user_uuid:
+                    return profile
+        if email:
+            for profile in self.people_profiles.values():
+                if profile.status == "active" and normalize_email(profile.email) == email:
+                    return profile
+        return None
+
+    def _linked_mvr_ids_for_ppp(
+        self,
+        ppp_uuid: str,
+        *,
+        group_id: str | None = None,
+    ) -> list[str]:
+        """MVR individual_ids linked to a PPP (optionally scoped to one group)."""
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for link in self.people_profile_links:
+            if link.ppp_uuid != ppp_uuid:
+                continue
+            if group_id and link.group_id != group_id:
+                continue
+            mid = str(link.individual_id or "").strip()
+            if not mid or mid in seen:
+                continue
+            seen.add(mid)
+            ordered.append(mid)
+        return ordered
+
+    def _authenticator_candidate_mvr_ids(
+        self,
+        profile: PresencePeopleProfile,
+    ) -> list[str]:
+        """
+        Candidate MVRs for authenticator face match for this email/PPP:
+        1) dedicated authenticator binding on PPP metadata
+        2) members linked to this PPP in the active Presence group
+        3) any other PPP↔MVR links for this profile
+        Never the global vmeta gallery.
+        """
+        ordered: list[str] = []
+        seen: set[str] = set()
+
+        def _add(mid: str | None) -> None:
+            value = str(mid or "").strip()
+            if value and value not in seen:
+                seen.add(value)
+                ordered.append(value)
+
+        metadata = profile.metadata or {}
+        _add(metadata.get("authenticator_mvr_people_uuid"))
+        active_group = self._active_presence_individual_group_id()
+        if active_group:
+            for mid in self._linked_mvr_ids_for_ppp(profile.ppp_uuid, group_id=active_group):
+                _add(mid)
+        for mid in self._linked_mvr_ids_for_ppp(profile.ppp_uuid, group_id=None):
+            _add(mid)
+        return ordered
+
+    def get_authenticator_enrollment(self, current_user: dict) -> AuthenticatorEnrollmentResponse:
+        profile = self._ppp_for_current_user(current_user)
+        if profile is None:
+            return AuthenticatorEnrollmentResponse(enrolled=False)
+        metadata = profile.metadata or {}
+        mvr_uuid = metadata.get("authenticator_mvr_people_uuid")
+        candidates = self._authenticator_candidate_mvr_ids(profile)
+        if not mvr_uuid and not candidates:
+            return AuthenticatorEnrollmentResponse(
+                enrolled=False,
+                ppp_uuid=profile.ppp_uuid,
+            )
+        # Enrolled if phone binding exists OR console already linked MVRs to this email/PPP.
+        primary = str(mvr_uuid) if mvr_uuid else candidates[0]
+        return AuthenticatorEnrollmentResponse(
+            enrolled=True,
+            mvr_people_uuid=primary,
+            ppp_uuid=profile.ppp_uuid,
+            enrolled_at=metadata.get("authenticator_enrolled_at"),
+        )
+
+    async def enroll_authenticator_face(
+        self,
+        current_user: dict,
+        image_bytes: bytes,
+        *,
+        filename: str = "face.jpg",
+        content_type: str = "image/jpeg",
+    ) -> AuthenticatorEnrollFaceResponse:
+        if not image_bytes:
+            raise ValueError("Face image is required")
+
+        profile = self.ensure_people_profile_for_user(
+            current_user,
+            reason="authenticator_enroll",
+            installation_uuid=self.installation_profile.installation_uuid or "local-installation",
+        )
+        # Prefer reusing an MVR already linked to this user's email/PPP.
+        linked_candidates = self._authenticator_candidate_mvr_ids(profile)
+        # Exclude existing authenticator binding from "linked reuse" probe so we
+        # still try linked console members even when re-enrolling.
+        metadata = dict(profile.metadata or {})
+        bound = str(metadata.get("authenticator_mvr_people_uuid") or "").strip()
+        reuse_targets = [m for m in linked_candidates if m != bound] if bound else list(linked_candidates)
+        # When re-enrolling, also allow confirming the current binding.
+        if bound and bound not in reuse_targets:
+            reuse_targets.insert(0, bound)
+
+        identify: dict = {}
+        mvr_uuid: str | None = None
+        created_new = False
+        score = 0.0
+
+        if reuse_targets:
+            identify = await self.platform_clients.identify_face(
+                image_bytes,
+                filename=filename,
+                content_type=content_type,
+                create_if_missing=False,
+                similarity_threshold=config.AUTHENTICATOR_VERIFY_SIMILARITY_THRESHOLD,
+                max_results=1,
+                enable_dedupe_reuse=False,
+                force_create=False,
+                target_mvr_people_uuids=reuse_targets,
+                detect_face=True,
+            )
+            if (
+                identify.get("success")
+                and identify.get("matched")
+                and identify.get("mvr_people_uuid")
+                and str(identify.get("mvr_people_uuid")) in set(reuse_targets)
+            ):
+                mvr_uuid = str(identify["mvr_people_uuid"])
+                created_new = False
+                score = float(identify.get("similarity_score") or 0.0)
+                logger.info(
+                    "Authenticator enroll reused PPP-linked MVR %s for %s (score=%.4f, candidates=%s)",
+                    mvr_uuid,
+                    normalize_email(current_user.get("email")) or current_user.get("guid"),
+                    score,
+                    len(reuse_targets),
+                )
+
+        if not mvr_uuid:
+            # No usable linked match — mint a fresh isolated MVR (never gallery NN).
+            identify = await self.platform_clients.identify_face(
+                image_bytes,
+                filename=filename,
+                content_type=content_type,
+                create_if_missing=True,
+                similarity_threshold=config.AUTHENTICATOR_VERIFY_SIMILARITY_THRESHOLD,
+                max_results=1,
+                enable_dedupe_reuse=False,
+                force_create=True,
+                detect_face=True,
+            )
+            if not identify.get("success"):
+                raise ValueError("Could not extract a face from the enrollment image")
+            mvr_uuid = identify.get("mvr_people_uuid")
+            if not mvr_uuid:
+                raise ValueError("vmeta did not return an MVR person for enrollment")
+            created_new = bool(identify.get("created_new"))
+            score = float(identify.get("similarity_score") or 0.0)
+            if not created_new:
+                logger.warning(
+                    "Authenticator enroll expected force_create/created_new but got "
+                    "matched existing MVR %s (dedupe_reused=%s)",
+                    mvr_uuid,
+                    identify.get("dedupe_reused_existing"),
+                )
+
+        enrolled_at = datetime.utcnow().isoformat()
+        metadata["authenticator_mvr_people_uuid"] = str(mvr_uuid)
+        metadata["authenticator_enrolled_at"] = enrolled_at
+        profile.metadata = metadata
+        profile.updated_at = datetime.utcnow()
+        self._persist_people_profile(profile)
+
+        group_id = self._active_presence_individual_group_id()
+        token = current_user.get("token")
+        if group_id and token:
+            try:
+                await self.platform_clients.add_individual_group_members(
+                    token,
+                    group_id,
+                    {"individual_ids": [str(mvr_uuid)]},
+                )
+                self.link_member(
+                    profile.ppp_uuid,
+                    group_id,
+                    str(mvr_uuid),
+                    linked_by=str(current_user.get("email") or current_user.get("guid") or "authenticator"),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Authenticator enroll: could not add MVR %s to active group %s: %s",
+                    mvr_uuid,
+                    group_id,
+                    exc,
+                )
+        elif group_id:
+            # Still record local PPP link even without a gateway token.
+            self.link_member(
+                profile.ppp_uuid,
+                group_id,
+                str(mvr_uuid),
+                linked_by=str(current_user.get("email") or current_user.get("guid") or "authenticator"),
+            )
+
+        return AuthenticatorEnrollFaceResponse(
+            mvr_people_uuid=str(mvr_uuid),
+            ppp_uuid=profile.ppp_uuid,
+            enrolled_at=enrolled_at,
+            created_new=created_new,
+            similarity_score=score,
+        )
+
+    async def verify_authenticator_face(
+        self,
+        current_user: dict,
+        image_bytes: bytes,
+        *,
+        session_uuid: str | None = None,
+        filename: str = "face.jpg",
+        content_type: str = "image/jpeg",
+    ) -> AuthenticatorVerifyFaceResponse:
+        if not image_bytes:
+            raise ValueError("Face image is required")
+
+        profile = self._ppp_for_current_user(current_user)
+        if profile is None:
+            raise ValueError("No authenticator face enrollment for this user")
+        candidates = self._authenticator_candidate_mvr_ids(profile)
+        if not candidates:
+            raise ValueError("No authenticator face enrollment for this user")
+
+        enrollment = self.get_authenticator_enrollment(current_user)
+
+        # 1:N against this user's PPP-linked / authenticator-bound MVRs only.
+        identify = await self.platform_clients.identify_face(
+            image_bytes,
+            filename=filename,
+            content_type=content_type,
+            create_if_missing=False,
+            similarity_threshold=config.AUTHENTICATOR_VERIFY_SIMILARITY_THRESHOLD,
+            max_results=1,
+            enable_dedupe_reuse=False,
+            target_mvr_people_uuids=candidates,
+            detect_face=True,
+        )
+        matched_uuid = identify.get("mvr_people_uuid")
+        score = float(identify.get("similarity_score") or 0.0)
+        verified = bool(
+            identify.get("success")
+            and identify.get("matched")
+            and matched_uuid
+            and str(matched_uuid) in set(candidates)
+            and score >= config.AUTHENTICATOR_VERIFY_SIMILARITY_THRESHOLD
+        )
+        if not verified:
+            logger.info(
+                "Authenticator verify failed: candidates=%s identify_matched=%s "
+                "returned_mvr=%s score=%.4f threshold=%.4f success=%s",
+                candidates,
+                identify.get("matched"),
+                matched_uuid,
+                score,
+                config.AUTHENTICATOR_VERIFY_SIMILARITY_THRESHOLD,
+                identify.get("success"),
+            )
+
+        session: PresenceSession | None = None
+        if session_uuid:
+            session = self.sessions.get(session_uuid)
+            if session is None:
+                raise ValueError("Presence session not found")
+
+        if not verified:
+            if session is not None:
+                session.detection_status = "authenticator_verify_failed"
+                session.failure_reason_code = "authenticator_face_mismatch"
+                session.decision = PresenceDecisionState.DENIED
+                session.status = PresenceSessionStatus.FAILED
+                session.updated_at = datetime.utcnow()
+                self.repository.save_session(session)
+            return AuthenticatorVerifyFaceResponse(
+                verified=False,
+                mvr_people_uuid=str(matched_uuid) if matched_uuid else None,
+                similarity_score=score,
+                session_uuid=session.session_uuid if session else None,
+                decision=session.decision.value if session else PresenceDecisionState.DENIED.value,
+                session_status=session.status.value if session else None,
+                message=(
+                    f"Live face did not match linked/enrolled MVR for this user "
+                    f"(score={score:.3f}, need>={config.AUTHENTICATOR_VERIFY_SIMILARITY_THRESHOLD:.2f}, "
+                    f"candidates={len(candidates)})"
+                ),
+            )
+
+        matched_mvr = str(matched_uuid)
+
+        if session is None:
+            return AuthenticatorVerifyFaceResponse(
+                verified=True,
+                mvr_people_uuid=matched_mvr,
+                similarity_score=score,
+                message="Face verified against linked/enrolled MVR",
+            )
+
+        session.detection_status = "authenticator_verified"
+        session.matched_member_uuid = matched_mvr
+        session.matched_group_uuid = self._active_presence_individual_group_id()
+        session.matched_individual_group_id = session.matched_group_uuid
+        session.matched_individual_group_name = self._active_presence_individual_group_name()
+        session.matched_ppp_uuid = enrollment.ppp_uuid or profile.ppp_uuid
+        ppp = self.people_profiles.get(session.matched_ppp_uuid or "")
+        if ppp and ppp.name:
+            session.matched_member_name = ppp.name
+        session.updated_at = datetime.utcnow()
+
+        if session.session_mode == PresenceSessionMode.CAMERA_ONLY:
+            await self._grant_presence_match(
+                session,
+                simulated_detection=False,
+                current_user=current_user,
+                reason_code="authenticator_mvr_verify",
+                trigger_match={
+                    "matched_member_uuid": matched_mvr,
+                    "similarity_score": score,
+                    "matched_individual_group_id": session.matched_individual_group_id,
+                    "matched_individual_group_name": session.matched_individual_group_name,
+                    "matched_member_name": session.matched_member_name,
+                },
+            )
+            session.policy_source = "authenticator_mvr_verify"
+            self.repository.save_session(session)
+        elif session.session_mode == PresenceSessionMode.QR_PLUS_CAMERA:
+            # Wait for station QR; get_result completes verified_presence grant.
+            if session.qr_status == "scanned":
+                await self._grant_presence_match(
+                    session,
+                    simulated_detection=False,
+                    current_user=current_user,
+                    reason_code="authenticator_verified_presence",
+                    trigger_match={
+                        "matched_member_uuid": matched_mvr,
+                        "similarity_score": score,
+                        "matched_individual_group_id": session.matched_individual_group_id,
+                        "matched_individual_group_name": session.matched_individual_group_name,
+                        "matched_member_name": session.matched_member_name,
+                    },
+                )
+                session.policy_source = "authenticator_mvr_verify"
+            self.repository.save_session(session)
+        else:
+            self.repository.save_session(session)
+
+        return AuthenticatorVerifyFaceResponse(
+            verified=True,
+            mvr_people_uuid=matched_mvr,
+            similarity_score=score,
+            session_uuid=session.session_uuid,
+            decision=session.decision.value,
+            session_status=session.status.value,
+            message="Face verified against linked/enrolled MVR",
+        )
 
     def get_current_installation_context(self) -> dict:
         reserved_camera = next(iter(self.cameras.values()), None)
@@ -692,6 +1122,293 @@ class PresenceService:
         self.repository.save_profile(self.installation_profile)
         return self.get_current_installation_context()
 
+    def _hubspot_config_from_profile(self) -> HubSpotCrmConfig:
+        raw = self.installation_profile.metadata.get("crm_hubspot") if isinstance(self.installation_profile.metadata, dict) else None
+        if not isinstance(raw, dict):
+            return HubSpotCrmConfig()
+        try:
+            return HubSpotCrmConfig.model_validate(raw)
+        except Exception:
+            return HubSpotCrmConfig()
+
+    def _save_hubspot_config(self, config_model: HubSpotCrmConfig) -> None:
+        self.installation_profile.metadata = {
+            **self.installation_profile.metadata,
+            "crm_hubspot": config_model.model_dump(mode="json"),
+        }
+        self.installation_profile.updated_at = datetime.utcnow()
+        self.profiles[self.installation_profile.presence_profile_uuid] = self.installation_profile
+        self.repository.save_profile(self.installation_profile)
+
+    def get_hubspot_crm_config(self) -> HubSpotCrmConfigPublic:
+        cfg = self._hubspot_config_from_profile()
+        return HubSpotCrmConfigPublic(
+            enabled=cfg.enabled,
+            token_configured=bool(cfg.access_token.strip()),
+            hub_id=cfg.hub_id or "",
+            list_id=cfg.list_id,
+            post_grants=cfg.post_grants,
+            grant_types=list(cfg.grant_types or DEFAULT_HUBSPOT_GRANT_TYPES),
+            last_sync_at=cfg.last_sync_at,
+            last_sync_status=cfg.last_sync_status,
+            last_error=cfg.last_error,
+        )
+
+    def update_hubspot_crm_config(self, request: UpdateHubSpotCrmConfigRequest) -> HubSpotCrmConfigPublic:
+        cfg = self._hubspot_config_from_profile()
+        if request.installation_uuid:
+            self.installation_profile.installation_uuid = request.installation_uuid
+        if request.enabled is not None:
+            cfg.enabled = request.enabled
+        if request.clear_access_token:
+            cfg.access_token = ""
+        elif request.access_token is not None and request.access_token.strip():
+            cfg.access_token = request.access_token.strip()
+        if request.hub_id is not None:
+            cfg.hub_id = request.hub_id.strip()
+        if request.list_id is not None:
+            list_id = request.list_id.strip()
+            cfg.list_id = list_id or None
+        if request.post_grants is not None:
+            cfg.post_grants = request.post_grants
+        if request.grant_types is not None:
+            allowed = {gt.value for gt in PresenceGrantType}
+            cfg.grant_types = [gt for gt in request.grant_types if gt in allowed] or list(DEFAULT_HUBSPOT_GRANT_TYPES)
+        self._save_hubspot_config(cfg)
+        return self.get_hubspot_crm_config()
+
+    def _hubspot_client(self) -> HubSpotCrmClient | None:
+        cfg = self._hubspot_config_from_profile()
+        if not cfg.access_token.strip():
+            return None
+        return HubSpotCrmClient(cfg.access_token)
+
+    async def test_hubspot_connection(self) -> HubSpotConnectionTestResult:
+        client = self._hubspot_client()
+        if client is None:
+            return HubSpotConnectionTestResult(ok=False, message="HubSpot access token is not configured")
+        ok, message, hub_id = await client.test_connection()
+        cfg = self._hubspot_config_from_profile()
+        if ok:
+            try:
+                await client.ensure_presence_properties()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("HubSpot property ensure failed: %s", exc)
+            if hub_id and not cfg.hub_id:
+                cfg.hub_id = hub_id
+            cfg.last_error = None
+            self._save_hubspot_config(cfg)
+            return HubSpotConnectionTestResult(ok=True, message=message, hub_id=hub_id or cfg.hub_id or None)
+        cfg.last_error = message
+        self._save_hubspot_config(cfg)
+        return HubSpotConnectionTestResult(ok=False, message=message, hub_id=hub_id)
+
+    def _find_ppp_by_external_ref(self, external_ref: str) -> PresencePeopleProfile | None:
+        ref = (external_ref or "").strip()
+        if not ref:
+            return None
+        for profile in self.people_profiles.values():
+            if profile.status == "inactive":
+                continue
+            if (profile.external_ref or "").strip() == ref:
+                return profile
+        return None
+
+    def _upsert_ppp_from_hubspot_contact(self, contact) -> str:
+        """Create or update a PPP from a HubSpot contact. Returns created|updated|skipped."""
+        existing = self._find_ppp_by_external_ref(contact.contact_id)
+        email = normalize_email(contact.email)
+        if existing is None and email:
+            existing = self.people_user_association.find_active_by_email(email)
+
+        name = contact.display_name
+        if existing is None:
+            if not name:
+                return "skipped"
+            # Avoid create_people_profile email collision path when email already exists
+            # but was not found above (inactive); create with unique external_ref.
+            try:
+                self.create_people_profile(
+                    CreatePeopleProfileRequest(
+                        name=name,
+                        email=email or contact.email,
+                        phone=contact.phone,
+                        notes=None,
+                        external_ref=contact.contact_id,
+                        installation_uuid=self.installation_profile.installation_uuid or "local-installation",
+                    )
+                )
+                return "created"
+            except ValueError:
+                # Email taken — attach external_ref to that profile instead
+                by_email = self.people_user_association.find_active_by_email(email) if email else None
+                if by_email is None:
+                    return "skipped"
+                by_email.external_ref = contact.contact_id
+                if contact.phone and not by_email.phone:
+                    by_email.phone = contact.phone
+                by_email.updated_at = datetime.utcnow()
+                self._persist_people_profile(by_email)
+                return "updated"
+
+        changed = False
+        if existing.external_ref != contact.contact_id:
+            existing.external_ref = contact.contact_id
+            changed = True
+        if email and normalize_email(existing.email) != email and not existing.linked_user_uuid:
+            # Only overwrite email when not bound to a platform user
+            other = self.people_user_association.find_active_by_email(email)
+            if other is None or other.ppp_uuid == existing.ppp_uuid:
+                existing.email = email
+                changed = True
+        if contact.phone and existing.phone != contact.phone:
+            existing.phone = contact.phone
+            changed = True
+        # Do not override account-linked names; HubSpot name fills gaps only
+        if not existing.linked_user_uuid and name and existing.name != name:
+            existing.name = name
+            changed = True
+        if not changed:
+            return "skipped"
+        existing.updated_at = datetime.utcnow()
+        self._persist_people_profile(existing)
+        return "updated"
+
+    async def sync_hubspot_contacts(self) -> HubSpotSyncReport:
+        cfg = self._hubspot_config_from_profile()
+        client = self._hubspot_client()
+        report = HubSpotSyncReport()
+        if client is None:
+            report.errors.append("HubSpot access token is not configured")
+            cfg.last_sync_status = "error"
+            cfg.last_error = report.errors[0]
+            cfg.last_sync_at = datetime.utcnow()
+            self._save_hubspot_config(cfg)
+            report.finished_at = cfg.last_sync_at
+            return report
+        if not cfg.enabled:
+            report.errors.append("HubSpot CRM sync is disabled")
+            cfg.last_sync_status = "error"
+            cfg.last_error = report.errors[0]
+            cfg.last_sync_at = datetime.utcnow()
+            self._save_hubspot_config(cfg)
+            report.finished_at = cfg.last_sync_at
+            return report
+
+        try:
+            await client.ensure_presence_properties()
+            async for contact in client.iter_contacts(list_id=cfg.list_id):
+                report.contacts_seen += 1
+                try:
+                    outcome = self._upsert_ppp_from_hubspot_contact(contact)
+                except Exception as exc:  # noqa: BLE001
+                    report.errors.append(f"{contact.contact_id}: {exc}")
+                    continue
+                if outcome == "created":
+                    report.created += 1
+                elif outcome == "updated":
+                    report.updated += 1
+                else:
+                    report.skipped += 1
+            cfg.last_sync_status = "ok" if not report.errors else "partial"
+            cfg.last_error = "; ".join(report.errors[:5]) if report.errors else None
+        except Exception as exc:  # noqa: BLE001
+            report.errors.append(str(exc))
+            cfg.last_sync_status = "error"
+            cfg.last_error = str(exc)
+
+        cfg.last_sync_at = datetime.utcnow()
+        self._save_hubspot_config(cfg)
+        report.finished_at = cfg.last_sync_at
+        return report
+
+    def _resolve_ppp_for_hubspot_grant(self, session: PresenceSession) -> PresencePeopleProfile | None:
+        if session.matched_ppp_uuid:
+            profile = self.people_profiles.get(session.matched_ppp_uuid)
+            if profile and profile.status != "inactive":
+                return profile
+        if session.matched_member_uuid:
+            profile = self._ppp_for_member(session.matched_member_uuid)
+            if profile and profile.status != "inactive":
+                return profile
+        if session.user_uuid:
+            for profile in self.people_profiles.values():
+                if profile.status == "inactive":
+                    continue
+                if profile.linked_user_uuid == session.user_uuid:
+                    return profile
+        return None
+
+    async def _notify_hubspot_grant(self, session: PresenceSession) -> None:
+        """Post grant Note + contact properties to HubSpot. Never raises to callers."""
+        try:
+            if session.decision != PresenceDecisionState.GRANTED:
+                return
+            assets = session.external_assets or PresenceExternalAssets()
+            if assets.hubspot_posted:
+                return
+
+            cfg = self._hubspot_config_from_profile()
+            if not cfg.enabled or not cfg.post_grants:
+                return
+            grant_type = session.grant_type.value if hasattr(session.grant_type, "value") else str(session.grant_type)
+            allowed = set(cfg.grant_types or DEFAULT_HUBSPOT_GRANT_TYPES)
+            if grant_type not in allowed:
+                return
+
+            client = self._hubspot_client()
+            if client is None:
+                return
+
+            ppp = self._resolve_ppp_for_hubspot_grant(session)
+            contact_id = (ppp.external_ref if ppp else None) or None
+            if not contact_id and ppp and ppp.email:
+                found = await client.find_contact_by_email(ppp.email)
+                if found is not None:
+                    contact_id = found.contact_id
+                    ppp.external_ref = contact_id
+                    ppp.updated_at = datetime.utcnow()
+                    self._persist_people_profile(ppp)
+            if not contact_id:
+                logger.info(
+                    "HubSpot grant notify skipped — no contact for session %s",
+                    session.session_uuid,
+                )
+                return
+
+            occurred_at = session.executed_at or session.updated_at or datetime.utcnow()
+            assurance = session.assurance_level.value if hasattr(session.assurance_level, "value") else str(session.assurance_level)
+            body = grant_note_body(
+                session_uuid=session.session_uuid,
+                grant_type=grant_type,
+                assurance_level=assurance,
+                person_name=(ppp.name if ppp else session.matched_member_name),
+                occurred_at=occurred_at,
+            )
+            note_id = await client.create_note_for_contact(contact_id=contact_id, body=body)
+            await client.update_presence_properties(
+                contact_id=contact_id,
+                occurred_at=occurred_at,
+                grant_type=grant_type,
+                session_uuid=session.session_uuid,
+            )
+            assets.hubspot_posted = True
+            assets.hubspot_note_id = note_id
+            assets.hubspot_contact_id = contact_id
+            session.external_assets = assets
+            session.updated_at = datetime.utcnow()
+            self.repository.save_session(session)
+            cfg.last_error = None
+            self._save_hubspot_config(cfg)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("HubSpot grant notify failed for %s: %s", session.session_uuid, exc)
+            try:
+                cfg = self._hubspot_config_from_profile()
+                cfg.last_error = str(exc)[:500]
+                self._save_hubspot_config(cfg)
+            except Exception:
+                pass
+
     async def refresh_local_installation_reference(self, current_user: dict) -> dict:
         token = current_user.get("token")
         if not token:
@@ -734,14 +1451,56 @@ class PresenceService:
         actions = await self.platform_clients.list_user_actions(token)
         return build_video_readiness_report(triggers, actions)
 
+    @staticmethod
+    def _normalize_client_origin(
+        client_origin: str | None,
+        *,
+        app_version: str | None = None,
+    ) -> str:
+        origin = (client_origin or "").strip().lower()
+        if origin in {"authenticator", "mobile_camera", "console", "station", "trigger"}:
+            return origin
+        app = (app_version or "").strip().lower()
+        if app.startswith("ppl-meta-authenticator") or app.startswith("ppl_meta_authenticator"):
+            return "authenticator"
+        if app.startswith("ppl-meta-mobile") or app.startswith("ppl_meta_mobile") or "mobile_camera" in app:
+            return "mobile_camera"
+        if origin:
+            return origin
+        return "unknown"
+
+    @staticmethod
+    def _is_authenticator_origin(request: CreatePresenceSessionRequest) -> bool:
+        return (
+            PresenceService._normalize_client_origin(
+                request.client_origin,
+                app_version=request.app_version,
+            )
+            == "authenticator"
+        )
+
+    def _session_client_origin(self, session: PresenceSession) -> str:
+        stored = getattr(session, "client_origin", None)
+        if stored:
+            return self._normalize_client_origin(stored)
+        # Heuristic for older sessions created before client_origin was persisted.
+        detection = (session.detection_status or "").lower()
+        policy = (session.policy_source or "").lower()
+        if "authenticator" in detection or policy == "authenticator_mvr_verify":
+            return "authenticator"
+        if policy == "platform_trigger":
+            return "trigger"
+        return "unknown"
+
     async def create_session(self, request: CreatePresenceSessionRequest, current_user: dict) -> PresenceSession:
         profile = self._get_or_create_user_profile(current_user=current_user, device_uuid=request.device_uuid)
         session_settings = self._current_session_settings()
         await self._ensure_default_resources(current_user)
 
+        authenticator_client = self._is_authenticator_origin(request)
         video_modes = {PresenceSessionMode.CAMERA_ONLY, PresenceSessionMode.QR_PLUS_CAMERA}
         readiness: dict | None = None
-        if request.session_mode in video_modes:
+        if request.session_mode in video_modes and not authenticator_client:
             readiness = await self.get_video_readiness(current_user)
             if not readiness.get("ready"):
                 issues = readiness.get("issues") or []
@@ -770,12 +1529,25 @@ class PresenceService:
                 if request.session_mode in {PresenceSessionMode.QR_ONLY, PresenceSessionMode.CAMERA_ONLY}
                 else PresenceSessionStatus.AWAITING_FRONT_BURST
             ),
-            resolved_camera_uuid=resolved_camera,
+            resolved_camera_uuid=None if authenticator_client else resolved_camera,
             resolved_collection_uuid=self._get_default_collection_id(),
+            client_origin=self._normalize_client_origin(
+                request.client_origin,
+                app_version=request.app_version,
+            ),
+            external_assets=PresenceExternalAssets(
+                individual_group_id=self._active_presence_individual_group_id(),
+            )
+            if authenticator_client
+            else None,
         )
+        if authenticator_client and request.session_mode in video_modes:
+            # Soft device video path: no cameras registration / instant detection.
+            # QR-only must not wait on face verify (that left orphan sessions as FAILED).
+            session.detection_status = "awaiting_authenticator_verify"
         # Video path uses platform Triggers + Presence action; do not auto-provision
         # a private Presence ppl_match trigger when readiness is already green.
-        if request.session_mode not in video_modes:
+        if request.session_mode not in video_modes and not authenticator_client:
             await self._ensure_presence_automation_assets(session, current_user)
         self._sync_session_external_assets(session)
         self.sessions[session.session_uuid] = session
@@ -783,7 +1555,7 @@ class PresenceService:
         self.repository.save_session(session)
         self._schedule_session_timeout(session)
 
-        if request.session_mode == PresenceSessionMode.CAMERA_ONLY:
+        if request.session_mode == PresenceSessionMode.CAMERA_ONLY and not authenticator_client:
             await self._start_camera_only_detection(session)
 
         return session
@@ -898,6 +1670,7 @@ class PresenceService:
             trigger_type="presence_match",
             action_type="presence_grant",
             action_execution_status="not_applicable",
+            client_origin="trigger",
             expires_at=datetime.utcnow() + timedelta(seconds=session_settings.session_timeout_seconds),
             external_assets=PresenceExternalAssets(
                 trigger_uuid=trigger_uuid,
@@ -914,35 +1687,8 @@ class PresenceService:
         self.qr_tokens[session.qr_token] = session.session_uuid
         self.repository.save_session(session)
         self._record_decision(session, simulated_detection=False, reason_code="presence_ppl_match")
-
-        if not any(event.session_uuid == session.session_uuid for event in self.analytics_events):
-            event = PresenceAnalyticsEvent(
-                session_uuid=session.session_uuid,
-                session_mode=session.session_mode,
-                assurance_level=session.assurance_level,
-                grant_type=session.grant_type,
-                installation_uuid=installation_uuid,
-                user_uuid=user_uuid,
-                device_uuid=device_uuid,
-                outcome=PresenceDecisionState.GRANTED.value,
-                reason_code="presence_ppl_match",
-                matched_group_uuid=matched_group_uuid,
-                matched_individual_group_id=matched_individual_group_id,
-                matched_individual_group_name=matched_individual_group_name,
-                matched_member_number=session.matched_member_number,
-                matched_member_name=session.matched_member_name,
-                matched_gender=session.matched_gender,
-                matched_age_min=session.matched_age_min,
-                matched_age_max=session.matched_age_max,
-                matched_ppp_uuid=session.matched_ppp_uuid,
-                policy_source=session.policy_source,
-                trigger_type=session.trigger_type,
-                action_type=session.action_type,
-                action_execution_status=session.action_execution_status,
-                resolved_camera_uuid=camera_device_id,
-            )
-            self.analytics_events.append(event)
-            self.repository.save_analytics_event(event)
+        self._ensure_analytics_event(session, reason_code="presence_ppl_match")
+        await self._notify_hubspot_grant(session)
 
         logger.info(
             "✅ Video-only presence grant issued via trigger %s (camera=%s, member=%s, score=%s) session=%s",
@@ -973,10 +1719,61 @@ class PresenceService:
     # Presence People Profiles (CRUD + linkage)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _people_profile_category_tags(profile: PresencePeopleProfile) -> set[str]:
+        """Canonical category tags used by People search + filter chips."""
+        tags: set[str] = set()
+        status = (profile.status or "active").strip().lower() or "active"
+        tags.add(status)
+        if (profile.linked_member_count or 0) > 0:
+            tags.add("linked")
+        else:
+            tags.add("unlinked")
+        if profile.linked_user_uuid and str(profile.linked_user_uuid).strip():
+            tags.add("linked_to_account")
+        else:
+            tags.add("not_linked_to_account")
+        return tags
+
+    @staticmethod
+    def _people_profile_matches_query(profile: PresencePeopleProfile, query: str) -> bool:
+        q = query.strip().lower()
+        if not q:
+            return True
+        haystacks = [
+            profile.name or "",
+            profile.email or "",
+            profile.phone or "",
+            profile.external_ref or "",
+            profile.notes or "",
+            profile.status or "",
+            profile.ppp_uuid or "",
+        ]
+        if any(q in str(value).lower() for value in haystacks):
+            return True
+
+        tags = PresenceService._people_profile_category_tags(profile)
+        readable = {tag.replace("_", " ") for tag in tags} | set(tags)
+        if q in readable:
+            return True
+        # Exact phrase aliases only (avoid "linked" matching "unlinked" / "not linked…").
+        aliases = {
+            "not linked": "unlinked",
+            "linked to members": "linked",
+            "member linked": "linked",
+            "account linked": "linked_to_account",
+            "linked account": "linked_to_account",
+            "no account": "not_linked_to_account",
+            "unlinked account": "not_linked_to_account",
+        }
+        mapped = aliases.get(q)
+        return bool(mapped and mapped in tags)
+
     def list_people_profiles(
         self,
         *,
         query: str | None = None,
+        tags: list[str] | None = None,
         installation_uuid: str | None = None,
         limit: int = 50,
         offset: int = 0,
@@ -985,14 +1782,27 @@ class PresenceService:
         if installation_uuid:
             items = [p for p in items if p.installation_uuid == installation_uuid]
         if query:
-            q = query.strip().lower()
-            items = [
-                p for p in items
-                if q in (p.name or "").lower()
-                or (p.external_ref and q in str(p.external_ref).lower())
-                or (p.email and q in str(p.email).lower())
-                or (p.phone and q in str(p.phone).lower())
-            ]
+            items = [p for p in items if self._people_profile_matches_query(p, query)]
+        if tags:
+            required = {
+                str(tag).strip().lower().replace(" ", "_")
+                for tag in tags
+                if str(tag).strip()
+            }
+            # Normalize common UI labels to canonical keys.
+            alias_map = {
+                "linked_to_members": "linked",
+                "member_linked": "linked",
+                "account_linked": "linked_to_account",
+                "not_account_linked": "not_linked_to_account",
+            }
+            required = {alias_map.get(tag, tag) for tag in required}
+            if required:
+                items = [
+                    p
+                    for p in items
+                    if required.issubset(self._people_profile_category_tags(p))
+                ]
         total = len(items)
         page = items[offset: offset + limit] if limit else items[offset:]
         return {"items": [p.model_dump(mode="json") for p in page], "total": total, "returned": len(page)}
@@ -1481,6 +2291,21 @@ class PresenceService:
         self.repository.save_session(session)
         return session
 
+    async def qr_hit_complete(
+        self,
+        session_uuid: str,
+        request: PresenceQrHitRequest,
+        current_user: dict,
+    ) -> PresenceSession:
+        """Apply station QR hit and grant immediately for QR-only sessions."""
+        session = self.qr_hit(session_uuid, request)
+        if (
+            session.session_mode == PresenceSessionMode.QR_ONLY
+            and session.decision == PresenceDecisionState.PENDING
+        ):
+            await self._grant_qr_check_in(session, current_user)
+        return session
+
     def owner_qr_hit(self, session_uuid: str, request: PresenceOwnerQrHitRequest) -> PresenceSession:
         session = self.sessions[session_uuid]
         self._apply_session_limits(session)
@@ -1541,23 +2366,68 @@ class PresenceService:
         if session.status == PresenceSessionStatus.FAILED:
             raise ValueError(self._human_reason_for_code(session.failure_reason_code))
 
-        camera_id = session.resolved_camera_uuid or self._get_default_camera_id()
-        if not camera_id:
-            return {
-                "found": False,
-                "reason": "camera_unbound",
-                "session": session.model_dump(),
-            }
+        # One-shot Connected (USB) camera from Action Tab "Scan Owner QR".
+        # Does not replace the session's reserved presence camera used by video flows.
+        oneshot_camera_id = (request.camera_device_id or "").strip() or None
+        bind_to_session = oneshot_camera_id is None
 
-        session.resolved_camera_uuid = camera_id
-        session.updated_at = datetime.utcnow()
-        self.repository.save_session(session)
+        if oneshot_camera_id:
+            camera_id = oneshot_camera_id
+            token = current_user.get("token")
+            if token:
+                try:
+                    platform_cameras = await self.platform_clients.list_cameras(token)
+                    selected = next(
+                        (
+                            camera
+                            for camera in platform_cameras
+                            if str(camera.get("device_id") or "") == camera_id
+                        ),
+                        None,
+                    )
+                    if selected is None:
+                        return {
+                            "found": False,
+                            "reason": "camera_not_found",
+                            "camera_id": camera_id,
+                            "session": session.model_dump(),
+                        }
+                    camera_type = str(selected.get("camera_type") or "").upper()
+                    if camera_type not in {"USB", "WEBCAM"}:
+                        return {
+                            "found": False,
+                            "reason": "not_connected_camera",
+                            "detail": (
+                                f"Camera '{camera_id}' is type {camera_type or 'unknown'}; "
+                                "Scan Owner QR requires a Connected (USB) camera."
+                            ),
+                            "camera_id": camera_id,
+                            "session": session.model_dump(),
+                        }
+                except httpx.HTTPError as exc:
+                    logger.warning(
+                        "Could not validate Connected camera %s before QR scan: %s",
+                        camera_id,
+                        exc,
+                    )
+        else:
+            camera_id = session.resolved_camera_uuid or self._get_default_camera_id()
+            if not camera_id:
+                return {
+                    "found": False,
+                    "reason": "camera_unbound",
+                    "session": session.model_dump(),
+                }
+            session.resolved_camera_uuid = camera_id
+            session.updated_at = datetime.utcnow()
+            self.repository.save_session(session)
 
         timeout_seconds = float(request.timeout_seconds or 30)
         if timeout_seconds <= 0:
             timeout_seconds = 30.0
         timeout_seconds = min(timeout_seconds, 60.0)
 
+        scan_result: dict = {}
         try:
             await self.platform_clients.connect_camera(camera_id)
             scan_result = await self.platform_clients.scan_qr_from_camera(
@@ -1573,6 +2443,19 @@ class PresenceService:
                 "camera_id": camera_id,
                 "session": session.model_dump(),
             }
+        finally:
+            # Always release one-shot Connected cameras after scan.
+            # For reserved-camera scans, leave connection policy unchanged
+            # (video flows may still need the camera).
+            if oneshot_camera_id:
+                try:
+                    await self.platform_clients.disconnect_camera(camera_id)
+                except Exception as disconnect_exc:  # noqa: BLE001
+                    logger.warning(
+                        "Failed to disconnect Connected camera %s after owner QR scan: %s",
+                        camera_id,
+                        disconnect_exc,
+                    )
 
         if not scan_result.get("found"):
             return {
@@ -1610,6 +2493,7 @@ class PresenceService:
             "camera_id": camera_id,
             "qr_payload": payload,
             "session": session.model_dump(),
+            "oneshot_connected_camera": not bind_to_session,
         }
 
     def bind_resources(self, session_uuid: str, request: BindResourcesRequest) -> PresenceSession:
@@ -1868,16 +2752,88 @@ class PresenceService:
         ):
             await self._grant_qr_check_in(session, current_user)
 
+        # Authenticator path: enrolled-MVR verify + station QR → verified_presence.
+        if (
+            session.session_mode == PresenceSessionMode.QR_PLUS_CAMERA
+            and session.detection_status == "authenticator_verified"
+            and session.qr_status == "scanned"
+            and session.decision == PresenceDecisionState.PENDING
+        ):
+            await self._grant_presence_match(
+                session,
+                simulated_detection=False,
+                current_user=current_user,
+                reason_code="authenticator_verified_presence",
+                trigger_match={
+                    "matched_member_uuid": session.matched_member_uuid,
+                    "matched_individual_group_id": session.matched_individual_group_id,
+                    "matched_individual_group_name": session.matched_individual_group_name,
+                    "matched_member_name": session.matched_member_name,
+                },
+            )
+            session.policy_source = "authenticator_mvr_verify"
+            self.repository.save_session(session)
+            return PresenceResult(
+                session_uuid=session_uuid,
+                session_mode=session.session_mode,
+                assurance_level=session.assurance_level,
+                grant_type=session.grant_type,
+                status=session.status,
+                decision=session.decision,
+                reason_code="authenticator_verified_presence",
+                matched_group_uuid=session.matched_group_uuid,
+                policy_source=session.policy_source,
+                trigger_type=session.trigger_type,
+                action_type=session.action_type,
+                action_execution_status=session.action_execution_status,
+                resolved_camera_uuid=session.resolved_camera_uuid,
+                resolved_collection_uuid=session.resolved_collection_uuid,
+            )
+
+        if (
+            session.session_mode == PresenceSessionMode.CAMERA_ONLY
+            and session.detection_status == "authenticator_verified"
+            and session.decision == PresenceDecisionState.GRANTED
+        ):
+            return PresenceResult(
+                session_uuid=session_uuid,
+                session_mode=session.session_mode,
+                assurance_level=session.assurance_level,
+                grant_type=session.grant_type,
+                status=session.status,
+                decision=session.decision,
+                reason_code="authenticator_mvr_verify",
+                matched_group_uuid=session.matched_group_uuid,
+                policy_source=session.policy_source or "authenticator_mvr_verify",
+                trigger_type=session.trigger_type,
+                action_type=session.action_type,
+                action_execution_status=session.action_execution_status,
+                resolved_camera_uuid=session.resolved_camera_uuid,
+                resolved_collection_uuid=session.resolved_collection_uuid,
+            )
+
         if (
             session.session_mode == PresenceSessionMode.QR_PLUS_CAMERA
             and live_detection_ready
             and session.decision == PresenceDecisionState.PENDING
             and latest_attempt is None
+            and session.detection_status != "authenticator_verified"
+            and session.detection_status != "awaiting_authenticator_verify"
         ):
             await self._start_verified_detection(session)
             latest_attempt = self._latest_attempt(session_uuid)
 
-        if live_detection_ready and session.decision == PresenceDecisionState.PENDING:
+        authenticator_pending = session.detection_status in {
+            "awaiting_authenticator_verify",
+            "authenticator_verified",
+            "authenticator_verify_failed",
+        }
+
+        if (
+            live_detection_ready
+            and session.decision == PresenceDecisionState.PENDING
+            and not authenticator_pending
+        ):
             await self._advance_live_detection(session)
             latest_attempt = self._latest_attempt(session_uuid)
 
@@ -1886,6 +2842,7 @@ class PresenceService:
             live_detection_ready
             and session.detection_status == "completed"
             and session.decision == PresenceDecisionState.PENDING
+            and not authenticator_pending
         ):
             seeded_member = await self._ensure_presence_group_seed_member(session, latest_attempt, current_user)
             if simulated_detection:
@@ -2358,34 +3315,8 @@ class PresenceService:
             self._apply_matched_person_fields(session, trigger_match)
         self.repository.save_session(session)
         self._record_decision(session, simulated_detection, reason_code)
-        if not any(event.session_uuid == session.session_uuid for event in self.analytics_events):
-            event = PresenceAnalyticsEvent(
-                session_uuid=session.session_uuid,
-                session_mode=session.session_mode,
-                assurance_level=session.assurance_level,
-                grant_type=session.grant_type,
-                installation_uuid=session.installation_uuid,
-                user_uuid=session.user_uuid,
-                device_uuid=session.device_uuid,
-                outcome=session.decision.value,
-                reason_code=reason_code,
-                matched_group_uuid=session.matched_group_uuid,
-                matched_individual_group_id=session.matched_individual_group_id,
-                matched_individual_group_name=session.matched_individual_group_name,
-                matched_member_number=session.matched_member_number,
-                matched_member_name=session.matched_member_name,
-                matched_gender=session.matched_gender,
-                matched_age_min=session.matched_age_min,
-                matched_age_max=session.matched_age_max,
-                policy_source=session.policy_source,
-                trigger_type=session.trigger_type,
-                action_type=session.action_type,
-                action_execution_status=session.action_execution_status,
-                resolved_camera_uuid=session.resolved_camera_uuid,
-                resolved_collection_uuid=session.resolved_collection_uuid,
-            )
-            self.analytics_events.append(event)
-            self.repository.save_analytics_event(event)
+        self._ensure_analytics_event(session, reason_code=reason_code)
+        await self._notify_hubspot_grant(session)
 
     def _apply_matched_person_fields(self, session: PresenceSession, data: dict) -> None:
         """Copy people-match details onto a presence session from match data.
@@ -2464,27 +3395,8 @@ class PresenceService:
         session.updated_at = datetime.utcnow()
         self.repository.save_session(session)
         self._record_decision(session, simulated_detection=False, reason_code="presence_check_in")
-        if not any(event.session_uuid == session.session_uuid for event in self.analytics_events):
-            event = PresenceAnalyticsEvent(
-                session_uuid=session.session_uuid,
-                session_mode=session.session_mode,
-                assurance_level=session.assurance_level,
-                grant_type=session.grant_type,
-                installation_uuid=session.installation_uuid,
-                user_uuid=session.user_uuid,
-                device_uuid=session.device_uuid,
-                outcome=session.decision.value,
-                reason_code="presence_check_in",
-                matched_group_uuid=session.matched_group_uuid,
-                policy_source=session.policy_source,
-                trigger_type=session.trigger_type,
-                action_type=session.action_type,
-                action_execution_status=session.action_execution_status,
-                resolved_camera_uuid=session.resolved_camera_uuid,
-                resolved_collection_uuid=session.resolved_collection_uuid,
-            )
-            self.analytics_events.append(event)
-            self.repository.save_analytics_event(event)
+        self._ensure_analytics_event(session, reason_code="presence_check_in")
+        await self._notify_hubspot_grant(session)
 
     async def _start_confirmation_detection(self, session: PresenceSession) -> bool:
         if not session.resolved_camera_uuid:
@@ -2530,30 +3442,74 @@ class PresenceService:
         except ValueError:
             return None
 
-    def analytics_summary(self) -> dict:
-        total_sessions = len(self.sessions)
+    def _sessions_in_range(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> list[PresenceSession]:
+        sessions = list(self.sessions.values())
+        if start_date:
+            sessions = [session for session in sessions if session.created_at >= start_date]
+        if end_date:
+            sessions = [session for session in sessions if session.created_at <= end_date]
+        return sessions
+
+    def analytics_summary(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> dict:
+        sessions = self._sessions_in_range(start_date, end_date)
+        total_sessions = len(sessions)
         granted = len(
-            [session for session in self.sessions.values() if session.decision == PresenceDecisionState.GRANTED]
+            [session for session in sessions if session.decision == PresenceDecisionState.GRANTED]
         )
         denied = len(
-            [session for session in self.sessions.values() if session.decision == PresenceDecisionState.DENIED]
+            [session for session in sessions if session.decision == PresenceDecisionState.DENIED]
         )
         failed = len(
-            [session for session in self.sessions.values() if session.decision == PresenceDecisionState.FAILED]
+            [session for session in sessions if session.decision == PresenceDecisionState.FAILED]
         )
         completed = len(
-            [session for session in self.sessions.values() if session.status == PresenceSessionStatus.COMPLETED]
+            [session for session in sessions if session.status == PresenceSessionStatus.COMPLETED]
         )
         pending = len(
             [
                 session
-                for session in self.sessions.values()
+                for session in sessions
                 if session.status not in {PresenceSessionStatus.COMPLETED, PresenceSessionStatus.FAILED}
-                and session.decision not in {PresenceDecisionState.GRANTED, PresenceDecisionState.DENIED, PresenceDecisionState.FAILED}
+                and session.decision
+                not in {
+                    PresenceDecisionState.GRANTED,
+                    PresenceDecisionState.DENIED,
+                    PresenceDecisionState.FAILED,
+                }
             ]
         )
-        total_attempts = sum(len(attempts) for attempts in self.attempts.values())
-        retries = len([a for attempts in self.attempts.values() for a in attempts if a.attempt_index > 1])
+        expired = len(
+            [
+                session
+                for session in sessions
+                if session.failure_reason_code == "presence_session_expired"
+            ]
+        )
+        session_ids = {session.session_uuid for session in sessions}
+        total_attempts = sum(
+            len(attempts)
+            for session_uuid, attempts in self.attempts.items()
+            if not session_ids or session_uuid in session_ids
+        )
+        if start_date is None and end_date is None:
+            total_attempts = sum(len(attempts) for attempts in self.attempts.values())
+        retries = len(
+            [
+                attempt
+                for session_uuid, attempts in self.attempts.items()
+                for attempt in attempts
+                if attempt.attempt_index > 1
+                and (start_date is None and end_date is None or session_uuid in session_ids)
+            ]
+        )
         return {
             "total_sessions": total_sessions,
             "completed_sessions": completed,
@@ -2561,12 +3517,126 @@ class PresenceService:
             "granted_sessions": granted,
             "denied_sessions": denied,
             "failed_sessions": failed,
+            "expired_sessions": expired,
             "attempts": total_attempts,
             "granted": granted,
             "denied": denied,
             "failed": failed,
             "retry_count": retries,
         }
+
+    def analytics_dashboard(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> dict:
+        """Session-backed analytics for the Presence Analytics tab (incl. failures)."""
+        sessions = self._sessions_in_range(start_date, end_date)
+        summary = self.analytics_summary(start_date=start_date, end_date=end_date)
+
+        outcomes: Dict[str, int] = {}
+        failures: Dict[str, int] = {}
+        policy_sources: Dict[str, int] = {}
+        client_origins: Dict[str, int] = {}
+        mode_stats: Dict[str, dict] = {}
+
+        for session in sessions:
+            decision = (
+                session.decision.value if hasattr(session.decision, "value") else str(session.decision or "pending")
+            )
+            outcomes[decision] = outcomes.get(decision, 0) + 1
+
+            if session.failure_reason_code:
+                reason = session.failure_reason_code
+                failures[reason] = failures.get(reason, 0) + 1
+
+            policy = session.policy_source or "unknown"
+            policy_sources[policy] = policy_sources.get(policy, 0) + 1
+
+            origin = self._session_client_origin(session)
+            client_origins[origin] = client_origins.get(origin, 0) + 1
+
+            mode = (
+                session.session_mode.value
+                if hasattr(session.session_mode, "value")
+                else str(session.session_mode or "unknown")
+            )
+            stats = mode_stats.setdefault(
+                mode,
+                {
+                    "session_mode": mode,
+                    "total": 0,
+                    "granted": 0,
+                    "denied": 0,
+                    "failed": 0,
+                    "pending": 0,
+                    "expired": 0,
+                },
+            )
+            stats["total"] += 1
+            if decision == PresenceDecisionState.GRANTED.value:
+                stats["granted"] += 1
+            elif decision == PresenceDecisionState.DENIED.value:
+                stats["denied"] += 1
+            elif decision == PresenceDecisionState.FAILED.value:
+                stats["failed"] += 1
+            else:
+                stats["pending"] += 1
+            if session.failure_reason_code == "presence_session_expired":
+                stats["expired"] += 1
+
+        mode_success = []
+        for mode, stats in sorted(mode_stats.items(), key=lambda item: item[0]):
+            total = stats["total"] or 0
+            granted = stats["granted"]
+            mode_success.append(
+                {
+                    **stats,
+                    "grant_rate": round(granted / total, 4) if total else 0.0,
+                    "fail_rate": round(stats["failed"] / total, 4) if total else 0.0,
+                    "expire_rate": round(stats["expired"] / total, 4) if total else 0.0,
+                    "count": total,
+                    "event_count": total,
+                }
+            )
+
+        def _bucket_list(mapping: Dict[str, int], key_name: str) -> list[dict]:
+            return [
+                {key_name: key, "count": count, "event_count": count}
+                for key, count in sorted(mapping.items(), key=lambda item: (-item[1], item[0]))
+            ]
+
+        return {
+            "summary": summary,
+            "outcomes": _bucket_list(outcomes, "outcome"),
+            "failure_reasons": _bucket_list(failures, "failure_reason_code"),
+            "policy_sources": _bucket_list(policy_sources, "policy_source"),
+            "client_origins": _bucket_list(client_origins, "client_origin"),
+            "mode_success": mode_success,
+            "by_session_mode": [
+                {
+                    "session_mode": item["session_mode"],
+                    "count": item["total"],
+                    "event_count": item["total"],
+                }
+                for item in mode_success
+            ],
+            "by_grant_type": self._analytics_grant_type_from_sessions(sessions),
+        }
+
+    def _analytics_grant_type_from_sessions(self, sessions: list[PresenceSession]) -> list[dict]:
+        aggregates: Dict[str, int] = {}
+        for session in sessions:
+            key = (
+                session.grant_type.value
+                if hasattr(session.grant_type, "value")
+                else str(session.grant_type or "unknown")
+            )
+            aggregates[key] = aggregates.get(key, 0) + 1
+        return [
+            {"grant_type": grant_type, "count": count, "event_count": count}
+            for grant_type, count in sorted(aggregates.items(), key=lambda item: (-item[1], item[0]))
+        ]
 
     def analytics_by_user(self) -> list[dict]:
         aggregates: Dict[str, int] = {}
@@ -2956,8 +4026,45 @@ class PresenceService:
         session.updated_at = datetime.utcnow()
         self.repository.save_session(session)
         self._record_decision(session, simulated_detection=False, reason_code=reason_code)
+        self._ensure_analytics_event(session, reason_code=reason_code)
         if camera_id:
             self._schedule_detection_cleanup(camera_id)
+
+    def _ensure_analytics_event(self, session: PresenceSession, *, reason_code: str) -> None:
+        if any(event.session_uuid == session.session_uuid for event in self.analytics_events):
+            return
+        client_origin = self._session_client_origin(session)
+        if not session.client_origin:
+            session.client_origin = client_origin
+        event = PresenceAnalyticsEvent(
+            session_uuid=session.session_uuid,
+            session_mode=session.session_mode,
+            assurance_level=session.assurance_level,
+            grant_type=session.grant_type,
+            installation_uuid=session.installation_uuid,
+            user_uuid=session.user_uuid,
+            device_uuid=session.device_uuid,
+            outcome=session.decision.value if hasattr(session.decision, "value") else str(session.decision),
+            reason_code=reason_code,
+            matched_group_uuid=session.matched_group_uuid,
+            matched_individual_group_id=session.matched_individual_group_id,
+            matched_individual_group_name=session.matched_individual_group_name,
+            matched_member_number=session.matched_member_number,
+            matched_member_name=session.matched_member_name,
+            matched_gender=session.matched_gender,
+            matched_age_min=session.matched_age_min,
+            matched_age_max=session.matched_age_max,
+            matched_ppp_uuid=session.matched_ppp_uuid,
+            policy_source=session.policy_source,
+            trigger_type=session.trigger_type,
+            action_type=session.action_type,
+            action_execution_status=session.action_execution_status,
+            resolved_camera_uuid=session.resolved_camera_uuid,
+            resolved_collection_uuid=session.resolved_collection_uuid,
+            client_origin=client_origin,
+        )
+        self.analytics_events.append(event)
+        self.repository.save_analytics_event(event)
 
     def _schedule_existing_session_timeouts(self) -> None:
         for session in self.sessions.values():

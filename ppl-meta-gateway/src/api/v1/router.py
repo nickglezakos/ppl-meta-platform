@@ -27,6 +27,12 @@ logger = logging.getLogger(__name__)
 JWT_SECRET_KEY = os.getenv("SECRET_KEY", "ppl-meta-secret-key-development-only-change-in-production")
 JWT_ALGORITHM = "HS256"
 
+# Shared internal service token for cross-service auth (matches shared/auth/service_auth.py)
+INTERNAL_SERVICE_TOKEN = os.getenv(
+    "INTERNAL_SERVICE_TOKEN",
+    "ppl-meta-internal-service-secret-key-change-in-production",
+)
+
 
 async def _stream_proxy_response(target_url: str, headers: dict, query_params):
     """Stream proxy response for MJPEG video streaming."""
@@ -733,7 +739,10 @@ async def _proxy_to_presence_service(request: Request) -> Response:
             f"🔐 [PRESENCE-PROXY] {method} {path} - Auth header: {'Present' if auth_header != 'MISSING' else 'MISSING'}"
         )
 
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        # Authenticator enroll/verify calls vmeta identify-face; allow longer ML latency.
+        timeout = 90.0 if "/authenticator/" in path else 30.0
+
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             response = await client.request(
                 method=method,
                 url=target_url,
@@ -762,12 +771,13 @@ async def _proxy_to_presence_service(request: Request) -> Response:
 
 
 # Capabilities Service Routes
+# Includes authenticator enroll/verify under /api/v1/presence/authenticator/*
 @api_router.api_route(
     "/presence/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
 )
 async def proxy_presence_service(request: Request):
-    """Proxy presence routes to the Presence service."""
+    """Proxy presence routes to the Presence service (incl. authenticator)."""
     return await _proxy_to_presence_service(request)
 
 
@@ -1685,7 +1695,9 @@ async def proxy_object_detections_list(request: Request):
     return await _proxy_to_vision_service(request, timeout=60.0)
 
 
-async def _proxy_to_cameras_service(request: Request) -> Response:
+async def _proxy_to_cameras_service(
+    request: Request, *, inject_service_auth: bool = False
+) -> Response:
     """Helper function to proxy requests to the Cameras service."""
     import logging
     logger = logging.getLogger(__name__)
@@ -1706,6 +1718,15 @@ async def _proxy_to_cameras_service(request: Request) -> Response:
         # Get headers (exclude host to avoid conflicts)
         headers = dict(request.headers)
         headers.pop("host", None)
+
+        # Cross-service paths (e.g. edge register) may arrive without a user JWT;
+        # inject the shared INTERNAL_SERVICE_TOKEN so cameras can authorize them.
+        if inject_service_auth and not headers.get("authorization"):
+            headers["authorization"] = f"Bearer {INTERNAL_SERVICE_TOKEN}"
+            headers["x-service-name"] = "ppl-meta-gateway"
+            logger.info(
+                f"🔐 [CAMERAS-PROXY] {method} {path} - Injected INTERNAL_SERVICE_TOKEN"
+            )
         
         # 🔍 DEBUG: Log authorization header status
         auth_header = headers.get("authorization", "MISSING")
@@ -3322,8 +3343,8 @@ async def rename_camera(request: Request):
 
 @api_router.post("/edge-cameras/register-edge")
 async def register_edge_camera(request: Request):
-    """Proxy edge camera registration to Cameras service."""
-    return await _proxy_to_cameras_service(request)
+    """Proxy edge camera registration to Cameras (cross-service auth when no user JWT)."""
+    return await _proxy_to_cameras_service(request, inject_service_auth=True)
 
 
 @api_router.get("/edge-cameras/{device_id}/config")

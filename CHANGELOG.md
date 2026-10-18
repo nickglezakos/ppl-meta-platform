@@ -15,6 +15,28 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+## [2.25.102] — 2026-10-18
+
+### Added
+
+- Presence ↔ HubSpot CRM connector: Service Key in Presence Settings; HubSpot → People Profiles import (`external_ref` = contact id); real-time grant Notes + `last_presence_*` contact properties.
+- Presence authenticator enroll/verify APIs for EyeNet Authenticator (gateway proxy timeout 90s for `/authenticator/` paths).
+
+### Fixed
+
+- Flutter web login session survives hard refresh (auth restore no longer races to `/login`).
+- User-visible MVR matching scores show three decimal places in views/templates (stored scores and match logic unchanged).
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.101 → 2.25.102**.
+
+### Notes
+
+- Affects `ppl-meta-presence`, `ppl-meta-frontend`, `ppl-meta-media`, `ppl-meta-gateway`. Mode D: rebuild those four; retag-forward the other eight from `2.25.101`.
+- Operator wiki: HubSpot Service Key setup under Presence and attendance (published to wiki.eyenet-vision.com).
+- Stage 2/3 Notes filled after GHCR publish and lab pull.
+
 ## [2.25.101] — 2026-10-16
 
 ### Fixed

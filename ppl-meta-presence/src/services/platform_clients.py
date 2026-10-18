@@ -34,6 +34,7 @@ class PlatformClients:
         self.cameras_url = config.CAMERAS_SERVICE_URL
         self.media_url = config.MEDIA_SERVICE_URL
         self.communications_url = config.COMMUNICATIONS_SERVICE_URL
+        self.vmeta_url = config.VMETA_SERVICE_URL
         self.service_name = "ppl-meta-presence"
         self.service_port = int(os.getenv("PRESENCE_SERVICE_PORT", "8011"))
         self.service_version = os.getenv("PRESENCE_SERVICE_VERSION", "0.1.0")
@@ -41,6 +42,8 @@ class PlatformClients:
         self.trigger_lookup: dict[str, dict[str, Any]] = {}
         self.action_lookup: dict[str, dict[str, Any]] = {}
         self._http_client = httpx.AsyncClient(timeout=httpx.Timeout(15.0), follow_redirects=True)
+        # First identify-face after a cold vmeta start can download/load FaceNet weights.
+        self._ml_http_client = httpx.AsyncClient(timeout=httpx.Timeout(180.0), follow_redirects=True)
 
     def _raise_downstream_http_error(self, response: httpx.Response, service_name: str) -> None:
         detail: Any
@@ -133,6 +136,72 @@ class PlatformClients:
         if self._registered:
             await deregister_service(self.service_name)
         await self._http_client.aclose()
+        await self._ml_http_client.aclose()
+
+    async def identify_face(
+        self,
+        image_bytes: bytes,
+        *,
+        filename: str = "face.jpg",
+        content_type: str = "image/jpeg",
+        create_if_missing: bool = True,
+        similarity_threshold: float = 0.7,
+        max_results: int = 5,
+        enable_dedupe_reuse: bool = True,
+        force_create: bool = False,
+        target_mvr_people_uuid: str | None = None,
+        target_mvr_people_uuids: list[str] | None = None,
+        detect_face: bool = False,
+    ) -> Dict[str, Any]:
+        """Call vmeta identify-face (multipart). Used by authenticator enroll/verify."""
+        params = {
+            "create_if_missing": str(create_if_missing).lower(),
+            "similarity_threshold": str(similarity_threshold),
+            "max_results": str(max_results),
+            "enable_dedupe_reuse": str(enable_dedupe_reuse).lower(),
+            "force_create": str(force_create).lower(),
+            "detect_face": str(detect_face).lower(),
+        }
+        uuids: list[str] = []
+        if target_mvr_people_uuids:
+            uuids.extend(str(u).strip() for u in target_mvr_people_uuids if str(u).strip())
+        if target_mvr_people_uuid:
+            uuids.append(str(target_mvr_people_uuid).strip())
+        # Dedupe preserve order
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for u in uuids:
+            if u not in seen:
+                seen.add(u)
+                ordered.append(u)
+        if len(ordered) == 1:
+            params["target_mvr_people_uuid"] = ordered[0]
+        elif len(ordered) > 1:
+            params["target_mvr_people_uuids"] = ",".join(ordered)
+        files = {"file": (filename, image_bytes, content_type or "image/jpeg")}
+        try:
+            response = await self._ml_http_client.post(
+                f"{self.vmeta_url}/api/v1/ml/identify-face",
+                params=params,
+                files=files,
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"service": "vmeta", "detail": str(exc)},
+            ) from exc
+
+        if response.status_code >= 400:
+            self._raise_downstream_http_error(response, "vmeta")
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"service": "vmeta", "detail": "Invalid JSON from identify-face"},
+            ) from exc
+        return payload if isinstance(payload, dict) else {}
 
     async def start_instant_detection(self, camera_id: str) -> Dict[str, Any]:
         response = await self._http_client.post(
