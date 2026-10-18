@@ -36,6 +36,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 - Affects `ppl-meta-presence`, `ppl-meta-frontend`, `ppl-meta-media`, `ppl-meta-gateway`. Mode D: rebuild those four; retag-forward the other eight from `2.25.101`.
 - Operator wiki: HubSpot Service Key setup under Presence and attendance (published to wiki.eyenet-vision.com).
 - GHCR images published for **2.25.102** (Mode D on `lab-work-dual-64g` / `eyenet-demo`): rebuilt presence `358fd9ab2ddd…`, frontend `62b45fcb4dd7…`, media `7f3debe3866c…`, gateway `0b405f9c4bd7…`; retagged the other eight from `2.25.101`. Manifest finalized 2026-10-18.
+- Stage 3 on `lab-work-dual-64g` (`eyenet-demo` @ `100.101.128.40`) — 2026-10-18; compose pull/recreate to `:2.25.102`; cleared local `authenticator-hotfix` presence image pin; presence/gw/ui 200; HubSpot + authenticator routes **401** unauth.
 
 ## [2.25.101] — 2026-10-16
 

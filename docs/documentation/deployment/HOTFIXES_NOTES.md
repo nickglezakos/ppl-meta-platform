@@ -17,42 +17,6 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-### 2026-10-18 — HubSpot ↔ Presence CRM (eyenet-demo)
-- **Status:** Pending (lab docker-cp hotfix only; not in GHCR release)
-- **Lab:** `lab-work-dual-64g` / `eyenet-demo` @ `100.101.128.40`
-- **Script:** `artifacts/lab-hotfix-hubspot-crm.sh`
-- **Summary:** Presence Settings HubSpot card; contact import → PPP `external_ref`; real-time grant Notes + `last_presence_*` properties. Applied on top of `eyenet-local/ppl-meta-presence:authenticator-hotfix` + frontend `main.dart.js` overlay.
-- **Files:**
-  - `ppl-meta-presence`: `hubspot_crm.py`, `presence_models.py`, `presence_service.py`, `presence_routes.py`
-  - `ppl-meta-frontend`: Presence Settings HubSpot UI + API client/models
-- **Verify:** Hard-refresh http://100.101.128.40:3000/ → Presence → Settings → **HubSpot CRM**. Unauth `GET /api/v1/presence/installations/current/crm/hubspot` → **401** (not 404).
-- **Next:** Stage 1 commit on `main` → Stage 2 rebuild presence + frontend → Stage 3 lab pull
-
-### 2026-10-18 — Web login session survives refresh (eyenet-demo)
-- **Status:** Pending (Stage 1 source on `main`; not in GHCR release)
-- **Summary:** Flutter web no longer races to `/login` before persisted JWT restore finishes. Auth starts in `restoring`; router defers login redirect; profile 401 does not wipe a silently refreshed token.
-- **Files:**
-  - `ppl-meta-frontend`: `auth_provider.dart`, `auth_service.dart`, `app_router.dart`, `api_client.dart`
-- **Verify:** Sign in on eyenet-demo web → hard refresh (same origin) → stay on app, not login.
-- **Next:** Stage 2 rebuild frontend → Stage 3 lab pull / recreate ui
-
-### 2026-10-18 — MVR matching score display: 3 decimals (views only)
-- **Status:** Pending (source edited locally; not in GHCR release)
-- **Summary:** Every user-visible MVR matching score shows `0.xxx` (3 decimals) instead of full floats or 1-decimal percents. Stored `similarity_score`, thresholds, and match logic unchanged.
-- **Files:**
-  - `ppl-meta-frontend`: `cross_video_analysis_models.dart` (`formattedSimilarity`), `person_objects_detail_screen.dart`, `triggers_tab.dart`, `duplicate_detection_dialog.dart`
-  - `ppl-meta-media`: `routes/triggers.py`, `services/redis_subscriber.py` (match-reason + `{similarity_score}` template text only)
-  - `ppl-meta-authenticator`: `presence_home_screen.dart` verify-error score text (tree currently untracked in this workspace)
-- **Next:** Stage 1 commit on `main` → Stage 2 rebuild frontend + media → Stage 3 lab pull
-
-### 2026-10-18 — Presence authenticator enroll/verify APIs (EyeNet Authenticator app)
-- **Status:** Pending (lab docker image hotfix only; not in GHCR release)
-- **Lab:** `lab-work-dual-64g` / `eyenet-demo` @ `100.101.128.40`
-- **Image:** `eyenet-local/ppl-meta-presence:authenticator-hotfix` (from `:2.25.101` + authenticator routes + `python-multipart` + `VMETA_SERVICE_URL`)
-- **Compose:** `~/eyenet-platform/docker-compose.override.yml` pins presence image + `VMETA_SERVICE_URL=http://ppl-meta-vmeta:8008`
-- **Verify:** `curl http://100.101.128.40:8080/api/v1/presence/authenticator/enrollment` → **401** (not 404)
-- **Next:** Stage 1/2/3 proper Presence (+ gateway timeout) release; remove local image pin
-
 ### Follow-up — Full clean rebuild of vmeta-protected (replace thin 2.25.100)
 - **Status:** Pending (product OK on lab; image lineage is a thin overlay)
 - **Why:** Stage 2 for **2.25.100** could not push a full `Dockerfile.protected` rebuild to GHCR (hung on large layer `db07833fef22` / ~DeepFace weights blob). Workaround: `FROM …:2.25.99` + `COPY individual_groups_manager.py` → digest `3afa092bc2af…`.
@@ -62,6 +26,14 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 ---
 
 ## Completed
+
+### 2026-10-18 — HubSpot CRM + authenticator APIs + login/MVR view fixes
+- **Status:** Completed
+- **VERSION / pin:** `2.25.102` (Stage 1 `8c45cacd`, manifest `ebe6519e`)
+- **Stage 1:** HubSpot connector, authenticator enroll/verify + gateway 90s proxy, login session restore, MVR 3-decimal views; pin bump; CHANGELOG
+- **Stage 2:** Mode D on `lab-work-dual-64g` — rebuilt presence `358fd9ab2ddd…`, frontend `62b45fcb4dd7…`, media `7f3debe3866c…`, gateway `0b405f9c4bd7…`; retagged eight from `2.25.101`
+- **Stage 3:** `lab-work-dual-64g` (`eyenet-demo` @ `100.101.128.40`) — 2026-10-18; compose to `:2.25.102`; cleared `authenticator-hotfix` image pin (kept `VMETA_SERVICE_URL`); hubspot/authenticator **401** unauth
+- **Script:** `artifacts/lab-stage2-3-hubspot-2.25.102.sh`
 
 ### 2026-10-14 — Group member numbers oldest-first + API field leak
 - **Status:** Completed (see Pending follow-up: replace thin vmeta with full clean rebuild)
