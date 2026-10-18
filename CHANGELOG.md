@@ -35,7 +35,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 - Affects `ppl-meta-presence`, `ppl-meta-frontend`, `ppl-meta-media`, `ppl-meta-gateway`. Mode D: rebuild those four; retag-forward the other eight from `2.25.101`.
 - Operator wiki: HubSpot Service Key setup under Presence and attendance (published to wiki.eyenet-vision.com).
-- Stage 2/3 Notes filled after GHCR publish and lab pull.
+- GHCR images published for **2.25.102** (Mode D on `lab-work-dual-64g` / `eyenet-demo`): rebuilt presence `358fd9ab2ddd…`, frontend `62b45fcb4dd7…`, media `7f3debe3866c…`, gateway `0b405f9c4bd7…`; retagged the other eight from `2.25.101`. Manifest finalized 2026-10-18.
 
 ## [2.25.101] — 2026-10-16
 
