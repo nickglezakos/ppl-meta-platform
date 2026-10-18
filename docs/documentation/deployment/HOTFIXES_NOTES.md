@@ -17,6 +17,14 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
+### 2026-10-18 — Web login session survives refresh (eyenet-demo)
+- **Status:** Pending (Stage 1 source on `main`; not in GHCR release)
+- **Summary:** Flutter web no longer races to `/login` before persisted JWT restore finishes. Auth starts in `restoring`; router defers login redirect; profile 401 does not wipe a silently refreshed token.
+- **Files:**
+  - `ppl-meta-frontend`: `auth_provider.dart`, `auth_service.dart`, `app_router.dart`, `api_client.dart`
+- **Verify:** Sign in on eyenet-demo web → hard refresh (same origin) → stay on app, not login.
+- **Next:** Stage 2 rebuild frontend → Stage 3 lab pull / recreate ui
+
 ### 2026-10-18 — MVR matching score display: 3 decimals (views only)
 - **Status:** Pending (source edited locally; not in GHCR release)
 - **Summary:** Every user-visible MVR matching score shows `0.xxx` (3 decimals) instead of full floats or 1-decimal percents. Stored `similarity_score`, thresholds, and match logic unchanged.

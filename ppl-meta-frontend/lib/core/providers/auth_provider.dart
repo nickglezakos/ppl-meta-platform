@@ -23,6 +23,13 @@ class AuthState {
         error = null,
         isAuthenticated = false;
 
+  /// Cold-start / refresh: restore from storage before deciding login vs home.
+  const AuthState.restoring()
+      : user = null,
+        isLoading = true,
+        error = null,
+        isAuthenticated = false;
+
   const AuthState.authenticated(this.user)
       : isLoading = false,
         error = null,
@@ -68,8 +75,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
   final Logger _logger = Logger();
 
-  AuthNotifier(this._authService) : super(const AuthState.unauthenticated()) {
-    _logger.i('AuthNotifier: Constructor called, initial state: unauthenticated');
+  AuthNotifier(this._authService) : super(const AuthState.restoring()) {
+    _logger.i('AuthNotifier: Constructor called, initial state: restoring');
     // Initialize authentication automatically
     _initializeAuth();
   }
@@ -84,13 +91,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
       _logger.i('AuthNotifier: Initial auth check completed');
     } catch (e) {
       _logger.e('AuthNotifier: _initializeAuth() failed: $e');
+      final token = await _authService.getToken();
+      if (token != null && token.isNotEmpty) {
+        // Keep session optimistic on init failure if a token is still stored.
+        state = state.copyWith(isLoading: false, isAuthenticated: true, error: null);
+      } else {
+        state = const AuthState.unauthenticated();
+      }
     }
   }
 
   /// Check current authentication status
   Future<void> checkAuth() async {
     _logger.i('AuthNotifier: checkAuth() called, current state: ${state.toString()}');
-    
+    if (!state.isLoading) {
+      state = state.copyWith(isLoading: true, error: null);
+    }
+
     try {
       final token = await _authService.getToken();
       _logger.i('AuthNotifier: Retrieved token from storage: ${token != null ? 'EXISTS (${token.length} chars)' : 'NULL'}');
@@ -107,27 +124,41 @@ class AuthNotifier extends StateNotifier<AuthState> {
       if (user != null) {
         _logger.i('AuthNotifier: Authentication valid, setting authenticated state');
         state = AuthState.authenticated(user);
-      } else {
-        // Check if we still have a token - if yes, it might be a temporary network issue
-        final tokenAfterCheck = await _authService.getToken();
-        if (tokenAfterCheck != null) {
-          _logger.w('AuthNotifier: User fetch failed but token still exists - keeping current auth state (might be network issue)');
-          // Don't change state if we still have a token - could be temporary network issue
-          // Only set unauthenticated if the token was actually cleared
-          if (state.isAuthenticated) {
-            _logger.i('AuthNotifier: Keeping existing authenticated state despite temporary user fetch failure');
-            return;
-          }
-        }
-        _logger.w('AuthNotifier: User is null and token cleared, setting unauthenticated');
-        state = const AuthState.unauthenticated();
+        return;
       }
+
+      // Profile fetch failed. If the token (or a silently refreshed one) remains,
+      // keep the session — common on web refresh when the gateway blips or JWT
+      // was rotated by ApiClient silent reauth after a 401.
+      final tokenAfterCheck = await _authService.getToken();
+      if (tokenAfterCheck != null && tokenAfterCheck.isNotEmpty) {
+        _logger.w(
+          'AuthNotifier: User fetch failed but token still exists — '
+          'keeping authenticated session (refresh / network)',
+        );
+        state = AuthState(
+          user: state.user,
+          isAuthenticated: true,
+          isLoading: false,
+        );
+        return;
+      }
+
+      _logger.w('AuthNotifier: User is null and token cleared, setting unauthenticated');
+      state = const AuthState.unauthenticated();
     } catch (e) {
       _logger.e('AuthNotifier: checkAuth error: $e');
-      // Don't automatically set to unauthenticated on errors - check if we still have a token
       final token = await _authService.getToken();
-      if (token != null && state.isAuthenticated) {
-        _logger.w('AuthNotifier: checkAuth failed but token exists - keeping authenticated state (network error)');
+      if (token != null && token.isNotEmpty) {
+        _logger.w(
+          'AuthNotifier: checkAuth failed but token exists — '
+          'keeping authenticated state (network error)',
+        );
+        state = AuthState(
+          user: state.user,
+          isAuthenticated: true,
+          isLoading: false,
+        );
         return;
       }
       state = const AuthState.unauthenticated();

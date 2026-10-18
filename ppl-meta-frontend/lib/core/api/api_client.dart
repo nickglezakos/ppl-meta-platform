@@ -32,8 +32,9 @@ class ApiClient {
         onRequest: (options, handler) async {
           final skipAuthHeader = options.extra['skipAuthHeader'] == true;
 
-          // If no token, try to restore from storage
-          if (_authToken == null && !skipAuthHeader) {
+          // If no token, try to restore from storage (skip right after an
+          // intentional clear so we do not rehydrate a rejected JWT).
+          if (_authToken == null && !skipAuthHeader && !_tokenJustCleared) {
             try {
               // Try secure storage first
               String? storedToken = await SecureStorageService.getString(_tokenKey);

@@ -201,9 +201,43 @@ class AuthService {
       return null;
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) {
-        print('AuthService: 401 error - clearing stored auth data');
-        await _clearStoredData();
-        _apiClient.clearAuthToken();
+        // ApiClient may have already silently re-logged and minted a new token.
+        // Only wipe storage when no token remains after the interceptor ran.
+        final tokenAfter = await _getStoredToken();
+        final memoryToken = _apiClient.authToken;
+        if ((tokenAfter == null || tokenAfter.isEmpty) &&
+            (memoryToken == null || memoryToken.isEmpty)) {
+          print('AuthService: 401 error and no token left - clearing stored auth data');
+          await _clearStoredData();
+          _apiClient.clearAuthToken();
+        } else {
+          print(
+            'AuthService: 401 on profile but token still present '
+            '(likely silent reauth) - keeping session',
+          );
+          // Retry once with the (possibly refreshed) token.
+          try {
+            if (memoryToken != null &&
+                memoryToken.isNotEmpty &&
+                _apiClient.authToken != memoryToken) {
+              _apiClient.setAuthToken(memoryToken);
+            }
+            final retry = await _apiClient.get(
+              '/api/v1/users/profile',
+              options: Options(
+                extra: const {
+                  'skipAuthRecovery': true,
+                  'authRetried': true,
+                },
+              ),
+            );
+            if (retry.data != null) {
+              return User.fromJson(retry.data!);
+            }
+          } catch (retryError) {
+            print('AuthService: Profile retry after 401 failed: $retryError');
+          }
+        }
       } else {
         print('AuthService: Non-401 error getting user profile: ${e.response?.statusCode}');
       }

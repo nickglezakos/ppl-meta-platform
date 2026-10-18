@@ -49,10 +49,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   
   return GoRouter(
     redirect: (context, state) async {
-      final storedToken = await SecureStorageService.getString('auth_token');
-      final isAuthenticated = authState.isAuthenticated &&
-          storedToken != null &&
-          storedToken.isNotEmpty;
       final path = state.uri.path;  // Clean path without query params
       final isLoginRoute = path == '/login';
       final isRegisterRoute = path == '/register';
@@ -67,6 +63,36 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         orElse: () => false,
       );
 
+      // While restoring a persisted session (web refresh), do not bounce to
+      // /login — that race was clearing the UX even when a token existed.
+      if (authState.isLoading) {
+        final storedToken = await SecureStorageService.getString('auth_token');
+        final hasStoredSession =
+            (storedToken != null && storedToken.isNotEmpty) ||
+            authState.isAuthenticated;
+        debugPrint(
+          '🔀 Router: path=$path restoring session '
+          'hasStored=$hasStoredSession isAuth=${authState.isAuthenticated}',
+        );
+        if (path == '/') {
+          final hash = windowLocationHash();
+          if (hash.isNotEmpty) {
+            return null;
+          }
+          // Prefer staying off the login page while we restore.
+          return hasStoredSession ? '/home' : null;
+        }
+        if (!hasStoredSession) {
+          return null;
+        }
+        // Have a stored token: allow protected routes; keep auth routes away.
+        if (isLoginRoute || isRegisterRoute || isBootstrapRoute) {
+          return '/home';
+        }
+        return null;
+      }
+
+      final isAuthenticated = authState.isAuthenticated;
       debugPrint('🔀 Router: path=$path isPublic=$isPublicRoute isAuth=$isAuthenticated');
 
       // Redirect root to home if authenticated, or login if not
@@ -444,11 +470,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'settings',
         builder: (context, state) => const SettingsScreen(),
       ),
-      // Root route redirects based on auth status
+      // Root route redirects based on auth status (defer while restoring)
       GoRoute(
         path: '/',
         name: 'root',
         redirect: (context, state) {
+          if (authState.isLoading) {
+            return authState.isAuthenticated ? '/home' : null;
+          }
           return authState.isAuthenticated ? '/home' : '/login';
         },
         builder: (context, state) => const SizedBox.shrink(),
