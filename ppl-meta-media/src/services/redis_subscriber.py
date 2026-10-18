@@ -89,7 +89,21 @@ def _build_ppl_match_reason(best_match: Dict[str, Any]) -> str:
     if not descriptor:
         descriptor = "member"
 
-    return f"Matched {descriptor} score={similarity_score}"
+    try:
+        score_text = f"{float(similarity_score):.3f}"
+    except (TypeError, ValueError):
+        score_text = similarity_score
+    return f"Matched {descriptor} score={score_text}"
+
+
+def _format_similarity_score_for_display(similarity_score: Any) -> str:
+    """Format a matching score for user-visible strings only (3 decimals)."""
+    if similarity_score is None or similarity_score == "":
+        return ""
+    try:
+        return f"{float(similarity_score):.3f}"
+    except (TypeError, ValueError):
+        return str(similarity_score)
 
 
 def _extract_ppl_match_context(match_info: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -99,6 +113,7 @@ def _extract_ppl_match_context(match_info: Optional[Dict[str, Any]]) -> Dict[str
     best_match = match_info.get("best_match") or {}
     match_reason = _build_ppl_match_reason(best_match)
     display_name = display_name_from_best_match(best_match)
+    raw_score = best_match.get("similarity_score")
 
     return {
         "match_reason": match_reason,
@@ -106,7 +121,9 @@ def _extract_ppl_match_context(match_info: Optional[Dict[str, Any]]) -> Dict[str
         "matched_member_name": display_name,
         "people_name": (best_match.get("people_name") or "").strip(),
         "group_member_number": best_match.get("group_member_number") or "",
-        "similarity_score": best_match.get("similarity_score") if best_match.get("similarity_score") is not None else "",
+        # Keep raw numeric for callers that need precision; display formatting
+        # happens in _interpolate_action_message / _build_ppl_match_reason.
+        "similarity_score": raw_score if raw_score is not None else "",
     }
 
 
@@ -131,7 +148,9 @@ def _interpolate_action_message(
         "matched_member_name": match_context.get("matched_member_name", ""),
         "people_name": match_context.get("people_name", ""),
         "group_member_number": match_context.get("group_member_number", ""),
-        "similarity_score": match_context.get("similarity_score", ""),
+        "similarity_score": _format_similarity_score_for_display(
+            match_context.get("similarity_score", "")
+        ),
     }
 
     used_template_variable = False

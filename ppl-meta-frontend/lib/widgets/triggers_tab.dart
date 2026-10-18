@@ -487,7 +487,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
       final memberUuid = bestMatch['matched_member_uuid']?.toString() ??
           bestMatch['member_uuid']?.toString();
       final similarity = bestMatch['similarity_score'];
-      final similarityText = similarity is num ? similarity.toStringAsFixed(2) : null;
+      final similarityText = similarity is num ? similarity.toStringAsFixed(3) : null;
       final personLabel = memberName ?? memberUuid ?? 'Unknown member';
       final scoreLabel = similarityText == null ? '' : ' • Score: $similarityText';
       return '$personLabel$scoreLabel';
@@ -495,7 +495,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
 
     final matchedMemberUuid = match['matched_member_uuid']?.toString();
     final similarity = match['similarity_score'];
-    final similarityText = similarity is num ? similarity.toStringAsFixed(2) : null;
+    final similarityText = similarity is num ? similarity.toStringAsFixed(3) : null;
     final personLabel = matchedMemberUuid ?? 'Matched member';
     final scoreLabel = similarityText == null ? '' : ' • Score: $similarityText';
     return '$personLabel$scoreLabel';

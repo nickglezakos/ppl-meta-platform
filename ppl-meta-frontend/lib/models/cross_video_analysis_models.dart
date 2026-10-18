@@ -769,9 +769,9 @@ class MergedMVRPerson {
     return '$ageMin-$ageMax';
   }
   
-  /// Get formatted similarity percentage
+  /// Get formatted matching score (0–1, three decimal places)
   String get formattedSimilarity {
-    return '${(similarityToFeatured * 100).toStringAsFixed(1)}%';
+    return similarityToFeatured.toStringAsFixed(3);
   }
   
   /// Convert to JSON

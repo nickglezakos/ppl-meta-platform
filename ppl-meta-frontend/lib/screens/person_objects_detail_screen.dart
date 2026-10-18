@@ -3023,7 +3023,7 @@ class _PersonObjectsDetailScreenState
             SnackBar(
               content: Text(
                 'Successfully merged $mergedCount individuals\n'
-                'Similarity: ${similarityScore != null ? (similarityScore * 100).toStringAsFixed(1) : "N/A"}%',
+                'Similarity: ${similarityScore != null ? similarityScore.toStringAsFixed(3) : "N/A"}',
               ),
               backgroundColor: Colors.green,
               duration: const Duration(seconds: 4),
@@ -5384,7 +5384,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                                                 style: const TextStyle(fontSize: 13)),
                                             if (sim != null)
                                               Text(
-                                                'Similarity: ${(sim * 100).toStringAsFixed(1)}%',
+                                                'Similarity: ${sim.toStringAsFixed(3)}',
                                                 style: TextStyle(
                                                     fontSize: 11, color: Colors.grey[600]),
                                               ),

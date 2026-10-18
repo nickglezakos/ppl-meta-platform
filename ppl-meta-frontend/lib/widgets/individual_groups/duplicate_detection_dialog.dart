@@ -308,7 +308,7 @@ class DuplicateDetectionDialog extends StatelessWidget {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            'Similarity: ${(match.similarity * 100).toStringAsFixed(1)}%',
+                            'Similarity: ${match.similarity.toStringAsFixed(3)}',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: Colors.grey[700],
                               fontWeight: FontWeight.w500,
