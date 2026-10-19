@@ -37,6 +37,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 - Affects `ppl-meta-cameras`, `ppl-meta-vision`, `ppl-meta-vmeta` (plus installer schema pack / compose). Mode D: rebuild those three; retag-forward the other nine from `2.25.102`.
 - GHCR images published for **2.25.103** (Mode D on `lab-work-dual-64g` / `eyenet-demo`): rebuilt cameras `662994600b1b…`, vision-protected `fdc1f5f847c0…`, vmeta-protected `3a684fa0cb23…`; retagged the other nine from `2.25.102`. Manifest finalized 2026-10-19.
+- Stage 3 on `lab-work-dual-64g` (`eyenet-demo` @ `100.101.128.40`) — 2026-10-19; compose pull/recreate to `:2.25.103`; vision `MODELS_SERVICE_URL` synced; schema apply includes `051`; `schema/verify.sh` all OK (incl. `fn.update_media_processing_status_last_updated`, individuals instant columns); discovery 11/11 healthy; digests match manifest (cameras/vision/vmeta/frontend/gateway/presence); gw/vmeta/cameras/ui 200.
 
 ## [2.25.102] — 2026-10-18
 
