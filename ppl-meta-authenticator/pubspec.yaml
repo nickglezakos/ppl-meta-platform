@@ -1,0 +1,41 @@
+name: ppl_meta_authenticator
+description: EyeNet Authenticator — Plan A login + Presence grants via enrolled MVR
+publish_to: 'none'
+version: 1.0.1+2
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.5.0
+  shared_preferences: ^2.5.3
+  provider: ^6.1.2
+  camera: ^0.10.6
+  permission_handler: ^12.0.1
+  mobile_scanner: ^7.0.1
+  qr_flutter: ^4.1.0
+  path_provider: ^2.1.4
+  path: ^1.9.1
+  uuid: ^4.5.1
+  device_info_plus: ^11.5.0
+  network_info_plus: ^6.1.4
+  logging: ^1.2.0
+  image: ^4.3.0
+  crypto: ^3.0.5
+  http_parser: ^4.0.2
+  tailscale: ^0.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo.png
+    - assets/images/eyenet-logo.png
+    - assets/images/eye-icon.png
