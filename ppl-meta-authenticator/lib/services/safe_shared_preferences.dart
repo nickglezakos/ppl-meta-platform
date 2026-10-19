@@ -35,8 +35,8 @@ class SafeSharedPreferences {
     throw StateError(
       'Shared preferences unavailable on this device '
       '(${lastError ?? 'unknown error'}). '
-      'Uninstall EyeNet Authenticator completely, reboot the phone, '
-      'reinstall the latest .apk from the wiki, then try again.',
+      'Install EyeNet Authenticator 1.0.4+ from the wiki '
+      '(uninstall the old app first), then try again.',
     );
   }
 
