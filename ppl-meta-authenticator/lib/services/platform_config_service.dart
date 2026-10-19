@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_logger.dart';
+import 'safe_shared_preferences.dart';
 
 /// Central service that resolves the platform endpoints the mobile camera
 /// should talk to, using the VPN mesh discovery principles from
@@ -29,11 +30,24 @@ class PlatformConfigService {
 
   /// Initialize with the shared prefs instance. Safe to call every boot.
   static Future<PlatformConfigService> getInstance() async {
-    if (_instance == null) {
-      _instance = PlatformConfigService._internal();
-      _prefs = await SharedPreferences.getInstance();
+    if (_instance != null && _prefs != null) {
+      return _instance!;
     }
+    // Load prefs BEFORE publishing the singleton. A failed getInstance() used
+    // to leave `_instance` set with `_prefs == null` (looks like "missing
+    // shared preferences" on the next login attempt).
+    final prefs = await SafeSharedPreferences.getInstance();
+    _prefs = prefs;
+    _instance ??= PlatformConfigService._internal();
     return _instance!;
+  }
+
+  /// Persist the Discovery / backend host the phone successfully used.
+  Future<void> saveManualBackendIp(String host) async {
+    final trimmed = host.trim();
+    if (trimmed.isEmpty) return;
+    await _prefs?.setString(_discoveryHostKey, trimmed);
+    await _prefs?.setString(_savedBackendIpKey, trimmed);
   }
 
   /// Reset the singleton so it re-reads a fresh prefs store. Test-only.
@@ -41,6 +55,7 @@ class PlatformConfigService {
   static void resetForTest() {
     _instance = null;
     _prefs = null;
+    SafeSharedPreferences.resetCache();
   }
 
   // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ import 'core/auth/auth_service.dart';
 import 'features/enroll/enroll_gate.dart';
 import 'features/setup/setup_screen.dart';
 import 'services/platform_config_service.dart';
+import 'services/safe_shared_preferences.dart';
 import 'services/tailscale_service.dart';
 
 /// Shared EyeNet / PPL Meta Camera brand blue.
@@ -14,6 +15,13 @@ const Color kEyeNetBrandBlue = Color(0xFF2196F3);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Warm SharedPreferences before any screen touches it. Prevents the
+  // "missing shared preferences" failure mode on some sideload phones.
+  try {
+    await SafeSharedPreferences.getInstance();
+  } catch (_) {
+    // UI still starts; login path will surface a clear StateError if needed.
+  }
   // Paint UI immediately. Never block the first frame on network token checks
   // or embedded Tailscale — that produced a permanent white screen on devices
   // that cannot reach the last server / VPN mesh at cold start.

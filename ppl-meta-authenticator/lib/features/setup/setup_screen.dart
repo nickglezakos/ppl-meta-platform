@@ -205,6 +205,9 @@ class _SetupScreenState extends State<SetupScreen> {
         portStr = _port.text.trim();
       }
 
+      // Always remember the host the user is dialing (LAN or Tailscale).
+      await config.saveManualBackendIp(host);
+
       final discovery = SimplifiedDiscoveryClient();
       final services = await _discoverWithFallback(
         config: config,
@@ -220,19 +223,15 @@ class _SetupScreenState extends State<SetupScreen> {
       }
       final gateway = gatewayMatches.isEmpty ? null : gatewayMatches.first;
       final node = nodeMatches.isEmpty ? null : nodeMatches.first;
+      // Prefer the host the phone already reached (discovery rewrite should have
+      // done this; force it again so login never dials an unreachable LAN IP).
       var loginHost = gateway?.host ?? node!.host;
       final loginPort = gateway?.port ?? 8080;
-
-      // When remote, rewrite private LAN hosts from discovery to mesh IP.
-      if (config.preferVpnHost ||
-          (config.vpnPlatformTailscaleIp != null &&
-              (loginHost.startsWith('192.168.') ||
-                  loginHost.startsWith('10.') ||
-                  RegExp(r'^172\.(1[6-9]|2\d|3[0-1])\.').hasMatch(loginHost)))) {
-        final mesh = config.vpnPlatformTailscaleIp;
-        if (mesh != null && mesh.isNotEmpty) {
-          loginHost = mesh;
-        }
+      final privateLan = loginHost.startsWith('192.168.') ||
+          loginHost.startsWith('10.') ||
+          RegExp(r'^172\.(1[6-9]|2\d|3[0-1])\.').hasMatch(loginHost);
+      if (privateLan && loginHost != host) {
+        loginHost = host;
       }
 
       final loginUrl = 'http://$loginHost:$loginPort';

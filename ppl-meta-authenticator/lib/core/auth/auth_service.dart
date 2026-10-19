@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/safe_shared_preferences.dart';
 
 /// Slim Plan A auth: gateway login + JWT persistence (no camera registration).
 class AuthService {
@@ -25,7 +25,7 @@ class AuthService {
       _userData?['email']?.toString() ?? _userData?['username']?.toString();
 
   Future<void> loadPersisted() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SafeSharedPreferences.getInstance();
     _token = prefs.getString(_tokenKey);
     _serverUrl = prefs.getString(_serverKey) ?? '';
     final raw = prefs.getString(_userKey);
@@ -93,7 +93,7 @@ class AuthService {
     };
     _authenticated = true;
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SafeSharedPreferences.getInstance();
     await prefs.setString(_tokenKey, token);
     await prefs.setString(_serverKey, base);
     await prefs.setString(_userKey, jsonEncode(_userData));
@@ -139,7 +139,7 @@ class AuthService {
     _token = null;
     _authenticated = false;
     _userData = null;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SafeSharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     await prefs.remove(_userKey);
   }
