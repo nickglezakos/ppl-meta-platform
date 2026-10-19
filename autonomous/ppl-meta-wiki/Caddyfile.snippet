@@ -1,0 +1,29 @@
+# EyeNet online wiki — static files on the Authority VPS.
+# Merge into /etc/caddy/Caddyfile (do not replace Authority/VPN blocks).
+# Reload: sudo systemctl reload caddy
+# Validate: caddy validate --config /etc/caddy/Caddyfile
+
+wiki.eyenet-vision.com {
+	root * /home/deploy/apps/ppl-meta-wiki/html
+	encode gzip
+	file_server
+	try_files {path} {path}/ {path}.html /index.html
+
+	@html path *.html /
+	header @html Cache-Control "public, max-age=60, must-revalidate"
+
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=86400"
+
+	# Android sideload packages: correct MIME + force download so phones
+	# open the package installer instead of treating the file as a zip/html.
+	@apk path *.apk
+	header @apk Content-Type "application/vnd.android.package-archive"
+	header @apk Content-Disposition "attachment"
+	header @apk Cache-Control "public, max-age=300, must-revalidate"
+
+	@pkgzip path *.zip
+	header @pkgzip Content-Type "application/zip"
+	header @pkgzip Content-Disposition "attachment"
+	header @pkgzip Cache-Control "public, max-age=300, must-revalidate"
+}
