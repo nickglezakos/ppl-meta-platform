@@ -36,7 +36,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Notes
 
 - Affects `ppl-meta-cameras`, `ppl-meta-vision`, `ppl-meta-vmeta` (plus installer schema pack / compose). Mode D: rebuild those three; retag-forward the other nine from `2.25.102`.
-- Do not finalize `release-manifest.yml` digests until Stage 2.
+- GHCR images published for **2.25.103** (Mode D on `lab-work-dual-64g` / `eyenet-demo`): rebuilt cameras `662994600b1b…`, vision-protected `fdc1f5f847c0…`, vmeta-protected `3a684fa0cb23…`; retagged the other nine from `2.25.102`. Manifest finalized 2026-10-19.
 
 ## [2.25.102] — 2026-10-18
 
