@@ -56,7 +56,7 @@ Authenticator video modes do **not** require Presence Settings **Video readiness
 
 ### A. Phone (recommended)
 
-1. On the phone browser, download **[eyenet-authenticator-1.0.1-pilot.apk](./downloads/eyenet-authenticator-1.0.1-pilot.apk?v=20261019-101)** (SHA-256: [checksum file](./downloads/eyenet-authenticator-1.0.1-pilot.apk.sha256?v=20261019-101)). Uninstall any older Authenticator first if Android blocks the update.
+1. On the phone browser, download **[eyenet-authenticator-1.0.2-pilot.apk](./downloads/eyenet-authenticator-1.0.2-pilot.apk?v=20261019-102)** (SHA-256: [checksum file](./downloads/eyenet-authenticator-1.0.2-pilot.apk.sha256?v=20261019-102)). Uninstall any older Authenticator first if Android blocks the update.
 2. Turn on **Developer options** if install is blocked. Google’s steps: [Configure on-device developer options](https://developer.android.com/studio/debug/dev-options) (Settings → About phone → tap **Build number** seven times, then open **Developer options**).
 3. Open the downloaded `.apk`. When Android asks, allow **Install unknown apps** for **Chrome**, **Files**, or **Files by Google** for this install. Overview: [Install apps from unknown sources](https://support.google.com/android/answer/9431958).
 4. Tap **Install**, then open **EyeNet Authenticator**. You should see a short “Starting…” splash, then the sign-in screen (not a blank white page).
@@ -66,8 +66,8 @@ Authenticator video modes do **not** require Presence Settings **Video readiness
 
 Use this only if the phone browser cannot download the APK.
 
-1. On a computer, download **[eyenet-authenticator-1.0.1-pilot.zip](./downloads/eyenet-authenticator-1.0.1-pilot.zip?v=20261019-101)** (SHA-256: [checksum file](./downloads/eyenet-authenticator-1.0.1-pilot.zip.sha256?v=20261019-101)).
-2. Unzip **on the computer** (not on the phone). You should see `eyenet-authenticator-1.0.1-pilot.apk` and `README.txt`.
+1. On a computer, download **[eyenet-authenticator-1.0.2-pilot.zip](./downloads/eyenet-authenticator-1.0.2-pilot.zip?v=20261019-102)** (SHA-256: [checksum file](./downloads/eyenet-authenticator-1.0.2-pilot.zip.sha256?v=20261019-102)).
+2. Unzip **on the computer** (not on the phone). You should see `eyenet-authenticator-1.0.2-pilot.apk` and `README.txt`.
 3. Copy **only the `.apk`** to the phone (USB, Drive, AirDrop-style share, etc.).
 4. On the phone, open that `.apk` and follow the same unknown-sources steps as in A.
 
@@ -158,6 +158,7 @@ Full Analytics / Sessions layout: [Presence and attendance — Analytics](./pres
 | Phone cannot unzip the zip / “extract failed” | **Expected on many Androids.** Use the **direct `.apk` link** in [Download A](#download-pilot-apk), or unzip on a computer and copy only the `.apk` |
 | APK from a phone-unzipped zip will not install / “package invalid” / “corrupt” | Delete it. Download the **direct `.apk`** again (or copy a computer-unzipped APK). Do not re-use a phone-extracted file |
 | White / blank screen after open | Install **1.0.1+** from this page (cold start no longer waits on VPN/network). Uninstall the old app first, reinstall, force-stop, reopen |
+| “Future not completed” / connection timed out | Install **1.0.2+**. Means Discovery/VPN timed out — same Wi‑Fi as the EyeNet PC (port **8006**), or join VPN mesh then Sign in. Off-LAN do not use a `192.168.*` Discovery IP |
 | Install blocked | Developer options off, or “install unknown apps” not allowed for the browser/Files app you used; see Download A steps 2–3 |
 | Play Protect blocks install | **Install anyway** / open details and continue — pilot builds are sideloaded |
 | Download stops early / APK smaller than ~100 MB | Incomplete download. Delete and download the `.apk` again on Wi‑Fi |

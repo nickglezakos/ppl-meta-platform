@@ -26,8 +26,10 @@ Future<void> _prepareVpnMesh() async {
         .timeout(const Duration(seconds: 5));
     if (!config.vpnEnrolled) return;
     final tailscale = TailscaleService(config: config);
-    await tailscale.initialize().timeout(const Duration(seconds: 12));
-    await config.ensurePlatformReachable().timeout(const Duration(seconds: 8));
+    // Embedded Tailscale.up itself allows ~90s; do not wrap with a short
+    // timeout (that surfaces as TimeoutException "Future not completed").
+    await tailscale.initialize();
+    await config.ensurePlatformReachable().timeout(const Duration(seconds: 20));
   } catch (_) {
     // Best-effort; setup screen can re-enroll.
   }
