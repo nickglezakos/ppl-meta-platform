@@ -73,6 +73,9 @@ check "individuals.last_seen" \
 check "individuals.person_objects" \
   "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='individuals' AND column_name='person_objects'" \
   "1"
+check "fn.update_media_processing_status_last_updated" \
+  "SELECT COUNT(*) FROM pg_proc WHERE proname='update_media_processing_status_last_updated'" \
+  "1"
 check "person_objects.representative_faces" \
   "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='person_objects' AND column_name='representative_faces'" \
   "1"

@@ -3,10 +3,64 @@
 from __future__ import annotations
 
 import inspect
+import logging
+import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 from deepface import DeepFace
+
+logger = logging.getLogger(__name__)
+
+_WEIGHT_FILES = (
+    "facenet512_weights.h5",
+    "age_model_weights.h5",
+    "gender_model_weights.h5",
+)
+_weights_paths_ready = False
+
+
+def ensure_deepface_weight_paths() -> None:
+    """
+    Point DeepFace at the baked image weights.
+
+    Build puts files in $DEEPFACE_HOME/weights (default /root/.deepface/weights).
+    Some DeepFace builds also read $DEEPFACE_HOME/.deepface/weights and will
+    re-download from GitHub into that nested folder if weights are missing.
+    Symlink the nested names to the baked files and remove incomplete .part downloads.
+    """
+    global _weights_paths_ready
+    if _weights_paths_ready:
+        return
+
+    home = Path(os.environ.get("DEEPFACE_HOME", "/root/.deepface"))
+    primary = home / "weights"
+    nested = home / ".deepface" / "weights"
+    nested.mkdir(parents=True, exist_ok=True)
+
+    for part in nested.glob("*.part"):
+        try:
+            part.unlink()
+        except OSError as exc:
+            logger.warning("Could not remove DeepFace partial download %s: %s", part, exc)
+
+    for name in _WEIGHT_FILES:
+        src = primary / name
+        dst = nested / name
+        if not src.is_file():
+            continue
+        try:
+            if dst.is_symlink() or dst.is_file():
+                if dst.resolve() == src.resolve():
+                    continue
+                dst.unlink()
+            dst.symlink_to(src)
+            logger.info("DeepFace weight link %s -> %s", dst, src)
+        except OSError as exc:
+            logger.warning("Could not link DeepFace weight %s: %s", name, exc)
+
+    _weights_paths_ready = True
 
 
 def _normalize_analyze_result(result: Any) -> List[Dict[str, Any]]:
@@ -65,6 +119,7 @@ def deepface_build_model(model_name: str) -> Any:
     Preload a DeepFace model (Age/Gender/…) with version-tolerant build_model.
     Newer DeepFace wants task='facial_attribute' for demography models.
     """
+    ensure_deepface_weight_paths()
     try:
         params = inspect.signature(DeepFace.build_model).parameters
     except (TypeError, ValueError):
@@ -80,6 +135,7 @@ def deepface_build_model(model_name: str) -> Any:
 
 def warmup_age_gender_models() -> Dict[str, Any]:
     """Load Age + Gender weights into process memory (no image required)."""
+    ensure_deepface_weight_paths()
     models: Dict[str, Any] = {}
     for key, name in (("age", "Age"), ("gender", "Gender")):
         models[key] = deepface_build_model(name)

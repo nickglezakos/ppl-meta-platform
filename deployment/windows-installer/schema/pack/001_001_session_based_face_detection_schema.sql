@@ -199,12 +199,20 @@ CREATE TRIGGER trigger_face_detection_sessions_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- Trigger for media_processing_status
+-- Trigger for media_processing_status (table has last_updated, not updated_at)
+CREATE OR REPLACE FUNCTION update_media_processing_status_last_updated()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.last_updated = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 DROP TRIGGER IF EXISTS trigger_media_processing_status_updated_at ON media_processing_status;
 CREATE TRIGGER trigger_media_processing_status_updated_at
     BEFORE UPDATE ON media_processing_status
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+    EXECUTE FUNCTION update_media_processing_status_last_updated();
 
 -- ================================================================
 -- 8. INSERT MIGRATION RECORD

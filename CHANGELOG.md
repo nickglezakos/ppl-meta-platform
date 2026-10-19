@@ -15,14 +15,28 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+## [2.25.103] — 2026-10-19
+
 ### Fixed
 
 - Instant-detection persist on existing labs: schema pack `050_individuals_instant_detection_columns.sql` adds `individuals.total_appearances`, `first_seen`, `last_seen`, and `person_objects`. `schema/verify.sh` fails if any of those columns are missing. Without them, a later sighting of a known person returns persist-batch 500 and rolls back the whole cycle.
+- Instant-detection Redis batch no longer replays cycles older than 120s after persist outages (`INSTANT_DETECTION_BATCH_MAX_AGE_SECONDS`, default 120). Queues are capped at 30 items (`INSTANT_DETECTION_BATCH_MAX_LEN`). Over-age heads are dropped before flush and after failed persist instead of retrying forever.
+- Persist-batch skips ghost `mvr_person_uuid` values missing from `mvr_people` (avoids FK 500 on `individual_mvr_mapping`) and ensures `tracking_sessions` exists before inserts.
+- `identify-face` only returns UUIDs that exist in `mvr_people`; ghost gallery hits fall through to create/unmatched.
+- DeepFace uses baked image weights: link `$DEEPFACE_HOME/.deepface/weights` → `$DEEPFACE_HOME/weights` (stops nested re-download / `.part` stalls).
+- Vision compose sets `MODELS_SERVICE_URL=http://ppl-meta-models:8013` so artifact fetch is not `localhost:8013` in-container.
+- Schema pack `051_media_processing_status_last_updated_trigger.sql`: `media_processing_status` UPDATE trigger writes `last_updated` (not missing `updated_at`).
 
 ### Changed
 
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.102 → 2.25.103**.
 - Stage 1 is not done while CHANGELOG Notes defer a missing column the shipped code writes. The column belongs in the schema pack and in `schema/verify.sh` in that same push.
 - Stage 3 lab notes must include `schema/verify.sh` output. A compose pull whose image digests match is not a finished install.
+
+### Notes
+
+- Affects `ppl-meta-cameras`, `ppl-meta-vision`, `ppl-meta-vmeta` (plus installer schema pack / compose). Mode D: rebuild those three; retag-forward the other nine from `2.25.102`.
+- Do not finalize `release-manifest.yml` digests until Stage 2.
 
 ## [2.25.102] — 2026-10-18
 

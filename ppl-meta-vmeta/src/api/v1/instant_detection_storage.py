@@ -361,6 +361,15 @@ async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]
         except ValueError:
             cycle_ts = datetime.utcnow()
 
+        # Persist batches can outlive a missing create-session call (or reuse a
+        # UUID after DB wipe). Ensure the FK target exists before inserts.
+        await _ensure_tracking_session(
+            conn,
+            session_id=session_id,
+            camera_id=request.camera_id,
+            cycle_ts=cycle_ts,
+        )
+
         synthetic_video_uuid = _uuid.uuid5(
             _uuid.NAMESPACE_URL,
             f"instant-detection:{request.camera_id}:{request.cycle_timestamp}",
@@ -376,6 +385,18 @@ async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]
             is_new = False
 
             mvr_uuid = _uuid.UUID(po.mvr_person_uuid) if po.mvr_person_uuid else None
+
+            if mvr_uuid:
+                mvr_exists = await conn.fetchval(
+                    "SELECT 1 FROM mvr_people WHERE mvr_people_uuid = $1",
+                    mvr_uuid,
+                )
+                if not mvr_exists:
+                    logger.warning(
+                        "MVR %s is not in mvr_people; saving the person without that link",
+                        mvr_uuid,
+                    )
+                    mvr_uuid = None
 
             if mvr_uuid:
                 if po.mvr_created_new:
@@ -524,6 +545,59 @@ async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]
         "appearances_created": total_appearances,
         "body_mvr_created": total_body_mvr,
     }
+
+
+async def _ensure_tracking_session(
+    conn,
+    *,
+    session_id: _uuid.UUID,
+    camera_id: str,
+    cycle_ts: datetime,
+) -> None:
+    """Insert a tracking_sessions row when persist runs without a prior create-session."""
+    exists = await conn.fetchval(
+        "SELECT 1 FROM tracking_sessions WHERE session_uuid = $1",
+        session_id,
+    )
+    if exists:
+        return
+
+    await conn.execute(
+        """
+        INSERT INTO tracking_sessions (
+            session_uuid, user_id, collections,
+            start_time, end_time, status,
+            config_hash, algorithm_config,
+            source_type, camera_device_id,
+            created_at, started_at
+        ) VALUES (
+            $1, $2, $3,
+            $4, $5, $6,
+            $7, $8,
+            $9, $10,
+            $11, $12
+        )
+        ON CONFLICT (session_uuid) DO NOTHING
+        """,
+        session_id,
+        "system",
+        [camera_id],
+        cycle_ts,
+        cycle_ts + timedelta(seconds=1),
+        "running",
+        "instant_detection",
+        json.dumps(
+            {
+                "source": "instant_detection",
+                "camera_id": camera_id,
+                "ensured_by": "persist_batch",
+            }
+        ),
+        "instant_detection",
+        camera_id,
+        cycle_ts,
+        cycle_ts,
+    )
 
 
 async def _create_individual(

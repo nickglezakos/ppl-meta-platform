@@ -37,6 +37,13 @@ INSTANT_DETECTION_BATCH_FLUSH_COUNT = int(
 INSTANT_DETECTION_BATCH_FLUSH_SECONDS = int(
     os.getenv("INSTANT_DETECTION_BATCH_FLUSH_SECONDS", "30")
 )
+# Near-real-time only: cycles older than this are dropped, never persisted as live.
+INSTANT_DETECTION_BATCH_MAX_AGE_SECONDS = int(
+    os.getenv("INSTANT_DETECTION_BATCH_MAX_AGE_SECONDS", "120")
+)
+INSTANT_DETECTION_BATCH_MAX_LEN = int(
+    os.getenv("INSTANT_DETECTION_BATCH_MAX_LEN", "30")
+)
 
 
 def _batch_queue_key(camera_id: str) -> str:
@@ -51,14 +58,175 @@ def _batch_lock_key(camera_id: str) -> str:
     return f"{_batch_queue_key(camera_id)}:flush_lock"
 
 
+def parse_cycle_timestamp(raw: Any) -> Optional[datetime]:
+    """Parse a cycle_timestamp string to aware UTC datetime, or None."""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def cycle_age_seconds(
+    cycle_timestamp: Any,
+    *,
+    now: Optional[datetime] = None,
+) -> Optional[float]:
+    """Age in seconds of a cycle_timestamp, or None if unparseable."""
+    parsed = parse_cycle_timestamp(cycle_timestamp)
+    if parsed is None:
+        return None
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    return (current - parsed).total_seconds()
+
+
+def is_cycle_over_max_age(
+    cycle_timestamp: Any,
+    *,
+    max_age_seconds: Optional[int] = None,
+    now: Optional[datetime] = None,
+) -> bool:
+    """True when the cycle is missing/unparseable or older than the max age."""
+    limit = (
+        INSTANT_DETECTION_BATCH_MAX_AGE_SECONDS
+        if max_age_seconds is None
+        else max_age_seconds
+    )
+    age = cycle_age_seconds(cycle_timestamp, now=now)
+    if age is None:
+        return True
+    return age > limit
+
+
+def _refresh_oldest_ts(camera_id: str) -> None:
+    queue_key = _batch_queue_key(camera_id)
+    oldest_key = _batch_oldest_key(camera_id)
+    next_item = redis_client.lindex(queue_key, 0)
+    if not next_item:
+        redis_client.delete(oldest_key)
+        return
+    try:
+        parsed = json.loads(next_item)
+        ts = parsed.get("cycle_timestamp") or datetime.now(timezone.utc).isoformat().replace(
+            "+00:00", "Z"
+        )
+        redis_client.set(oldest_key, ts)
+    except json.JSONDecodeError:
+        redis_client.delete(oldest_key)
+
+
+def _drop_stale_batch_items(
+    camera_id: str,
+    *,
+    reason: str = "over_age",
+    now: Optional[datetime] = None,
+) -> int:
+    """
+    Remove over-age (or malformed) items from the head of the batch queue.
+
+    Returns the number of items dropped.
+    """
+    queue_key = _batch_queue_key(camera_id)
+    dropped = 0
+    oldest_dropped_ts: Optional[str] = None
+    current = now or datetime.now(timezone.utc)
+
+    while True:
+        head = redis_client.lindex(queue_key, 0)
+        if not head:
+            break
+        try:
+            parsed = json.loads(head)
+        except json.JSONDecodeError:
+            redis_client.lpop(queue_key)
+            dropped += 1
+            continue
+
+        cycle_ts = parsed.get("cycle_timestamp")
+        if not is_cycle_over_max_age(cycle_ts, now=current):
+            break
+
+        if oldest_dropped_ts is None and cycle_ts is not None:
+            oldest_dropped_ts = str(cycle_ts)
+        redis_client.lpop(queue_key)
+        dropped += 1
+
+    if dropped:
+        _refresh_oldest_ts(camera_id)
+        logger.warning(
+            "🗑️ [CELERY] Dropped stale instant batch items camera_id=%s dropped=%s "
+            "oldest_ts=%s reason=%s max_age_seconds=%s",
+            camera_id,
+            dropped,
+            oldest_dropped_ts,
+            reason,
+            INSTANT_DETECTION_BATCH_MAX_AGE_SECONDS,
+        )
+    return dropped
+
+
+def _cap_batch_queue_length(camera_id: str) -> int:
+    """Keep only the newest MAX_LEN items. Returns number dropped."""
+    queue_key = _batch_queue_key(camera_id)
+    length = int(redis_client.llen(queue_key) or 0)
+    if length <= INSTANT_DETECTION_BATCH_MAX_LEN:
+        return 0
+
+    dropped = length - INSTANT_DETECTION_BATCH_MAX_LEN
+    oldest_raw = redis_client.lindex(queue_key, 0)
+    oldest_ts = None
+    if oldest_raw:
+        try:
+            oldest_ts = json.loads(oldest_raw).get("cycle_timestamp")
+        except json.JSONDecodeError:
+            oldest_ts = None
+
+    # Keep the newest MAX_LEN entries (tail of the list).
+    redis_client.ltrim(queue_key, -INSTANT_DETECTION_BATCH_MAX_LEN, -1)
+    _refresh_oldest_ts(camera_id)
+    logger.warning(
+        "🗑️ [CELERY] Capped instant batch queue camera_id=%s dropped=%s "
+        "oldest_ts=%s reason=over_len max_len=%s",
+        camera_id,
+        dropped,
+        oldest_ts,
+        INSTANT_DETECTION_BATCH_MAX_LEN,
+    )
+    return dropped
+
+
 def _queue_batch_item(camera_id: str, payload: Dict[str, Any]) -> int:
     queue_key = _batch_queue_key(camera_id)
     oldest_key = _batch_oldest_key(camera_id)
+
+    if is_cycle_over_max_age(payload.get("cycle_timestamp")):
+        logger.warning(
+            "🗑️ [CELERY] Refusing over-age instant batch enqueue camera_id=%s "
+            "cycle_timestamp=%s reason=over_age max_age_seconds=%s",
+            camera_id,
+            payload.get("cycle_timestamp"),
+            INSTANT_DETECTION_BATCH_MAX_AGE_SECONDS,
+        )
+        _drop_stale_batch_items(camera_id, reason="over_age")
+        _cap_batch_queue_length(camera_id)
+        return int(redis_client.llen(queue_key) or 0)
+
     pipe = redis_client.pipeline()
     pipe.rpush(queue_key, json.dumps(payload))
     pipe.setnx(oldest_key, payload["cycle_timestamp"])
     result = pipe.execute()
-    return int(result[0])
+    _drop_stale_batch_items(camera_id, reason="over_age")
+    _cap_batch_queue_length(camera_id)
+    return int(redis_client.llen(queue_key) or result[0])
 
 
 def _should_flush_batch(camera_id: str) -> bool:
@@ -95,17 +263,43 @@ def _load_batch_items(camera_id: str, limit: int) -> List[Dict[str, Any]]:
 
 def _trim_batch_items(camera_id: str, count: int) -> None:
     queue_key = _batch_queue_key(camera_id)
-    oldest_key = _batch_oldest_key(camera_id)
     redis_client.ltrim(queue_key, count, -1)
-    next_item = redis_client.lindex(queue_key, 0)
-    if next_item:
-        try:
-            parsed = json.loads(next_item)
-            redis_client.set(oldest_key, parsed.get("cycle_timestamp", datetime.utcnow().isoformat() + "Z"))
-        except json.JSONDecodeError:
-            redis_client.delete(oldest_key)
-    else:
-        redis_client.delete(oldest_key)
+    _refresh_oldest_ts(camera_id)
+
+
+def _drop_failed_flush_if_stale(camera_id: str, attempted: int) -> int:
+    """
+    After a persist failure, drop the head batch when its oldest cycle is over max age.
+
+    Fresh failures stay queued for retry; weeks-old backlog is discarded.
+    """
+    dropped_stale = _drop_stale_batch_items(camera_id, reason="persist_fail_stale")
+    if attempted <= 0:
+        return dropped_stale
+
+    head = redis_client.lindex(_batch_queue_key(camera_id), 0)
+    if not head:
+        return dropped_stale
+
+    try:
+        parsed = json.loads(head)
+    except json.JSONDecodeError:
+        redis_client.lpop(_batch_queue_key(camera_id))
+        _refresh_oldest_ts(camera_id)
+        return dropped_stale + 1
+
+    if not is_cycle_over_max_age(parsed.get("cycle_timestamp")):
+        return dropped_stale
+
+    _trim_batch_items(camera_id, attempted)
+    logger.warning(
+        "🗑️ [CELERY] Dropped failed persist batch after max age camera_id=%s "
+        "dropped=%s oldest_ts=%s reason=persist_fail_stale",
+        camera_id,
+        attempted,
+        parsed.get("cycle_timestamp"),
+    )
+    return dropped_stale + attempted
 
 
 def _extract_source_identity_uuids(person_objects: List[Dict[str, Any]]) -> List[str]:
@@ -669,13 +863,28 @@ def flush_instant_detection_batch(camera_id: str) -> Dict:
     if not lock_acquired:
         return {"success": True, "camera_id": camera_id, "skipped": "flush_locked"}
 
+    attempted = 0
     try:
+        _drop_stale_batch_items(camera_id, reason="over_age")
+
         if not _should_flush_batch(camera_id):
             return {"success": True, "camera_id": camera_id, "skipped": "flush_not_due"}
 
         items = _load_batch_items(camera_id, INSTANT_DETECTION_BATCH_FLUSH_COUNT)
         if not items:
             return {"success": True, "camera_id": camera_id, "flushed": 0}
+
+        # FIFO: drop any over-age heads already handled; skip leftover stale rows.
+        items = [
+            item
+            for item in items
+            if not is_cycle_over_max_age(item.get("cycle_timestamp"))
+        ]
+        if not items:
+            _drop_stale_batch_items(camera_id, reason="over_age")
+            return {"success": True, "camera_id": camera_id, "flushed": 0, "dropped_stale": True}
+
+        attempted = len(items)
 
         vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
         endpoint = f"{vmeta_url}/api/v1/instant-detection/persist-batch"
@@ -731,10 +940,22 @@ def flush_instant_detection_batch(camera_id: str) -> Dict:
             camera_id,
             resp.text[:200],
         )
-        return {"success": False, "camera_id": camera_id, "status": resp.status_code}
+        dropped = _drop_failed_flush_if_stale(camera_id, attempted)
+        return {
+            "success": False,
+            "camera_id": camera_id,
+            "status": resp.status_code,
+            "dropped_stale": dropped,
+        }
 
     except Exception as e:
         logger.error(f"❌ [CELERY] Persist batch flush failed for {camera_id}: {e}")
-        return {"success": False, "camera_id": camera_id, "error": str(e)}
+        dropped = _drop_failed_flush_if_stale(camera_id, attempted)
+        return {
+            "success": False,
+            "camera_id": camera_id,
+            "error": str(e),
+            "dropped_stale": dropped,
+        }
     finally:
         redis_client.delete(lock_key)

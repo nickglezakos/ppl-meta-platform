@@ -58,5 +58,16 @@ download_one "facenet512_weights.h5" 90000000
 download_one "age_model_weights.h5" 500000000
 download_one "gender_model_weights.h5" 500000000
 
-echo "DeepFace weights ready in ${WEIGHTS_DIR}:"
+# Some DeepFace builds read $DEEPFACE_HOME/.deepface/weights instead of
+# $DEEPFACE_HOME/weights. Link both layouts to the same baked files.
+NESTED_WEIGHTS_DIR="${DEEPFACE_HOME}/.deepface/weights"
+mkdir -p "${NESTED_WEIGHTS_DIR}"
+for name in facenet512_weights.h5 age_model_weights.h5 gender_model_weights.h5; do
+  if [[ -f "${WEIGHTS_DIR}/${name}" ]]; then
+    ln -sfn "${WEIGHTS_DIR}/${name}" "${NESTED_WEIGHTS_DIR}/${name}"
+  fi
+done
+
+echo "DeepFace weights ready in ${WEIGHTS_DIR} (and linked under ${NESTED_WEIGHTS_DIR}):"
 ls -lh "${WEIGHTS_DIR}"
+ls -lh "${NESTED_WEIGHTS_DIR}"

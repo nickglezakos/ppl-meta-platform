@@ -19,9 +19,14 @@ from pydantic import BaseModel
 
 from ml.age_estimator import AgeEstimator
 from ml.gender_classifier import GenderClassifier
-from ml.deepface_compat import deepface_analyze, warmup_age_gender_models
+from ml.deepface_compat import (
+    deepface_analyze,
+    ensure_deepface_weight_paths,
+    warmup_age_gender_models,
+)
 from api.dependencies import get_mvr_service
 from services.mvr_service import MVRService
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +68,40 @@ def ensure_deepface_models_warm() -> Dict[str, Any]:
     with _warmup_lock:
         if _deepface_models is not None:
             return _deepface_models
+        ensure_deepface_weight_paths()
         logger.info("🔥 Warming DeepFace Age + Gender models (CPU; may take 30–90s)...")
         _deepface_models = warmup_age_gender_models()
         get_age_estimator()._model_loaded = True
         get_gender_classifier()._model_loaded = True
         logger.info("✅ DeepFace Age + Gender models ready")
         return _deepface_models
+
+
+async def _mvr_people_exists(mvr_service: MVRService, mvr_people_uuid: Any) -> bool:
+    """True when the UUID is present in mvr_people (ghost ids must not leave this API)."""
+    if not mvr_people_uuid:
+        return False
+    try:
+        uid = UUID(str(mvr_people_uuid))
+    except (TypeError, ValueError):
+        return False
+    row = await mvr_service.repository.get_mvr_people_by_uuid(uid)
+    return row is not None
+
+
+async def _verified_mvr_uuid(
+    mvr_service: MVRService, mvr_people_uuid: Any
+) -> Optional[str]:
+    """Return uuid string only if the row exists; otherwise None (never return ghosts)."""
+    if not mvr_people_uuid:
+        return None
+    if await _mvr_people_exists(mvr_service, mvr_people_uuid):
+        return str(mvr_people_uuid)
+    logger.warning(
+        "identify-face: MVR uuid %s is not in mvr_people; treating as unmatched",
+        mvr_people_uuid,
+    )
+    return None
 
 
 def start_deepface_warmup_background() -> None:
@@ -242,6 +275,26 @@ async def identify_face(
         True,
         description="Reuse near-existing MVR below strict threshold before creating new",
     ),
+    force_create: bool = Query(
+        False,
+        description="Always create a new isolated MVR (skip gallery match / dedupe). "
+        "Used by authenticator enroll so phone faces are not bound to unrelated gallery people.",
+    ),
+    target_mvr_people_uuid: str | None = Query(
+        None,
+        description="If set, compare 1:1 against this MVR only (skip gallery nearest-neighbor). "
+        "Used by authenticator verify against the enrolled person.",
+    ),
+    target_mvr_people_uuids: str | None = Query(
+        None,
+        description="Comma-separated MVR UUIDs for 1:N compare (single face extract, best score). "
+        "Used by authenticator against PPP-linked identities for the signed-in user.",
+    ),
+    detect_face: bool = Query(
+        False,
+        description="Run a face detector before FaceNet. Required for full-frame phone "
+        "photos (authenticator). Leave false for pre-cropped face patches.",
+    ),
     mvr_service: MVRService = Depends(get_mvr_service),
 ):
     """
@@ -261,7 +314,8 @@ async def identify_face(
         ml_result = await asyncio.to_thread(
             mvr_service.ml_processor.process_face,
             face_image,
-            False,
+            bool(detect_face),  # enforce_detection when detecting full frames
+            "opencv" if detect_face else None,
         )
 
         if not ml_result or not ml_result.get("success"):
@@ -299,94 +353,222 @@ async def identify_face(
                 dedupe_reused_existing=False,
             )
 
+        # Authenticator: score against one or more known MVR people (not gallery NN).
+        target_ids: list[str] = []
+        if target_mvr_people_uuids:
+            target_ids.extend(
+                part.strip()
+                for part in str(target_mvr_people_uuids).split(",")
+                if part.strip()
+            )
+        if target_mvr_people_uuid:
+            target_ids.append(str(target_mvr_people_uuid).strip())
+        # Dedupe preserve order
+        seen_targets: set[str] = set()
+        ordered_targets: list[str] = []
+        for tid in target_ids:
+            if tid and tid not in seen_targets:
+                seen_targets.add(tid)
+                ordered_targets.append(tid)
+
+        if ordered_targets:
+            from uuid import UUID as _UUID
+
+            def _parse_embedding(raw) -> np.ndarray | None:
+                if raw is None:
+                    return None
+                if isinstance(raw, str):
+                    arr = np.array(
+                        [float(x) for x in raw.strip("[]").split(",") if x.strip()],
+                        dtype=np.float32,
+                    )
+                else:
+                    arr = np.array(raw, dtype=np.float32)
+                if arr.size != 512:
+                    return None
+                return arr
+
+            best_uuid: str | None = None
+            best_score = -1.0
+            scored = 0
+            for tid in ordered_targets:
+                try:
+                    target_uuid = _UUID(tid)
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=400, detail=f"Invalid target MVR uuid: {tid}"
+                    ) from exc
+                person = await mvr_service.repository.get_mvr_people_by_uuid(target_uuid)
+                if not person:
+                    continue
+                stored = _parse_embedding(person.get("face_embedding"))
+                if stored is None:
+                    continue
+                denom = float(
+                    np.linalg.norm(face_embedding) * np.linalg.norm(stored)
+                )
+                score = (
+                    float(np.dot(face_embedding, stored) / denom) if denom > 0 else 0.0
+                )
+                scored += 1
+                if score > best_score:
+                    best_score = score
+                    best_uuid = str(target_uuid)
+
+            if scored == 0 or best_uuid is None:
+                return FaceIdentityResponse(
+                    success=True,
+                    matched=False,
+                    mvr_people_uuid=None,
+                    similarity_score=0.0,
+                    total_candidates=0,
+                    created_new=False,
+                    dedupe_reused_existing=False,
+                )
+
+            matched = best_score >= similarity_threshold
+            return FaceIdentityResponse(
+                success=True,
+                matched=matched,
+                mvr_people_uuid=best_uuid if matched else None,
+                similarity_score=float(best_score),
+                total_candidates=scored,
+                created_new=False,
+                dedupe_reused_existing=False,
+            )
+
+        # Authenticator enroll: always mint a fresh isolated MVR for this capture.
+        if force_create:
+            created = await mvr_service.repository.create_mvr_people(
+                face_embedding=face_embedding,
+                featured_individual_uuid=None,
+                age_min=ml_result.get("age_min"),
+                age_max=ml_result.get("age_max"),
+                age_confidence=ml_result.get("age_confidence"),
+                gender=ml_result.get("gender"),
+                gender_confidence=ml_result.get("gender_confidence"),
+                quality_score=float(ml_result.get("face_quality", 0.5) or 0.5),
+                confidence_score=float(
+                    ml_result.get("detection_confidence", 0.5) or 0.5
+                ),
+                face_quality=float(ml_result.get("face_quality", 0.5) or 0.5),
+                auto_created=True,
+                is_isolated=True,
+            )
+            created_uuid = await _verified_mvr_uuid(
+                mvr_service, created.get("mvr_people_uuid")
+            )
+            return FaceIdentityResponse(
+                success=True,
+                matched=bool(created_uuid),
+                mvr_people_uuid=created_uuid,
+                similarity_score=1.0 if created_uuid else 0.0,
+                total_candidates=0,
+                created_new=bool(created_uuid),
+                dedupe_reused_existing=False,
+            )
+
         candidates = await mvr_service.find_similar_people(
             face_embedding=face_embedding,
             similarity_threshold=similarity_threshold,
             max_results=max_results,
         )
 
-        if not candidates:
-            if (
-                create_if_missing
-                and enable_dedupe_reuse
-                and dedupe_similarity_threshold < similarity_threshold
-            ):
-                reuse_candidates = await mvr_service.find_similar_people(
-                    face_embedding=face_embedding,
-                    similarity_threshold=dedupe_similarity_threshold,
-                    max_results=1,
+        verified_match: Optional[tuple[str, float]] = None
+        for cand in candidates or []:
+            cand_uuid = await _verified_mvr_uuid(
+                mvr_service, cand.get("mvr_people_uuid")
+            )
+            if cand_uuid:
+                verified_match = (
+                    cand_uuid,
+                    float(cand.get("similarity_score", 0.0) or 0.0),
                 )
+                break
 
-                if reuse_candidates:
-                    reused = reuse_candidates[0]
-                    reused_uuid = reused.get("mvr_people_uuid")
-                    reused_similarity = float(
-                        reused.get("similarity_score", 0.0) or 0.0
-                    )
-
-                    return FaceIdentityResponse(
-                        success=True,
-                        matched=bool(reused_uuid),
-                        mvr_people_uuid=str(reused_uuid) if reused_uuid else None,
-                        similarity_score=reused_similarity,
-                        total_candidates=1,
-                        created_new=False,
-                        dedupe_reused_existing=bool(reused_uuid),
-                    )
-
-            if create_if_missing:
-                created = await mvr_service.repository.create_mvr_people(
-                    face_embedding=face_embedding,
-                    featured_individual_uuid=None,
-                    age_min=ml_result.get("age_min"),
-                    age_max=ml_result.get("age_max"),
-                    age_confidence=ml_result.get("age_confidence"),
-                    gender=ml_result.get("gender"),
-                    gender_confidence=ml_result.get("gender_confidence"),
-                    quality_score=float(
-                        ml_result.get("face_quality", 0.5) or 0.5
-                    ),
-                    confidence_score=float(
-                        ml_result.get("detection_confidence", 0.5) or 0.5
-                    ),
-                    face_quality=float(
-                        ml_result.get("face_quality", 0.5) or 0.5
-                    ),
-                    auto_created=True,
-                    is_isolated=True,
-                )
-
-                created_uuid = created.get("mvr_people_uuid")
-                return FaceIdentityResponse(
-                    success=True,
-                    matched=bool(created_uuid),
-                    mvr_people_uuid=str(created_uuid) if created_uuid else None,
-                    similarity_score=1.0 if created_uuid else 0.0,
-                    total_candidates=0,
-                    created_new=bool(created_uuid),
-                    dedupe_reused_existing=False,
-                )
-
+        if verified_match:
+            match_uuid, match_score = verified_match
             return FaceIdentityResponse(
                 success=True,
-                matched=False,
-                mvr_people_uuid=None,
-                similarity_score=0.0,
-                total_candidates=0,
+                matched=True,
+                mvr_people_uuid=match_uuid,
+                similarity_score=match_score,
+                total_candidates=len(candidates),
                 created_new=False,
                 dedupe_reused_existing=False,
             )
 
-        best = candidates[0]
-        best_uuid = best.get("mvr_people_uuid")
-        best_similarity = float(best.get("similarity_score", 0.0) or 0.0)
+        if (
+            create_if_missing
+            and enable_dedupe_reuse
+            and dedupe_similarity_threshold < similarity_threshold
+        ):
+            reuse_candidates = await mvr_service.find_similar_people(
+                face_embedding=face_embedding,
+                similarity_threshold=dedupe_similarity_threshold,
+                max_results=1,
+            )
+
+            for reused in reuse_candidates or []:
+                reused_uuid = await _verified_mvr_uuid(
+                    mvr_service, reused.get("mvr_people_uuid")
+                )
+                if not reused_uuid:
+                    continue
+                reused_similarity = float(
+                    reused.get("similarity_score", 0.0) or 0.0
+                )
+                return FaceIdentityResponse(
+                    success=True,
+                    matched=True,
+                    mvr_people_uuid=reused_uuid,
+                    similarity_score=reused_similarity,
+                    total_candidates=1,
+                    created_new=False,
+                    dedupe_reused_existing=True,
+                )
+
+        if create_if_missing:
+            created = await mvr_service.repository.create_mvr_people(
+                face_embedding=face_embedding,
+                featured_individual_uuid=None,
+                age_min=ml_result.get("age_min"),
+                age_max=ml_result.get("age_max"),
+                age_confidence=ml_result.get("age_confidence"),
+                gender=ml_result.get("gender"),
+                gender_confidence=ml_result.get("gender_confidence"),
+                quality_score=float(
+                    ml_result.get("face_quality", 0.5) or 0.5
+                ),
+                confidence_score=float(
+                    ml_result.get("detection_confidence", 0.5) or 0.5
+                ),
+                face_quality=float(
+                    ml_result.get("face_quality", 0.5) or 0.5
+                ),
+                auto_created=True,
+                is_isolated=True,
+            )
+
+            created_uuid = await _verified_mvr_uuid(
+                mvr_service, created.get("mvr_people_uuid")
+            )
+            return FaceIdentityResponse(
+                success=True,
+                matched=bool(created_uuid),
+                mvr_people_uuid=created_uuid,
+                similarity_score=1.0 if created_uuid else 0.0,
+                total_candidates=0,
+                created_new=bool(created_uuid),
+                dedupe_reused_existing=False,
+            )
 
         return FaceIdentityResponse(
             success=True,
-            matched=bool(best_uuid),
-            mvr_people_uuid=str(best_uuid) if best_uuid else None,
-            similarity_score=best_similarity,
-            total_candidates=len(candidates),
+            matched=False,
+            mvr_people_uuid=None,
+            similarity_score=0.0,
+            total_candidates=0,
             created_new=False,
             dedupe_reused_existing=False,
         )

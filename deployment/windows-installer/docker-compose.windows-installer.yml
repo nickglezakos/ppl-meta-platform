@@ -328,6 +328,8 @@ services:
       ORCHESTRATOR_URL: http://ppl-meta-orchestrator:8002
       MEDIA_SERVICE_URL: http://ppl-meta-media:8000
       GATEWAY_SERVICE_URL: http://ppl-meta-gateway:8080
+      # Artifact / model fetch (defaults to localhost:8013 without this → connection refused in-container).
+      MODELS_SERVICE_URL: http://ppl-meta-models:8013
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-ppl-meta-internal-service-secret-key-change-in-production}
       DISCOVERY_SERVICE_URL: http://ppl-meta-discovery:8006
     depends_on:
