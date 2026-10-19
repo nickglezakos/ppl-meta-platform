@@ -15,6 +15,15 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+### Fixed
+
+- Instant-detection persist on existing labs: schema pack `050_individuals_instant_detection_columns.sql` adds `individuals.total_appearances`, `first_seen`, `last_seen`, and `person_objects`. `schema/verify.sh` fails if any of those columns are missing. Without them, a later sighting of a known person returns persist-batch 500 and rolls back the whole cycle.
+
+### Changed
+
+- Stage 1 is not done while CHANGELOG Notes defer a missing column the shipped code writes. The column belongs in the schema pack and in `schema/verify.sh` in that same push.
+- Stage 3 lab notes must include `schema/verify.sh` output. A compose pull whose image digests match is not a finished install.
+
 ## [2.25.102] — 2026-10-18
 
 ### Added

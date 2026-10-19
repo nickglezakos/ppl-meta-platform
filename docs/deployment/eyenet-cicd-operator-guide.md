@@ -117,6 +117,8 @@ This is “save your homework to the cloud.” Labs can pull **installer scripts
 **Does:** commit + push (source, installers, docs, pins, schema pack when needed) **and** update root [`CHANGELOG.md`](../../CHANGELOG.md).  
 **Does not:** build or push Docker images.
 
+A CHANGELOG **Notes** line that a column is missing, or that persist can 500 until a later schema follow-up, means Stage 1 is not done. That column belongs in the schema pack and in `schema/verify.sh` in the same push.
+
 #### CHANGELOG (mandatory on meaningful Stage 1)
 
 1. Prefer `## [Unreleased]` while iterating without a pin bump.  
@@ -385,6 +387,17 @@ bash deployment/ubuntu/install-eyenet-ubuntu.sh
 # or: ADVERTISE_HOST=<lan-ip> RELEASE_TAG=<VERSION> bash deployment/ubuntu/install-eyenet-ubuntu.sh
 ```
 
+After `compose up -d`, apply and verify schema. Stage 3 is not finished when image digests match. Paste the verify output into the lab note.
+
+```bash
+cd ~/eyenet-platform
+docker compose --project-name pplmeta --env-file .env -f docker-compose.yml pull
+docker compose --project-name pplmeta --env-file .env -f docker-compose.yml up -d
+bash ~/ppl-meta-platform/deployment/windows-installer/schema/apply.sh
+bash ~/ppl-meta-platform/deployment/windows-installer/schema/verify.sh
+bash ~/ppl-meta-platform/deployment/windows-installer/reregister-discovery-services.sh
+```
+
 Health:
 
 ```bash
@@ -392,7 +405,7 @@ curl -s http://127.0.0.1:8006/api/v1/services
 # UI: http://<ADVERTISE_HOST>:3000/network
 ```
 
-If only the **installer script** changed (Stage 1 only), `git pull` and re-run the installer — image pull alone does not update scripts.
+If only the **installer script** changed (Stage 1 only), `git pull` and re-run the installer — image pull alone does not update scripts. A pull that skips `schema/apply.sh` and `schema/verify.sh` is not Stage 3.
 
 ---
 

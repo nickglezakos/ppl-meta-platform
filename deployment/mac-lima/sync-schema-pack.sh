@@ -107,7 +107,8 @@ add "$COMPAT/014_camera_settings_and_enable_detection.sql"
 for pack_only in \
   047_orchestrator_workflow_settings.sql \
   048_individuals_created_by_session.sql \
-  049_individual_video_appearances_instant_columns.sql
+  049_individual_video_appearances_instant_columns.sql \
+  050_individuals_instant_detection_columns.sql
 do
   src="$COMPAT/$pack_only"
   if [[ -f "$src" ]]; then

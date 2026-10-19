@@ -164,7 +164,8 @@ Before CHANGELOG / pins / “Stage 1 done”:
 1. **List affected paths** — e.g. `ppl-meta-cameras`, `ppl-meta-vmeta`, schema pack, compose/env templates, installers, docs. If you hotfixed more than one container, each matching monorepo tree must be updated.  
 2. **Port lab hotfixes into source** — copy lasting logic from `docker cp` / one-off scripts into the repo files. Lab-only DB row edits stay lab data; durable DDL belongs in `deployment/windows-installer/schema/pack/`.  
 3. **Commit and push those sources to GitHub** (same Stage 1 push as CHANGELOG below, or an earlier push — either way they must be on the remote before Stage 2 starts).  
-4. **Refuse Stage 2** if `git status` still shows uncommitted service fixes, or if the only working copy of the fix is on a lab container.
+4. **Refuse Stage 2** if `git status` still shows uncommitted service fixes, or if the only working copy of the fix is on a lab container.  
+5. **Every column the shipped code writes is in the schema pack and in `schema/verify.sh` in this same push.** A CHANGELOG **Notes** line that a column is missing, or that persist can 500 until a later schema follow-up, means Stage 1 is not done. Do not cut that pin.
 
 Example (instant detection / stream freeze): cameras + vmeta source **and** schema `048_…` must be pushed before rebuilding those GHCR images. A nickg `docker cp` that “works” is not a release.
 
@@ -464,7 +465,7 @@ Stage 2 stays manual on a lab PC. Tray: prefer Actions; keep real OS smoke on la
 **Does:** Installer (or manual compose pull) + schema apply/verify + discovery reregister + **tray download/autostart** when Release assets exist.  
 **Does not:** publish GHCR or rebuild tray binaries.
 
-**Tracking:** After every Stage 3, update the **Fleet status** table in [lab-machines.md](./lab-machines.md) (pin, match vs `release-manifest.yml`, date, notes). A matching tag is not enough — digests must match.
+**Tracking:** After every Stage 3, update the **Fleet status** table in [lab-machines.md](./lab-machines.md) (pin, match vs `release-manifest.yml`, date, notes). A matching tag is not enough — digests must match. Stage 3 is not finished on a compose pull alone. The lab note must include the `schema/verify.sh` output (every `OK` line, or the `FAIL` that stopped the install).
 
 ### Shared post-install (both installers)
 

@@ -61,6 +61,18 @@ check "individuals.gender_estimate" \
 check "individuals.created_by_session" \
   "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='individuals' AND column_name='created_by_session'" \
   "1"
+check "individuals.total_appearances" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='individuals' AND column_name='total_appearances'" \
+  "1"
+check "individuals.first_seen" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='individuals' AND column_name='first_seen'" \
+  "1"
+check "individuals.last_seen" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='individuals' AND column_name='last_seen'" \
+  "1"
+check "individuals.person_objects" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='individuals' AND column_name='person_objects'" \
+  "1"
 check "person_objects.representative_faces" \
   "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='person_objects' AND column_name='representative_faces'" \
   "1"
