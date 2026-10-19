@@ -62,7 +62,8 @@ class FaceNetProcessor:
     def extract_embedding(
         self,
         face_image: np.ndarray,
-        enforce_detection: bool = False
+        enforce_detection: bool = False,
+        detector_backend: str | None = None,
     ) -> Optional[np.ndarray]:
         """
         Extract face embedding from image.
@@ -70,6 +71,9 @@ class FaceNetProcessor:
         Args:
             face_image: Face image as numpy array (RGB or BGR)
             enforce_detection: If True, raise error if no face detected
+            detector_backend: DeepFace detector. Default ``skip`` for pre-cropped
+                face patches. Use ``opencv`` (or similar) for full-frame phone
+                photos so FaceNet is not run on the whole image.
             
         Returns:
             512-dimensional embedding as numpy array, or None if failed
@@ -78,30 +82,40 @@ class FaceNetProcessor:
             return None
         
         try:
-            # Prefer skip: callers pass already-cropped face patches. Re-running
-            # OpenCV on a tight crop can emit hundreds of false positives, and
-            # some DeepFace builds return a bare 512-float vector which an older
-            # multi-face guard misread as "512 faces" (blocking all MVR people).
-            try:
+            backend = (detector_backend or "skip").strip().lower()
+            if backend and backend != "skip":
                 result = DeepFace.represent(
                     img_path=face_image,
                     model_name=self.model_name,
                     enforce_detection=enforce_detection,
-                    detector_backend='skip',
-                    align=False,
-                )
-            except Exception as skip_err:
-                logger.debug(
-                    "detector_backend=skip failed (%s); falling back to opencv",
-                    skip_err,
-                )
-                result = DeepFace.represent(
-                    img_path=face_image,
-                    model_name=self.model_name,
-                    enforce_detection=enforce_detection,
-                    detector_backend='opencv',
+                    detector_backend=backend,
                     align=True,
                 )
+            else:
+                # Prefer skip: callers pass already-cropped face patches. Re-running
+                # OpenCV on a tight crop can emit hundreds of false positives, and
+                # some DeepFace builds return a bare 512-float vector which an older
+                # multi-face guard misread as "512 faces" (blocking all MVR people).
+                try:
+                    result = DeepFace.represent(
+                        img_path=face_image,
+                        model_name=self.model_name,
+                        enforce_detection=enforce_detection,
+                        detector_backend='skip',
+                        align=False,
+                    )
+                except Exception as skip_err:
+                    logger.debug(
+                        "detector_backend=skip failed (%s); falling back to opencv",
+                        skip_err,
+                    )
+                    result = DeepFace.represent(
+                        img_path=face_image,
+                        model_name=self.model_name,
+                        enforce_detection=enforce_detection,
+                        detector_backend='opencv',
+                        align=True,
+                    )
 
             embedding = self._embedding_from_represent_result(result)
             if embedding is None:

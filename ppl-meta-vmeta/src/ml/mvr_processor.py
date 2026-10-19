@@ -48,7 +48,8 @@ class MVRProcessor:
     def process_face(
         self,
         face_image: np.ndarray,
-        enforce_detection: bool = False
+        enforce_detection: bool = False,
+        detector_backend: str | None = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Process face image through all ML models.
@@ -56,6 +57,7 @@ class MVRProcessor:
         Args:
             face_image: Face image as numpy array
             enforce_detection: If True, fail if no face detected
+            detector_backend: Forwarded to FaceNet (``skip`` for crops, ``opencv`` for full frames)
             
         Returns:
             Dict with embedding, age, gender data or None
@@ -72,7 +74,8 @@ class MVRProcessor:
             # Extract face embedding (required)
             embedding = self.facenet.extract_embedding(
                 face_image,
-                enforce_detection=enforce_detection
+                enforce_detection=enforce_detection,
+                detector_backend=detector_backend,
             )
             
             if embedding is None:
