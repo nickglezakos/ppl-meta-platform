@@ -16,8 +16,8 @@ This document names and describes the physical lab hosts used for EyeNet install
 |---|---|---|---|---|
 | **`lab-home-win-nickg`** | Home | Windows (user `nickg`) | Windows laptop | Home Windows/WSL install path; optional Stage 2 builder when disk/RAM allow |
 | **`lab-work-u24-mini-8g`** | Work LAN | Ubuntu 24.04 only | Mini PC, **8 GB RAM** | Stress / failure-mode lab: what happens **under** the 16 GB product threshold |
-| **`lab-work-dual-64g`** | Work LAN | Dual-boot Windows + Ubuntu 24.04 | Laptop, **64 GB RAM** | Primary work lab: full-product Windows/WSL **or** native Ubuntu; preferred Stage 2 builder |
-| **`lab-work-eyenet2`** | Work LAN | Ubuntu 24.04 only | Laptop / desktop, **~15 Gi RAM**, hostname `eyenet2` | Second work Ubuntu soak + install path (not preferred Stage 2) |
+| **`lab-work-dual-64g`** | Work LAN | Dual-boot Windows + Ubuntu 24.04 | Laptop, **16 GB RAM** (lab ID keeps historical “64g” name) | Primary work lab: full-product Windows/WSL **or** native Ubuntu; Stage 3 soak (not preferred Stage 2 — tight on RAM) |
+| **`lab-work-eyenet2`** | Work LAN | Ubuntu 24.04 only | Laptop / desktop, **32 GB RAM**, hostname `eyenet2` | Preferred Stage 2 builder + Ubuntu soak / install path |
 | **`lab-work-win-eynetdell`** | Work LAN | Windows only | Dell PC, hostname `EYNETDELL` | Work Windows lab / soak; OpenSSH via reverse tunnel (see host details) |
 
 Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *“Stage 2 on lab-work-dual-64g”*).
@@ -151,17 +151,17 @@ ssh eyenet-server 'hostname; free -h | head -2; cat ~/ppl-meta-platform/VERSION;
 |---|---|
 | Site | Work LAN (`192.168.9.0/24` when on work Wi‑Fi) |
 | OS | **Dual-boot:** Windows 10/11 amd64 **or** Ubuntu 24.04 (reboot to switch) |
-| RAM | Labelled **64 GB** dual-boot laptop; Ubuntu currently reports **~15 Gi** visible (`free -h`) — re-check after BIOS/DIMM if Stage 2 needs full RAM |
+| RAM | **16 GB** (operator-confirmed 2026-10-27; lab ID still `lab-work-dual-64g`) |
 | Hostname (Ubuntu) | `eyenet-demo` |
 | Windows LAN (historical) | `192.168.11.29` (SSH host alias `windows-lab`, user `user`) — confirm after each boot |
-| Ubuntu LAN | **`10.171.48.228`** (was `192.168.9.13`); set `ADVERTISE_HOST=10.171.48.228` |
-| Access (LAN) | Windows: Windows App / RDP → LAN IP (or `ssh windows-lab`). Ubuntu: `ssh eyenet@10.171.48.228` (Mac key `eyenet-mac-to-kvalvis` authorized) |
-| Access (remote) | Tailscale client installed on Ubuntu; run `sudo tailscale up` then add Host alias when mesh IP is known |
+| Ubuntu LAN | **`192.168.9.13`** (also seen as `10.171.48.228`); set `ADVERTISE_HOST` to current LAN IP |
+| Access (LAN) | Windows: Windows App / RDP → LAN IP (or `ssh windows-lab`). Ubuntu: `ssh eyenet@192.168.9.13` |
+| Access (remote) | Tailscale `100.101.128.40` when mesh is up |
 | Install dir (Ubuntu) | `~/eyenet-platform` (user `eyenet`) |
 | Product path (Windows) | WSL `eyenet` + Windows installer |
 | Product path (Ubuntu) | Native Docker CE + `deployment/ubuntu/install-eyenet-ubuntu.sh` |
-| Stage 2 builder? | **Yes — preferred** when full RAM + ≥12 GB free disk + Flutter toolchain ready |
-| Notes | Only one OS active at a time. Fresh Ubuntu Stage 3 on 2026-09-22: GHCR pull can hit stub-resolver timeouts — retry `docker compose pull`. If schema verify fails on first apply, drop app-created `schema_migrations` (wrong shape vs pack) and re-run `schema/apply.sh`. UI `http://10.171.48.228:3000`. |
+| Stage 2 builder? | **No — prefer `lab-work-eyenet2` (32 GB)**; dual is OK only for light selective builds if ≥12 GB free disk |
+| Notes | Only one OS active at a time. Use for Stage 3 soak / wiki-install validation. GHCR pull can hit stub-resolver timeouts — retry `docker compose pull`. If schema verify fails on first apply, drop app-created `schema_migrations` (wrong shape vs pack) and re-run `schema/apply.sh`. |
 
 ---
 
@@ -172,7 +172,7 @@ ssh eyenet-server 'hostname; free -h | head -2; cat ~/ppl-meta-platform/VERSION;
 | Site | Work LAN (`192.168.9.0/24`) |
 | OS | **Ubuntu 24.04 only** |
 | Hostname | `eyenet2` |
-| RAM | ~15 Gi visible |
+| RAM | **32 GB** (operator-confirmed 2026-10-27) |
 | LAN | **`192.168.9.8`** (`wlo1`) |
 | Tailscale | **`100.116.59.7`** (personal Tailscale; hostname `eyenet2`) |
 | SSH user | `eyenet` (Mac key `eyenet-mac-to-kvalvis`; passwordless sudo configured 2026-09-29) |
@@ -181,8 +181,8 @@ ssh eyenet-server 'hostname; free -h | head -2; cat ~/ppl-meta-platform/VERSION;
 | Install dir | `~/eyenet-platform` |
 | Repo clone | `~/ppl-meta-platform` |
 | Product path | Native Docker CE + `deployment/ubuntu/install-eyenet-ubuntu.sh` |
-| Stage 2 builder? | **No** (prefer `lab-work-dual-64g`) |
-| Notes | Fresh Stage 3 **2.25.93** on 2026-09-29. `ADVERTISE_HOST=192.168.9.8`. First schema apply needed drop of app-shaped `schema_migrations` then re-apply. UI `http://192.168.9.8:3000` (bootstrap until Authority entitlement filled). |
+| Stage 2 builder? | **Yes — preferred** (32 GB; use for Mode D / protected vision+vmeta builds) |
+| Notes | Prefer this host for Stage 2 of **2.25.104+**. Prior Stage 3 pin **2.25.93** (2026-09-29). `ADVERTISE_HOST=192.168.9.8`. UI `http://192.168.9.8:3000`. |
 
 ---
 
@@ -252,14 +252,14 @@ If the tunnel drops, re-run the `ssh -N -R 2201:…` command on Windows before r
 | Operator Mac | **Yes** (usual) | No (default) | No |
 | `lab-home-win-nickg` | Rarely | Optional (Tailscale OK) | Windows/WSL customer path |
 | `lab-work-u24-mini-8g` | No | **No** | Ubuntu under-threshold |
-| `lab-work-dual-64g` | Rarely | **Preferred** | Full Windows **or** full Ubuntu (after reboot) |
-| `lab-work-eyenet2` | No | **No** | Second Ubuntu full-product soak |
+| `lab-work-dual-64g` | Rarely | Light only (16 GB) | Full Windows **or** full Ubuntu soak / Stage 3 |
+| `lab-work-eyenet2` | Rarely | **Preferred** (32 GB) | Stage 2 image builds + Ubuntu soak |
 | `lab-work-win-eynetdell` | No | **No** | Work Windows soak (SSH via reverse tunnel) |
 
 Agent wording examples:
 
-- *“Stage 2 on lab-work-dual-64g (Ubuntu boot).”*  
-- *“Stage 2 on lab-work-dual-64g (Windows/WSL).”*  
+- *“Stage 2 on lab-work-eyenet2.”*
+- *“Stage 2 on lab-work-dual-64g (Ubuntu boot) — light only; prefer eyenet2.”*
 - *“Upgrade lab-home-win-nickg after Stage 2.”*  
 - *“Reproduce under-RAM behavior on lab-work-u24-mini-8g.”*
 - *“SSH eyenet-server / lab-work-u24-mini-8g from work LAN.”*
@@ -316,8 +316,8 @@ Update this table as you stabilize addresses (do not put passwords here):
 |---|---|---|---|---|---|
 | `lab-home-win-nickg` | `DESKTOP-VDM2JKF` | `192.168.1.71` | `100.73.31.71` (`homenetwork`) | `nickg` | `ssh lab-home-win-nickg` / `ssh desktop-vdm2jkf`; product `ADVERTISE_HOST=192.168.1.71` |
 | `lab-work-u24-mini-8g` | `eyenet-server` | `192.168.9.14` | *(logged out — enroll for remote)* | `eyenet` | `ssh eyenet-server`; 8 GB soak; not Stage 2 |
-| `lab-work-dual-64g` | `eyenet-demo` (Ubuntu) | Ubuntu `192.168.9.13` (confirm after boot; hist. `10.171.48.228` / Win `192.168.11.29`) | `100.101.128.40` | Ubuntu: `eyenet` / Win: `user` | Preferred Stage 2; product `ADVERTISE_HOST` = current LAN IP |
-| `lab-work-eyenet2` | `eyenet2` | `192.168.9.8` | `100.116.59.7` | `eyenet` | `ssh eyenet@100.116.59.7`; product `ADVERTISE_HOST=192.168.9.8` |
+| `lab-work-dual-64g` | `eyenet-demo` (Ubuntu) | Ubuntu `192.168.9.13` (confirm after boot; hist. `10.171.48.228` / Win `192.168.11.29`) | `100.101.128.40` | Ubuntu: `eyenet` / Win: `user` | **16 GB** — Stage 3 soak; product `ADVERTISE_HOST` = current LAN IP |
+| `lab-work-eyenet2` | `eyenet2` | `192.168.9.8` | `100.116.59.7` | `eyenet` | **32 GB** — preferred Stage 2; `ssh eyenet@100.116.59.7`; `ADVERTISE_HOST=192.168.9.8` |
 | `lab-work-win-eynetdell` | `EYNETDELL` | `192.168.1.105` | `100.114.224.54` (`eynetdell`) | `administrator` | Product `ADVERTISE_HOST=192.168.1.105`. On Windows: `ssh -N -R 2201:127.0.0.1:22 <mac-user>@<mac-tailscale-ip>`; on Mac: `ssh -p 2201 administrator@127.0.0.1`. Direct mesh SSH times out. |
 
 Historical / other boxes (not in the named set above) may still appear in older notes (e.g. `kvalvis-pc` at older Tailscale `100.64.0.23`). Prefer the lab IDs in this document going forward; migrate aliases here when you rename hosts.
