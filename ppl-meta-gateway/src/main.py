@@ -266,7 +266,9 @@ def create_app() -> FastAPI:
             "/api/v1/password": "3/minute",
             "/api/v1/users": "50/minute",
             "/api/v1/streaming": "1000/minute",  # High limit for cameras
-            "/api/v1/audit": "300/minute",  # Polling endpoint for alert notifications
+            # Alert poller + triggers UI paginate audit/logs aggressively;
+            # 300/min caused lab 429s (~9k logs / 50 page_size ≈ 180 pages/poll).
+            "/api/v1/audit": "10000/minute",
         },
     )
 

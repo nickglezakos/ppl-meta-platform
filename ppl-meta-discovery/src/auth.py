@@ -46,6 +46,8 @@ KNOWN_SERVICES = {
     "ppl-meta-discovery",
     "ppl-meta-bootcore",
     "ppl-meta-presence",
+    "ppl-meta-communications",
+    "ppl-meta-models",
 }
 
 

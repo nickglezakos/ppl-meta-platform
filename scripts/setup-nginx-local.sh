@@ -21,7 +21,7 @@ echo "✅ Nginx is installed: $(nginx -v 2>&1)"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-NGINX_CONFIG="$REPO_ROOT/docs/deployment/nginx/nginx-local-dev.conf"
+NGINX_CONFIG="$REPO_ROOT/docs/documentation/deployment/nginx/nginx-local-dev.conf"
 CERT_SCRIPT="$REPO_ROOT/scripts/generate-nginx-local-certs.sh"
 CERT_META_FILE="/tmp/ppl-meta-local-dev-meta.env"
 

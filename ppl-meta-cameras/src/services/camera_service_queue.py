@@ -125,33 +125,61 @@ class CameraService:
         connected_workers = manager.get_all_workers()
         
         logger.info(f"🔍 [DETECT] Currently connected workers: {list(connected_workers.keys())}")
+
+        def _worker_matches_index(worker, index: int, connection_string: str) -> bool:
+            """True if this worker already owns the local device at index."""
+            if getattr(worker, "camera_type", None) != CameraType.USB:
+                return False
+            info = worker.camera_info or {}
+            worker_cs = str(info.get("connection_string") or "")
+            worker_index = info.get("index")
+            if worker_index is not None and int(worker_index) == index:
+                return True
+            if worker_cs in (connection_string, str(index)):
+                return True
+            # Match /dev/videoN or trailing videoN
+            if worker_cs.endswith(f"video{index}"):
+                return True
+            return False
         
         # Try indices 0-9
         for index in range(10):
-            # Generate proper UUID for new cameras (legacy workers keep their IDs)
-            device_id = f"usb_camera_{index}"  # Check if legacy worker exists
-            
-            # ⚠️ CRITICAL: Skip if camera worker exists (ANY status)
+            legacy_device_id = f"usb_camera_{index}"
+            connection_string = f"/dev/video{index}"
+
+            # ⚠️ CRITICAL: Skip if any USB worker already owns this device.
             # Opening cv2.VideoCapture() for a camera that has an active worker
-            # will force the existing worker's VideoCapture to fail on macOS
-            if device_id in connected_workers:
-                worker = connected_workers[device_id]
-                logger.warning(f"⏭️ SKIPPING {device_id} - WORKER EXISTS (status: {worker.status.value}) - will NOT open VideoCapture")
-                # Return cached info from worker's camera_info
-                width = int(worker.camera_info.get('resolution_width', 0))
-                height = int(worker.camera_info.get('resolution_height', 0))
-                fps = worker.camera_info.get('max_fps', 30)
-                # For existing workers, use their device_id (supports migration)
+            # will force the existing worker's VideoCapture to fail on macOS.
+            # Match legacy usb_camera_{index} ids and UUID-based USB workers.
+            live_worker = None
+            if legacy_device_id in connected_workers:
+                live_worker = connected_workers[legacy_device_id]
+            else:
+                for worker in connected_workers.values():
+                    if _worker_matches_index(worker, index, connection_string):
+                        live_worker = worker
+                        break
+
+            if live_worker is not None:
+                worker = live_worker
+                logger.warning(
+                    f"⏭️ SKIPPING index {index} ({connection_string}) - "
+                    f"WORKER EXISTS for {worker.device_id} "
+                    f"(status: {worker.status.value}) - will NOT open VideoCapture"
+                )
+                width = int(worker.camera_info.get("resolution_width", 0))
+                height = int(worker.camera_info.get("resolution_height", 0))
+                fps = worker.camera_info.get("max_fps", 30)
                 camera_info = {
-                    "device_id": device_id,  # Keep legacy ID for existing workers
-                    "name": f"USB Camera {index + 1}",  # Name suggestion (will be auto-numbered on save)
+                    "device_id": worker.device_id,
+                    "name": f"Connected Camera {index + 1}",
                     "camera_type": CameraType.USB,
-                    "connection_string": f"/dev/video{index}",
+                    "connection_string": connection_string,
                     "index": index,
                     "resolution_width": width,
                     "resolution_height": height,
                     "max_fps": fps,
-                    "status": worker.status.value  # Use actual worker status
+                    "status": worker.status.value,
                 }
                 cameras.append(camera_info)
                 continue
@@ -181,9 +209,9 @@ class CameraService:
                     
                     camera_info = {
                         "device_id": new_device_id,  # Proper UUID for new cameras
-                        "name": f"USB Camera {index + 1}",  # Name suggestion
+                        "name": f"Connected Camera {index + 1}",  # Name suggestion
                         "camera_type": CameraType.USB,
-                        "connection_string": f"/dev/video{index}",
+                        "connection_string": connection_string,
                         "index": index,
                         "resolution_width": width,
                         "resolution_height": height,
@@ -192,7 +220,9 @@ class CameraService:
                     }
                     
                     cameras.append(camera_info)
-                    logger.info(f"✅ Found {device_id} at index {index} ({width}x{height})")
+                    logger.info(
+                        f"✅ Found {legacy_device_id} at index {index} ({width}x{height})"
+                    )
                 
                 # Release test capture
                 await loop.run_in_executor(None, cap.release)
@@ -253,7 +283,7 @@ class CameraService:
                 index = int(device_id.split("_")[-1])
                 camera_info = {
                     "device_id": device_id,
-                    "name": f"USB Camera {index}",
+                    "name": f"Connected Camera {index}",
                     "camera_type": CameraType.USB,
                     "connection_string": f"/dev/video{index}",
                     "index": index

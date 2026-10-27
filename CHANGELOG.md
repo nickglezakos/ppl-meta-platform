@@ -15,6 +15,34 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+## [2.25.104] — 2026-10-27
+
+### Fixed
+
+- Gateway: raise `/api/v1/audit` rate limit (alert poller pagination); skip rate-limit on CORS `OPTIONS`; echo Origin on 429 so credentialed Flutter web can read the body (replaces eyenet-demo `docker cp` hotfix).
+- Frontend alert poller: cap page walk (`maxPages=5`); start from “now” when no cursor so a missing cursor cannot hammer the gateway.
+- Cameras / frontend: refresh scans connected local cameras; USB display name “Connected Camera”; queue/detection hardenings.
+- Media Recognize People: scope embedding matches to the trigger’s `ppl_match_group_ids` (stops cross-trigger false fires against the shared cache).
+- Node: create Presence people profile on register / bootstrap activate (targeted notify).
+- Discovery / shared auth: allow `ppl-meta-communications` and `ppl-meta-models` (and presence in shared auth) as known internal services.
+- Service discovery defaults: compose DNS inside Docker, `127.0.0.1:8006` for local Python host runs.
+- Windows installer WSL bootstrap: fall back when Store lists only `Ubuntu` (not `Ubuntu-24.04`); complete first-run with `ubuntu install --root`; Docker CE apt falls back to `noble`/`jammy` when the host Ubuntu codename has no packages yet.
+- Windows installer tray: prefer bundled `tray/eyenet-tray-windows-amd64-${VERSION}.exe` before GitHub Release download.
+- Standalone schema `apply.sh`: strip CRLF from `.env.windows` before sourcing; drop app-shaped `schema_migrations`; wait for app base tables; two soft pack passes (007/009 order); `verify.sh` is the hard gate.
+- Schema pack `001`: only ALTER/`CREATE INDEX` on `face_detections` when that table already exists (greenfield apply order).
+- `install-platform.ps1`: ASCII UI glyphs + UTF-8 BOM for Windows PowerShell 5.1; LF-only `.env.windows` writes; expand `schema/pack.tar.gz` with Windows `tar` (avoid hung WSL tar on `/mnt/c`).
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.103 → 2.25.104**.
+- Owner wiki First install uses versioned zip links (updated at Stage 3a after GHCR).
+- Ubuntu pack script `deployment/ubuntu/pack-eyenet-ubuntu.sh` for wiki zip without a git clone.
+
+### Notes
+
+- Affects gateway, frontend, cameras, media, node, discovery, communications, models, orchestrator, presence, vmeta (service-discovery defaults), plus installer schema/apply and tray host scripts. Mode D: rebuild those eleven; retag-forward **vision** from `2.25.103`.
+- Stage 3 for this cut is wiki-first: pack/publish installer zips → lab install via First-install links → SSH smoke (pin + digests + health).
+
 ## [2.25.103] — 2026-10-19
 
 ### Fixed

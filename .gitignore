@@ -130,6 +130,9 @@ jspm_packages/
 !.env.windows.template
 !deployment/windows-installer/.env.windows.template
 
+# Local Python host storage (Mac) — see scripts/load-local-python-runtime-env.sh
+.local/
+
 # =============================================
 # DATABASES
 # =============================================

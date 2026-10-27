@@ -567,7 +567,7 @@ class StreamingStatus {
 
 /// Camera type enumeration for multi-camera support
 enum CameraType {
-  usb('USB Camera'),
+  usb('Connected Camera'),
   rtsp('RTSP Network Camera'),
   webRtc('WebRTC Camera'),
   mjpeg('MJPEG Camera'),

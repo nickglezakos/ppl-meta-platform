@@ -1,0 +1,73 @@
+name: Docs Wiki Deploy
+
+# Publishes static HTML to wiki.eyenet-vision.com on Hetzner.
+# Decoupled from authority-release / authority-deploy-hetzner / platform-release.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/documentation/wiki/**'
+      - 'docs/wiki/**'
+      - 'autonomous/ppl-meta-wiki/**'
+      - 'scripts/build_wiki_static.py'
+      - 'scripts/deploy-wiki-to-hetzner.sh'
+      - 'scripts/validate_wiki_software_ref.py'
+      - '.github/workflows/docs-wiki-deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  validate-build-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+      HETZNER_USER: ${{ secrets.HETZNER_USER }}
+      HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+      WIKI_BASE_URL: https://wiki.eyenet-vision.com
+      WIKI_REMOTE_DIR: /home/deploy/apps/ppl-meta-wiki/html
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build dependency
+        run: pip install markdown
+
+      - name: Validate What is EyeNet software_ref
+        run: python scripts/validate_wiki_software_ref.py docs/documentation/wiki/what-is-eyenet
+
+      - name: Validate user-guide wiki software_ref
+        run: python scripts/validate_wiki_software_ref.py docs/documentation/wiki/owners-admins
+
+      - name: Validate distributors-guide wiki software_ref
+        run: python scripts/validate_wiki_software_ref.py docs/documentation/wiki/distributors
+
+      - name: Build static wiki site
+        run: python scripts/build_wiki_static.py --wiki-root docs/documentation/wiki --out artifacts/wiki-site
+
+      - name: Upload wiki site artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eyenet-wiki-site
+          path: artifacts/wiki-site
+          retention-days: 14
+
+      - name: Configure SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$HETZNER_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy wiki to Hetzner
+        run: |
+          chmod +x scripts/deploy-wiki-to-hetzner.sh
+          export HETZNER_SSH_KEY_PATH="$HOME/.ssh/id_ed25519"
+          ./scripts/deploy-wiki-to-hetzner.sh artifacts/wiki-site

@@ -31,16 +31,16 @@ def generate_auto_camera_name(
         exclude_device_id: Optional device_id to exclude from uniqueness check
     
     Returns:
-        Unique camera name like "USB Camera 1", "RTSP Camera 2", etc.
+        Unique camera name like "Connected Camera 1", "RTSP Camera 2", etc.
     
     Examples:
-        - USB Camera with index=0 → checks "USB Camera 1", "USB Camera 2", etc.
+        - Connected camera with index=0 → checks "Connected Camera 1", etc.
         - RTSP Camera → checks "RTSP Camera 1", "RTSP Camera 2", etc.
         - Edge Camera → checks "Edge Camera 1", "Edge Camera 2", etc.
     """
     # Base name by camera type
     type_prefix = {
-        CameraType.USB: "USB Camera",
+        CameraType.USB: "Connected Camera",
         CameraType.RTSP: "RTSP Camera",
         CameraType.EDGE: "Edge Camera",
         CameraType.MOBILE: "Mobile Camera",
@@ -98,7 +98,7 @@ def suggest_camera_name(camera_type: CameraType, device_info: Optional[dict] = N
         Suggested camera name (may not be unique)
     """
     type_prefix = {
-        CameraType.USB: "USB Camera",
+        CameraType.USB: "Connected Camera",
         CameraType.RTSP: "RTSP Camera",
         CameraType.EDGE: "Edge Camera",
         CameraType.MOBILE: "Mobile Camera",

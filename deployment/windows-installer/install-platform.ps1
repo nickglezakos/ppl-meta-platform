@@ -1,6 +1,6 @@
-# EyeNet Platform Manager
+﻿# EyeNet Platform Manager
 # Autonomous Windows installer & management console
-# Version: 2.25.103
+# Version: 2.25.104
 # Repository: https://github.com/nickglezakos/ppl-meta-platform
 
 param(
@@ -18,7 +18,7 @@ $script:TargetWslMemoryGb = 12
 $script:TargetWslProcessors = 6
 $script:GitHubRawBase = "https://raw.githubusercontent.com/nickglezakos/ppl-meta-platform/main/deployment/windows-installer"
 $script:InstallDir = $null
-$script:ReleaseTag = "2.25.103"
+$script:ReleaseTag = "2.25.104"
 $script:ComposeProjectName = "pplmeta"
 $script:WslDistro = "eyenet"
 $script:UseWslDocker = $false
@@ -37,38 +37,38 @@ $script:Blue    = "DarkBlue"
 function Write-EyeNetBanner {
     Clear-Host
     Write-Host ""
-    Write-Host "  ╔══════════════════════════════════════════════════════════════╗" -ForegroundColor $script:Cyan
-    Write-Host "  ║" -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "  +==============================================================+" -ForegroundColor $script:Cyan
+    Write-Host "  |" -ForegroundColor $script:Cyan -NoNewline
     Write-Host "                                                              " -NoNewline
-    Write-Host "║" -ForegroundColor $script:Cyan
-    Write-Host "  ║" -ForegroundColor $script:Cyan -NoNewline
-    Write-Host "    ███████╗██╗   ██╗███████╗███╗   ██╗███████╗████████╗     " -ForegroundColor $script:Cyan -NoNewline
-    Write-Host "║" -ForegroundColor $script:Cyan
-    Write-Host "  ║" -ForegroundColor $script:Cyan -NoNewline
-    Write-Host "    ██╔════╝╚██╗ ██╔╝██╔════╝████╗  ██║██╔════╝╚══██╔══╝     " -ForegroundColor $script:Cyan -NoNewline
-    Write-Host "║" -ForegroundColor $script:Cyan
-    Write-Host "  ║" -ForegroundColor $script:Cyan -NoNewline
-    Write-Host "    █████╗   ╚████╔╝ █████╗  ██╔██╗ ██║█████╗     ██║        " -ForegroundColor $script:Cyan -NoNewline
-    Write-Host "║" -ForegroundColor $script:Cyan
-    Write-Host "  ║" -ForegroundColor $script:Cyan -NoNewline
-    Write-Host "    ██╔══╝    ╚██╔╝  ██╔══╝  ██║╚██╗██║██╔══╝     ██║        " -ForegroundColor $script:Cyan -NoNewline
-    Write-Host "║" -ForegroundColor $script:Cyan
-    Write-Host "  ║" -ForegroundColor $script:Cyan -NoNewline
-    Write-Host "    ███████╗   ██║   ███████╗██║ ╚████║███████╗   ██║        " -ForegroundColor $script:Cyan -NoNewline
-    Write-Host "║" -ForegroundColor $script:Cyan
-    Write-Host "  ║" -ForegroundColor $script:Cyan -NoNewline
-    Write-Host "    ╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═══╝╚══════╝   ╚═╝        " -ForegroundColor $script:Cyan -NoNewline
-    Write-Host "║" -ForegroundColor $script:Cyan
-    Write-Host "  ║" -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "|" -ForegroundColor $script:Cyan
+    Write-Host "  |" -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "    #######+##+   ##+#######+###+   ##+#######+########+     " -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "|" -ForegroundColor $script:Cyan
+    Write-Host "  |" -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "    ##+====++##+ ##++##+====+####+  ##|##+====++==##+==+     " -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "|" -ForegroundColor $script:Cyan
+    Write-Host "  |" -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "    #####+   +####++ #####+  ##+##+ ##|#####+     ##|        " -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "|" -ForegroundColor $script:Cyan
+    Write-Host "  |" -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "    ##+==+    +##++  ##+==+  ##|+##+##|##+==+     ##|        " -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "|" -ForegroundColor $script:Cyan
+    Write-Host "  |" -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "    #######+   ##|   #######+##| +####|#######+   ##|        " -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "|" -ForegroundColor $script:Cyan
+    Write-Host "  |" -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "    +======+   +=+   +======++=+  +===++======+   +=+        " -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "|" -ForegroundColor $script:Cyan
+    Write-Host "  |" -ForegroundColor $script:Cyan -NoNewline
     Write-Host "                                                              " -NoNewline
-    Write-Host "║" -ForegroundColor $script:Cyan
-    Write-Host "  ║" -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "|" -ForegroundColor $script:Cyan
+    Write-Host "  |" -ForegroundColor $script:Cyan -NoNewline
     Write-Host "             Platform Manager  v$script:ReleaseTag                   " -ForegroundColor $script:White -NoNewline
-    Write-Host "║" -ForegroundColor $script:Cyan
-    Write-Host "  ║" -ForegroundColor $script:Cyan -NoNewline
+    Write-Host "|" -ForegroundColor $script:Cyan
+    Write-Host "  |" -ForegroundColor $script:Cyan -NoNewline
     Write-Host "                                                              " -NoNewline
-    Write-Host "║" -ForegroundColor $script:Cyan
-    Write-Host "  ╚══════════════════════════════════════════════════════════════╝" -ForegroundColor $script:Cyan
+    Write-Host "|" -ForegroundColor $script:Cyan
+    Write-Host "  +==============================================================+" -ForegroundColor $script:Cyan
     Write-Host ""
 }
 
@@ -110,7 +110,7 @@ function Write-WarningMsg {
 function Write-Divider {
     param([string]$Color = $script:Cyan)
     Write-Host "  " -NoNewline
-    Write-Host ("─" * 62) -ForegroundColor $Color
+    Write-Host ("-" * 62) -ForegroundColor $Color
 }
 
 function Draw-Box {
@@ -119,26 +119,26 @@ function Draw-Box {
         [string]$TitleColor = $script:White,
         [string]$BoxColor = $script:Cyan
     )
-    Write-Host "  ╔" -NoNewline -ForegroundColor $BoxColor
-    Write-Host ("═" * 60) -NoNewline -ForegroundColor $BoxColor
-    Write-Host "╗" -ForegroundColor $BoxColor
+    Write-Host "  +" -NoNewline -ForegroundColor $BoxColor
+    Write-Host ("=" * 60) -NoNewline -ForegroundColor $BoxColor
+    Write-Host "+" -ForegroundColor $BoxColor
     if ($Title) {
-        Write-Host "  ║" -NoNewline -ForegroundColor $BoxColor
+        Write-Host "  |" -NoNewline -ForegroundColor $BoxColor
         $padding = 60 - $Title.Length
         $leftPad = [math]::Floor($padding / 2)
         $rightPad = $padding - $leftPad
         Write-Host (" " * $leftPad) -NoNewline
         Write-Host $Title -NoNewline -ForegroundColor $TitleColor
         Write-Host (" " * $rightPad) -NoNewline
-        Write-Host "║" -ForegroundColor $BoxColor
+        Write-Host "|" -ForegroundColor $BoxColor
     }
 }
 
 function Draw-BoxFooter {
     param([string]$BoxColor = $script:Cyan)
-    Write-Host "  ╚" -NoNewline -ForegroundColor $BoxColor
-    Write-Host ("═" * 60) -NoNewline -ForegroundColor $BoxColor
-    Write-Host "╝" -ForegroundColor $BoxColor
+    Write-Host "  +" -NoNewline -ForegroundColor $BoxColor
+    Write-Host ("=" * 60) -NoNewline -ForegroundColor $BoxColor
+    Write-Host "+" -ForegroundColor $BoxColor
 }
 
 function Draw-MenuItem {
@@ -148,7 +148,7 @@ function Draw-MenuItem {
         [string]$Suffix = "",
         [string]$SuffixColor = $script:White
     )
-    Write-Host "  ║" -NoNewline -ForegroundColor $script:Cyan
+    Write-Host "  |" -NoNewline -ForegroundColor $script:Cyan
     Write-Host "  [" -NoNewline -ForegroundColor $script:Cyan
     Write-Host $Key -NoNewline -ForegroundColor $script:Cyan
     Write-Host "]  " -NoNewline -ForegroundColor $script:Cyan
@@ -162,13 +162,13 @@ function Draw-MenuItem {
     if ($remaining -gt 0) {
         Write-Host (" " * $remaining) -NoNewline
     }
-    Write-Host "║" -ForegroundColor $script:Cyan
+    Write-Host "|" -ForegroundColor $script:Cyan
 }
 
 function Draw-MenuDivider {
-    Write-Host "  ╠" -NoNewline -ForegroundColor $script:Cyan
-    Write-Host ("═" * 60) -NoNewline -ForegroundColor $script:Cyan
-    Write-Host "╣" -ForegroundColor $script:Cyan
+    Write-Host "  +" -NoNewline -ForegroundColor $script:Cyan
+    Write-Host ("=" * 60) -NoNewline -ForegroundColor $script:Cyan
+    Write-Host "+" -ForegroundColor $script:Cyan
 }
 
 function Write-InputPrompt {
@@ -350,7 +350,6 @@ memory=$($script:TargetWslMemoryGb)GB
 processors=$($script:TargetWslProcessors)
 swap=2GB
 localhostForwarding=true
-networkingMode=mirrored
 "@
             Set-Content -Path $wslConfigPath -Value $wslContent -Force
             Write-Success "WSL config created at $wslConfigPath"
@@ -457,19 +456,20 @@ function Download-InstallerFiles {
         }
     }
 
-    # Expand pack.tar.gz into schema/pack if needed
+    # Expand pack.tar.gz into schema/pack if needed (prefer Windows tar; avoid hung WSL tar on /mnt/c)
     $packDir = Join-Path $script:InstallDir "schema\pack"
     $packTar = Join-Path $script:InstallDir "schema\pack.tar.gz"
-    if ((Test-Path $packTar) -and -not (Test-Path (Join-Path $packDir "000_preflight_extensions_and_stub_reconcile.sql"))) {
+    $packMarker = Join-Path $packDir "000_preflight_extensions_and_stub_reconcile.sql"
+    if ((Test-Path $packTar) -and -not (Test-Path $packMarker)) {
         New-Item -ItemType Directory -Path $packDir -Force | Out-Null
-        $drive = $script:InstallDir.Substring(0, 1).ToLower()
-        $rest = ($script:InstallDir.Substring(2) -replace '\\', '/')
-        $wslSchema = "/mnt/$drive$rest/schema"
-        if ($script:UseWslDocker) {
-            wsl -d $script:WslDistro --user root -- bash -lc "mkdir -p '$wslSchema/pack' && tar -xzf '$wslSchema/pack.tar.gz' -C '$wslSchema/pack'"
-        } else {
-            tar -xzf $packTar -C $packDir 2>$null
+        Write-Host "  Expanding schema/pack.tar.gz..." -ForegroundColor $script:Gray
+        tar -xzf $packTar -C $packDir 2>$null
+        if (-not (Test-Path $packMarker)) {
+            Write-ErrorMsg "Failed to expand schema/pack.tar.gz"
+            return $false
         }
+        # Drop macOS AppleDouble junk if present
+        Get-ChildItem -Path $packDir -Force -Filter "._*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     }
 
     Write-Success "All files downloaded to $script:InstallDir"
@@ -515,7 +515,7 @@ function New-EnvWindows {
     $installUuid = if ($null -ne $currentValues['INSTALLATION_UUID']) { $currentValues['INSTALLATION_UUID'] } else { "" }
     $appKey = if ($null -ne $currentValues['APPLICATION_KEY']) { $currentValues['APPLICATION_KEY'] } else { "" }
     if ([string]::IsNullOrWhiteSpace($installUuid) -and [string]::IsNullOrWhiteSpace($appKey)) {
-        Write-Host "  INSTALLATION_UUID / APPLICATION_KEY left empty → activate at /bootstrap after start" -ForegroundColor $script:Gray
+        Write-Host "  INSTALLATION_UUID / APPLICATION_KEY left empty -> activate at /bootstrap after start" -ForegroundColor $script:Gray
     } else {
         Write-Host "  Keeping pre-seeded INSTALLATION_UUID / APPLICATION_KEY from existing .env" -ForegroundColor $script:Gray
     }
@@ -538,7 +538,7 @@ function New-EnvWindows {
     } else {
         Write-Host "  Keeping existing POSTGRES_PASSWORD / JWT secrets" -ForegroundColor $script:Gray
         if ($weakPg -or $weakJwt) {
-            Write-WarningMsg "Existing .env still has weak template secrets — rotate manually only with a matching Postgres reset"
+            Write-WarningMsg "Existing .env still has weak template secrets - rotate manually only with a matching Postgres reset"
         }
     }
     Write-Divider $script:Cyan
@@ -554,14 +554,14 @@ function New-EnvWindows {
     Set-EnvValue -Path $script:EnvFile -Key "REGISTRY" -Value "ghcr.io/nickglezakos/ppl-meta-platform"
 
     # Always refresh to the current Windows LAN IP (Wi-Fi/Ethernet). Do not
-    # keep a stale Docker/WSL 172.x or Tailscale 100.x value — phones on the
+    # keep a stale Docker/WSL 172.x or Tailscale 100.x value - phones on the
     # physical LAN cannot use those, and DHCP can change the NIC address.
     $advertiseHost = Get-EyeNetAdvertiseHost
     if (-not [string]::IsNullOrWhiteSpace($advertiseHost)) {
         Set-EnvValue -Path $script:EnvFile -Key "ADVERTISE_HOST" -Value $advertiseHost
-        Write-Host "  ADVERTISE_HOST=$advertiseHost (Windows LAN — cameras / mobile)" -ForegroundColor $script:Green
+        Write-Host "  ADVERTISE_HOST=$advertiseHost (Windows LAN - cameras / mobile)" -ForegroundColor $script:Green
     } else {
-        Write-WarningMsg "ADVERTISE_HOST unset — set the Windows LAN IP in .env.windows for mobile onboarding"
+        Write-WarningMsg "ADVERTISE_HOST unset - set the Windows LAN IP in .env.windows for mobile onboarding"
     }
 
     # Ensure COMPOSE_PROJECT_NAME is set in env for this session
@@ -652,7 +652,7 @@ function Invoke-EnrollHostTailscale {
         Copy-Item $bundled $scriptPath -Force
     }
     if (-not (Test-Path $scriptPath)) {
-        Write-WarningMsg "enroll-host-tailscale.sh missing — Node appuser cannot tailscale up on the host socket"
+        Write-WarningMsg "enroll-host-tailscale.sh missing - Node appuser cannot tailscale up on the host socket"
         return
     }
     $drive = $script:InstallDir.Substring(0, 1).ToLower()
@@ -683,7 +683,7 @@ function Invoke-InstallDiscoveryReregisterTask {
         Copy-Item $reregBundled $rereg -Force
     }
     if (-not (Test-Path $scriptPath)) {
-        Write-WarningMsg "install-discovery-reregister-task.ps1 missing — discovery may empty after reboot"
+        Write-WarningMsg "install-discovery-reregister-task.ps1 missing - discovery may empty after reboot"
         return
     }
     try {
@@ -708,7 +708,7 @@ function Invoke-PublishLanPorts {
         Copy-Item $bundled $scriptPath -Force
     }
     if (-not (Test-Path $scriptPath)) {
-        Write-WarningMsg "publish-lan-ports.ps1 missing — LAN phones will not reach WSL NAT ports"
+        Write-WarningMsg "publish-lan-ports.ps1 missing - LAN phones will not reach WSL NAT ports"
         return
     }
     try {
@@ -738,7 +738,7 @@ function New-EyeNetSecret {
 
 function Set-EnvValue {
     param([string]$Path, [string]$Key, [string]$Value)
-    $lines = Get-Content $Path
+    $lines = @(Get-Content $Path)
     $updated = $false
     for ($i = 0; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -match "^$Key=") {
@@ -750,7 +750,10 @@ function Set-EnvValue {
     if (-not $updated) {
         $lines += "$Key=$Value"
     }
-    Set-Content -Path $Path -Value $lines
+    # LF-only so WSL bash can source .env.windows
+    $text = ($lines -join "`n") + "`n"
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText((Resolve-Path $Path), $text, $utf8)
 }
 
 function Get-ContainerHealthStatus {
@@ -781,20 +784,12 @@ function Invoke-ApplyCodebaseSchema {
 
     if ((Test-Path $packTar) -and -not (Test-Path (Join-Path $packDir "000_preflight_extensions_and_stub_reconcile.sql"))) {
         New-Item -ItemType Directory -Path $packDir -Force | Out-Null
-        if ($script:UseWslDocker) {
-            $wslSchema = ($schemaDir -replace '\\', '/') -replace '^([A-Za-z]):', { "/mnt/$($args[0].Groups[1].Value.ToLower())" }
-            # Fallback path conversion for C:\...
-            $drive = $schemaDir.Substring(0, 1).ToLower()
-            $rest = ($schemaDir.Substring(2) -replace '\\', '/')
-            $wslSchema = "/mnt/$drive$rest"
-            wsl -d $script:WslDistro --user root -- bash -lc "mkdir -p '$wslSchema/pack' && tar -xzf '$wslSchema/pack.tar.gz' -C '$wslSchema/pack'"
-        } else {
-            tar -xzf $packTar -C $packDir
-        }
+        tar -xzf $packTar -C $packDir
+        Get-ChildItem -Path $packDir -Force -Filter "._*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     }
 
     if (-not (Test-Path $applySh)) {
-        Write-ErrorMsg "schema/apply.sh missing under $script:InstallDir — re-run sync-schema-pack.sh and ship schema/ with the installer"
+        Write-ErrorMsg "schema/apply.sh missing under $script:InstallDir - re-run sync-schema-pack.sh and ship schema/ with the installer"
         return $false
     }
 
@@ -840,7 +835,7 @@ function Invoke-ReregisterDiscovery {
         Copy-Item $bundled $rereg -Force
     }
     if (-not (Test-Path $rereg)) {
-        Write-WarningMsg "reregister-discovery-services.sh missing — skip (mobile discovery may be incomplete)"
+        Write-WarningMsg "reregister-discovery-services.sh missing - skip (mobile discovery may be incomplete)"
         return $true
     }
 
@@ -854,7 +849,7 @@ function Invoke-ReregisterDiscovery {
         } else {
             $bash = Get-Command bash -ErrorAction SilentlyContinue
             if (-not $bash) {
-                Write-WarningMsg "bash required for discovery reregister — skip"
+                Write-WarningMsg "bash required for discovery reregister - skip"
                 return $true
             }
             Push-Location $script:InstallDir
@@ -900,7 +895,7 @@ function Invoke-EnsureMediaVolumePerms {
         $scriptPath = Join-Path $script:InstallDir "ensure-media-volume-perms.sh"
     }
     if (-not (Test-Path $scriptPath)) {
-        Write-WarningMsg "ensure-media-volume-perms.sh missing — Media uploads may hit Permission denied"
+        Write-WarningMsg "ensure-media-volume-perms.sh missing - Media uploads may hit Permission denied"
         return
     }
     try {
@@ -990,10 +985,10 @@ function Invoke-StartStack {
     Write-Host "    Discovery: http://${uiHost}:8006" -ForegroundColor $script:Gray
     Write-Host "    Bootstrap: http://${uiHost}:3000/bootstrap" -ForegroundColor $script:Gray
     if ($adv -and $adv -ne "localhost") {
-        Write-Host "    Cameras/apps on this Wi-Fi use http://${adv}:… (not 172.18.x)" -ForegroundColor $script:Gray
+        Write-Host "    Cameras/apps on this Wi-Fi use http://${adv}:... (not 172.18.x)" -ForegroundColor $script:Gray
     }
     if ($script:UseWslDocker) {
-        Write-Host "    VPN: Node enrolls via WSL Tailscale → https://vpn.eyenet-vision.com" -ForegroundColor $script:Gray
+        Write-Host "    VPN: Node enrolls via WSL Tailscale -> https://vpn.eyenet-vision.com" -ForegroundColor $script:Gray
         Write-Host "    Check: wsl -d $($script:WslDistro) -- tailscale status" -ForegroundColor $script:Gray
     }
     return $true
@@ -1016,9 +1011,9 @@ function Invoke-StopStack {
 function Show-Status {
     Write-Host ""
     Draw-Box -Title "Container Status"
-    Write-Host "  ║" -NoNewline -ForegroundColor $script:Cyan
+    Write-Host "  |" -NoNewline -ForegroundColor $script:Cyan
     Write-Host (" " * 60) -NoNewline
-    Write-Host "║" -ForegroundColor $script:Cyan
+    Write-Host "|" -ForegroundColor $script:Cyan
     try {
         $cwd = ConvertTo-WslPath (Get-Location).Path
         if ($script:UseWslDocker) {
@@ -1031,7 +1026,7 @@ function Show-Status {
             if ($trimmed.Length -gt 60) { $trimmed = $trimmed.Substring(0, 57) + "..." }
             $padLen = 60 - $trimmed.Length
             if ($padLen -lt 0) { $padLen = 0 }
-            Write-Host "  ║ " -NoNewline -ForegroundColor $script:Cyan
+            Write-Host "  | " -NoNewline -ForegroundColor $script:Cyan
             if ($trimmed -match "healthy|Up") {
                 Write-Host $trimmed -NoNewline -ForegroundColor $script:Green
             } elseif ($trimmed -match "Restarting|unhealthy") {
@@ -1044,10 +1039,10 @@ function Show-Status {
                 Write-Host $trimmed -NoNewline -ForegroundColor $script:White
             }
             Write-Host (" " * $padLen) -NoNewline
-            Write-Host " ║" -ForegroundColor $script:Cyan
+            Write-Host " |" -ForegroundColor $script:Cyan
         }
     } catch {
-        Write-Host "  ║ Could not retrieve container status" -ForegroundColor $script:Red
+        Write-Host "  | Could not retrieve container status" -ForegroundColor $script:Red
     }
     Draw-BoxFooter
 }
@@ -1281,14 +1276,14 @@ function Invoke-FullInstall {
     Invoke-InstallTray
 
     Draw-Box -Title "" -BoxColor $script:Green
-    Write-Host "  ║" -NoNewline -ForegroundColor $script:Green
+    Write-Host "  |" -NoNewline -ForegroundColor $script:Green
     Write-Host "    Platform is running!" -NoNewline -ForegroundColor $script:Green
     Write-Host (" " * 35) -NoNewline
-    Write-Host "║" -ForegroundColor $script:Green
-    Write-Host "  ║" -NoNewline -ForegroundColor $script:Green
+    Write-Host "|" -ForegroundColor $script:Green
+    Write-Host "  |" -NoNewline -ForegroundColor $script:Green
     Write-Host "    Open: http://localhost:3000" -NoNewline -ForegroundColor $script:White
     Write-Host (" " * 30) -NoNewline
-    Write-Host "║" -ForegroundColor $script:Green
+    Write-Host "|" -ForegroundColor $script:Green
     Draw-BoxFooter -BoxColor $script:Green
 
     return $true
@@ -1306,14 +1301,27 @@ function Invoke-InstallTray {
     $cfgDir = Join-Path $programData "EyeNet"
     $cfgPath = Join-Path $cfgDir "tray.json"
 
-    try {
-        New-Item -ItemType Directory -Path $trayDir -Force | Out-Null
-        New-Item -ItemType Directory -Path $cfgDir -Force | Out-Null
-        Write-Host "  Downloading $url" -ForegroundColor $script:Gray
-        Invoke-WebRequest -Uri $url -OutFile $trayExe -UseBasicParsing -ErrorAction Stop
-    } catch {
-        Write-WarningMsg "Tray download skipped (Release asset may not exist yet): $($_.Exception.Message)"
-        return
+    New-Item -ItemType Directory -Path $trayDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $cfgDir -Force | Out-Null
+
+    # Prefer tray shipped next to this script (wiki zip / full installer folder)
+    $bundledCandidates = @(
+        (Join-Path $PSScriptRoot "tray\$asset"),
+        (Join-Path $PSScriptRoot $asset),
+        (Join-Path $PSScriptRoot "tray\eyenet-tray.exe")
+    )
+    $bundled = $bundledCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($bundled) {
+        Copy-Item $bundled $trayExe -Force
+        Write-Host "  Tray from bundle: $bundled" -ForegroundColor $script:Gray
+    } else {
+        try {
+            Write-Host "  Downloading $url" -ForegroundColor $script:Gray
+            Invoke-WebRequest -Uri $url -OutFile $trayExe -UseBasicParsing -ErrorAction Stop
+        } catch {
+            Write-WarningMsg "Tray download skipped (Release asset may not exist yet): $($_.Exception.Message)"
+            return
+        }
     }
 
     $cfg = @{

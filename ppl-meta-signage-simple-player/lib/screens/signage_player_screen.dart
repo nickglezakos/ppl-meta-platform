@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +8,7 @@ import 'package:video_player/video_player.dart';
 import 'package:signage_simple_player/services/player_engine.dart';
 import 'package:signage_simple_player/services/discovery_service.dart';
 import 'package:signage_simple_player/services/config_service.dart';
+import 'package:signage_simple_player/services/desktop_window_service.dart';
 import 'package:signage_simple_player/widgets/player_controls.dart';
 import 'package:signage_simple_player/widgets/status_overlay.dart';
 import 'package:signage_simple_player/widgets/rich_message_overlay.dart';
@@ -17,7 +21,7 @@ import 'package:signage_simple_player/main.dart';
 /// - Development controls (can be hidden for production)
 /// - Status overlays (playlist, network, errors)
 /// - Responsive layout
-/// - Keyboard shortcuts
+/// - Keyboard shortcuts (F11 fullscreen, Esc quit on desktop)
 class SignagePlayerScreen extends StatefulWidget {
   final bool showControls;
   final bool showStatusOverlay;
@@ -319,10 +323,27 @@ class _SignagePlayerScreenState extends State<SignagePlayerScreen> {
       return const SizedBox.expand();
     }
 
-    return Center(
-      child: AspectRatio(
-        aspectRatio: controller.value.aspectRatio,
-        child: VideoPlayer(controller),
+    // Cover the window like Android, but stay inside ClipRect (no OverflowBox —
+    // that painted outside the Flutter window on Linux and felt like "overflow").
+    final size = controller.value.size;
+    final videoW = size.width > 0 ? size.width : 16.0;
+    final videoH = size.height > 0 ? size.height : 9.0;
+
+    return Positioned.fill(
+      child: ColoredBox(
+        color: Colors.black,
+        child: ClipRect(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            clipBehavior: Clip.hardEdge,
+            child: SizedBox(
+              width: videoW,
+              height: videoH,
+              child: VideoPlayer(controller),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -435,9 +456,25 @@ class _SignagePlayerScreenState extends State<SignagePlayerScreen> {
                 fontStyle: FontStyle.italic,
               ),
             ),
+          if (!kIsWeb &&
+              (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) ...[
+            const SizedBox(height: 24),
+            Text(
+              'F11 fullscreen · Esc quit · Space pause · C controls',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.35),
+                fontSize: 12,
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  bool get _isDesktop {
+    if (kIsWeb) return false;
+    return Platform.isLinux || Platform.isWindows || Platform.isMacOS;
   }
 
   KeyEventResult _handleKeyPress(KeyEvent event, SignagePlayerEngine playerEngine) {
@@ -462,9 +499,29 @@ class _SignagePlayerScreenState extends State<SignagePlayerScreen> {
         playerEngine.previous();
         return KeyEventResult.handled;
 
-      case LogicalKeyboardKey.escape:
-        playerEngine.stop();
+      case LogicalKeyboardKey.f11:
+        // Fire-and-forget; Focus onKeyEvent must stay sync.
+        DesktopWindowService.instance.toggleFullscreen();
         return KeyEventResult.handled;
+
+      case LogicalKeyboardKey.escape:
+        // Desktop kiosk: Esc quits the app (no window chrome to close).
+        // Mobile / embedded: Esc only stops playback.
+        if (_isDesktop) {
+          playerEngine.stop();
+          DesktopWindowService.instance.quit();
+        } else {
+          playerEngine.stop();
+        }
+        return KeyEventResult.handled;
+
+      case LogicalKeyboardKey.keyQ:
+        if (_isDesktop) {
+          playerEngine.stop();
+          DesktopWindowService.instance.quit();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
 
       case LogicalKeyboardKey.keyI:
         _toggleStatus();

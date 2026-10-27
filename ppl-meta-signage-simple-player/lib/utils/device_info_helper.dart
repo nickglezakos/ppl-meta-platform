@@ -30,6 +30,25 @@ class DeviceInfoHelper {
       } else if (Platform.isIOS) {
         final iosInfo = await _deviceInfo.iosInfo;
         _cachedDeviceId = 'ios-${iosInfo.identifierForVendor ?? const Uuid().v4()}';
+      } else if (Platform.isLinux) {
+        // Persist across container recreates so playlist assignment survives.
+        final dir = Directory(
+          '${Platform.environment['HOME'] ?? '/root'}/.local/share/signage_simple_player',
+        );
+        if (!dir.existsSync()) {
+          dir.createSync(recursive: true);
+        }
+        final file = File('${dir.path}/device_id');
+        if (file.existsSync()) {
+          final existing = file.readAsStringSync().trim();
+          _cachedDeviceId =
+              existing.isNotEmpty ? existing : 'linux-${const Uuid().v4()}';
+        } else {
+          _cachedDeviceId = 'linux-${const Uuid().v4()}';
+        }
+        if (!file.existsSync() || file.readAsStringSync().trim().isEmpty) {
+          file.writeAsStringSync(_cachedDeviceId!);
+        }
       } else {
         _cachedDeviceId = 'unknown-${const Uuid().v4()}';
       }

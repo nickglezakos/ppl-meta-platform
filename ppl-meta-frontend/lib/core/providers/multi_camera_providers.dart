@@ -150,9 +150,11 @@ class CameraActions {
   }
 
   /// Detect new cameras
-  Future<void> detectCameras() async {
-    await _ref.read(cameraListProvider.notifier).detectCameras();
-    
+  Future<void> detectCameras({bool includeArchived = false}) async {
+    await _ref.read(cameraListProvider.notifier).detectCameras(
+          includeArchived: includeArchived,
+        );
+
     // Invalidate all derived providers
     _ref.invalidate(allCamerasProvider);
     _ref.invalidate(usbCamerasProvider);

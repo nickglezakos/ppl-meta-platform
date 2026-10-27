@@ -33,7 +33,7 @@ health_monitor: HealthMonitor = None
 ws_client: PlatformWebSocketClient = None
 capture_thread: threading.Thread = None
 is_running = False
-logger = None
+logger = logging.getLogger(__name__)
 
 
 # Pydantic models for request/response
@@ -60,29 +60,67 @@ class ControlRequest(BaseModel):
 
 def handle_connect_command(params):
     """Handle connect command from platform."""
-    logger.info("📡 Received CONNECT command from platform")
+    log = logging.getLogger(__name__)
+    log.info("📡 Received CONNECT command from platform")
     # Edge camera is always ready (capture running), just acknowledge
     return True
 
 
+def _release_camera_hardware(log=None):
+    """Stop capture loop and release the device so camera LEDs turn off."""
+    global camera, is_running, capture_thread, health_monitor
+    log = log or logging.getLogger(__name__)
+
+    if is_running:
+        is_running = False
+        if capture_thread:
+            capture_thread.join(timeout=2)
+            capture_thread = None
+        log.info("✅ Capture loop stopped")
+
+    if camera is not None and (camera.is_running or camera.cap is not None):
+        camera.stop()
+        log.info("✅ Camera hardware released (LEDs should turn off)")
+        if health_monitor is not None:
+            health_monitor.set_camera_status("standby")
+
+
 def handle_disconnect_command(params):
     """Handle disconnect command from platform."""
-    logger.info("📡 Received DISCONNECT command from platform")
-    # Stop streaming if active
-    if streaming_client and streaming_client.is_streaming:
-        streaming_client.stop()
-        health_monitor.set_streaming_status("stopped")
-    return True
+    global streaming_client, health_monitor
+    log = logging.getLogger(__name__)
+    log.info("📡 Received DISCONNECT command from platform")
+    try:
+        # Stop upload + release hardware so frames and LEDs both stop
+        if streaming_client and streaming_client.is_streaming:
+            streaming_client.stop()
+        if health_monitor is not None:
+            health_monitor.set_streaming_status("stopped")
+        _release_camera_hardware(log)
+        log.info("✅ Disconnect handled — streaming and capture stopped")
+        return True
+    except Exception as e:
+        log.error(f"❌ Disconnect command failed: {e}")
+        return False
 
 
 def handle_start_stream_command(params):
     """Handle start-stream command from platform."""
-    global streaming_client, is_running, capture_thread
+    global streaming_client, is_running, capture_thread, camera, health_monitor
     import logging
     logger = logging.getLogger(__name__)
     logger.info("📡 Received START-STREAM command from platform")
     
     if streaming_client and not streaming_client.is_streaming:
+        # Open hardware only while streaming (keeps LEDs off when idle)
+        if camera is None or not camera.start():
+            logger.error("❌ Failed to open camera hardware")
+            if health_monitor is not None:
+                health_monitor.set_camera_status("error")
+            return False
+        if health_monitor is not None:
+            health_monitor.set_camera_status("active")
+
         # Start capture thread if not already running
         if not is_running:
             is_running = True
@@ -105,28 +143,20 @@ def handle_start_stream_command(params):
 
 def handle_stop_stream_command(params):
     """Handle stop-stream command from platform."""
-    global streaming_client, is_running, capture_thread
+    global streaming_client, health_monitor
     import logging
     logger = logging.getLogger(__name__)
     logger.info("📡 Received STOP-STREAM command from platform")
     
     if streaming_client and streaming_client.is_streaming:
-        # Stop streaming first
         streaming_client.stop()
-        health_monitor.set_streaming_status("stopped")
+        if health_monitor is not None:
+            health_monitor.set_streaming_status("stopped")
         logger.info("✅ Streaming stopped via platform command")
-        
-        # Stop capture loop to save resources
-        if is_running:
-            is_running = False
-            if capture_thread:
-                capture_thread.join(timeout=2)
-            logger.info("✅ Capture loop stopped")
-        
-        return True
-    else:
-        logger.info("⚠️ Streaming not active")
-        return True
+
+    # Always release hardware on stop — even if upload already halted
+    _release_camera_hardware(logger)
+    return True
 
 
 async def handle_set_config_command(params):
@@ -340,33 +370,24 @@ async def lifespan(app: FastAPI):
     ws_client.register_command_handler("restart", handle_restart_command)
     ws_client.register_command_handler("network-test", handle_network_test_command)
     
-    # Start camera
-    if camera.start():
-        logger.info("Camera started successfully")
-        health_monitor.set_camera_status("active")
-        
-        # Register with discovery service (ecosystem-wide registration)
-        logger.info("Registering edge camera with discovery service...")
-        if registration_client.register():
-            logger.info("✅ Edge camera registered with discovery service")
-            health_monitor.set_registration_status("registered")
-        else:
-            logger.warning("⚠️ Failed to register with discovery service (will retry)")
-            health_monitor.set_registration_status("failed")
-        
-        # DO NOT start capture thread yet - wait for start-stream command
-        # This prevents buffer warnings when camera is idle
-        
-        # Start WebSocket client for platform commands (runs in background)
-        asyncio.create_task(ws_client.start())
-        logger.info("✅ WebSocket client started - waiting for platform commands")
-        
-        logger.info("Edge camera ready - capture will start when user starts streaming")
+    # Do not open the camera device at boot — that keeps the LEDs on.
+    # Hardware is opened on start-stream and released on stop/disconnect.
+    health_monitor.set_camera_status("standby")
+
+    # Register with discovery service (ecosystem-wide registration)
+    logger.info("Registering edge camera with discovery service...")
+    if registration_client.register():
+        logger.info("✅ Edge camera registered with discovery service")
+        health_monitor.set_registration_status("registered")
     else:
-        logger.error("Failed to start camera")
-        health_monitor.set_camera_status("error")
-        health_monitor.record_error("Camera initialization failed")
-    
+        logger.warning("⚠️ Failed to register with discovery service (will retry)")
+        health_monitor.set_registration_status("failed")
+
+    # Start WebSocket client for platform commands (runs in background)
+    asyncio.create_task(ws_client.start())
+    logger.info("✅ WebSocket client started - waiting for platform commands")
+    logger.info("Edge camera ready - hardware opens when user starts streaming")
+
     logger.info("Edge camera application started")
     
     yield
@@ -847,7 +868,7 @@ async def disconnect():
 @app.post("/start-stream")
 async def start_stream():
     """Start streaming frames to platform."""
-    global streaming_client, health_monitor
+    global streaming_client, health_monitor, is_running, capture_thread
     logger = logging.getLogger(__name__)
     
     if streaming_client is None:
@@ -856,6 +877,13 @@ async def start_stream():
             status_code=503,
             content={"status": "error", "message": "Streaming client not initialized"}
         )
+
+    # Capture loop must run or the streaming client has nothing to send
+    if not is_running:
+        is_running = True
+        capture_thread = threading.Thread(target=capture_loop, daemon=True)
+        capture_thread.start()
+        logger.info("✅ Capture loop started")
     
     if streaming_client.is_streaming:
         logger.info("Streaming already active")

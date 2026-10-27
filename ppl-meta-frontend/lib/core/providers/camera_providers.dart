@@ -107,21 +107,25 @@ class CameraListNotifier extends StateNotifier<CameraListState> {
     }
   }
 
-  /// Detect new cameras
-  Future<void> detectCameras({bool saveToDb = true}) async {
+  /// Detect local cameras, save new ones, then reload the full saved list.
+  /// Reloading preserves RTSP, mobile, and edge cameras that are not in the
+  /// detect payload.
+  Future<void> detectCameras({
+    bool saveToDb = true,
+    bool includeArchived = false,
+  }) async {
     state = state.copyWith(isDetecting: true, error: null);
-    
+
     try {
-      final detectedCameras = await _cameraService.detectCameras(saveToDb: saveToDb);
-      state = state.copyWith(
-        cameras: detectedCameras,
-        isDetecting: false,
-      );
+      await _cameraService.detectCameras(saveToDb: saveToDb);
+      await loadCameras(includeArchived: includeArchived);
+      state = state.copyWith(isDetecting: false);
     } catch (e) {
       state = state.copyWith(
         isDetecting: false,
         error: e.toString(),
       );
+      rethrow;
     }
   }
 

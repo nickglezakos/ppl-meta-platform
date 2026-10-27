@@ -569,13 +569,39 @@ async def detect_cameras(
             saved_count = 0
             for cam_info in detected_cameras:
                 device_id = cam_info.get('device_id')
-                camera_type_str = cam_info.get('camera_type', 'USB')
-                camera_type = CameraType[camera_type_str] if camera_type_str in CameraType.__members__ else CameraType.USB
+                camera_type_raw = cam_info.get('camera_type', 'USB')
+                if isinstance(camera_type_raw, CameraType):
+                    camera_type = camera_type_raw
+                else:
+                    camera_type_str = str(camera_type_raw)
+                    camera_type = (
+                        CameraType[camera_type_str]
+                        if camera_type_str in CameraType.__members__
+                        else CameraType.USB
+                    )
                 
                 # Ensure device_id is valid UUID (converts legacy formats)
                 device_id = ensure_valid_uuid(device_id)
+                connection_string = cam_info.get('connection_string')
                 
                 existing = db.query(Camera).filter(Camera.device_id == device_id).first()
+                # USB probes mint a new UUID each scan; dedupe by local device path
+                # so refresh does not insert another row for the same /dev/videoN.
+                if not existing and camera_type == CameraType.USB and connection_string:
+                    existing = (
+                        db.query(Camera)
+                        .filter(
+                            Camera.camera_type == CameraType.USB,
+                            Camera.connection_string == connection_string,
+                        )
+                        .first()
+                    )
+                    if existing:
+                        logger.info(
+                            f"⏭️ Skipping USB insert for {connection_string} "
+                            f"— already saved as {existing.device_id}"
+                        )
+
                 if not existing:
                     # Generate unique auto-numbered name
                     index = cam_info.get('index')  # For USB cameras, use detection index
@@ -589,7 +615,7 @@ async def detect_cameras(
                         resolution_width=cam_info.get('resolution_width'),
                         resolution_height=cam_info.get('resolution_height'),
                         max_fps=cam_info.get('max_fps'),
-                        connection_string=cam_info.get('connection_string'),
+                        connection_string=connection_string,
                     )
                     db.add(new_camera)
                     saved_count += 1

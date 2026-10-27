@@ -117,9 +117,9 @@ class SyncService extends ChangeNotifier {
       }
 
       // Fetch playlist from backend (API returns single playlist or null)
-      final playlist = await _apiClient.syncPlaylist();
+      final rawPlaylist = await _apiClient.syncPlaylist();
       
-      if (playlist == null) {
+      if (rawPlaylist == null) {
         _logger.i('No playlist received from backend (device may not be assigned)');
         final result = SyncResult(
           success: true,
@@ -129,6 +129,10 @@ class SyncService extends ChangeNotifier {
         _completeSync(SyncStatus.success, result);
         return result;
       }
+
+      // Lab/media auth: /api/v1/media/stream/{id} often returns 403 for edge
+      // players; signage stream is the working playback URL.
+      final playlist = _rewriteSignageStreamUrls(rawPlaylist);
 
       _logger.d('Received playlist from backend: ${playlist.name} (${playlist.videos.length} videos)');
 
@@ -322,6 +326,30 @@ class SyncService extends ChangeNotifier {
     }
   }
 
+  /// Rewrite media stream URLs to the signage stream endpoint.
+  ///
+  /// Edge players frequently get 403 on `/api/v1/media/stream/{id}`; the
+  /// `/api/v1/signage/stream/{id}` path is the supported playback URL.
+  VideoList _rewriteSignageStreamUrls(VideoList playlist) {
+    final rewritten = playlist.videos.map((video) {
+      final url = video.url.replaceFirst(
+        '/api/v1/media/stream/',
+        '/api/v1/signage/stream/',
+      );
+      if (url == video.url) return video;
+      return VideoItem(
+        id: video.id,
+        videoId: video.videoId,
+        title: video.title,
+        url: url,
+        sequenceOrder: video.sequenceOrder,
+        durationMs: video.durationMs,
+        metadata: video.metadata,
+      );
+    }).toList(growable: false);
+    return playlist.copyWith(videos: rewritten);
+  }
+
   /// Determine if playlist should be updated
   bool _shouldUpdatePlaylist(VideoList existing, VideoList updated) {
     // Check sync version
@@ -358,6 +386,13 @@ class SyncService extends ChangeNotifier {
         existing.loopMode != updated.loopMode ||
         existing.isActive != updated.isActive) {
       return true;
+    }
+
+    // Detect stream URL path changes (e.g. media/stream -> signage/stream).
+    for (var i = 0; i < existing.videos.length; i++) {
+      if (existing.videos[i].url != updated.videos[i].url) {
+        return true;
+      }
     }
 
     return false;

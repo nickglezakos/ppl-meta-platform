@@ -184,7 +184,7 @@ class CameraDetectionService:
                         device_id = f"usb_camera_{index}"
                         camera_info = {
                             "device_id": device_id,
-                            "name": f"USB Camera {index}",
+                            "name": f"Connected Camera {index}",
                             "camera_type": CameraType.USB,
                             "status": CameraStatus.AVAILABLE,
                             "resolution_width": width,

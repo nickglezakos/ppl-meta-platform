@@ -16,6 +16,11 @@ dependencies:
   
   # Video playback
   video_player: ^2.9.2
+  # Linux desktop backend for video_player (RPi Docker / Flutter Linux).
+  # Official video_player has no linux implementation; without this,
+  # initialize() throws UnimplementedError and playlist playback sticks.
+  video_player_media_kit: ^1.0.5
+  media_kit_libs_linux: any
   
   # HTTP client for API communication
   http: ^1.2.2

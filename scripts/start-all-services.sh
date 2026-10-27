@@ -106,7 +106,7 @@ start_service \
 start_service \
     "ppl-meta-cameras" \
     "ppl-meta-cameras" \
-    "set -a && source .env && set +a && source $PROJECT_ROOT/scripts/load-presence-runtime-env.sh && PYTHONPATH=$PROJECT_ROOT/ppl-meta-cameras $PROJECT_ROOT/ppl-meta-cameras/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload" \
+    "set -a && source .env && set +a && source $PROJECT_ROOT/scripts/load-presence-runtime-env.sh && PYTHONPATH=$PROJECT_ROOT/ppl-meta-cameras python3.11 -m uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload" \
     "8005"
 
 # Start Bootcore Service

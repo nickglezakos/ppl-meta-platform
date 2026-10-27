@@ -1,7 +1,7 @@
 # Lab machines inventory
 
 **Status:** Active  
-**Last updated:** 2026-09-27  
+**Last updated:** 2026-10-20  
 **Operator console:** developer Mac (Apple Silicon) — Stage 1 git, docs, RDP/SSH into labs; **not** the default Stage 2 image builder  
 **Canonical release process:** [platform-release-cicd.md](./platform-release-cicd.md)  
 **Operator guide (for dummies + glossary):** [eyenet-cicd-operator-guide.md](./eyenet-cicd-operator-guide.md)
@@ -18,6 +18,7 @@ This document names and describes the physical lab hosts used for EyeNet install
 | **`lab-work-u24-mini-8g`** | Work LAN | Ubuntu 24.04 only | Mini PC, **8 GB RAM** | Stress / failure-mode lab: what happens **under** the 16 GB product threshold |
 | **`lab-work-dual-64g`** | Work LAN | Dual-boot Windows + Ubuntu 24.04 | Laptop, **64 GB RAM** | Primary work lab: full-product Windows/WSL **or** native Ubuntu; preferred Stage 2 builder |
 | **`lab-work-eyenet2`** | Work LAN | Ubuntu 24.04 only | Laptop / desktop, **~15 Gi RAM**, hostname `eyenet2` | Second work Ubuntu soak + install path (not preferred Stage 2) |
+| **`lab-work-win-eynetdell`** | Work LAN | Windows only | Dell PC, hostname `EYNETDELL` | Work Windows lab / soak; OpenSSH via reverse tunnel (see host details) |
 
 Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *“Stage 2 on lab-work-dual-64g”*).
 
@@ -34,6 +35,7 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 | `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Offline during 2.25.103 Stage 3. |
 | `lab-work-dual-64g` | `2.25.103` | **Yes** (cameras `662994600b1b…`, vision `fdc1f5f847c0…`, vmeta `3a684fa0cb23…`) | 2026-10-19 | Ubuntu `eyenet-demo` @ `192.168.9.13` / Tailscale `100.101.128.40`; schema verify all OK incl. `051` trigger + individuals instant columns; discovery 11/11. |
 | `lab-work-eyenet2` | `2.25.93` | **Yes** (fresh Ubuntu Stage 3) | 2026-09-29 | Hostname `eyenet2` @ `192.168.9.8` / Tailscale `100.116.59.7`; empty UUID/key → `/bootstrap`. Offline during 2.25.103 Stage 3. |
+| `lab-work-win-eynetdell` | `2.25.103` | **Yes** (cameras `662994600b1b…`, vision `fdc1f5f847c0…`, gateway `0b405f9c4bd7…`, frontend `62b45fcb4dd7…`) | 2026-10-20 | Fresh install from wiki zip `eyenet-windows-2.25.103.zip` (SHA `44cfe24f…`); WSL `eyenet` + Docker Engine CE; `C:\ppl-meta-platform`; `ADVERTISE_HOST=192.168.1.105`; schema verify all OK; discovery 11/11; tray running; UI `:3000` 200. SSH still reverse-tunnel only. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
 
@@ -61,12 +63,13 @@ Single Windows laptop on the home LAN (`192.168.1.0/24`). Reachable when the ope
 
 ### Work
 
-Professionally built local network with two labs on related office subnets:
+Professionally built local network with labs on related office subnets:
 
 - Ubuntu-only mini PC (undersized RAM on purpose) — currently on **`192.168.9.0/24`**
 - Dual-boot Windows / Ubuntu 24 laptop (oversized RAM) — Windows session historically on **`192.168.11.0/24`**
+- Windows-only Dell (`EYNETDELL` / Tailscale `eynetdell`) — work LAN + personal Tailscale `100.114.224.54`
 
-Same office building; Mac on work Wi‑Fi is typically `192.168.9.x`. Remote access: enroll the lab in personal Tailscale (or stay on work LAN), then SSH (Linux) or Windows App / RDP (Windows).
+Same office building; Mac on work Wi‑Fi is typically `192.168.9.x`. Remote access: enroll the lab in personal Tailscale (or stay on work LAN), then SSH (Linux) or Windows App / RDP (Windows). For `lab-work-win-eynetdell`, use the reverse-tunnel SSH path documented below (direct Tailscale → Windows host TCP is broken as of 2026-10-20).
 
 ---
 
@@ -183,6 +186,65 @@ ssh eyenet-server 'hostname; free -h | head -2; cat ~/ppl-meta-platform/VERSION;
 
 ---
 
+### `lab-work-win-eynetdell`
+
+| Field | Value |
+|---|---|
+| Site | Work LAN (`192.168.9.0/24`) |
+| OS | **Windows only** (account **`administrator`**; hostname `EYNETDELL`) |
+| Tailscale name | `eynetdell` (personal Tailscale / default account; MagicDNS `eynetdell.tailc2d351.ts.net`) |
+| LAN | Confirm with `ipconfig` after each boot (same office subnet as other work labs) |
+| Tailscale IP | **`100.114.224.54`** |
+| SSH user | `administrator` (`eynetdell\administrator`) |
+| Access (LAN) | Prefer RDP / local console until LAN SSH is verified; OpenSSH Server is installed and listens on `0.0.0.0:22` |
+| Access (remote) | **Reverse tunnel only** (see below). Do **not** expect `ssh administrator@100.114.224.54` to work yet. |
+| Stage 2 builder? | **No** (prefer `lab-work-dual-64g`) |
+| Product path | Windows installer + WSL2 distro **`eyenet`** (Docker Engine CE); wiki zip install path proven 2026-10-20 |
+| Install dir | `C:\ppl-meta-platform` (WSL: `/mnt/c/ppl-meta-platform`) |
+| LAN | `192.168.1.105` (product `ADVERTISE_HOST`; confirm with `ipconfig` after each boot) |
+| Notes | Tailscale mesh is healthy (ping + PeerAPI). Inbound **host** TCP (including OpenSSH `:22`) from other Tailscale nodes does **not** reach Windows services as of 2026-10-20 — even with Windows Firewall off and WeakHostReceive/Send enabled. Workaround: reverse SSH from this host to the operator Mac. Stage 3 from [wiki First install](https://wiki.eyenet-vision.com/owners-admins/) zip. |
+
+#### Prerequisites (remote SSH)
+
+1. **Personal Tailscale** up on the operator Mac **and** on `EYNETDELL` (`tailscale status` shows `eynetdell` online).
+2. **OpenSSH Server** installed and running on Windows:
+   ```powershell
+   Get-Service sshd   # must be Running
+   netstat -ano | findstr ":22"   # LISTENING on 0.0.0.0:22
+   ```
+3. **Operator Mac accepts SSH** (Remote Login / `sshd` listening on `:22`, reachable at the Mac’s Tailscale IP — currently `100.102.56.67`).
+4. **Reverse tunnel** started **on Windows** (keep this session alive):
+   ```powershell
+   ssh -N -R 2201:127.0.0.1:22 <mac-user>@100.102.56.67
+   ```
+5. Optional but recommended: key-based auth Mac↔Windows both directions so the tunnel and operator SSH are non-interactive.
+
+#### How to SSH (operator Mac)
+
+With the reverse tunnel up:
+
+```bash
+ssh -p 2201 administrator@127.0.0.1
+```
+
+Quick check:
+
+```bash
+ssh -p 2201 administrator@127.0.0.1 'hostname & whoami'
+# expect: EYNETDELL / eynetdell\administrator
+```
+
+#### Broken path (do not use until fixed)
+
+```bash
+ssh administrator@100.114.224.54   # times out — host TCP not delivered over Tailscale
+ssh administrator@eynetdell        # same
+```
+
+If the tunnel drops, re-run the `ssh -N -R 2201:…` command on Windows before retrying from the Mac.
+
+---
+
 ## Roles vs release stages
 
 | Lab ID | Stage 1 (git) | Stage 2 (GHCR build) | Install / soak test |
@@ -192,6 +254,7 @@ ssh eyenet-server 'hostname; free -h | head -2; cat ~/ppl-meta-platform/VERSION;
 | `lab-work-u24-mini-8g` | No | **No** | Ubuntu under-threshold |
 | `lab-work-dual-64g` | Rarely | **Preferred** | Full Windows **or** full Ubuntu (after reboot) |
 | `lab-work-eyenet2` | No | **No** | Second Ubuntu full-product soak |
+| `lab-work-win-eynetdell` | No | **No** | Work Windows soak (SSH via reverse tunnel) |
 
 Agent wording examples:
 
@@ -201,6 +264,7 @@ Agent wording examples:
 - *“Reproduce under-RAM behavior on lab-work-u24-mini-8g.”*
 - *“SSH eyenet-server / lab-work-u24-mini-8g from work LAN.”*
 - *“Upgrade / soak lab-work-eyenet2 (eyenet2).”*
+- *“SSH lab-work-win-eynetdell via reverse tunnel (`ssh -p 2201 administrator@127.0.0.1`).”*
 
 ---
 
@@ -215,12 +279,14 @@ Agent wording examples:
 | `lab-work-dual-64g` (Windows booted) | Windows App → work LAN IP / `ssh windows-lab` if `192.168.11.29` is up |
 | `lab-work-dual-64g` (Ubuntu booted) | `ssh eyenet@192.168.9.13` (hostname `eyenet-demo`; confirm IP after each boot) |
 | `lab-work-eyenet2` | `ssh eyenet@192.168.9.8` (hostname `eyenet2`) |
+| `lab-work-win-eynetdell` | Local console / RDP; OpenSSH on `:22` (verify LAN path separately) |
 
 ### Access (remote)
 
 1. Bring up **personal Tailscale** (default account — not EyeNet product VPN) on the Mac.  
 2. Confirm the lab appears: `tailscale status` / `tailscale ping <lab>`.  
-3. Connect with the **same tool as LAN**, but use the **mesh IP** (`100.x`), not `192.168.x.x`.
+3. Connect with the **same tool as LAN**, but use the **mesh IP** (`100.x`), not `192.168.x.x`.  
+   **Exception — `lab-work-win-eynetdell`:** after Tailscale is up, start the reverse tunnel on Windows, then SSH to `127.0.0.1:2201` (see host details). Mesh IP alone is not enough for SSH today.
 
 Known remote SSH aliases today:
 
@@ -230,6 +296,7 @@ Known remote SSH aliases today:
 | `lab-work-u24-mini-8g` | *(none yet — enroll Tailscale, then add Host)* | — |
 | `lab-work-dual-64g` | *(optional Host)* | `100.101.128.40` (`eyenet-demo`) |
 | `lab-work-eyenet2` | *(optional Host)* | `100.116.59.7` (`eyenet2`) |
+| `lab-work-win-eynetdell` | *(none — use reverse tunnel)* | `100.114.224.54` (`eynetdell`) → then `ssh -p 2201 administrator@127.0.0.1` |
 
 For **Stage 2 builds**, do not leave a single SSH open for hours: use **tmux** on the builder, or **one image per SSH** (`scripts/stage2_one.sh`) as in [platform-release-cicd.md](./platform-release-cicd.md).
 
@@ -251,6 +318,7 @@ Update this table as you stabilize addresses (do not put passwords here):
 | `lab-work-u24-mini-8g` | `eyenet-server` | `192.168.9.14` | *(logged out — enroll for remote)* | `eyenet` | `ssh eyenet-server`; 8 GB soak; not Stage 2 |
 | `lab-work-dual-64g` | `eyenet-demo` (Ubuntu) | Ubuntu `192.168.9.13` (confirm after boot; hist. `10.171.48.228` / Win `192.168.11.29`) | `100.101.128.40` | Ubuntu: `eyenet` / Win: `user` | Preferred Stage 2; product `ADVERTISE_HOST` = current LAN IP |
 | `lab-work-eyenet2` | `eyenet2` | `192.168.9.8` | `100.116.59.7` | `eyenet` | `ssh eyenet@100.116.59.7`; product `ADVERTISE_HOST=192.168.9.8` |
+| `lab-work-win-eynetdell` | `EYNETDELL` | `192.168.1.105` | `100.114.224.54` (`eynetdell`) | `administrator` | Product `ADVERTISE_HOST=192.168.1.105`. On Windows: `ssh -N -R 2201:127.0.0.1:22 <mac-user>@<mac-tailscale-ip>`; on Mac: `ssh -p 2201 administrator@127.0.0.1`. Direct mesh SSH times out. |
 
 Historical / other boxes (not in the named set above) may still appear in older notes (e.g. `kvalvis-pc` at older Tailscale `100.64.0.23`). Prefer the lab IDs in this document going forward; migrate aliases here when you rename hosts.
 

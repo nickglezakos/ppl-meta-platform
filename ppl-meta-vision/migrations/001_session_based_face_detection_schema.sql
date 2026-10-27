@@ -65,13 +65,17 @@ COMMENT ON COLUMN media_processing_status.processing_method IS 'Detection method
 -- ================================================================
 -- 3. ADD session_uuid COLUMN TO EXISTING face_detections TABLE
 -- ================================================================
--- Check if column already exists before adding
+-- Add session_uuid only when face_detections already exists (created by app or later pack files).
 DO $$ 
 BEGIN
-    IF NOT EXISTS (
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'face_detections'
+    ) AND NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'face_detections' 
-        AND column_name = 'session_uuid'
+        WHERE table_schema = 'public'
+          AND table_name = 'face_detections' 
+          AND column_name = 'session_uuid'
     ) THEN
         ALTER TABLE face_detections ADD COLUMN session_uuid VARCHAR(36);
         COMMENT ON COLUMN face_detections.session_uuid IS 'Reference to face detection session for complete traceability';
@@ -81,11 +85,13 @@ END $$;
 -- ================================================================
 -- 4. CREATE FOREIGN KEY CONSTRAINTS
 -- ================================================================
--- Add foreign key constraint for session relationship
+-- Add foreign key constraint for session relationship (only if face_detections exists)
 DO $$
 BEGIN
-    -- Add FK constraint if it doesn't exist
-    IF NOT EXISTS (
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'face_detections'
+    ) AND NOT EXISTS (
         SELECT 1 FROM information_schema.table_constraints 
         WHERE constraint_name = 'fk_face_detections_session_uuid'
         AND table_name = 'face_detections'
@@ -132,13 +138,19 @@ CREATE INDEX IF NOT EXISTS idx_face_detection_sessions_type
 CREATE INDEX IF NOT EXISTS idx_face_detection_sessions_started_at 
     ON face_detection_sessions(started_at);
 
--- Index for face_detections session lookup
-CREATE INDEX IF NOT EXISTS idx_face_detections_session_uuid 
-    ON face_detections(session_uuid);
-
--- Composite index for efficient session face queries
-CREATE INDEX IF NOT EXISTS idx_face_detections_session_frame 
-    ON face_detections(session_uuid, frame_number);
+-- Indexes on face_detections only when the table exists (app may create it later)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'face_detections'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS idx_face_detections_session_uuid
+            ON face_detections(session_uuid);
+        CREATE INDEX IF NOT EXISTS idx_face_detections_session_frame
+            ON face_detections(session_uuid, frame_number);
+    END IF;
+END $$;
 
 -- Indexes for media_processing_status table
 CREATE INDEX IF NOT EXISTS idx_media_processing_status_processed 

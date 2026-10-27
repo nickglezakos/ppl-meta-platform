@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,10 +9,13 @@ import 'package:provider/provider.dart';
 import 'package:signage_simple_player/screens/signage_player_screen.dart';
 import 'package:signage_simple_player/services/player_engine.dart';
 import 'package:signage_simple_player/services/discovery_service.dart';
+import 'package:signage_simple_player/services/desktop_window_service.dart';
 import 'package:signage_simple_player/services/history_tracking_service.dart';
+import 'package:signage_simple_player/services/rich_message_overlay_service.dart';
 import 'package:signage_simple_player/api/signage_api_client.dart';
 import 'package:signage_simple_player/models/playback_models.dart';
 import 'package:signage_simple_player/models/video_list.dart';
+import 'package:logger/logger.dart';
 
 import 'package:signage_simple_player/widgets/player_controls.dart';
 import 'package:signage_simple_player/widgets/status_overlay.dart';
@@ -28,12 +33,21 @@ void main() {
   late MockSignageDiscoveryService mockDiscoveryService;
   late MockHistoryTrackingService mockHistoryTracker;
   late MockSignageApiClient mockApiClient;
+  late RichMessageOverlayService richMessageOverlay;
 
   setUp(() {
     mockPlayerEngine = MockSignagePlayerEngine();
     mockDiscoveryService = MockSignageDiscoveryService();
     mockHistoryTracker = MockHistoryTrackingService();
     mockApiClient = MockSignageApiClient();
+    richMessageOverlay = RichMessageOverlayService(
+      logger: Logger(level: Level.nothing),
+    );
+
+    // Desktop Esc/F11 must not kill the test process or call real wmctrl.
+    DesktopWindowService.exitProcessOnQuit = false;
+    DesktopWindowService.enableProcessCalls = false;
+    DesktopWindowService.instance.resetForTest();
 
     // Default mock behaviors
     when(mockPlayerEngine.isPlaying).thenReturn(false);
@@ -48,6 +62,11 @@ void main() {
     when(mockPlayerEngine.currentPosition).thenReturn(Duration.zero);
     when(mockPlayerEngine.currentDuration).thenReturn(Duration.zero);
     when(mockPlayerEngine.progressPercent).thenReturn(0.0);
+    when(mockPlayerEngine.play()).thenAnswer((_) async => true);
+    when(mockPlayerEngine.pause()).thenAnswer((_) async {});
+    when(mockPlayerEngine.stop()).thenAnswer((_) async {});
+    when(mockPlayerEngine.next()).thenAnswer((_) async => true);
+    when(mockPlayerEngine.previous()).thenAnswer((_) async => true);
 
     when(mockDiscoveryService.isRegistered).thenReturn(false);
     when(mockHistoryTracker.isTracking).thenReturn(false);
@@ -70,6 +89,9 @@ void main() {
         ),
         Provider<SignageApiClient>.value(
           value: mockApiClient,
+        ),
+        ChangeNotifierProvider<RichMessageOverlayService>.value(
+          value: richMessageOverlay,
         ),
       ],
       child: MaterialApp(
@@ -265,8 +287,12 @@ void main() {
   });
 
   group('Keyboard Shortcuts', () {
+    // Avoid the 10s status-overlay auto-hide timer pending after dispose.
+    Widget keyboardHarness() =>
+        createTestWidget(showControls: false, showStatusOverlay: false);
+
     testWidgets('space key toggles play/pause', (tester) async {
-      await tester.pumpWidget(createTestWidget());
+      await tester.pumpWidget(keyboardHarness());
 
       // Simulate space key press
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
@@ -276,7 +302,7 @@ void main() {
     });
 
     testWidgets('right arrow key plays next video', (tester) async {
-      await tester.pumpWidget(createTestWidget());
+      await tester.pumpWidget(keyboardHarness());
 
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pump();
@@ -285,7 +311,7 @@ void main() {
     });
 
     testWidgets('left arrow key plays previous video', (tester) async {
-      await tester.pumpWidget(createTestWidget());
+      await tester.pumpWidget(keyboardHarness());
 
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pump();
@@ -293,13 +319,40 @@ void main() {
       verify(mockPlayerEngine.previous()).called(1);
     });
 
-    testWidgets('escape key stops playback', (tester) async {
-      await tester.pumpWidget(createTestWidget());
+    testWidgets('escape key stops playback and quits on desktop', (tester) async {
+      await tester.pumpWidget(keyboardHarness());
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump();
 
       verify(mockPlayerEngine.stop()).called(1);
+      // flutter test runs on the host OS; on Linux/macOS/Windows Esc quits.
+      if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
+        expect(DesktopWindowService.instance.quitCallCount, 1);
+      }
+    });
+
+    testWidgets('F11 toggles fullscreen on desktop', (tester) async {
+      await tester.pumpWidget(keyboardHarness());
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.f11);
+      await tester.pump();
+
+      if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
+        expect(DesktopWindowService.instance.toggleFullscreenCallCount, 1);
+      }
+    });
+
+    testWidgets('Q quits on desktop', (tester) async {
+      await tester.pumpWidget(keyboardHarness());
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
+      await tester.pump();
+
+      if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
+        verify(mockPlayerEngine.stop()).called(1);
+        expect(DesktopWindowService.instance.quitCallCount, 1);
+      }
     });
   });
 }

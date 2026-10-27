@@ -12,7 +12,7 @@ cat >"$DESKTOP" <<EOF
 Type=Application
 Name=EyeNet Tray
 Comment=EyeNet platform status and control
-Exec=${TRAY_BIN} ${CONFIG}
+Exec="${TRAY_BIN}" "${CONFIG}"
 Icon=applications-system
 Terminal=false
 X-GNOME-Autostart-enabled=true

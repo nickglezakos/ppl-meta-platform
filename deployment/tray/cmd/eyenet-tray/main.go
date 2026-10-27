@@ -52,10 +52,15 @@ type trayApp struct {
 	ctl *ctl.Controller
 	cfg *config.Config
 
-	mu       sync.Mutex
-	busy     bool
-	mStatus  *systray.MenuItem
-	mOpen    *systray.MenuItem
+	mu          sync.Mutex
+	busy        bool
+	statusLabel string
+	identity    ctl.Identity
+	mStatus    *systray.MenuItem
+	mHost      *systray.MenuItem
+	mAdvertise *systray.MenuItem
+	mVPN       *systray.MenuItem
+	mOpen      *systray.MenuItem
 	mStart   *systray.MenuItem
 	mStop    *systray.MenuItem
 	mRestart *systray.MenuItem
@@ -77,6 +82,13 @@ func (a *trayApp) onReady() {
 
 	a.mStatus = systray.AddMenuItem("Status: …", "Platform status")
 	a.mStatus.Disable()
+	a.mHost = systray.AddMenuItem("Host: …", "This computer")
+	a.mHost.Disable()
+	a.mAdvertise = systray.AddMenuItem("Advertise: …", "Address phones and cameras use")
+	a.mAdvertise.Disable()
+	a.mVPN = systray.AddMenuItem("VPN: …", "EyeNet VPN address")
+	a.mVPN.Disable()
+	a.mVPN.Hide()
 	systray.AddSeparator()
 	a.mOpen = systray.AddMenuItem("Open UI", "Open EyeNet web UI")
 	a.mStart = systray.AddMenuItem("Start platform", "docker compose up -d")
@@ -154,21 +166,26 @@ func (a *trayApp) refreshStatus() {
 	if busy {
 		return
 	}
+	idCtx, idCancel := context.WithTimeout(context.Background(), 8*time.Second)
+	id := a.ctl.Identity(idCtx)
+	idCancel()
+	a.applyIdentity(id)
+
 	if a.cfg.InstallDir == "" {
-		a.applyStatus(ctl.StatusInactive, "not configured")
+		a.applyStatus(ctl.StatusInactive)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	st, _, err := a.ctl.Status(ctx)
 	if err != nil {
-		a.applyStatus(ctl.StatusInactive, "unreachable")
+		a.applyStatus(ctl.StatusInactive)
 		return
 	}
-	a.applyStatus(st, string(st))
+	a.applyStatus(st)
 }
 
-func (a *trayApp) applyStatus(st ctl.Status, _ string) {
+func (a *trayApp) applyStatus(st ctl.Status) {
 	label := "Inactive"
 	icon := a.iconInactive
 	switch st {
@@ -180,8 +197,54 @@ func (a *trayApp) applyStatus(st ctl.Status, _ string) {
 		icon = a.iconDegraded
 	}
 	systray.SetIcon(icon)
-	systray.SetTooltip(fmt.Sprintf("EyeNet %s — %s", a.cfg.Version, label))
-	a.mStatus.SetTitle(fmt.Sprintf("Status: %s", label))
+	a.mu.Lock()
+	a.statusLabel = label
+	tip := a.tooltipLocked()
+	a.mu.Unlock()
+	systray.SetTooltip(tip)
+	a.mStatus.SetTitle("Status: " + label)
+}
+
+func (a *trayApp) applyIdentity(id ctl.Identity) {
+	host := id.Host
+	if host == "" {
+		host = "—"
+	}
+	advertise := id.Advertise
+	if advertise == "" {
+		advertise = "—"
+	}
+	a.mHost.SetTitle("Host: " + host)
+	a.mAdvertise.SetTitle("Advertise: " + advertise)
+	if id.VPN == "" {
+		a.mVPN.Hide()
+	} else {
+		a.mVPN.SetTitle("VPN: " + id.VPN)
+		a.mVPN.Show()
+	}
+	a.mu.Lock()
+	a.identity = id
+	tip := a.tooltipLocked()
+	a.mu.Unlock()
+	systray.SetTooltip(tip)
+}
+
+func (a *trayApp) tooltipLocked() string {
+	label := a.statusLabel
+	if label == "" {
+		label = "starting…"
+	}
+	tip := fmt.Sprintf("EyeNet %s — %s", a.cfg.Version, label)
+	if a.identity.Host != "" {
+		tip += " — " + a.identity.Host
+	}
+	if a.identity.Advertise != "" {
+		tip += " — " + a.identity.Advertise
+	}
+	if a.identity.VPN != "" {
+		tip += " — VPN " + a.identity.VPN
+	}
+	return tip
 }
 
 func mustAsset(base string) []byte {
@@ -189,7 +252,7 @@ func mustAsset(base string) []byte {
 	if runtime.GOOS == "windows" {
 		ext = ".ico"
 	}
-	// embed path is relative to this file: ../../assets → stored as assets/...
+	// embed path is relative to this file (assets/icon-*.ico on Windows, assets/icon-*.png on Linux).
 	name := "assets/" + base + ext
 	b, err := assetFS.ReadFile(name)
 	if err == nil && len(b) > 0 {

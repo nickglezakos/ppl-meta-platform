@@ -140,15 +140,19 @@ class EmbeddingCache:
         threshold: float,
         top_k: int = 1,
         exclude_uuids: Optional[set] = None,
+        group_ids: Optional[List[str]] = None,
     ) -> List[Dict]:
         """
-        Compare a single source embedding against all cached group members.
+        Compare a single source embedding against cached group members.
 
         Args:
             source_embedding: Normalized 512-dim embedding of the source MVR
             threshold: Minimum cosine similarity (0-1)
             top_k: Max matches per group
             exclude_uuids: MVR UUIDs to skip
+            group_ids: If set, only compare against these group ids (trigger scope).
+                Empty list means no groups → no matches. None keeps legacy
+                all-cached-groups behavior for callers that omit it.
 
         Returns:
             List of match dicts sorted by similarity descending.
@@ -157,8 +161,11 @@ class EmbeddingCache:
             source_mvr_uuid (None, filled by caller), source_camera_id (None).
         """
         matches = []
+        allowed = set(group_ids) if group_ids is not None else None
 
         for group in self._groups.values():
+            if allowed is not None and group.group_id not in allowed:
+                continue
             if group.embedding_matrix is None or len(group.members) == 0:
                 continue
 
@@ -512,9 +519,19 @@ class VProfileMatchWorker:
         source_mvr_uuids = detection_data.get('source_mvr_uuids', [])
         source_camera_id = detection_data.get('camera_id')
 
+        group_ids_raw = getattr(trigger, 'ppl_match_group_ids', '[]')
+        try:
+            group_ids_list = json.loads(group_ids_raw) if isinstance(group_ids_raw, str) else (group_ids_raw or [])
+        except (json.JSONDecodeError, TypeError):
+            group_ids_list = []
+        if not isinstance(group_ids_list, list):
+            group_ids_list = []
+
         if not source_mvr_uuids:
             return False, "No source MVR UUIDs in detection data", None
 
+        # Scope matches to this trigger's groups only. Comparing against the full
+        # shared cache made Recognize Philip fire on Angelo faces (and vice versa).
         all_matches = []
         matched_members = set()
 
@@ -524,12 +541,18 @@ class VProfileMatchWorker:
                 logger.info("  🔬 Source uuid %s not in embedding map (keys=%s)", source_uuid[:12], list(source_embedding_map.keys())[:3] if source_embedding_map else [])
                 continue
 
-            logger.info("  🔬 source_shape=%s, cache_groups=%d", source_emb.shape, self.cache.group_count)
+            logger.info(
+                "  🔬 source_shape=%s, cache_groups=%d, trigger_groups=%d",
+                source_emb.shape,
+                self.cache.group_count,
+                len(group_ids_list),
+            )
             matches = self.cache.compare_source_against_all_groups(
                 source_embedding=source_emb,
                 threshold=threshold,
                 top_k=top_k,
                 exclude_uuids=matched_members,
+                group_ids=group_ids_list,
             )
 
             if matches:
@@ -547,12 +570,6 @@ class VProfileMatchWorker:
             all_matches.extend(matches)
 
         all_matches.sort(key=lambda m: m['similarity_score'], reverse=True)
-
-        group_ids_raw = getattr(trigger, 'ppl_match_group_ids', '[]')
-        try:
-            group_ids_list = json.loads(group_ids_raw) if isinstance(group_ids_raw, str) else (group_ids_raw or [])
-        except (json.JSONDecodeError, TypeError):
-            group_ids_list = []
 
         if negate:
             if len(all_matches) == 0:

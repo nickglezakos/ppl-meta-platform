@@ -45,10 +45,15 @@ class SignagePlayerEngine extends ChangeNotifier {
         _configService = configService;
 
   /// Resolve a playable URL, rewriting LAN hosts to mesh when remote (issue #8).
+  /// Also maps media/stream -> signage/stream (media endpoint often 403s on edge).
   String _resolvePlayUrl(String url) {
+    final signageUrl = url.replaceFirst(
+      '/api/v1/media/stream/',
+      '/api/v1/signage/stream/',
+    );
     final config = _configService;
-    if (config == null) return url;
-    return config.rewriteMediaUrlForReachability(url);
+    if (config == null) return signageUrl;
+    return config.rewriteMediaUrlForReachability(signageUrl);
   }
 
   // Getters
@@ -416,6 +421,12 @@ class SignagePlayerEngine extends ChangeNotifier {
 
   /// Pre-load next video for seamless transition
   Future<void> _preloadNextVideo() async {
+    // Linux/media_kit: dual full-res S/W textures (esp. 4K portrait) segfault
+    // during dispose/create races. Skip preload when disabled.
+    if (preloadCount <= 0) {
+      return;
+    }
+
     try {
       final nextIndex = _getNextIndex();
       if (nextIndex == -1 || _currentPlaylist == null) {

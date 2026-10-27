@@ -122,6 +122,12 @@ class AdvancedRateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Apply rate limiting to requests."""
+        # Never rate-limit CORS preflight — a 429 on OPTIONS fails the browser
+        # access-control check ("preflight does not have HTTP ok status") even
+        # when the subsequent GET would be allowed.
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         if not self.redis_pool:
             await self.init_redis()
 
@@ -152,6 +158,9 @@ class AdvancedRateLimitMiddleware(BaseHTTPMiddleware):
                 limit=limit,
                 window=window,
             )
+            # Echo Origin (not *) so credentialed Flutter web clients on :3000
+            # can still read the 429 body; CORSMiddleware never sees this early return.
+            origin = request.headers.get("origin") or "*"
             return JSONResponse(
                 status_code=429,
                 content={
@@ -162,7 +171,9 @@ class AdvancedRateLimitMiddleware(BaseHTTPMiddleware):
                 },
                 headers={
                     "Retry-After": str(window),
-                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Credentials": "true",
+                    "Vary": "Origin",
                 },
             )
 

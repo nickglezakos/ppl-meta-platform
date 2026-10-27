@@ -138,13 +138,14 @@ class AlertNotificationService {
     _pollTimer = null;
   }
   
-  /// Fetch all pages of audit logs newer than the cursor, collecting them into
-  /// a single list to avoid pagination gaps (where page 2+ logs are skipped).
-  Future<List<dynamic>> _fetchAllLogs({int pageSize = 50}) async {
+  /// Fetch pages of audit logs newer than the cursor.
+  /// Caps page walk so a missing/stale cursor cannot hammer the gateway
+  /// (previously walked every historical page every 2s → 429 + CORS failures).
+  Future<List<dynamic>> _fetchAllLogs({int pageSize = 50, int maxPages = 5}) async {
     final allLogs = <dynamic>[];
     int page = 1;
 
-    while (true) {
+    while (page <= maxPages) {
       final response = await _client.fetchLogs(
         type: 'audit_log',
         pageSize: pageSize,
@@ -230,12 +231,21 @@ class AlertNotificationService {
 
       print('🔍 AlertNotificationService: Polling for alerts...');
 
-      // Fetch ALL pages so no log is skipped due to pagination
+      // No cursor yet: start from "now" instead of replaying the full audit
+      // history (thousands of pages → gateway 429).
+      if (_lastSeenTimestamp == null) {
+        _lastSeenTimestamp = DateTime.now().toUtc();
+        await _persistLastSeenTimestamp(_lastSeenTimestamp!);
+        _isFirstPoll = false;
+        print('🔕 AlertNotificationService: No cursor — starting from now ($_lastSeenTimestamp)');
+        return;
+      }
+
       final allLogs = await _fetchAllLogs(pageSize: 50);
 
-      print('📋 AlertNotificationService: Fetched ${allLogs.length} audit logs across all pages (since: ${_lastSeenTimestamp ?? 'beginning'})');
+      print('📋 AlertNotificationService: Fetched ${allLogs.length} audit logs across pages (since: $_lastSeenTimestamp)');
 
-      // On first poll, just mark all fetched logs as seen without showing them
+      // On first poll after a persisted cursor, mark batch as seen without showing
       if (_isFirstPoll) {
         for (final log in allLogs) {
           if (log.payload != null && log.payload!['message'] != null) {

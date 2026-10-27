@@ -1,10 +1,11 @@
 ﻿# EyeNet WSL Runtime Bootstrap
 # Creates/configures the `eyenet` WSL2 distro with Docker Engine CE + Tailscale
 # (open-source client). Does NOT require Docker Desktop.
-# Version: 2.25.84
+# Version: 2.25.104
 
 param(
     [string]$DistroName = "eyenet",
+    # Prefer Ubuntu-24.04 when listed; many hosts only expose the generic "Ubuntu" name.
     [string]$UbuntuVersion = "Ubuntu-24.04",
     [switch]$SkipTailscale
 )
@@ -55,7 +56,6 @@ memory=$($script:TargetWslMemoryGb)GB
 processors=$($script:TargetWslProcessors)
 swap=2GB
 localhostForwarding=true
-networkingMode=mirrored
 "@
     $needsWrite = $true
     if (Test-Path $wslConfigPath) {
@@ -91,15 +91,63 @@ function Get-WslDistros {
     return @($raw | ForEach-Object { ($_ -replace "`0", "").Trim() } | Where-Object { $_ })
 }
 
+function Get-OnlineUbuntuName {
+    $raw = wsl --list --online 2>$null
+    if (-not $raw) { return $null }
+    $names = @()
+    foreach ($line in $raw) {
+        $clean = ($line -replace "`0", "").Trim()
+        if ($clean -match '^(Ubuntu(?:-\d+\.\d+)?)\s+') {
+            $names += $Matches[1]
+        }
+    }
+    foreach ($prefer in @($UbuntuVersion, "Ubuntu-24.04", "Ubuntu-22.04", "Ubuntu")) {
+        if ($names -contains $prefer) { return $prefer }
+    }
+    return ($names | Select-Object -First 1)
+}
+
+function Complete-UbuntuFirstRun {
+    # Store package can be present while WSL still has no registered distro until first launch.
+    $ubuntuCmd = Get-Command ubuntu.exe -ErrorAction SilentlyContinue
+    if (-not $ubuntuCmd) { $ubuntuCmd = Get-Command ubuntu -ErrorAction SilentlyContinue }
+    if (-not $ubuntuCmd) { return $false }
+    Write-Info "Completing Ubuntu first-run registration (non-interactive --root)..."
+    & $ubuntuCmd.Source install --root
+    Start-Sleep -Seconds 2
+    $distros = Get-WslDistros
+    return [bool]($distros | Where-Object { $_ -like "Ubuntu*" })
+}
+
 function Ensure-UbuntuBase {
     $distros = Get-WslDistros
     if ($distros -contains $UbuntuVersion -or ($distros | Where-Object { $_ -like "Ubuntu*" })) {
         Write-Ok "Ubuntu base present"
         return
     }
-    Write-Info "Installing $UbuntuVersion from Microsoft Store / wsl --install..."
-    wsl --install -d $UbuntuVersion --no-launch
-    Write-Warn "If Ubuntu setup prompts for a UNIX username, complete that once, then re-run this script."
+    # AppX may already be installed without a registered distro
+    if (Complete-UbuntuFirstRun) {
+        Write-Ok "Ubuntu base registered"
+        return
+    }
+    $toInstall = Get-OnlineUbuntuName
+    if (-not $toInstall) { $toInstall = $UbuntuVersion }
+    Write-Info "Installing $toInstall from Microsoft Store / wsl --install..."
+    wsl --install -d $toInstall --no-launch
+    if ($LASTEXITCODE -ne 0) {
+        throw "wsl --install -d $toInstall failed (exit $LASTEXITCODE). Run: wsl --list --online"
+    }
+    Start-Sleep -Seconds 3
+    $distros = Get-WslDistros
+    if ($distros -contains $toInstall -or ($distros | Where-Object { $_ -like "Ubuntu*" })) {
+        Write-Ok "Ubuntu base present after install"
+        return
+    }
+    if (Complete-UbuntuFirstRun) {
+        Write-Ok "Ubuntu base registered after install"
+        return
+    }
+    throw "Ubuntu package installed but WSL distro not registered. Run 'ubuntu install --root' once, then re-run this script."
 }
 
 function Ensure-EyeNetDistro {
@@ -137,9 +185,18 @@ function Ensure-EyeNetDistro {
 }
 
 function Invoke-InEyeNet([string]$Bash) {
-    wsl -d $DistroName --user root -- bash -lc $Bash
-    if ($LASTEXITCODE -ne 0) {
-        throw "Command failed inside WSL distro '$DistroName' (exit $LASTEXITCODE)"
+    # Write script to a temp file so multi-line bash is reliable and exit codes propagate.
+    $tmpWin = Join-Path $env:TEMP ("eyenet-wsl-" + [guid]::NewGuid().ToString("N") + ".sh")
+    # LF-only for bash
+    [System.IO.File]::WriteAllText($tmpWin, ($Bash -replace "`r`n", "`n" -replace "`r", "`n"))
+    $drive = $tmpWin.Substring(0, 1).ToLower()
+    $rest = ($tmpWin.Substring(2) -replace '\\', '/')
+    $tmpWsl = "/mnt/$drive$rest"
+    wsl -d $DistroName --user root -- bash -lc "bash '$tmpWsl'; ec=`$?; rm -f '$tmpWsl'; exit `$ec"
+    $code = $LASTEXITCODE
+    Remove-Item -Force $tmpWin -ErrorAction SilentlyContinue
+    if ($code -ne 0) {
+        throw "Command failed inside WSL distro '$DistroName' (exit $code)"
     }
 }
 
@@ -180,11 +237,41 @@ if [ ! -f /etc/apt/keyrings/docker.asc ]; then
   chmod a+r /etc/apt/keyrings/docker.asc
 fi
 . /etc/os-release
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
-  > /etc/apt/sources.list.d/docker.list
-apt-get update -y
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+# Docker apt lags brand-new Ubuntu releases (e.g. Store "Ubuntu" = 26.04 resolute).
+# Try the host codename first, then fall back through known LTS codenames.
+ARCH="$(dpkg --print-architecture)"
+install_docker_from_codename() {
+  local codename="$1"
+  echo "Trying Docker apt suite: ${codename}"
+  echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${codename} stable" \
+    > /etc/apt/sources.list.d/docker.list
+  apt-get update -y
+  if apt-cache policy docker-ce | awk '/Candidate:/ {print $2}' | grep -vq '(none)'; then
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    return 0
+  fi
+  return 1
+}
+ok=0
+for codename in "$VERSION_CODENAME" noble jammy; do
+  if install_docker_from_codename "$codename"; then
+    ok=1
+    break
+  fi
+done
+if [ "$ok" != 1 ]; then
+  echo "ERROR: No docker-ce candidate for $VERSION_CODENAME / noble / jammy" >&2
+  exit 1
+fi
 systemctl enable --now docker
+# Wait briefly for the daemon (Assert-NotDesktopOnly needs a live engine)
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  if /usr/bin/docker info >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+test -x /usr/bin/docker
 /usr/bin/docker version
 /usr/bin/docker compose version
 '@
@@ -213,10 +300,18 @@ echo 'Tailscale installed. Wait for Node enroll_once (EyeNet Headscale) - do not
 
 function Assert-NotDesktopOnly {
     Write-Info "Verifying Docker Engine is available in $DistroName (not Desktop-only)..."
-    $out = wsl -d $DistroName --user root -- bash -lc "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; /usr/bin/docker info --format '{{.Name}}' 2>/dev/null || true"
+    $probe = @"
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+if [ ! -x /usr/bin/docker ]; then
+  echo 'MISSING_USR_BIN_DOCKER'
+  exit 1
+fi
+/usr/bin/docker info --format '{{.Name}}' 2>/dev/null || true
+"@
+    $out = wsl -d $DistroName --user root -- bash -lc $probe
     $out = (($out | Out-String) -replace "`0", "").Trim()
-    if (-not $out -or $out -match "could not be found|Docker Desktop") {
-        throw "docker-ce is not usable inside '$DistroName'. Re-run this script or install docker-ce manually."
+    if (-not $out -or $out -match "MISSING_USR_BIN_DOCKER|could not be found|Docker Desktop") {
+        throw "docker-ce is not usable inside '$DistroName' (/usr/bin/docker missing or daemon down). Re-run this script."
     }
     $desktop = Get-Process "Docker Desktop" -ErrorAction SilentlyContinue
     if ($desktop) {

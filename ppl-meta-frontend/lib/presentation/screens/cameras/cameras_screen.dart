@@ -201,16 +201,52 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
             tooltip: monitoringEnabled ? 'Stop All Monitoring' : 'Start All Monitoring',
           ), */
           
-          // Refresh cameras
+          // Scan for connected local cameras, then reload the full list
           IconButton(
-            onPressed: () {
-              ref.read(cameraListProvider.notifier).loadCameras(includeArchived: _showArchivedCameras);
-            },
-            icon: Icon(
-              Icons.refresh,
-              color: AppColors.primary,
-            ),
-            tooltip: 'Refresh Cameras',
+            onPressed: cameraListState.isDetecting
+                ? null
+                : () async {
+                    try {
+                      await ref.read(cameraListProvider.notifier).detectCameras(
+                            saveToDb: true,
+                            includeArchived: _showArchivedCameras,
+                          );
+                      if (!mounted) return;
+                      final cameras = ref.read(cameraListProvider).cameras;
+                      final usbCount =
+                          cameras.where((c) => c.type == CameraType.usb).length;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            usbCount == 0
+                                ? 'Scan complete. No local cameras found.'
+                                : 'Scan complete. ${cameras.length} camera(s) in list.',
+                          ),
+                          backgroundColor:
+                              usbCount == 0 ? Colors.orange : Colors.green,
+                        ),
+                      );
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Camera scan failed: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  },
+            icon: cameraListState.isDetecting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(
+                    Icons.refresh,
+                    color: AppColors.primary,
+                  ),
+            tooltip: 'Scan for connected cameras',
           ),
           
           // Add RTSP Camera
@@ -300,7 +336,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
   }
 
   Widget _buildCamerasContent(CameraListState cameraListState) {
-    if (cameraListState.isLoading) {
+    if (cameraListState.isLoading || cameraListState.isDetecting) {
       return const Center(
         child: CircularProgressIndicator(),
       );
@@ -502,14 +538,27 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
 
   /// Camera type filter toggles shown under the search field.
   Widget _buildFilterToggles() {
-    const types = <CameraType?>[null, CameraType.rtsp, CameraType.edge, CameraType.mobile];
+    const types = <CameraType?>[
+      null,
+      CameraType.usb,
+      CameraType.rtsp,
+      CameraType.edge,
+      CameraType.mobile,
+    ];
 
     const icons = <IconData>[
       Icons.dashboard_outlined, // All
+      Icons.videocam,           // Connected (local / embedded / USB)
       AppIcons.cameras,         // RTSP
       Icons.router,             // Edge
       Icons.smartphone,         // Mobile
     ];
+
+    String labelFor(CameraType? type) {
+      if (type == null) return 'All';
+      if (type == CameraType.usb) return 'Connected';
+      return type.displayName.split(' ').first;
+    }
 
     return ToggleButtons(
       constraints: const BoxConstraints(minHeight: 32),
@@ -532,7 +581,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
                 Icon(icons[i], size: AppIconSize.sm),
                 const SizedBox(width: AppSpacing.xs),
                 Text(
-                  types[i]?.displayName.split(' ').first ?? 'All',
+                  labelFor(types[i]),
                   style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.w500),
                 ),
               ],
@@ -664,6 +713,44 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
     );
   }
 
+  Future<void> _runDetectCameras() async {
+    try {
+      await ref.read(cameraListProvider.notifier).detectCameras(
+            saveToDb: true,
+            includeArchived: _showArchivedCameras,
+          );
+
+      if (!mounted) return;
+      final cameras = ref.read(cameraListProvider).cameras;
+      if (cameras.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No cameras detected. Check backend logs for errors.',
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Detected ${cameras.length} camera(s)!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Detection failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   void _showDetectCamerasDialog() {
     showDialog(
       context: context,
@@ -681,38 +768,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
           ElevatedButton(
             onPressed: () async {
               Navigator.of(context).pop();
-              try {
-                await ref.read(cameraListProvider.notifier).detectCameras(saveToDb: true);
-                
-                if (mounted) {
-                  final cameras = ref.read(cameraListProvider).cameras;
-                  if (cameras.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('No cameras detected. Check backend logs for errors.'),
-                        backgroundColor: Colors.orange,
-                        duration: Duration(seconds: 5),
-                      ),
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Detected ${cameras.length} camera(s)!'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  }
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Detection failed: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
+              await _runDetectCameras();
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,

@@ -52,11 +52,15 @@ from .api.vpn import router as vpn_router
 
 # Try to import shared modules
 try:
-    from shared.service_discovery import register_service
+    from src.shared.service_discovery import register_service
     service_discovery_available = True
 except ImportError:
-    service_discovery_available = False
-    logger.warning("Service discovery module not available, using fallback mode")
+    try:
+        from shared.service_discovery import register_service
+        service_discovery_available = True
+    except ImportError:
+        service_discovery_available = False
+        logger.warning("Service discovery module not available, using fallback mode")
 
 # Initialize configuration
 config = get_config()

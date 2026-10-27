@@ -160,15 +160,15 @@ Writes an audit / log entry via communications.
 
 ### Digital Signage
 
-Pushes a **playlist** to one or more signage players (switches what is playing).
+Starts a **playlist** on one or more signage players (switches what is playing). Optionally plays that first playlist for a short duration, then switches to a **second playlist**.
 
 | Field | Required | Default | Explanation |
 |---|---|---|---|
 | **Target Devices \*** | Yes (≥1) | none | Checkboxes for discovered signage players. Prefer online devices. |
-| **Playlist \*** | Yes | none | Playlist to start on the selected devices. |
-| **Second Playlist** | No | none | Optional playlist to switch to after the first playlist has played for the duration below. |
-| **Duration (seconds)** | No (only when Second Playlist is set) | **10** | How long the first playlist plays before switching to the second. Empty uses 10 seconds. Hidden unless a second playlist is selected. |
-| **Transition Mode** | No | **Immediate** | `Immediate` · `After Current Video` · `Fade Transition`. |
+| **Playlist \*** | Yes | none | First playlist to start on the selected devices when the action fires. |
+| **Second Playlist (optional)** | No | **None** | After the duration below, switch from the first playlist to this one. Choose **None** to keep only the first playlist. |
+| **Duration (seconds)** | No (only when Second Playlist is set) | **10** | How long the first playlist plays before switching. Empty uses **10** seconds. Hidden unless a second playlist is selected. |
+| **Transition Mode** | No | **Immediate** | `Immediate` · `After Current Video` · `Fade Transition`. Applies to the playlist start(s). |
 | **Fade Duration (ms)** | Only when Fade Transition | `1000` | Fade length in milliseconds. Hidden unless transition is fade. |
 
 If no devices appear, start players and confirm Discovery — see [Digital signage](./digital-signage.md).

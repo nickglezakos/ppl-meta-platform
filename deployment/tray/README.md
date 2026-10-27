@@ -1,6 +1,6 @@
 # EyeNet tray (host control)
 
-System tray / AppIndicator app that shows platform **Active / Inactive / Degraded** and offers **Open UI**, **Start**, **Stop**, and **Restart**.
+System tray / AppIndicator app that shows platform **Active / Inactive / Degraded**, the host name, the advertise address, and the EyeNet VPN address when this machine is on Headscale. It offers **Open UI**, **Start**, **Stop**, and **Restart**.
 
 Pinned to the same product identity as root [`VERSION`](../../VERSION). Binaries publish to **GitHub Releases** on tag `v${VERSION}` via **manual** lab builds + `gh release` today (Actions workflow is draft/future) — not to GHCR.
 
@@ -46,10 +46,12 @@ go build -ldflags "-X main.version=$(tr -d '[:space:]' < ../../VERSION)" \
   -o eyenet-tray ./cmd/eyenet-tray
 ```
 
-Linux needs AppIndicator / GTK headers (CI installs them):
+Ubuntu 24.04 uses the same binary in **native** mode: `docker compose` runs on the host (no WSL). The tray icon is an Ayatana AppIndicator. Ubuntu Desktop already includes that support. Status icons are the embedded PNGs (`icon-active.png`, `icon-inactive.png`, `icon-degraded.png`).
+
+Build dependencies (once):
 
 ```bash
-sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
+sudo apt-get install -y gcc pkg-config libgtk-3-dev libayatana-appindicator3-dev
 ```
 
 ## Release assets (manual today)

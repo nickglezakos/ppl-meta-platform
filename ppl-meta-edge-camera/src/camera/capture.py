@@ -41,6 +41,9 @@ class CameraCapture:
         Returns:
             True if successful, False otherwise
         """
+        if self.is_running and self.cap is not None:
+            return True
+
         try:
             logger.info(f"Starting camera capture on device {self.device_id}")
             

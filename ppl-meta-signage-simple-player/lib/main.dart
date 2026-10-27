@@ -1,11 +1,13 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:video_player_media_kit/video_player_media_kit.dart';
 import 'config/app_config.dart';
 import 'services/discovery_service.dart';
 import 'services/player_engine.dart';
@@ -22,18 +24,28 @@ import 'screens/signage_player_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/simple_setup_screen.dart';
 
+// DevelopmentFilter drops every line in release builds (asserts are stripped),
+// which is why `flutter logs` stays empty after `flutter install --release`.
 final logger = Logger(
+  filter: ProductionFilter(),
+  level: kReleaseMode ? Level.info : Level.trace,
   printer: PrettyPrinter(
     methodCount: 0,
     errorMethodCount: 5,
     lineLength: 80,
-    colors: true,
-    printEmojis: true,
+    colors: !kReleaseMode,
+    printEmojis: !kReleaseMode,
   ),
 );
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Official video_player has no Linux implementation. Register media_kit as
+  // the VideoPlayerPlatform backend so playlist playback works on RPi Docker.
+  if (Platform.isLinux) {
+    VideoPlayerMediaKit.ensureInitialized(linux: true);
+  }
 
   // Enable fullscreen mode for signage display
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
@@ -49,9 +61,9 @@ void main() async {
     databaseFactory = databaseFactoryFfi;
   }
   
-  logger.i('Starting PPL Meta Signage Simple Player v\${AppConfig.version}');
-  logger.i('Platform: \${getPlatformName()}');
-  logger.i('HTTP Server Port: \${AppConfig.httpServerPort}');
+  logger.i('Starting PPL Meta Signage Simple Player v${AppConfig.version}');
+  logger.i('Platform: ${getPlatformName()}');
+  logger.i('HTTP Server Port: ${AppConfig.httpServerPort}');
   
   runApp(const SignageSimplePlayerApp());
 }
@@ -258,10 +270,12 @@ class _InitializationScreenState extends State<InitializationScreen> {
         _statusMessage = 'Initializing player engine...';
       });
       
+      // Linux media_kit S/W path segfaults with dual full-res textures on RPi;
+      // skip preload there. Android/iOS keep AppConfig.preloadCount.
       _playerEngine = SignagePlayerEngine(
         database: _database!,
         logger: logger,
-        preloadCount: AppConfig.preloadCount,
+        preloadCount: Platform.isLinux ? 0 : AppConfig.preloadCount,
         configService: _configService,
       );
       

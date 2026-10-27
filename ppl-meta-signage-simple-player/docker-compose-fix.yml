@@ -17,7 +17,8 @@ services:
   signage-player:
     image: ppl-meta-signage-player:arm64
     container_name: signage-player
-    restart: unless-stopped
+    # on-failure: Esc/X exit(0) stays stopped; crashes still restart
+    restart: on-failure
     ports:
       - "8009:8009"
     environment:

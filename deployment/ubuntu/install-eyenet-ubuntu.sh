@@ -1,18 +1,31 @@
 #!/usr/bin/env bash
-# Native Ubuntu 24.04 lab install: Docker CE + public GHCR images + schema pack.
+# Native Ubuntu 24.04 lab/customer install: Docker CE + public GHCR images + schema pack.
 # Run on the Ubuntu host as a sudo-capable user:
 #   bash install-eyenet-ubuntu.sh
+#
+# Preferred (wiki zip): unzip eyenet-ubuntu-*.zip and run this script from that folder.
+# Lab fallback: clones/updates REPO_DIR when the zip bundle files are not beside this script.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 ADVERTISE_HOST="${ADVERTISE_HOST:-$(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | head -1)}"
-RELEASE_TAG="${RELEASE_TAG:-2.25.103}"
+RELEASE_TAG="${RELEASE_TAG:-2.25.104}"
 REGISTRY="${REGISTRY:-ghcr.io/nickglezakos/ppl-meta-platform}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/eyenet-platform}"
 REPO_DIR="${REPO_DIR:-$HOME/ppl-meta-platform}"
 GITHUB_REPO="${GITHUB_REPO:-https://github.com/nickglezakos/ppl-meta-platform.git}"
 
+# Wiki zip layout: compose + schema next to this script (no git required).
+BUNDLE_MODE=0
+if [[ -f "$SCRIPT_DIR/docker-compose.yml" || -f "$SCRIPT_DIR/docker-compose.windows-installer.yml" ]] \
+  && [[ -f "$SCRIPT_DIR/schema/pack.tar.gz" || -d "$SCRIPT_DIR/schema/pack" ]]; then
+  BUNDLE_MODE=1
+fi
+
 echo "==> Host: $(hostname)  user=$(whoami)  ADVERTISE_HOST=${ADVERTISE_HOST}"
 echo "==> Release: ${REGISTRY} @ ${RELEASE_TAG}"
+echo "==> Mode: $([[ "$BUNDLE_MODE" -eq 1 ]] && echo wiki-bundle || echo git-repo)"
 
 if ! sudo -n true 2>/dev/null; then
   echo "Sudo password required once for Docker / packages..."
@@ -58,24 +71,50 @@ compose_() {
 echo "==> Docker: $(docker_ --version)"
 echo "==> Compose: $(compose_ version)"
 
-# --- Repo (installer + schema pack) ---
-if [[ ! -d "$REPO_DIR/.git" ]]; then
-  echo "==> Cloning ${GITHUB_REPO} -> ${REPO_DIR}"
-  git clone --depth 1 "$GITHUB_REPO" "$REPO_DIR"
+# --- Installer sources (wiki zip bundle, else git checkout) ---
+if [[ "$BUNDLE_MODE" -eq 1 ]]; then
+  echo "==> Using wiki zip bundle at ${SCRIPT_DIR}"
+  if [[ -f "$SCRIPT_DIR/docker-compose.yml" ]]; then
+    COMPOSE_SRC="$SCRIPT_DIR/docker-compose.yml"
+  else
+    COMPOSE_SRC="$SCRIPT_DIR/docker-compose.windows-installer.yml"
+  fi
+  ENV_SRC="$SCRIPT_DIR/.env.windows.template"
+  [[ -f "$ENV_SRC" ]] || ENV_SRC="$SCRIPT_DIR/.env.template"
+  SCHEMA_APPLY="$SCRIPT_DIR/schema/apply.sh"
+  SCHEMA_PACK="$SCRIPT_DIR/schema/pack.tar.gz"
+  SCHEMA_PACK_DIR="$SCRIPT_DIR/schema/pack"
+  PERMS_SRC="$SCRIPT_DIR/ensure-media-volume-perms.sh"
+  REREG="$SCRIPT_DIR/reregister-discovery-services.sh"
+  TIMER_SRC="$SCRIPT_DIR/install-discovery-reregister-timer.sh"
+  TRAY_AUTOSTART_SRC="$SCRIPT_DIR/install-autostart-ubuntu.sh"
+  BUNDLED_TRAY_TGZ="$(ls -1 "$SCRIPT_DIR"/tray/eyenet-tray-linux-amd64-*.tar.gz 2>/dev/null | head -1 || true)"
 else
-  echo "==> Updating ${REPO_DIR}"
-  git -C "$REPO_DIR" fetch --depth 1 origin main
-  git -C "$REPO_DIR" checkout main
-  git -C "$REPO_DIR" pull --ff-only origin main || true
+  if [[ ! -d "$REPO_DIR/.git" ]]; then
+    echo "==> Cloning ${GITHUB_REPO} -> ${REPO_DIR}"
+    git clone --depth 1 "$GITHUB_REPO" "$REPO_DIR"
+  else
+    echo "==> Updating ${REPO_DIR}"
+    git -C "$REPO_DIR" fetch --depth 1 origin main
+    git -C "$REPO_DIR" checkout main
+    git -C "$REPO_DIR" pull --ff-only origin main || true
+  fi
+  COMPOSE_SRC="$REPO_DIR/deployment/windows-installer/docker-compose.windows-installer.yml"
+  ENV_SRC="$REPO_DIR/deployment/windows-installer/.env.windows.template"
+  SCHEMA_APPLY="$REPO_DIR/deployment/windows-installer/schema/apply.sh"
+  SCHEMA_PACK="$REPO_DIR/deployment/windows-installer/schema/pack.tar.gz"
+  SCHEMA_PACK_DIR="$REPO_DIR/deployment/windows-installer/schema/pack"
+  PERMS_SRC="$REPO_DIR/deployment/windows-installer/ensure-media-volume-perms.sh"
+  REREG="$REPO_DIR/deployment/windows-installer/reregister-discovery-services.sh"
+  [[ -f "$REREG" ]] || REREG="$REPO_DIR/deployment/mac-lima/reregister-discovery-services.sh"
+  TIMER_SRC="$REPO_DIR/deployment/ubuntu/install-discovery-reregister-timer.sh"
+  TRAY_AUTOSTART_SRC="$REPO_DIR/deployment/tray/scripts/install-autostart-ubuntu.sh"
+  BUNDLED_TRAY_TGZ=""
 fi
 
-COMPOSE_SRC="$REPO_DIR/deployment/windows-installer/docker-compose.windows-installer.yml"
-ENV_SRC="$REPO_DIR/deployment/windows-installer/.env.windows.template"
-SCHEMA_APPLY="$REPO_DIR/deployment/windows-installer/schema/apply.sh"
-SCHEMA_PACK="$REPO_DIR/deployment/windows-installer/schema/pack.tar.gz"
-
 [[ -f "$COMPOSE_SRC" ]] || { echo "FATAL: missing $COMPOSE_SRC"; exit 1; }
-[[ -f "$SCHEMA_PACK" ]] || { echo "FATAL: missing schema pack $SCHEMA_PACK"; exit 1; }
+[[ -f "$SCHEMA_PACK" || -d "${SCHEMA_PACK_DIR:-}" ]] || { echo "FATAL: missing schema pack"; exit 1; }
+[[ -f "$SCHEMA_APPLY" ]] || { echo "FATAL: missing $SCHEMA_APPLY"; exit 1; }
 
 mkdir -p "$INSTALL_DIR/data"
 cp -f "$COMPOSE_SRC" "$INSTALL_DIR/docker-compose.yml"
@@ -124,7 +163,6 @@ echo "==> Starting stack..."
 compose_ --project-name pplmeta --env-file .env -f docker-compose.yml up -d
 
 # Media runs as uid 1001; fresh Docker volumes are root:root (upload Permission denied).
-PERMS_SRC="$REPO_DIR/deployment/windows-installer/ensure-media-volume-perms.sh"
 if [[ -f "$PERMS_SRC" ]]; then
   bash "$PERMS_SRC" || echo "WARN: media volume perms fix failed (non-fatal)"
 else
@@ -141,15 +179,13 @@ for _ in $(seq 1 60); do
 done
 
 echo "==> Applying schema pack (+ verify)..."
-INSTALL_DIR="$INSTALL_DIR" SCHEMA_PACK_DIR="$REPO_DIR/deployment/windows-installer/schema/pack" \
+INSTALL_DIR="$INSTALL_DIR" SCHEMA_PACK_DIR="${SCHEMA_PACK_DIR}" \
   bash "$SCHEMA_APPLY"
-SCHEMA_VERIFY="$REPO_DIR/deployment/windows-installer/schema/verify.sh"
+SCHEMA_VERIFY="$(dirname "$SCHEMA_APPLY")/verify.sh"
 if [[ -f "$SCHEMA_VERIFY" ]]; then
   INSTALL_DIR="$INSTALL_DIR" bash "$SCHEMA_VERIFY"
 fi
 
-REREG="$REPO_DIR/deployment/windows-installer/reregister-discovery-services.sh"
-[[ -f "$REREG" ]] || REREG="$REPO_DIR/deployment/mac-lima/reregister-discovery-services.sh"
 if [[ -f "$REREG" ]]; then
   echo "==> Re-registering services with discovery..."
   cp -f "$REREG" "$INSTALL_DIR/reregister-discovery-services.sh"
@@ -159,7 +195,6 @@ else
   echo "WARN: reregister-discovery-services.sh missing — mobile discovery may be incomplete"
 fi
 
-TIMER_SRC="$REPO_DIR/deployment/ubuntu/install-discovery-reregister-timer.sh"
 if [[ -f "$TIMER_SRC" ]]; then
   echo "==> Installing required discovery re-register systemd timer..."
   if command -v systemctl >/dev/null 2>&1; then
@@ -176,7 +211,7 @@ fi
 
 compose_ --project-name pplmeta --env-file .env -f docker-compose.yml ps
 
-# --- Host tray (soft-fail if GitHub Release asset missing) ---
+# --- Host tray (prefer wiki zip bundle, else GitHub Release; soft-fail) ---
 echo "==> Installing EyeNet tray (host control)..."
 TRAY_DIR="$INSTALL_DIR/tray"
 mkdir -p "$TRAY_DIR"
@@ -184,8 +219,16 @@ TRAY_TAG="v${RELEASE_TAG}"
 TRAY_ASSET="eyenet-tray-linux-amd64-${RELEASE_TAG}.tar.gz"
 TRAY_URL="https://github.com/nickglezakos/ppl-meta-platform/releases/download/${TRAY_TAG}/${TRAY_ASSET}"
 TRAY_CFG="$TRAY_DIR/tray.json"
-if curl -fsSL "$TRAY_URL" -o "$TRAY_DIR/$TRAY_ASSET"; then
-  tar -xzf "$TRAY_DIR/$TRAY_ASSET" -C "$TRAY_DIR"
+TRAY_TGZ=""
+if [[ -n "${BUNDLED_TRAY_TGZ:-}" && -f "$BUNDLED_TRAY_TGZ" ]]; then
+  cp -f "$BUNDLED_TRAY_TGZ" "$TRAY_DIR/$TRAY_ASSET"
+  TRAY_TGZ="$TRAY_DIR/$TRAY_ASSET"
+  echo "Using bundled tray archive"
+elif curl -fsSL "$TRAY_URL" -o "$TRAY_DIR/$TRAY_ASSET"; then
+  TRAY_TGZ="$TRAY_DIR/$TRAY_ASSET"
+fi
+if [[ -n "$TRAY_TGZ" ]]; then
+  tar -xzf "$TRAY_TGZ" -C "$TRAY_DIR"
   TRAY_BIN="$TRAY_DIR/eyenet-tray"
   chmod +x "$TRAY_BIN" 2>/dev/null || true
   # Prefer binary named eyenet-tray; accept versioned name from tarball
@@ -210,8 +253,8 @@ if curl -fsSL "$TRAY_URL" -o "$TRAY_DIR/$TRAY_ASSET"; then
 }
 EOF
   if [[ -x "$TRAY_BIN" ]]; then
-    if [[ -f "$REPO_DIR/deployment/tray/scripts/install-autostart-ubuntu.sh" ]]; then
-      bash "$REPO_DIR/deployment/tray/scripts/install-autostart-ubuntu.sh" "$TRAY_BIN" "$TRAY_CFG" || true
+    if [[ -f "${TRAY_AUTOSTART_SRC:-}" ]]; then
+      bash "$TRAY_AUTOSTART_SRC" "$TRAY_BIN" "$TRAY_CFG" || true
     else
       mkdir -p "$HOME/.config/autostart"
       cat >"$HOME/.config/autostart/eyenet-tray.desktop" <<EOF
@@ -232,7 +275,7 @@ EOF
     echo "WARN: tray binary missing after extract"
   fi
 else
-  echo "WARN: tray download skipped (Release asset may not exist yet): $TRAY_URL"
+  echo "WARN: tray skipped (no bundled archive and Release asset unavailable): $TRAY_URL"
 fi
 
 echo

@@ -188,6 +188,28 @@ async def activate_bootstrap_owner(
         ensure_exact_system_roles(db, payload.email, {"owner", "admin", "user"})
         log_user_action(db, created_user.username, created_user.email, "bootstrap_activate")
 
+        try:
+            from src.services.presence_people_sync_notify import notify_presence_people_from_user
+
+            await notify_presence_people_from_user(
+                {
+                    "guid": str(getattr(created_user, "guid", "") or ""),
+                    "email": created_user.email,
+                    "username": created_user.username,
+                    "given_name": getattr(created_user, "given_name", None),
+                    "family_name": getattr(created_user, "family_name", None),
+                    "name": getattr(created_user, "name", None),
+                    "is_active": bool(getattr(created_user, "is_active", True)),
+                    "blocked": bool(getattr(created_user, "blocked", False)),
+                },
+                reason="bootstrap_activate",
+            )
+        except Exception as notify_err:  # noqa: BLE001
+            logger.warning(
+                "Presence people create after bootstrap activate skipped: %s",
+                notify_err,
+            )
+
         access_token = create_access_token(data={"sub": str(created_user.id)})
         return BootstrapActivationResponse(
             success=True,

@@ -129,11 +129,23 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
         log_user_action(db, created_user.username, created_user.email, "register")
 
         try:
-            from src.services.presence_people_sync_notify import notify_presence_people_user_sync
+            from src.services.presence_people_sync_notify import notify_presence_people_from_user
 
-            await notify_presence_people_user_sync(reason="user_create")
+            await notify_presence_people_from_user(
+                {
+                    "guid": str(getattr(created_user, "guid", "") or ""),
+                    "email": created_user.email,
+                    "username": created_user.username,
+                    "given_name": getattr(created_user, "given_name", None),
+                    "family_name": getattr(created_user, "family_name", None),
+                    "name": getattr(created_user, "name", None),
+                    "is_active": bool(getattr(created_user, "is_active", True)),
+                    "blocked": bool(getattr(created_user, "blocked", False)),
+                },
+                reason="user_create",
+            )
         except Exception as notify_err:  # noqa: BLE001
-            logger.warning("Presence people sync after register skipped: %s", notify_err)
+            logger.warning("Presence people create after register skipped: %s", notify_err)
 
         # Send verification email
         try:

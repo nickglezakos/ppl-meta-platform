@@ -24,6 +24,32 @@ services:
     networks:
       - ppl-meta-network
 
+  # Cython-protected runtime: proprietary .py stripped (same pattern as vmeta).
+  # Usage: docker compose --profile protected up -d --build ppl-meta-mini-protected
+  ppl-meta-mini-protected:
+    profiles: ["protected"]
+    build:
+      context: .
+      dockerfile: Dockerfile.protected
+    image: nickglezakos/ppl-meta-mini-protected:latest
+    container_name: ppl-meta-mini-protected
+    ports:
+      - "8004:8004"
+    environment:
+      - PYTHONPATH=/app/src
+    volumes:
+      - ./storage:/app/storage
+      - ./temp:/app/temp
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ppl-meta-network
+
 networks:
   ppl-meta-network:
     driver: bridge

@@ -17,10 +17,17 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
+### 2026-10-20 — Gateway audit 429 / OPTIONS + frontend alert poller
+- **Status:** Pending (Stage 1 source in **2.25.104**; Stage 2/3 not finished)
+- **Lab:** `lab-work-dual-64g` (`eyenet-demo`) — gateway was live via `docker cp` of `advanced_middleware.py` + `main.py`; frontend poller fix was local only
+- **Files:** `ppl-meta-gateway/src/main.py`, `ppl-meta-gateway/src/core/advanced_middleware.py`, `ppl-meta-frontend/lib/services/alert_notification_service.dart`
+- **Summary:** Audit rate limit for alert poller; never rate-limit CORS OPTIONS; Origin-aware 429 CORS; poller `maxPages=5` + start-from-now without cursor
+- **Next:** Stage 2 rebuild gateway + frontend on `2.25.104`; Stage 3 wiki zip → labs; confirm digests replace docker-cp
+
 ### Follow-up — Full clean rebuild of vmeta-protected (replace thin 2.25.100)
-- **Status:** Pending (product OK on lab; image lineage is a thin overlay)
+- **Status:** Pending (product OK on lab; image lineage was a thin overlay on 2.25.100 — **2.25.103** already published a full vmeta rebuild `3a684fa0cb23…`; **2.25.104** rebuilds vmeta again for service-discovery defaults)
 - **Why:** Stage 2 for **2.25.100** could not push a full `Dockerfile.protected` rebuild to GHCR (hung on large layer `db07833fef22` / ~DeepFace weights blob). Workaround: `FROM …:2.25.99` + `COPY individual_groups_manager.py` → digest `3afa092bc2af…`.
-- **Next Stage 2 (vmeta):** Do a **full clean** `stage2_one.sh vmeta` (or equivalent protected build+push) on a later pin so GHCR `:VERSION` is a normal protected image, not base+patch. If full push hangs again, fix GHCR upload path first (serial uploads / network / alternate publish), then rebuild — do not keep stacking thin layers.
+- **Next Stage 2 (vmeta):** Prefer **full clean** `stage2_one.sh vmeta` (protected) — do not stack thin layers.
 - **Verify after clean rebuild:** manifest digest for `ppl-meta-vmeta-protected` changes; image history is a normal multi-stage protected build; `get_group_members` still selects `gm.member_number` / `gm.added_by` in the outer query.
 
 ---
