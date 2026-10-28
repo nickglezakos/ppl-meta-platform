@@ -41,6 +41,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Notes
 
 - Affects gateway, frontend, cameras, media, node, discovery, communications, models, orchestrator, presence, vmeta (service-discovery defaults), plus installer schema/apply and tray host scripts. Mode D: rebuild those eleven; retag-forward **vision** from `2.25.103`.
+- GHCR images published for **2.25.104** (Mode D on `lab-work-win-eynetdell` / WSL): rebuilt gateway `bd78deff018b…`, frontend `885b9752a71a…`, vmeta-protected `75e7f374d7cb…`, cameras `ad18861f371f…` (+ node/media/orchestrator/discovery/communications/presence/models); retagged vision from `2.25.103`. Manifest finalized 2026-10-28.
 - Stage 3 for this cut is wiki-first: pack/publish installer zips → lab install via First-install links → SSH smoke (pin + digests + health).
 
 ## [2.25.103] — 2026-10-19
