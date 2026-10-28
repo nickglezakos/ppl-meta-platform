@@ -1,6 +1,6 @@
 ---
 software_ref:
-  platform_version: "2.25.103"
+  platform_version: "2.25.104"
   policy_revision: "2026-09-10"
   channels_documented:
     - sandbox
@@ -38,7 +38,7 @@ Choose one host path (same GHCR images, host **EyeNet tray**, and bootstrap):
 **Windows**
 
 1. Windows 10/11 amd64 PC or **Hyper-V** virtual machine with **≥16 GB RAM** and **≥12 GB** free disk (same install path on physical hosts and Hyper-V guests). Run the installers as **Administrator**.
-2. Download the Windows installer zip from this wiki: **[eyenet-windows-2.25.103.zip](./downloads/eyenet-windows-2.25.103.zip?v=20261020-44cfe24f)** (SHA-256: [checksum file](./downloads/eyenet-windows-2.25.103.zip.sha256?v=20261020-44cfe24f)). Unzip it.
+2. Download the Windows installer zip from this wiki: **[eyenet-windows-2.25.104.zip](./downloads/eyenet-windows-2.25.104.zip?v=20261028-89582c6c)** (SHA-256: [checksum file](./downloads/eyenet-windows-2.25.104.zip.sha256?v=20261028-89582c6c)). Unzip it.
 3. Double-click **`install-eyenet-wsl.bat`**. This creates the WSL2 distro **`eyenet`** with **Docker Engine CE** (not Docker Desktop) and configures **12 GB** WSL memory. If Windows asks to restart WSL, finish that step and re-run the same bat if prompted.
 4. Double-click **`install-platform.bat`**. Accept the default install directory (`C:\ppl-meta-platform`) unless you need another path. The installer pulls pinned GHCR images, applies the database schema, and installs the **EyeNet tray** (start/stop/restart and status from the system tray; also starts at Windows logon).
 5. Open **http://localhost:3000** and complete **bootstrap** with the approved owner email and licence / application key — see [Bootstrap the installation](./bootstrap.md).
@@ -46,7 +46,7 @@ Choose one host path (same GHCR images, host **EyeNet tray**, and bootstrap):
 **Linux**
 
 1. **Ubuntu 24.04** (or a compatible amd64 Ubuntu) with **≥16 GB RAM**.
-2. Download the Ubuntu installer zip from this wiki: **[eyenet-ubuntu-2.25.103.zip](./downloads/eyenet-ubuntu-2.25.103.zip?v=20261020-7f626037)** (SHA-256: [checksum file](./downloads/eyenet-ubuntu-2.25.103.zip.sha256?v=20261020-7f626037)). Unzip it.
+2. Download the Ubuntu installer zip from this wiki: **[eyenet-ubuntu-2.25.104.zip](./downloads/eyenet-ubuntu-2.25.104.zip?v=20261028-c440e4ac)** (SHA-256: [checksum file](./downloads/eyenet-ubuntu-2.25.104.zip.sha256?v=20261028-c440e4ac)). Unzip it.
 3. In a terminal inside the unzipped folder, run **`bash install-eyenet-ubuntu.sh`** (optional: `ADVERTISE_HOST=<lan-ip> bash install-eyenet-ubuntu.sh`). The installer installs **Docker Engine** if needed, pulls the same pinned GHCR images, applies the schema, and installs the **EyeNet tray** (start/stop and status from the desktop tray / AppIndicator).
 4. Open **http://localhost:3000** and complete **bootstrap** with the approved owner email and licence / application key — see [Bootstrap the installation](./bootstrap.md).
 
