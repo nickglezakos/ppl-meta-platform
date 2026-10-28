@@ -16,9 +16,9 @@ This document names and describes the physical lab hosts used for EyeNet install
 |---|---|---|---|---|
 | **`lab-home-win-nickg`** | Home | Windows (user `nickg`) | Windows laptop | Home Windows/WSL install path; optional Stage 2 builder when disk/RAM allow |
 | **`lab-work-u24-mini-8g`** | Work LAN | Ubuntu 24.04 only | Mini PC, **8 GB RAM** | Stress / failure-mode lab: what happens **under** the 16 GB product threshold |
-| **`lab-work-dual-64g`** | Work LAN | Dual-boot Windows + Ubuntu 24.04 | Laptop, **16 GB RAM** (lab ID keeps historical “64g” name) | Primary work lab: full-product Windows/WSL **or** native Ubuntu; Stage 3 soak (not preferred Stage 2 — tight on RAM) |
-| **`lab-work-eyenet2`** | Work LAN | Ubuntu 24.04 only | Laptop / desktop, **32 GB RAM**, hostname `eyenet2` | Preferred Stage 2 builder + Ubuntu soak / install path |
-| **`lab-work-win-eynetdell`** | Work LAN | Windows only | Dell PC, hostname `EYNETDELL` | Work Windows lab / soak; OpenSSH via reverse tunnel (see host details) |
+| **`lab-work-dual-64g`** | Work LAN | Dual-boot Windows + Ubuntu 24.04 | Laptop, **16 GB RAM** (lab ID keeps historical “64g” name) | Primary work lab; Stage 3 soak |
+| **`lab-work-eyenet2`** | Work LAN | Ubuntu 24.04 only | Laptop / desktop, **16 GB RAM**, hostname `eyenet2` | Second Ubuntu soak / install path |
+| **`lab-work-win-eynetdell`** | Work LAN | Windows only | Dell PC, hostname `EYNETDELL`, **32 GB RAM** | **Preferred Stage 2** (WSL `eyenet` + Docker) + Windows soak; LAN SSH `Administrator@192.168.9.11` |
 
 Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *“Stage 2 on lab-work-dual-64g”*).
 
@@ -26,16 +26,16 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 
 ## Fleet status (vs GHCR)
 
-**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.103`** (Mode D; last finalized **2026-10-19** — cameras `662994600b1b…`, vision `fdc1f5f847c0…`, vmeta `3a684fa0cb23…`).  
+**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.104`** (Mode D; last finalized **2026-10-28** — gateway `bd78deff018b…`, frontend `885b9752a71a…`, vmeta `75e7f374d7cb…`, cameras `ad18861f371f…`; vision retagged `fdc1f5f847c0…`).  
 **Rule:** After every **Stage 3** on a named lab, update this table (pin, match state, date, short notes). Do not treat a matching *tag* as current — compare **running container Image ID** (and ideally `main.dart.js` sha256) to the manifest. Tag RepoDigests alone can lie if the container was not recreated.
 
 | Lab ID | Pin | Match GHCR? | Last Stage 3 | Notes |
 |---|---|---|---|---|
-| `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. Offline during 2.25.103 Stage 3. |
-| `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Offline during 2.25.103 Stage 3. |
-| `lab-work-dual-64g` | `2.25.103` | **Yes** (cameras `662994600b1b…`, vision `fdc1f5f847c0…`, vmeta `3a684fa0cb23…`) | 2026-10-19 | Ubuntu `eyenet-demo` @ `192.168.9.13` / Tailscale `100.101.128.40`; schema verify all OK incl. `051` trigger + individuals instant columns; discovery 11/11. |
-| `lab-work-eyenet2` | `2.25.93` | **Yes** (fresh Ubuntu Stage 3) | 2026-09-29 | Hostname `eyenet2` @ `192.168.9.8` / Tailscale `100.116.59.7`; empty UUID/key → `/bootstrap`. Offline during 2.25.103 Stage 3. |
-| `lab-work-win-eynetdell` | `2.25.103` | **Yes** (cameras `662994600b1b…`, vision `fdc1f5f847c0…`, gateway `0b405f9c4bd7…`, frontend `62b45fcb4dd7…`) | 2026-10-20 | Fresh install from wiki zip `eyenet-windows-2.25.103.zip` (SHA `44cfe24f…`); WSL `eyenet` + Docker Engine CE; `C:\ppl-meta-platform`; `ADVERTISE_HOST=192.168.1.105`; schema verify all OK; discovery 11/11; tray running; UI `:3000` 200. SSH still reverse-tunnel only. |
+| `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. Offline during 2.25.104 Stage 3. |
+| `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Offline during 2.25.104 Stage 3. |
+| `lab-work-dual-64g` | `2.25.104` | **Yes** (gateway `bd78deff018b…`, frontend `885b9752a71a…`, cameras `ad18861f371f…`, vmeta `75e7f374d7cb…`) | 2026-10-28 | Ubuntu `eyenet-demo` @ `192.168.9.13` / Tailscale `100.101.128.40`; wiki zip in-place (`RELEASE_TAG=2.25.104`); schema verify OK; discovery 11/11; UI/gw/media 200. |
+| `lab-work-eyenet2` | `2.25.93` | **Yes** (fresh Ubuntu Stage 3) | 2026-09-29 | Hostname `eyenet2` @ `192.168.9.8` / Tailscale `100.116.59.7`; empty UUID/key → `/bootstrap`. Offline during 2.25.104 Stage 3. |
+| `lab-work-win-eynetdell` | `2.25.104` | **Yes** (gateway `bd78deff018b…`, frontend `885b9752a71a…`, cameras `ad18861f371f…`, vmeta `75e7f374d7cb…`) | 2026-10-28 | Wiki zip in-place on WSL `eyenet` / `C:\ppl-meta-platform`; `ADVERTISE_HOST=192.168.9.11` / Tailscale `100.114.224.54`; schema verify OK; discovery 11/11; UI/gw/media 200. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
 
@@ -160,7 +160,7 @@ ssh eyenet-server 'hostname; free -h | head -2; cat ~/ppl-meta-platform/VERSION;
 | Install dir (Ubuntu) | `~/eyenet-platform` (user `eyenet`) |
 | Product path (Windows) | WSL `eyenet` + Windows installer |
 | Product path (Ubuntu) | Native Docker CE + `deployment/ubuntu/install-eyenet-ubuntu.sh` |
-| Stage 2 builder? | **No — prefer `lab-work-eyenet2` (32 GB)**; dual is OK only for light selective builds if ≥12 GB free disk |
+| Stage 2 builder? | Light / selective only (**16 GB**); full Mode D (esp. vmeta/frontend) needs headroom — prefer a host with ≥24 GB visible to Docker/WSL |
 | Notes | Only one OS active at a time. Use for Stage 3 soak / wiki-install validation. GHCR pull can hit stub-resolver timeouts — retry `docker compose pull`. If schema verify fails on first apply, drop app-created `schema_migrations` (wrong shape vs pack) and re-run `schema/apply.sh`. |
 
 ---
@@ -172,7 +172,7 @@ ssh eyenet-server 'hostname; free -h | head -2; cat ~/ppl-meta-platform/VERSION;
 | Site | Work LAN (`192.168.9.0/24`) |
 | OS | **Ubuntu 24.04 only** |
 | Hostname | `eyenet2` |
-| RAM | **32 GB** (operator-confirmed 2026-10-27) |
+| RAM | **16 GB** (operator-corrected 2026-10-27) |
 | LAN | **`192.168.9.8`** (`wlo1`) |
 | Tailscale | **`100.116.59.7`** (personal Tailscale; hostname `eyenet2`) |
 | SSH user | `eyenet` (Mac key `eyenet-mac-to-kvalvis`; passwordless sudo configured 2026-09-29) |
@@ -181,8 +181,8 @@ ssh eyenet-server 'hostname; free -h | head -2; cat ~/ppl-meta-platform/VERSION;
 | Install dir | `~/eyenet-platform` |
 | Repo clone | `~/ppl-meta-platform` |
 | Product path | Native Docker CE + `deployment/ubuntu/install-eyenet-ubuntu.sh` |
-| Stage 2 builder? | **Yes — preferred** (32 GB; use for Mode D / protected vision+vmeta builds) |
-| Notes | Prefer this host for Stage 2 of **2.25.104+**. Prior Stage 3 pin **2.25.93** (2026-09-29). `ADVERTISE_HOST=192.168.9.8`. UI `http://192.168.9.8:3000`. |
+| Stage 2 builder? | **No** — prefer `lab-work-win-eynetdell` (32 GB) |
+| Notes | Stage 3 soak / Ubuntu path. Prior pin **2.25.93** (2026-09-29). `ADVERTISE_HOST=192.168.9.8`. UI `http://192.168.9.8:3000`. |
 
 ---
 
@@ -192,17 +192,17 @@ ssh eyenet-server 'hostname; free -h | head -2; cat ~/ppl-meta-platform/VERSION;
 |---|---|
 | Site | Work LAN (`192.168.9.0/24`) |
 | OS | **Windows only** (account **`administrator`**; hostname `EYNETDELL`) |
+| RAM | **32 GB** (operator-confirmed 2026-10-27) — **preferred Stage 2 builder** |
 | Tailscale name | `eynetdell` (personal Tailscale / default account; MagicDNS `eynetdell.tailc2d351.ts.net`) |
-| LAN | Confirm with `ipconfig` after each boot (same office subnet as other work labs) |
 | Tailscale IP | **`100.114.224.54`** |
 | SSH user | `administrator` (`eynetdell\administrator`) |
-| Access (LAN) | Prefer RDP / local console until LAN SSH is verified; OpenSSH Server is installed and listens on `0.0.0.0:22` |
-| Access (remote) | **Reverse tunnel only** (see below). Do **not** expect `ssh administrator@100.114.224.54` to work yet. |
-| Stage 2 builder? | **No** (prefer `lab-work-dual-64g`) |
+| Access (LAN) | **`ssh Administrator@192.168.9.11`** (proven 2026-10-27); OpenSSH on `0.0.0.0:22` |
+| Access (remote) | Reverse tunnel still valid if off-LAN (see below). Mesh IP alone may not accept SSH. |
+| Stage 2 builder? | **Yes — preferred** (32 GB host). Builds run in WSL distro **`eyenet`**. Give WSL enough RAM via `%UserProfile%\.wslconfig` (e.g. `memory=24GB`) then `wsl --shutdown` — default WSL often caps ~8 Gi and will OOM Mode D. |
 | Product path | Windows installer + WSL2 distro **`eyenet`** (Docker Engine CE); wiki zip install path proven 2026-10-20 |
-| Install dir | `C:\ppl-meta-platform` (WSL: `/mnt/c/ppl-meta-platform`) |
-| LAN | `192.168.1.105` (product `ADVERTISE_HOST`; confirm with `ipconfig` after each boot) |
-| Notes | Tailscale mesh is healthy (ping + PeerAPI). Inbound **host** TCP (including OpenSSH `:22`) from other Tailscale nodes does **not** reach Windows services as of 2026-10-20 — even with Windows Firewall off and WeakHostReceive/Send enabled. Workaround: reverse SSH from this host to the operator Mac. Stage 3 from [wiki First install](https://wiki.eyenet-vision.com/owners-admins/) zip. |
+| Install dir | `C:\ppl-meta-platform` (WSL: `/mnt/c/ppl-meta-platform`); Stage 2 clone also at `/home/eyenet/ppl-meta-platform` |
+| Product LAN / ADVERTISE_HOST | Confirm with `ipconfig` (historically `192.168.1.105`; work LAN also seen as `192.168.9.11`) |
+| Notes | Stage 2 for **2.25.104+** targets this host. Stage 3 from [wiki First install](https://wiki.eyenet-vision.com/owners-admins/) zip. |
 
 #### Prerequisites (remote SSH)
 
@@ -252,14 +252,14 @@ If the tunnel drops, re-run the `ssh -N -R 2201:…` command on Windows before r
 | Operator Mac | **Yes** (usual) | No (default) | No |
 | `lab-home-win-nickg` | Rarely | Optional (Tailscale OK) | Windows/WSL customer path |
 | `lab-work-u24-mini-8g` | No | **No** | Ubuntu under-threshold |
-| `lab-work-dual-64g` | Rarely | Light only (16 GB) | Full Windows **or** full Ubuntu soak / Stage 3 |
-| `lab-work-eyenet2` | Rarely | **Preferred** (32 GB) | Stage 2 image builds + Ubuntu soak |
-| `lab-work-win-eynetdell` | No | **No** | Work Windows soak (SSH via reverse tunnel) |
+| `lab-work-dual-64g` | Rarely | No (16 GB) | Full Windows **or** full Ubuntu soak / Stage 3 |
+| `lab-work-eyenet2` | Rarely | No (16 GB) | Ubuntu soak |
+| `lab-work-win-eynetdell` | No | **Preferred** (32 GB WSL) | Stage 2 builds + Windows soak |
 
 Agent wording examples:
 
-- *“Stage 2 on lab-work-eyenet2.”*
-- *“Stage 2 on lab-work-dual-64g (Ubuntu boot) — light only; prefer eyenet2.”*
+- *“Stage 2 on lab-work-win-eynetdell (WSL eyenet).”*
+- *“Stage 2 on lab-work-dual-64g — light only; prefer eyenetdell.”*
 - *“Upgrade lab-home-win-nickg after Stage 2.”*  
 - *“Reproduce under-RAM behavior on lab-work-u24-mini-8g.”*
 - *“SSH eyenet-server / lab-work-u24-mini-8g from work LAN.”*
@@ -279,7 +279,7 @@ Agent wording examples:
 | `lab-work-dual-64g` (Windows booted) | Windows App → work LAN IP / `ssh windows-lab` if `192.168.11.29` is up |
 | `lab-work-dual-64g` (Ubuntu booted) | `ssh eyenet@192.168.9.13` (hostname `eyenet-demo`; confirm IP after each boot) |
 | `lab-work-eyenet2` | `ssh eyenet@192.168.9.8` (hostname `eyenet2`) |
-| `lab-work-win-eynetdell` | Local console / RDP; OpenSSH on `:22` (verify LAN path separately) |
+| `lab-work-win-eynetdell` | `ssh Administrator@192.168.9.11` |
 
 ### Access (remote)
 
@@ -317,8 +317,8 @@ Update this table as you stabilize addresses (do not put passwords here):
 | `lab-home-win-nickg` | `DESKTOP-VDM2JKF` | `192.168.1.71` | `100.73.31.71` (`homenetwork`) | `nickg` | `ssh lab-home-win-nickg` / `ssh desktop-vdm2jkf`; product `ADVERTISE_HOST=192.168.1.71` |
 | `lab-work-u24-mini-8g` | `eyenet-server` | `192.168.9.14` | *(logged out — enroll for remote)* | `eyenet` | `ssh eyenet-server`; 8 GB soak; not Stage 2 |
 | `lab-work-dual-64g` | `eyenet-demo` (Ubuntu) | Ubuntu `192.168.9.13` (confirm after boot; hist. `10.171.48.228` / Win `192.168.11.29`) | `100.101.128.40` | Ubuntu: `eyenet` / Win: `user` | **16 GB** — Stage 3 soak; product `ADVERTISE_HOST` = current LAN IP |
-| `lab-work-eyenet2` | `eyenet2` | `192.168.9.8` | `100.116.59.7` | `eyenet` | **32 GB** — preferred Stage 2; `ssh eyenet@100.116.59.7`; `ADVERTISE_HOST=192.168.9.8` |
-| `lab-work-win-eynetdell` | `EYNETDELL` | `192.168.1.105` | `100.114.224.54` (`eynetdell`) | `administrator` | Product `ADVERTISE_HOST=192.168.1.105`. On Windows: `ssh -N -R 2201:127.0.0.1:22 <mac-user>@<mac-tailscale-ip>`; on Mac: `ssh -p 2201 administrator@127.0.0.1`. Direct mesh SSH times out. |
+| `lab-work-eyenet2` | `eyenet2` | `192.168.9.8` | `100.116.59.7` | `eyenet` | **16 GB** soak; `ADVERTISE_HOST=192.168.9.8` |
+| `lab-work-win-eynetdell` | `EYNETDELL` | `192.168.9.11` (also hist. `192.168.1.105`) | `100.114.224.54` (`eynetdell`) | `administrator` | **32 GB** preferred Stage 2. LAN: `ssh Administrator@192.168.9.11`. WSL `.wslconfig` memory≥24GB for Mode D. |
 
 Historical / other boxes (not in the named set above) may still appear in older notes (e.g. `kvalvis-pc` at older Tailscale `100.64.0.23`). Prefer the lab IDs in this document going forward; migrate aliases here when you rename hosts.
 

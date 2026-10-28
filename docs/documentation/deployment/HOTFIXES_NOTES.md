@@ -17,22 +17,24 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-### 2026-10-20 — Gateway audit 429 / OPTIONS + frontend alert poller
-- **Status:** Pending (Stage 1 source in **2.25.104**; Stage 2/3 not finished)
-- **Lab:** `lab-work-dual-64g` (`eyenet-demo`) — gateway was live via `docker cp` of `advanced_middleware.py` + `main.py`; frontend poller fix was local only
-- **Files:** `ppl-meta-gateway/src/main.py`, `ppl-meta-gateway/src/core/advanced_middleware.py`, `ppl-meta-frontend/lib/services/alert_notification_service.dart`
-- **Summary:** Audit rate limit for alert poller; never rate-limit CORS OPTIONS; Origin-aware 429 CORS; poller `maxPages=5` + start-from-now without cursor
-- **Next:** Stage 2 rebuild gateway + frontend on `2.25.104`; Stage 3 wiki zip → labs; confirm digests replace docker-cp
-
-### Follow-up — Full clean rebuild of vmeta-protected (replace thin 2.25.100)
-- **Status:** Pending (product OK on lab; image lineage was a thin overlay on 2.25.100 — **2.25.103** already published a full vmeta rebuild `3a684fa0cb23…`; **2.25.104** rebuilds vmeta again for service-discovery defaults)
-- **Why:** Stage 2 for **2.25.100** could not push a full `Dockerfile.protected` rebuild to GHCR (hung on large layer `db07833fef22` / ~DeepFace weights blob). Workaround: `FROM …:2.25.99` + `COPY individual_groups_manager.py` → digest `3afa092bc2af…`.
-- **Next Stage 2 (vmeta):** Prefer **full clean** `stage2_one.sh vmeta` (protected) — do not stack thin layers.
-- **Verify after clean rebuild:** manifest digest for `ppl-meta-vmeta-protected` changes; image history is a normal multi-stage protected build; `get_group_members` still selects `gm.member_number` / `gm.added_by` in the outer query.
+_(none)_
 
 ---
 
 ## Completed
+
+### 2026-10-20 — Gateway audit 429 / OPTIONS + frontend alert poller
+- **Status:** Completed
+- **VERSION / pin:** `2.25.104` (Stage 1 `aec06964` / docs `535985ad`; Stage 2 manifest `bec2e5ed`; Stage 3a wiki `d3b94c8c`)
+- **Stage 1:** Gateway rate-limit/OPTIONS + frontend alert poller in pin `2.25.104`
+- **Stage 2:** Mode D on `lab-work-win-eynetdell` — gateway `bd78deff018b…`, frontend `885b9752a71a…` (+ node/media/orchestrator/discovery/communications/vmeta/cameras/presence/models); vision retagged from `2.25.103`
+- **Stage 3:** Wiki First install zips → in-place upgrade on `lab-work-dual-64g` + `lab-work-win-eynetdell`; digests match manifest; discovery 11/11; UI/gw/media 200
+- **Summary:** Replaces lab docker-cp gateway hotfix and local-only frontend poller fix.
+
+### Follow-up — Full clean rebuild of vmeta-protected (replace thin 2.25.100)
+- **Status:** Completed (superseded by **2.25.103** full rebuild `3a684fa0cb23…` and **2.25.104** Mode D rebuild `75e7f374d7cb…`)
+- **VERSION / pin:** `2.25.104`
+- **Verify:** `ppl-meta-vmeta-protected@sha256:75e7f374d7cb…` on dual + eyenetdell
 
 ### 2026-10-18 — HubSpot CRM + authenticator APIs + login/MVR view fixes
 - **Status:** Completed
