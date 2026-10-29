@@ -116,8 +116,11 @@ async def lifespan(app: FastAPI):
         detected_ip = s.getsockname()[0]
         s.close()
     except Exception:
-        # Fallback to hostname resolution
-        detected_ip = socket.gethostbyname(socket.gethostname())
+        # Fallback to hostname resolution, then localhost for host-local Python.
+        try:
+            detected_ip = socket.gethostbyname(socket.gethostname())
+        except Exception:
+            detected_ip = "127.0.0.1"
 
     # Detect our Headscale/Tailscale mesh IP so devices dialing in over the VPN
     # can resolve the gateway to a reachable address.

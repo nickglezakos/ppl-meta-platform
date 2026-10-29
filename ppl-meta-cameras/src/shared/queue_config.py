@@ -47,6 +47,7 @@ celery_app.conf.update(
         "instant_detection.process_frames": {"queue": "instant_detection_queue"},
         "instant_detection.persist_results": {"queue": "instant_detection_queue"},
         "instant_detection.flush_persist_batch": {"queue": "instant_detection_queue"},
+        "instant_detection.flush_y_window": {"queue": "instant_detection_queue"},
         "stream_operations.reconcile_all": {"queue": "instant_detection_queue"},
         "stream_operations.reconcile_camera": {"queue": "instant_detection_queue"},
     },

@@ -15,6 +15,7 @@ from .streaming import router as streaming_router
 from .triggers import router as triggers_router
 from .user import router as user_router
 from .vmeta_proxy import router as vmeta_proxy_router
+from .instant_detection_logs import router as instant_detection_logs_router
 
 # Create v1 API router
 v1_router = APIRouter(prefix="/api/v1")
@@ -31,5 +32,6 @@ v1_router.include_router(workflow_router)  # Phase 2: Enhanced workflows
 v1_router.include_router(vmeta_proxy_router)  # vmeta MVR-People proxy
 v1_router.include_router(signage_router)  # Signage Simple Player endpoints
 v1_router.include_router(triggers_router)  # Trigger evaluation endpoints
+v1_router.include_router(instant_detection_logs_router)
 
 __all__ = ["v1_router"]

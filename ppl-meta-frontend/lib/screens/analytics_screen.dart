@@ -11,6 +11,7 @@ import 'package:fl_chart/fl_chart.dart';
 import '../core/theme/app_theme.dart';
 import '../widgets/custom_app_bar.dart';
 import '../models/analytics_models.dart';
+import '../models/api_response.dart';
 import '../services/media_api_client.dart';
 import '../core/providers/camera_providers.dart';
 import '../utils/platform_file_download.dart';
@@ -19,7 +20,12 @@ import '../widgets/people_counters_tile.dart';
 /// MVR Analytics Dashboard - showing people detection insights from camera collections
 /// Based on MVRsearch cached results from camera cards endpoint
 class AnalyticsScreen extends ConsumerStatefulWidget {
-  const AnalyticsScreen({super.key, this.initialCameraId, this.showAppBar = true});
+  const AnalyticsScreen({
+    super.key,
+    this.initialCameraId,
+    this.showAppBar = true,
+    this.initialDataSource,
+  });
 
   /// When provided, the dashboard is pre-filtered to this camera/collection
   /// id (used when embedding the dashboard for a single selected camera).
@@ -28,6 +34,10 @@ class AnalyticsScreen extends ConsumerStatefulWidget {
   /// Whether to show the screen-level app bar. Disable when embedding the
   /// dashboard inside another pane that provides its own chrome.
   final bool showAppBar;
+
+  /// Optional override for Recording vs Instant Detection. When set (e.g. from
+  /// the Cameras content pane), wins over the saved preference for first load.
+  final String? initialDataSource;
 
   @override
   ConsumerState<AnalyticsScreen> createState() => _AnalyticsScreenState();
@@ -103,7 +113,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final videoUuids = <String>[];
     final seenVideoUuids = <String>{};
 
-    for (final selectedCameraId in selectedCameraIds) {
+    // Parallel per-camera media search (was sequential and dominated cold loads).
+    final searches = selectedCameraIds.map((selectedCameraId) async {
       final matchingCamera = _cameras.cast<Map<String, dynamic>?>().firstWhere(
         (camera) => camera?['id'] == selectedCameraId,
         orElse: () => null,
@@ -113,17 +124,19 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           ? collectionUuid
           : selectedCameraId;
 
-      final mediaResponse = await apiClient.searchMedia(
+      return apiClient.searchMedia(
         collectionId: collectionId,
         startDate: effectiveStartDate,
         endDate: effectiveEndDate,
         limit: 500,
       );
+    });
 
+    final mediaResponses = await Future.wait(searches);
+    for (final mediaResponse in mediaResponses) {
       if (!mediaResponse.success || mediaResponse.data == null) {
         continue;
       }
-
       for (final media in mediaResponse.data!.items) {
         if (seenVideoUuids.add(media.uuid)) {
           videoUuids.add(media.uuid);
@@ -151,7 +164,13 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       return;
     }
 
-    if (storedDataSource == 'instant_detection' || storedDataSource == 'recording') {
+    final override = widget.initialDataSource?.trim();
+    if (override == 'instant_detection' || override == 'recording') {
+      setState(() {
+        _dataSource = override!;
+      });
+    } else if (storedDataSource == 'instant_detection' ||
+        storedDataSource == 'recording') {
       setState(() {
         _dataSource = storedDataSource!;
       });
@@ -166,6 +185,13 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   }
 
   Future<void> _loadAnalytics() async {
+    if (!mounted) return;
+
+    // Capture providers before any await — switching Cameras panes can dispose
+    // this widget mid-load (ValueKey remount), and later ref.read() would throw.
+    final apiClient = ref.read(mediaApiClientProvider);
+    final analyticsApiClient = ref.read(analyticsApiClientProvider);
+
     setState(() {
       _isLoading = true;
       _error = null;
@@ -173,208 +199,170 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     });
 
     try {
-      // Get MediaApiClient from provider
-      final apiClient = ref.read(mediaApiClientProvider);
-      
       // Load cameras list if empty (for filter dropdown)
       if (_cameras.isEmpty) {
         final camerasResponse = await apiClient.getCamerasList();
+        if (!mounted) return;
         if (camerasResponse.success && camerasResponse.data != null) {
           _cameras = camerasResponse.data!;
         }
       }
 
       final explicitVideoUuids = await _resolveAnalyticsVideoUuids(apiClient);
-      
-      // Load analytics summary from backend endpoint
-      final response = await apiClient.getAnalyticsSummary(
+      if (!mounted) return;
+
+      final cameraIds =
+          _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null;
+      final genders =
+          _selectedGenders.isNotEmpty ? _selectedGenders : null;
+      final ageGroups =
+          _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null;
+      final interval = (_timeFilter == 'today' ||
+              _timeFilter == 'last_hour' ||
+              _timeFilter == 'last_3_hours')
+          ? 'hour'
+          : 'day';
+
+      // One quality call is enough when there are no explicit video UUIDs
+      // (Instant Detection always; Recording when no videos resolved).
+      final needsSplitQuality =
+          explicitVideoUuids != null && explicitVideoUuids.isNotEmpty;
+
+      // Parallel fan-out: previously 5–6 sequential round-trips.
+      final summaryFuture = apiClient.getAnalyticsSummary(
         timeFilter: _timeFilter,
-        cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
+        cameraIds: cameraIds,
         videoUuids: explicitVideoUuids,
         forceRefresh: false,
         startDate: _startDate,
         endDate: _endDate,
-        genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
-        ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
+        genders: genders,
+        ageGroups: ageGroups,
         dataSource: _dataSource,
       );
-      
-      if (response.success && response.data != null) {
-        if (mounted) {
-          setState(() {
-            _analyticsSummary = AnalyticsSummary.fromJson(response.data!);
-            _isLoading = false;
-          });
-        }
-      } else {
+      final qualityFuture = analyticsApiClient.getMvrQualityMetrics(
+        timeFilter: _timeFilter,
+        collectionName: null,
+        cameraIds: cameraIds,
+        videoUuids: needsSplitQuality ? explicitVideoUuids : null,
+        startDate: _startDate,
+        endDate: _endDate,
+        genders: genders,
+        ageGroups: ageGroups,
+        dataSource: _dataSource,
+      );
+      final overviewQualityFuture = needsSplitQuality
+          ? analyticsApiClient.getMvrQualityMetrics(
+              timeFilter: _timeFilter,
+              collectionName: null,
+              cameraIds: cameraIds,
+              startDate: _startDate,
+              endDate: _endDate,
+              genders: genders,
+              ageGroups: ageGroups,
+              dataSource: _dataSource,
+            )
+          : null;
+      final timeSeriesFuture = apiClient.getTimeBasedAnalytics(
+        timeFilter: _timeFilter,
+        cameraIds: cameraIds,
+        videoUuids: explicitVideoUuids,
+        interval: interval,
+        startDate: _startDate,
+        endDate: _endDate,
+        dataSource: _dataSource,
+      );
+      final demographicsFuture = apiClient.getDemographicsBreakdown(
+        timeFilter: _timeFilter,
+        cameraIds: cameraIds,
+        videoUuids: explicitVideoUuids,
+        startDate: _startDate,
+        endDate: _endDate,
+        genders: genders,
+        ageGroups: ageGroups,
+        dataSource: _dataSource,
+      );
+      final behavioralFuture = apiClient.getBehavioralAnalytics(
+        timeFilter: _timeFilter,
+        cameraIds: cameraIds,
+        videoUuids: explicitVideoUuids,
+        startDate: _startDate,
+        endDate: _endDate,
+        genders: genders,
+        ageGroups: ageGroups,
+        dataSource: _dataSource,
+      );
+
+      final settled = await Future.wait([
+        summaryFuture,
+        qualityFuture,
+        if (overviewQualityFuture != null) overviewQualityFuture,
+        timeSeriesFuture,
+        demographicsFuture,
+        behavioralFuture,
+      ]);
+      if (!mounted) return;
+
+      var i = 0;
+      final response = settled[i++] as ApiResponse<Map<String, dynamic>>;
+      final qualityResponse = settled[i++] as ApiResponse<Map<String, dynamic>>;
+      final filteredQualityResponse = overviewQualityFuture != null
+          ? settled[i++] as ApiResponse<Map<String, dynamic>>
+          : qualityResponse;
+      final timeSeriesResponse =
+          settled[i++] as ApiResponse<Map<String, dynamic>>;
+      final demographicsResponse =
+          settled[i++] as ApiResponse<Map<String, dynamic>>;
+      final behavioralResponse =
+          settled[i++] as ApiResponse<Map<String, dynamic>>;
+
+      if (!response.success || response.data == null) {
         throw Exception(response.error ?? 'Failed to load analytics');
       }
-      
-      // Load MVR quality metrics (NEW)
-      try {
-        debugPrint('🔍 Analytics: Attempting to load MVR quality metrics...');
-        final analyticsApiClient = ref.read(analyticsApiClientProvider);
-        debugPrint('🔍 Analytics: Got analyticsApiClient: ${analyticsApiClient.runtimeType}');
 
-        final filteredQualityResponse = await analyticsApiClient.getMvrQualityMetrics(
-          timeFilter: _timeFilter,
-          collectionName: null, // null = all collections
-          cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
-          videoUuids: explicitVideoUuids,
-          startDate: _startDate,
-          endDate: _endDate,
-          genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
-          ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
-          dataSource: _dataSource,
+      MvrQualityMetrics? metrics;
+      if (qualityResponse.success && qualityResponse.data != null) {
+        final qualityMetrics =
+            MvrQualityMetrics.fromJson(qualityResponse.data!);
+        final overviewMetrics =
+            filteredQualityResponse.success && filteredQualityResponse.data != null
+                ? MvrQualityMetrics.fromJson(filteredQualityResponse.data!)
+                : qualityMetrics;
+        metrics = MvrQualityMetrics(
+          timeFilter: qualityMetrics.timeFilter,
+          collectionName: qualityMetrics.collectionName,
+          trackingSessionsCount: overviewMetrics.trackingSessionsCount,
+          totalIndividuals: overviewMetrics.totalIndividuals,
+          totalMvrPeople: overviewMetrics.totalMvrPeople,
+          totalVideosProcessed: overviewMetrics.totalVideosProcessed,
+          mvrWithQuality: qualityMetrics.mvrWithQuality,
+          mvrWithoutQuality: qualityMetrics.mvrWithoutQuality,
+          averageQuality: qualityMetrics.averageQuality,
+          minQuality: qualityMetrics.minQuality,
+          maxQuality: qualityMetrics.maxQuality,
+          qualityStdDev: qualityMetrics.qualityStdDev,
+          qualityGrade: qualityMetrics.qualityGrade,
+          dataCompleteness: qualityMetrics.dataCompleteness,
+          queryStartTime: qualityMetrics.queryStartTime,
+          queryEndTime: qualityMetrics.queryEndTime,
+          queriedAt: qualityMetrics.queriedAt,
         );
+      }
 
-        final qualityResponse = await analyticsApiClient.getMvrQualityMetrics(
-          timeFilter: _timeFilter,
-          collectionName: null, // null = all collections
-          cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
-          startDate: _startDate,
-          endDate: _endDate,
-          genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
-          ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
-          dataSource: _dataSource,
-        );
-        
-        debugPrint('🔍 Analytics: Quality response success: ${qualityResponse.success}');
-        if (qualityResponse.data != null) {
-          debugPrint('🔍 Analytics: Quality data keys: ${qualityResponse.data!.keys}');
-          debugPrint('🔍 Analytics: Average quality: ${qualityResponse.data!['average_quality']}');
-          debugPrint('🔍 Analytics: Quality grade: ${qualityResponse.data!['quality_grade']}');
-        } else {
-          debugPrint('⚠️  Analytics: Quality response data is null');
+      setState(() {
+        _analyticsSummary = AnalyticsSummary.fromJson(response.data!);
+        _mvrQualityMetrics = metrics;
+        if (timeSeriesResponse.success && timeSeriesResponse.data != null) {
+          _timeSeriesData = timeSeriesResponse.data!;
         }
-        
-        if (mounted && qualityResponse.success && qualityResponse.data != null) {
-          final qualityMetrics = MvrQualityMetrics.fromJson(qualityResponse.data!);
-          final overviewMetrics = filteredQualityResponse.success && filteredQualityResponse.data != null
-              ? MvrQualityMetrics.fromJson(filteredQualityResponse.data!)
-              : qualityMetrics;
-          final metrics = MvrQualityMetrics(
-            timeFilter: qualityMetrics.timeFilter,
-            collectionName: qualityMetrics.collectionName,
-            trackingSessionsCount: overviewMetrics.trackingSessionsCount,
-            totalIndividuals: overviewMetrics.totalIndividuals,
-            totalMvrPeople: overviewMetrics.totalMvrPeople,
-            totalVideosProcessed: overviewMetrics.totalVideosProcessed,
-            mvrWithQuality: qualityMetrics.mvrWithQuality,
-            mvrWithoutQuality: qualityMetrics.mvrWithoutQuality,
-            averageQuality: qualityMetrics.averageQuality,
-            minQuality: qualityMetrics.minQuality,
-            maxQuality: qualityMetrics.maxQuality,
-            qualityStdDev: qualityMetrics.qualityStdDev,
-            qualityGrade: qualityMetrics.qualityGrade,
-            dataCompleteness: qualityMetrics.dataCompleteness,
-            queryStartTime: qualityMetrics.queryStartTime,
-            queryEndTime: qualityMetrics.queryEndTime,
-            queriedAt: qualityMetrics.queriedAt,
-          );
-          debugPrint('✅ Analytics: Successfully parsed MvrQualityMetrics');
-          debugPrint('   - Overview sessions: ${metrics.trackingSessionsCount}');
-          debugPrint('   - Overview computed: ${metrics.totalIndividuals}');
-          debugPrint('   - Overview detected: ${metrics.totalMvrPeople}');
-          debugPrint('   - Has quality data: ${metrics.hasQualityData}');
-          debugPrint('   - Average quality: ${metrics.averageQuality}');
-          debugPrint('   - Quality grade: ${metrics.qualityGrade}');
-          
-          setState(() {
-            _mvrQualityMetrics = metrics;
-          });
-          debugPrint('✅ Analytics: State updated with MVR quality metrics');
-        } else {
-          debugPrint('⚠️  Analytics: Quality response not successful or data null');
-          if (!qualityResponse.success) {
-            debugPrint('   - Error: ${qualityResponse.error}');
-          }
-          if (mounted) {
-            setState(() {
-              _mvrQualityMetrics = null;
-            });
-          }
+        if (demographicsResponse.success && demographicsResponse.data != null) {
+          _demographicsData = demographicsResponse.data!;
         }
-      } catch (e, stackTrace) {
-        debugPrint('❌ Analytics: Failed to load MVR quality metrics: $e');
-        debugPrint('   Stack trace: $stackTrace');
-        if (mounted) {
-          setState(() {
-            _mvrQualityMetrics = null;
-          });
+        if (behavioralResponse.success && behavioralResponse.data != null) {
+          _behavioralData = behavioralResponse.data!;
         }
-        // Don't fail the whole page if quality metrics fails
-      }
-      
-      // Load time-series data for Level 2 analytics
-      try {
-        final timeSeriesResponse = await apiClient.getTimeBasedAnalytics(
-          timeFilter: _timeFilter,
-          cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
-          videoUuids: explicitVideoUuids,
-          interval: _timeFilter == 'today' || _timeFilter == 'last_hour' || _timeFilter == 'last_3_hours' 
-              ? 'hour' 
-              : 'day',
-          startDate: _startDate,
-          endDate: _endDate,
-          dataSource: _dataSource,
-        );
-        
-        if (mounted && timeSeriesResponse.success && timeSeriesResponse.data != null) {
-          setState(() {
-            _timeSeriesData = timeSeriesResponse.data!;
-          });
-        }
-      } catch (e) {
-        debugPrint('⚠️  Failed to load time-series data: $e');
-        // Don't fail the whole page if time-series fails
-      }
-      
-      // Load demographics data for Level 3 analytics
-      try {
-        final demographicsResponse = await apiClient.getDemographicsBreakdown(
-          timeFilter: _timeFilter,
-          cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
-          videoUuids: explicitVideoUuids,
-          startDate: _startDate,
-          endDate: _endDate,
-          genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
-          ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
-          dataSource: _dataSource,
-        );
-        
-        if (mounted && demographicsResponse.success && demographicsResponse.data != null) {
-          setState(() {
-            _demographicsData = demographicsResponse.data!;
-          });
-        }
-      } catch (e) {
-        debugPrint('⚠️  Failed to load demographics data: $e');
-        // Don't fail the whole page if demographics fails
-      }
-      
-      // Load behavioral analytics data for Level 4 analytics
-      try {
-        final behavioralResponse = await apiClient.getBehavioralAnalytics(
-          timeFilter: _timeFilter,
-          cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
-          videoUuids: explicitVideoUuids,
-          startDate: _startDate,
-          endDate: _endDate,
-          genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
-          ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
-          dataSource: _dataSource,
-        );
-        
-        if (mounted && behavioralResponse.success && behavioralResponse.data != null) {
-          setState(() {
-            _behavioralData = behavioralResponse.data!;
-          });
-        }
-      } catch (e) {
-        debugPrint('⚠️  Failed to load behavioral data: $e');
-        // Don't fail the whole page if behavioral fails
-      }
+        _isLoading = false;
+      });
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -806,11 +794,13 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                 _buildMetricCard(
                   title: _dataSource == 'instant_detection' ? 'Sessions' : 'Videos Analyzed',
                   value: _dataSource == 'instant_detection'
-                      ? '${_mvrQualityMetrics?.trackingSessionsCount ?? 0}'
+                      ? '${_mvrQualityMetrics?.trackingSessionsCount ?? _analyticsSummary?.totalVideos ?? 0}'
                       : _analyticsSummary?.totalVideos.toString() ?? '--',
                   icon: _dataSource == 'instant_detection' ? Icons.visibility : Icons.movie,
                   color: Colors.orange,
-                  subtitle: _dataSource == 'instant_detection' ? 'Detection sessions' : 'In time range',
+                  subtitle: _dataSource == 'instant_detection'
+                      ? 'Flush windows (Instant Detection logs)'
+                      : 'In time range',
                 ),
                 // NEW: Show Image Quality as main metric
                 if (_mvrQualityMetrics != null && _mvrQualityMetrics!.hasQualityData)

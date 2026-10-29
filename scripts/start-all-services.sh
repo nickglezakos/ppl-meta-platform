@@ -78,7 +78,7 @@ start_service \
 start_service \
     "ppl-meta-media" \
     "ppl-meta-media" \
-    "source venv/bin/activate && PYTHONPATH=$PROJECT_ROOT/ppl-meta-media python src/main.py" \
+    "bash $PROJECT_ROOT/scripts/start-local-media.sh" \
     "8000"
 
 # Start Gateway Service

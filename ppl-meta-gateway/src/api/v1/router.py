@@ -140,15 +140,19 @@ _LOCAL_SERVICE_URLS = {
 def _service_url(env_name: str, fallback: str) -> str:
     explicit = (os.getenv(env_name) or "").strip()
     if explicit:
-        return explicit.rstrip("/")
-    resolved = (fallback or "").strip()
-    # Compose DNS (ppl-meta-*) does not resolve on the Mac. Containers set the
-    # env vars, or run with /.dockerenv, and keep the compose hostname.
-    if not _running_in_docker() and "ppl-meta-" in resolved:
-        local = _LOCAL_SERVICE_URLS.get(env_name)
-        if local:
-            return local
-    return resolved.rstrip("/")
+        resolved = explicit
+    else:
+        resolved = (fallback or "").strip()
+        # Compose DNS (ppl-meta-*) does not resolve on the Mac. Containers set the
+        # env vars, or run with /.dockerenv, and keep the compose hostname.
+        if not _running_in_docker() and "ppl-meta-" in resolved:
+            local = _LOCAL_SERVICE_URLS.get(env_name)
+            if local:
+                resolved = local
+    # Gateway proxies forward the full request path (/api/v1/...). Bases that
+    # already end with /api/v1 (common in Presence/Media client envs) must be
+    # normalized or audit/logs become /api/v1/api/v1/... → 404.
+    return resolved.rstrip("/").removesuffix("/api/v1").rstrip("/")
 
 
 _HOP_BY_HOP_HEADERS = frozenset(
@@ -1360,6 +1364,32 @@ async def delete_trigger(request: Request):
 async def toggle_trigger(request: Request):
     """Proxy toggle trigger to Media service."""
     return await _proxy_to_media_service(request)
+
+
+# Instant Detection flush logs (Automation domain) — Media service
+@api_router.get("/instant-detection-logs")
+async def list_instant_detection_logs(request: Request):
+    """Proxy Instant Detection flush logs list to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/instant-detection-logs/analytics/summary")
+async def instant_detection_logs_analytics_summary(request: Request):
+    """Proxy Instant Detection flush analytics summary to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/instant-detection-logs/{log_id}")
+async def get_instant_detection_log(request: Request):
+    """Proxy single Instant Detection flush log to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.post("/instant-detection-logs")
+async def create_instant_detection_log(request: Request):
+    """Proxy Instant Detection flush log create to Media service."""
+    return await _proxy_to_media_service(request)
+
 
 
 # User Actions Routes - Proxy to Media service

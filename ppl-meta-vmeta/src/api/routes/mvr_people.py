@@ -6450,6 +6450,74 @@ async def process_media_independently(
 
 
 # ============================================================================
+# ENDPOINT 15a: Hierarchical MVR Merge Preview (in-memory records)
+# ============================================================================
+
+@router.post(
+    "/merge/hierarchical/preview-from-records",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="In-memory hierarchical merge preview (Instant Detection flush)",
+)
+async def hierarchical_merge_preview_from_records(
+    mvr_records: List[Dict[str, Any]] = Body(
+        ..., description="In-memory MVR-shaped records with face_embedding"
+    ),
+    similarity_threshold: float = Body(0.60, ge=0.30, le=0.95),
+    min_similarity_check: float = Body(0.50, ge=0.30, le=0.80),
+    force_merge: bool = Body(False),
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    mvr_matcher: MVRMatcher = Depends(get_mvr_matcher),
+):
+    """
+    Same merge core as search/by-videos auto-merge preview, for ephemeral InstantMvr records.
+    Does not write mvr_people hierarchy.
+    """
+    try:
+        from services.hierarchical_mvr_merger import HierarchicalMVRMerger
+
+        if len(mvr_records) > 2000:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Maximum 2000 records per preview-from-records request",
+            )
+
+        # Normalize UUID keys for merger helpers
+        normalized = []
+        for rec in mvr_records:
+            item = dict(rec)
+            if "mvr_people_uuid" not in item and item.get("instant_mvr_uuid"):
+                item["mvr_people_uuid"] = item["instant_mvr_uuid"]
+            if isinstance(item.get("mvr_people_uuid"), str):
+                try:
+                    item["mvr_people_uuid"] = UUID(item["mvr_people_uuid"])
+                except ValueError:
+                    pass
+            if item.get("quality_score") is None:
+                item["quality_score"] = float(item.get("face_quality") or 0.5)
+            normalized.append(item)
+
+        merger = HierarchicalMVRMerger(
+            repository=mvr_repository,
+            mvr_matcher=mvr_matcher,
+        )
+        return await merger.preview_hierarchical_merge_records(
+            mvr_people=normalized,
+            similarity_threshold=similarity_threshold,
+            min_similarity_check=min_similarity_check,
+            force_merge=force_merge,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("preview-from-records failed: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"preview-from-records failed: {e}",
+        ) from e
+
+
+# ============================================================================
 # ENDPOINT 15: Hierarchical MVR Merge
 # ============================================================================
 

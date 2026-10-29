@@ -86,6 +86,47 @@ class ContentBar extends StatelessWidget {
     );
   }
 
+  /// Compact pill with three exclusive modes (e.g. analytics / logs / settings).
+  static Widget tripleModePill({
+    required int selectedIndex,
+    required ValueChanged<int> onChanged,
+    required ColorScheme scheme,
+    required List<IconData> icons,
+    List<String>? tooltips,
+  }) {
+    assert(icons.length == 3, 'tripleModePill requires exactly 3 icons');
+    assert(selectedIndex >= 0 && selectedIndex < 3);
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outlineVariant),
+        color: scheme.surface,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < 3; i++)
+            Tooltip(
+              message: (tooltips != null && i < tooltips.length)
+                  ? tooltips[i]
+                  : 'Mode ${i + 1}',
+              child: InkWell(
+                onTap: () => onChanged(i),
+                borderRadius: BorderRadius.circular(16),
+                child: _pillIcon(
+                  scheme: scheme,
+                  icon: icons[i],
+                  selected: selectedIndex == i,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   static Widget _pillIcon({
     required ColorScheme scheme,
     required IconData icon,

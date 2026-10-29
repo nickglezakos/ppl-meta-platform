@@ -93,10 +93,12 @@ add "$CAM/add_tolerance_percent.sql"
 add "$CAM/add_workflow_settings.sql"
 add "$CAM/create_profile_templates.sql"
 add "$CAM/increase_model_serial_number_sizes.sql"
+add "$CAM/add_instant_detection_flush_settings.sql"
 
 # --- Media ---
 add "$REPO_ROOT/ppl-meta-media/migrations/add_recording_timestamps.sql"
 add "$REPO_ROOT/ppl-meta-media/migrations/add_signage_rich_message_templates.sql"
+add "$REPO_ROOT/ppl-meta-media/migrations/add_instant_detection_logs.sql"
 
 # --- Installer ORM clash fixes only ---
 add "$COMPAT/012_recording_sessions_cameras_compat.sql"

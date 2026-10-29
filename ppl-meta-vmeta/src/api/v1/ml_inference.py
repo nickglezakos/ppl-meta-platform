@@ -142,6 +142,14 @@ class FaceIdentityResponse(BaseModel):
     dedupe_reused_existing: bool = False
 
 
+class FaceEmbedResponse(BaseModel):
+    """FaceNet embedding only — no gallery match or mvr_people write."""
+    success: bool
+    face_embedding: Optional[list] = None
+    face_quality: float = 0.0
+    detection_confidence: float = 0.0
+
+
 @router.post("/detect-age-gender", response_model=AgeGenderResponse)
 async def detect_age_gender(
     file: UploadFile = File(..., description="Face region image (JPEG/PNG)")
@@ -254,6 +262,52 @@ async def ml_status():
         "deepface_models_warm": _deepface_models is not None,
         "ready": bool(_deepface_models),
     }
+
+
+@router.post("/embed-face", response_model=FaceEmbedResponse)
+async def embed_face(
+    file: UploadFile = File(..., description="Face region image (JPEG/PNG)"),
+    mvr_service: MVRService = Depends(get_mvr_service),
+):
+    """
+    Extract a FaceNet embedding from a face crop without gallery lookup or DB writes.
+
+    Used by Instant Detection live cycles to attach ephemeral InstantMvr embeddings
+    for Redis / Vprofile matching.
+    """
+    try:
+        file_content = await file.read()
+        nparr = np.frombuffer(file_content, np.uint8)
+        face_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if face_image is None:
+            raise HTTPException(status_code=400, detail="Invalid image format")
+
+        ml_result = await asyncio.to_thread(
+            mvr_service.ml_processor.process_face,
+            face_image,
+            False,
+            None,
+        )
+        if not ml_result or not ml_result.get("success"):
+            return FaceEmbedResponse(success=False)
+
+        embedding_data = ml_result.get("face_embedding")
+        if not embedding_data:
+            return FaceEmbedResponse(success=False)
+
+        return FaceEmbedResponse(
+            success=True,
+            face_embedding=list(embedding_data),
+            face_quality=float(ml_result.get("face_quality", 0.5) or 0.5),
+            detection_confidence=float(
+                ml_result.get("detection_confidence", 0.5) or 0.5
+            ),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in embed-face: {e}")
+        raise HTTPException(status_code=500, detail=f"embed-face failed: {e}") from e
 
 
 @router.post("/identify-face", response_model=FaceIdentityResponse)

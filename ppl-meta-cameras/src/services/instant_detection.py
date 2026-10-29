@@ -22,7 +22,7 @@ import uuid
 import os
 from dataclasses import dataclass, field
 from typing import Any, List, Dict, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 import cv2
@@ -34,6 +34,40 @@ from src.services.instant_velocity import attach_cycle_velocity
 logger = logging.getLogger(__name__)
 
 LEGACY_MEDIA_TRIGGER_WEBHOOK_SUFFIX = "/api/v1/triggers/instant-detection"
+# Instant Detection historically used relative in-cycle offsets (0.0/0.5/1.0).
+# Values below this floor are treated as relative, not Unix wall-clock epochs.
+_EPOCH_FLOOR = 1_000_000_000.0
+
+
+def _absolute_source_timestamp(
+    value: Any,
+    *,
+    cycle_wall_start: Optional[float] = None,
+) -> float:
+    """Return wall-clock epoch seconds for a face/frame source timestamp."""
+    if isinstance(value, (int, float)):
+        ts = float(value)
+        if ts >= _EPOCH_FLOOR:
+            return ts
+        base = float(cycle_wall_start) if cycle_wall_start is not None else time.time()
+        return base + max(ts, 0.0)
+    if isinstance(value, str) and value.strip():
+        text = value.strip()
+        try:
+            ts = float(text)
+            if ts >= _EPOCH_FLOOR:
+                return ts
+            base = float(cycle_wall_start) if cycle_wall_start is not None else time.time()
+            return base + max(ts, 0.0)
+        except ValueError:
+            try:
+                dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.timestamp()
+            except ValueError:
+                pass
+    return float(cycle_wall_start) if cycle_wall_start is not None else time.time()
 
 
 def _is_legacy_media_trigger_webhook(url: Optional[str]) -> bool:
@@ -273,6 +307,9 @@ class CameraSamplerState:
     pending_task_id: Optional[str] = None
     # Per-camera cycle period (seconds). Overrides manager default.
     sampling_interval: int = 5
+    frames_per_cycle: int = 3
+    flush_interval_cycles: int = 12
+    flush_merge_similarity_threshold: float = 0.60
 
 
 def _clamp_sampling_interval(seconds: Optional[int], default: int = 5) -> int:
@@ -647,10 +684,11 @@ class InstantDetectionSampler:
                 finally:
                     loop.close()
                 
-                # Capture 3 frames from queue worker
-                frames = self._capture_3_frames_from_queue(camera_id)
+                # Capture frames_per_cycle frames from queue worker
+                n_frames = max(1, int(getattr(state, "frames_per_cycle", None) or 3))
+                frames = self._capture_n_frames_from_queue(camera_id, n_frames)
                 
-                if len(frames) == 3:
+                if len(frames) >= n_frames:
                     # Avoid piling soft-time-limit failures: wait for in-flight task
                     if state.pending_task_id:
                         try:
@@ -686,14 +724,11 @@ class InstantDetectionSampler:
                     )
                     consecutive_failures = 0
                     
-                    # --- Persist to database (governed by storage_multiple) ---
+                    # --- Y-window flush to Instant Detection Automation logs ---
                     state.cycle_counter += 1
-                    if (
-                        state.storage_multiple > 0
-                        and state.session_uuid
-                        and state.cycle_counter % state.storage_multiple == 0
-                    ):
-                        self._maybe_persist_cycle(state)
+                    y = max(1, int(state.flush_interval_cycles or 12))
+                    if state.cycle_counter % y == 0:
+                        self._maybe_flush_y_window(state)
                     
                 elif len(frames) == 0:
                     consecutive_failures += 1
@@ -712,7 +747,7 @@ class InstantDetectionSampler:
                 else:
                     consecutive_failures += 1
                     logger.warning(
-                        f"⚠️ Only captured {len(frames)}/3 frames for {camera_id} "
+                        f"⚠️ Only captured {len(frames)}/{n_frames} frames for {camera_id} "
                         f"(failure {consecutive_failures}/{max_failures})"
                     )
                     
@@ -749,33 +784,42 @@ class InstantDetectionSampler:
         
         state.running = False
         logger.info(f"🛑 Instant detection sample loop exited for {camera_id}")
+        # Flush leftover Redis cycles so Logs pane is not empty when stopped
+        # before hitting flush_interval_cycles (default Y=12).
+        try:
+            self._maybe_flush_y_window(state)
+        except Exception as flush_exc:
+            logger.warning(
+                "⚠️ [FLUSH] End-of-run flush failed for %s: %s",
+                camera_id,
+                flush_exc,
+            )
     
     def _capture_3_frames_from_queue(self, camera_id: str) -> List[Dict]:
+        """Backward-compatible alias for default 3-frame cycles."""
+        return self._capture_n_frames_from_queue(camera_id, 3)
+
+    def _capture_n_frames_from_queue(self, camera_id: str, n_frames: int = 3) -> List[Dict]:
         """
-        Capture 3 frames from queue worker buffer (non-blocking, no contention).
-        
-        Temporal spacing:
-        - Frame 0: t=0.0s
-        - Frame 1: t=0.5s (temporal_window / 2)
-        - Frame 2: t=1.0s (temporal_window)
-        
-        Total window: 1 second (captures motion context)
-        
-        Args:
-            camera_id: Camera device ID
-        
-        Returns:
-            List of frame dictionaries with frame, timestamp, and index
+        Capture n frames from queue worker buffer (non-blocking, no contention).
+
+        Frames are spaced across temporal_window seconds.
         """
         frames = []
+        n_frames = max(1, int(n_frames or 3))
         
         try:
             import asyncio
             from src.services.camera_service_queue import get_camera_service as get_queue_service
             
-            frame_spacing = self.temporal_window / 2  # 0.5s for 1.0s window
+            frame_spacing = (
+                self.temporal_window / max(1, n_frames - 1)
+                if n_frames > 1
+                else 0.0
+            )
             
-            for i in range(3):
+            capture_t0 = time.time()
+            for i in range(n_frames):
                 # Read frame from queue worker (non-blocking)
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -787,14 +831,17 @@ class InstantDetectionSampler:
                 
                 if frame is not None:
                     logger.debug(f"📸 [INSTANT-DETECT] Frame {i} from queue worker for {camera_id}")
+                    relative_ts = i * frame_spacing
                     frames.append({
                         "frame": frame.copy(),
-                        "timestamp": i * frame_spacing,
+                        # Wall-clock source time for Y-flush / contamination metrics.
+                        "timestamp": capture_t0 + relative_ts,
+                        "relative_timestamp": relative_ts,
                         "frame_index": i
                     })
                     
                     # Wait between frames (except after last frame)
-                    if i < 2:
+                    if i < n_frames - 1 and frame_spacing > 0:
                         time.sleep(frame_spacing)
                 else:
                     logger.warning(f"Failed to capture frame {i} from queue worker")
@@ -831,6 +878,7 @@ class InstantDetectionSampler:
                 return frames
             
             frame_spacing = self.temporal_window / 2  # 0.5s for 1.0s window
+            capture_t0 = time.time()
             
             for i in range(3):
                 # ✅ READ FROM FRAME BUFFER if available (RTSP cameras)
@@ -846,9 +894,11 @@ class InstantDetectionSampler:
                 
                 if ret and frame is not None:
                     logger.debug(f"📸 Captured frame {i}: shape={frame.shape}, size={frame.size}")
+                    relative_ts = i * frame_spacing
                     frames.append({
                         "frame": frame.copy(),
-                        "timestamp": i * frame_spacing,
+                        "timestamp": capture_t0 + relative_ts,
+                        "relative_timestamp": relative_ts,
                         "frame_index": i
                     })
                     
@@ -882,14 +932,17 @@ class InstantDetectionSampler:
                 return frames
             
             frame_spacing = self.temporal_window / 2  # 0.5s for 1.0s window
+            capture_t0 = time.time()
             
             for i in range(3):
                 ret, frame = cap.read()
                 
                 if ret and frame is not None:
+                    relative_ts = i * frame_spacing
                     frames.append({
                         "frame": frame.copy(),
-                        "timestamp": i * frame_spacing,
+                        "timestamp": capture_t0 + relative_ts,
+                        "relative_timestamp": relative_ts,
                         "frame_index": i
                     })
                     
@@ -922,6 +975,7 @@ class InstantDetectionSampler:
         later (same Redis queue / VMeta persist-batch path as faces).
         """
         start_time = time.time()
+        cycle_wall_start = start_time
         
         logger.info(f"🚀🚀🚀 [_process_3_frames] STARTING instant detection for camera {camera_id} with {len(frames)} frames")
         
@@ -940,7 +994,12 @@ class InstantDetectionSampler:
                 for array_position, frame_data in enumerate(frames):
                     frame = frame_data["frame"]
                     frame_index = frame_data["frame_index"]
-                    timestamp = frame_data["timestamp"]
+                    # Normalize to wall-clock epoch (captures may still send relative offsets).
+                    timestamp = _absolute_source_timestamp(
+                        frame_data.get("timestamp"),
+                        cycle_wall_start=cycle_wall_start,
+                    )
+                    frame_data["timestamp"] = timestamp
                     
                     # Store mapping from Vision's frame_index to our array position
                     frame_index_map[frame_index] = array_position
@@ -1048,19 +1107,35 @@ class InstantDetectionSampler:
                         )
                         person["age_gender"] = age_gender
 
-                        # Resolve person identity against vmeta MVR store
-                        identity_match = await self._identify_face_via_vmeta_service(
+                        # Ephemeral InstantMvr: embed only (no gallery identify / DB write)
+                        embed = await self._embed_face_via_vmeta_service(
                             session,
                             frames[array_position]["frame"],
-                            selected_face["bbox"]
+                            selected_face["bbox"],
                         )
-                        if identity_match.get("matched") and identity_match.get("mvr_people_uuid"):
-                            mvr_uuid = identity_match["mvr_people_uuid"]
-                            person["mvr_person_uuid"] = mvr_uuid
-                            selected_face["mvr_person_uuid"] = mvr_uuid
+                        if embed.get("success") and embed.get("face_embedding"):
+                            instant_mvr_uuid = str(uuid.uuid4())
+                            instant_mvr = {
+                                "instant_mvr_uuid": instant_mvr_uuid,
+                                "mvr_people_uuid": instant_mvr_uuid,
+                                "face_embedding": embed["face_embedding"],
+                                "face_quality": embed.get("face_quality", 0.5),
+                                "quality_score": embed.get("face_quality", 0.5),
+                                "age_gender": person.get("age_gender"),
+                                "person_object_uuid": person.get("person_object_uuid")
+                                or person.get("person_id"),
+                                "camera_id": camera_id,
+                                "bbox": selected_face.get("bbox"),
+                            }
+                            person["instant_mvr"] = instant_mvr
+                            person["instant_mvr_uuid"] = instant_mvr_uuid
+                            person["face_embedding"] = embed["face_embedding"]
+                            selected_face["instant_mvr_uuid"] = instant_mvr_uuid
+                            selected_face["face_embedding"] = embed["face_embedding"]
                             logger.info(
-                                f"✅ Instant identity resolved: camera={camera_id}, mvr={mvr_uuid}, "
-                                f"similarity={identity_match.get('similarity_score', 0.0):.3f}"
+                                "✅ Instant ephemeral embed: camera=%s instant_mvr=%s",
+                                camera_id,
+                                instant_mvr_uuid[:8],
                             )
                     else:
                         logger.error(f"❌ SKIP VMeta: array_position {array_position} >= len(frames) {len(frames)}")
@@ -1074,6 +1149,51 @@ class InstantDetectionSampler:
         # Step 5: Per-person + crowd velocity (Vision px/ms → m/s via face height)
         velocity_summary = attach_cycle_velocity(person_objects, body_persons)
         
+        instant_mvrs = [
+            p["instant_mvr"]
+            for p in person_objects
+            if isinstance(p.get("instant_mvr"), dict)
+        ]
+        # Serializable face detections for Y-window flush buffer (no image bytes)
+        serializable_faces: List[Dict] = []
+        for face in all_face_detections:
+            bbox = face.get("bbox")
+            bx1, by1, bx2, by2 = (
+                face.get("bbox_x1"),
+                face.get("bbox_y1"),
+                face.get("bbox_x2"),
+                face.get("bbox_y2"),
+            )
+            if (
+                (bx1 is None or by1 is None or bx2 is None or by2 is None)
+                and isinstance(bbox, (list, tuple))
+                and len(bbox) >= 4
+            ):
+                bx1, by1, bx2, by2 = bbox[0], bbox[1], bbox[2], bbox[3]
+            source_ts = _absolute_source_timestamp(
+                face.get("timestamp"),
+                cycle_wall_start=cycle_wall_start,
+            )
+            serializable_faces.append(
+                {
+                    "id": face.get("id") or face.get("face_id") or str(uuid.uuid4()),
+                    "face_id": face.get("face_id") or face.get("id"),
+                    "bbox": bbox if bbox is not None else [bx1, by1, bx2, by2],
+                    "bbox_x1": bx1,
+                    "bbox_y1": by1,
+                    "bbox_x2": bx2,
+                    "bbox_y2": by2,
+                    "confidence": face.get("confidence", 0.0),
+                    "frame_index": face.get("frame_index", face.get("frame_number", 0)),
+                    "frame_number": face.get("frame_number", face.get("frame_index", 0)),
+                    # Absolute wall-clock source time (not frames/30).
+                    "timestamp": source_ts,
+                    "created_at": datetime.fromtimestamp(
+                        source_ts, tz=timezone.utc
+                    ).isoformat(),
+                }
+            )
+
         logger.info(
             f"✅ Instant detection complete: {len(person_objects)} people, "
             f"{total_faces} faces, {len(body_persons)} body persons, "
@@ -1086,6 +1206,7 @@ class InstantDetectionSampler:
         return {
             "success": True,
             "camera_id": camera_id,
+            "cycle_id": session_uuid,
             "timestamp": datetime.now().isoformat(),
             "face_detection_enabled": face_enabled,
             "temporal_window_seconds": self.temporal_window,
@@ -1100,6 +1221,8 @@ class InstantDetectionSampler:
             "vehicles": vehicle_detections,
             "demographics": demographics,  # NEW: Gender/age breakdown
             "person_objects": person_objects,
+            "instant_mvrs": instant_mvrs,
+            "face_detections_for_flush": serializable_faces,
             "body_detections": body_detections,
             "body_persons": body_persons,
             "crowd_velocity_mps": velocity_summary.get("crowd_velocity_mps"),
@@ -1113,7 +1236,7 @@ class InstantDetectionSampler:
             },
             "processing_time_seconds": processing_time,
             "detection_method": "vision_service_three_tier_grouping",
-            "storage": "none",
+            "storage": "redis_ephemeral",
         }
     
     def _resolve_instant_runtime(self, camera_id: str) -> str:
@@ -2177,6 +2300,72 @@ class InstantDetectionSampler:
             logger.error(f"Error getting age/gender from VMeta: {e}")
             return self._default_age_gender()
 
+    async def _embed_face_via_vmeta_service(
+        self,
+        session: aiohttp.ClientSession,
+        frame: np.ndarray,
+        bbox: List[int],
+    ) -> Dict[str, Any]:
+        """
+        Extract FaceNet embedding only (no gallery match / no mvr_people write).
+        """
+        _empty = {"success": False, "face_embedding": None, "face_quality": 0.0}
+
+        if not self._vmeta_circuit.allow_request():
+            logger.debug("VMeta circuit OPEN – skipping embed-face")
+            return _empty
+
+        try:
+            x1, y1, x2, y2 = [int(v) for v in bbox]
+            height, width = frame.shape[:2]
+
+            x1 = max(0, min(x1, width - 1))
+            y1 = max(0, min(y1, height - 1))
+            x2 = max(x1 + 1, min(x2, width))
+            y2 = max(y1 + 1, min(y2, height))
+
+            face_roi = frame[y1:y2, x1:x2]
+            if face_roi.size == 0:
+                return _empty
+
+            ok, buffer = cv2.imencode(".jpg", face_roi)
+            if not ok:
+                return _empty
+
+            data = aiohttp.FormData()
+            data.add_field(
+                "file",
+                buffer.tobytes(),
+                filename="face.jpg",
+                content_type="image/jpeg",
+            )
+
+            url = f"{self.vmeta_service_url}/api/v1/ml/embed-face"
+            identity_timeout = float(os.getenv("VMETA_IDENTITY_TIMEOUT", "8"))
+            timeout = aiohttp.ClientTimeout(total=identity_timeout)
+            self._vmeta_semaphore.acquire()
+            try:
+                async with session.post(url, data=data, timeout=timeout) as response:
+                    if response.status == 200:
+                        self._vmeta_circuit.record_success()
+                        payload = await response.json()
+                        return {
+                            "success": bool(payload.get("success")),
+                            "face_embedding": payload.get("face_embedding"),
+                            "face_quality": float(payload.get("face_quality") or 0.5),
+                            "detection_confidence": float(
+                                payload.get("detection_confidence") or 0.5
+                            ),
+                        }
+                    self._vmeta_circuit.record_failure()
+                    return _empty
+            finally:
+                self._vmeta_semaphore.release()
+        except Exception as exc:
+            self._vmeta_circuit.record_failure()
+            logger.debug("embed-face failed: %s", exc)
+            return _empty
+
     async def _identify_face_via_vmeta_service(
         self,
         session: aiohttp.ClientSession,
@@ -2184,7 +2373,8 @@ class InstantDetectionSampler:
         bbox: List[int]
     ) -> Dict[str, Any]:
         """
-        Resolve a face crop to an MVR identity using vmeta similarity lookup.
+        Legacy gallery identify — retained for non-instant callers / admin tools.
+        Instant Detection live path uses _embed_face_via_vmeta_service instead.
 
         Returns:
             {"matched": bool, "mvr_people_uuid": str|None, "similarity_score": float}
@@ -2229,7 +2419,7 @@ class InstantDetectionSampler:
                 f"&dedupe_similarity_threshold={dedupe_similarity_threshold}"
                 f"&enable_dedupe_reuse=true"
                 f"&max_results={max_results}"
-                f"&create_if_missing=true"
+                f"&create_if_missing=false"
             )
 
             identity_timeout = float(os.getenv("VMETA_IDENTITY_TIMEOUT", "8"))
@@ -2760,54 +2950,45 @@ class InstantDetectionSampler:
     # Instant detection persistent storage helpers
     # ------------------------------------------------------------------
 
-    def _maybe_persist_cycle(self, state: 'CameraSamplerState'):
-        """Submit a persist task for the latest cached detection result.
-
-        Face person_objects and body_persons share the same Redis batch →
-        VMeta persist-batch flush path.
-        """
+    def _maybe_flush_y_window(self, state: 'CameraSamplerState'):
+        """Enqueue Y-window re-group + hierarchical merge + Automation log flush."""
         camera_id = state.camera_id
         try:
-            # Check if session needs rotation first
             if self._should_rotate_session(state):
                 self._rotate_tracking_session(state)
 
-            # Get the latest result from Redis cache
-            import redis as _redis
-            import json as _json
+            from src.services.instant_detection_flush import enqueue_y_window_flush
 
-            r = _redis.Redis(host=__import__('os').getenv('REDIS_HOST','redis'), port=int(__import__('os').getenv('REDIS_PORT','6379')), decode_responses=False)
-            cached = r.get(f"instant_detection:{camera_id}")
-            if not cached:
-                return
-
-            result = _json.loads(cached.decode("utf-8"))
-            person_objects = result.get("person_objects") or []
-            body_persons = result.get("body_persons") or []
-            if not person_objects and not body_persons:
-                return
-
-            from src.tasks.instant_detection_tasks import persist_instant_detection_results
-
-            persist_instant_detection_results.delay(
-                camera_id=camera_id,
+            y = int(getattr(state, "flush_interval_cycles", None) or 12)
+            enqueue_y_window_flush(
+                camera_id,
                 session_uuid=state.session_uuid,
-                cycle_timestamp=result.get("timestamp", datetime.utcnow().isoformat()),
-                person_objects=person_objects,
-                demographics=result.get("demographics", {}),
                 auth_token=state.auth_token or "",
-                body_persons=body_persons,
-                crowd_velocity_mps=result.get("crowd_velocity_mps"),
-                max_person_speed_mps=result.get("max_person_speed_mps"),
-                crowd_person_count=result.get("crowd_person_count"),
+                frames_per_cycle=int(getattr(state, "frames_per_cycle", None) or 3),
+                flush_interval_cycles=y,
+                merge_threshold=float(
+                    getattr(state, "flush_merge_similarity_threshold", None) or 0.60
+                ),
             )
             logger.info(
-                f"📦 [PERSIST] Queued storage for {camera_id} "
-                f"(faces={len(person_objects)}, bodies={len(body_persons)}, "
-                f"cycle {state.cycle_counter}, session {state.session_uuid[:8]}...)"
+                "📦 [FLUSH] Queued Y-window flush for %s (cycle %s, Y=%s)",
+                camera_id,
+                state.cycle_counter,
+                y,
             )
         except Exception as e:
-            logger.warning(f"⚠️ [PERSIST] Failed to submit persist task: {e}")
+            logger.warning("⚠️ [FLUSH] Failed to submit Y-window flush: %s", e)
+
+    def _maybe_persist_cycle(self, state: 'CameraSamplerState'):
+        """Legacy VMeta persist-batch path — disabled for Redis-first Instant Detection.
+
+        Durable Instant Detection analytics now come from Y-window flush logs.
+        """
+        logger.debug(
+            "Skipping legacy persist-batch for %s (Redis-first flush path active)",
+            state.camera_id,
+        )
+        return
 
     def _should_rotate_session(self, state: 'CameraSamplerState') -> bool:
         """Check whether the current tracking session duration has been exceeded."""
@@ -3162,6 +3343,7 @@ class InstantDetectionSampler:
             # Decode base64 frames back to numpy arrays
             frames = []
             frame_spacing = self.temporal_window / 2  # 0.5s for 1.0s window
+            capture_t0 = time.time()
             for i, frame_b64 in enumerate(frames_data):
                 # Decode base64 to bytes
                 frame_bytes = base64.b64decode(frame_b64)
@@ -3169,10 +3351,12 @@ class InstantDetectionSampler:
                 nparr = np.frombuffer(frame_bytes, np.uint8)
                 # Decode JPEG to image
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                relative_ts = i * frame_spacing
                 frames.append({
                     "frame": frame,
                     "frame_index": i,
-                    "timestamp": i * frame_spacing,
+                    "timestamp": capture_t0 + relative_ts,
+                    "relative_timestamp": relative_ts,
                 })
             
             if len(frames) != 3:

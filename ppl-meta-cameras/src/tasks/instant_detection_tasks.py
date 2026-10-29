@@ -586,6 +586,44 @@ def process_instant_detection(
                 logger.error(f"❌ [CELERY] Failed to cache in Redis: {e}")
                 # Fallback to instance cache (won't work cross-process but better than nothing)
                 detector._cache_result(camera_id, result)
+
+            # Buffer cycle faces / InstantMvrs for Y-window flush (no DB yet)
+            try:
+                from src.services.instant_detection_flush import push_cycle_to_flush_buffer
+
+                buf_len = push_cycle_to_flush_buffer(
+                    camera_id,
+                    cycle_id=result.get("cycle_id") or result.get("timestamp"),
+                    timestamp=result.get("timestamp"),
+                    face_detections=result.get("face_detections_for_flush") or [],
+                    person_objects=result.get("person_objects") or [],
+                    instant_mvrs=result.get("instant_mvrs") or [],
+                )
+                # Threshold flush from the worker (in case sampler Y-counter missed
+                # a stop / restart before cycle_counter % Y).
+                flush_y = int(
+                    os.getenv("INSTANT_DETECTION_FLUSH_INTERVAL_CYCLES", "12") or 12
+                )
+                flush_y = max(1, flush_y)
+                if buf_len >= flush_y:
+                    flush_instant_detection_y_window.delay(
+                        camera_id=camera_id,
+                        session_uuid=result.get("cycle_id"),
+                        auth_token=os.getenv("INTERNAL_SERVICE_TOKEN", ""),
+                        flush_interval_cycles=flush_y,
+                    )
+                    logger.info(
+                        "📦 [CELERY] Buffer hit Y=%s for %s (len=%s) — queued flush",
+                        flush_y,
+                        camera_id,
+                        buf_len,
+                    )
+            except Exception as buf_exc:
+                logger.warning(
+                    "⚠️ [CELERY] Failed to push flush buffer for %s: %s",
+                    camera_id,
+                    buf_exc,
+                )
             
             # Publish to Redis Pub/Sub
             _publish_to_redis(camera_id, result)
@@ -628,6 +666,24 @@ def _publish_to_redis(camera_id: str, result: Dict):
         if object_count is None:
             object_count = len(objects)
         source_mvr_uuids = _extract_source_identity_uuids(result.get("person_objects") or [])
+        instant_mvrs = result.get("instant_mvrs") or []
+        # Compact source embeddings for Vprofile (Redis-only; no DB resolve)
+        source_embeddings = []
+        for mvr in instant_mvrs:
+            emb = mvr.get("face_embedding")
+            if not emb:
+                continue
+            source_embeddings.append(
+                {
+                    "instant_mvr_uuid": mvr.get("instant_mvr_uuid")
+                    or mvr.get("mvr_people_uuid"),
+                    "face_embedding": emb,
+                    "person_object_uuid": mvr.get("person_object_uuid"),
+                }
+            )
+            uid = mvr.get("instant_mvr_uuid") or mvr.get("mvr_people_uuid")
+            if uid and uid not in source_mvr_uuids:
+                source_mvr_uuids.append(uid)
         body_summary = summarize_body_persons(body_persons)
         object_summary = summarize_objects(objects)
         vehicles = result.get("vehicles") or []
@@ -686,6 +742,16 @@ def _publish_to_redis(camera_id: str, result: Dict):
             "vehicles": vehicle_summary,
             "demographics": demographics,
             "source_mvr_uuids": source_mvr_uuids,
+            "source_embeddings": source_embeddings,
+            "instant_mvrs": [
+                {
+                    "instant_mvr_uuid": m.get("instant_mvr_uuid"),
+                    "face_embedding": m.get("face_embedding"),
+                    "person_object_uuid": m.get("person_object_uuid"),
+                    "age_gender": m.get("age_gender"),
+                }
+                for m in instant_mvrs
+            ],
             "velocity": result.get("velocity") or {
                 "crowd_mps": result.get("crowd_velocity_mps"),
                 "max_mps": result.get("max_person_speed_mps"),
@@ -777,6 +843,47 @@ def health_check() -> Dict:
         "timestamp": datetime.utcnow().isoformat(),
         "worker": "instant_detection"
     }
+
+
+@celery_app.task(
+    name="instant_detection.flush_y_window",
+    queue="instant_detection_queue",
+    time_limit=180,
+    soft_time_limit=150,
+    max_retries=1,
+    retry_backoff=True,
+    acks_late=True,
+)
+def flush_instant_detection_y_window(
+    camera_id: str,
+    session_uuid: Optional[str] = None,
+    auth_token: str = "",
+    frames_per_cycle: int = 3,
+    flush_interval_cycles: int = 12,
+    merge_threshold: float = 0.60,
+) -> Dict:
+    """
+    Y-window flush: Vision re-group + contamination, hierarchical MVR merge,
+    write Media instant_detection_logs only (no gallery identify).
+    """
+    from src.services.instant_detection_flush import run_y_window_flush
+
+    logger.info(
+        "📦 [CELERY] Y-window flush starting for %s (Y=%s threshold=%.2f)",
+        camera_id,
+        flush_interval_cycles,
+        merge_threshold,
+    )
+    result = run_y_window_flush(
+        camera_id,
+        session_uuid=session_uuid,
+        auth_token=auth_token or None,
+        frames_per_cycle=frames_per_cycle,
+        flush_interval_cycles=flush_interval_cycles,
+        merge_threshold=merge_threshold,
+    )
+    logger.info("📦 [CELERY] Y-window flush done for %s: %s", camera_id, result)
+    return result
 
 
 @celery_app.task(

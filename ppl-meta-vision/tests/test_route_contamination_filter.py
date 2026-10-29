@@ -127,7 +127,8 @@ class TestRouteContaminationFilter(unittest.TestCase):
                 "bbox_y1": 0,
                 "bbox_x2": 40,
                 "bbox_y2": 40,
-                "timestamp": 0.33,
+                # Wall-clock source time (relative 0.33 offsets are ignored).
+                "timestamp": 1_764_000_000.33,
             }
         ]
         mappings = [
@@ -140,7 +141,7 @@ class TestRouteContaminationFilter(unittest.TestCase):
         points = build_route_points_for_person("p1", mappings, faces)
         self.assertEqual(len(points), 1)
         self.assertEqual(points[0]["center_x"], 20.0)
-        self.assertEqual(points[0]["timestamp"], 0.33)
+        self.assertEqual(points[0]["timestamp"], 1_764_000_000.33)
 
 
 if __name__ == "__main__":

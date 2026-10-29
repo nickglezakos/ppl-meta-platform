@@ -97,6 +97,10 @@ class Camera(Base):
     # Instant Detection Storage Configuration
     storage_multiple = Column(Integer, default=1)
     tracking_session_duration_minutes = Column(Integer, default=0)
+    # Instant Detection Redis-first flush (Y-window)
+    frames_per_cycle = Column(Integer, default=3)
+    flush_interval_cycles = Column(Integer, default=12)
+    flush_merge_similarity_threshold = Column(Float, default=0.60)
 
     # Workflow Configuration (Face Detection & Performance)
     auto_face_detection = Column(Boolean, default=False)

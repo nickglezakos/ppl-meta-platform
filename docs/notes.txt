@@ -11,7 +11,57 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \§
 curl -X POST 'http://localhost:8001/api/v1/users/login' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=nick.glezakos@gmail.com&password=Kodikos@23'   
- 
+
+
+wsl -d eyenet -u root -- systemctl start docker
+wsl -d eyenet -u root -- bash -lc "cd /mnt/c/ppl-meta-platform && docker compose --project-name pplmeta --env-file .env.windows -f docker-compose.windows-installer.yml up -d"
+
++++++++++++
+
+ssh eyenet@192.168.1.90 'hostname; systemctl is-active ssh; hostname -I'
+
+to change IP:
+chmod +x artifacts/lab-fix-advertise-host.sh
+./artifacts/lab-fix-advertise-host.sh eyenet@192.168.1.90 192.168.1.90
+
+after reboot / hibernate:
+cd ~/eyenet-platform && bash ./reregister-discovery-services.sh
+
+To control eyenet:
+ssh eyenet@192.168.1.90
+cd ~/eyenet-platform
+
+# Start (or recreate)
+docker compose --project-name pplmeta --env-file .env \
+  -f docker-compose.windows-installer.yml up -d
+# (if that file isn’t there, use -f docker-compose.yml)
+
+# Stop (keeps volumes/DB)
+docker compose --project-name pplmeta --env-file .env \
+  -f docker-compose.windows-installer.yml stop
+
+# Full down (containers only; volumes stay unless -v)
+docker compose --project-name pplmeta --env-file .env \
+  -f docker-compose.windows-installer.yml down
+
+# Status
+docker compose --project-name pplmeta --env-file .env \
+  -f docker-compose.windows-installer.yml ps
+
+Health:
+curl -sS -o /dev/null -w "ui:%{http_code}\n" http://127.0.0.1:3000/
+curl -sS -o /dev/null -w "gw:%{http_code}\n" http://127.0.0.1:8080/health
+curl -sS -o /dev/null -w "media:%{http_code}\n" http://127.0.0.1:8000/health
+curl -sS -o /dev/null -w "discovery:%{http_code}\n" http://127.0.0.1:8006/health
+
+
+
++++++++++++
+
+static local wiki
+
+python3 -m http.server 8765 --directory artifacts/wiki-site
+
 
 github push
 
@@ -20,7 +70,13 @@ github push
 rotate headescale key:
 `headscale -c ~/.headscale/config.yaml apikeys create`
 
-
+One industrial fanless mini PC (32 GB RAM, 1 TB SSD), 
+Small Linux mini PC (e.g. Intel N100/N150 class, 8 GB RAM, SSD),
+One Touch screen, 7 or 12 inch or similar fo rthe small PC
+One Regular Screen for the industrial PC (24 inch or similar, simple use)
+2 Keyborads, 2 mouses for both pcs (simple)
+One C340 TP-Link VIGI PoE RTSP or newer  
+Two C440 TP-Link VIGI PoE RTSP or newer
 
 Authority
 https://authority.eyenet-vision.com/admin
@@ -237,10 +293,30 @@ cd /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-frontend && flutter run
 
 Kkkkodikos234
 rtsp://nick.glezakos@gmail.com:Kkkkodikos234@192.168.1.76:554/stream1
+rtsp://nick.glezakos%40gmail.com:12345qwert%40192.168.1.89:554/stream1
 
 http://192.168.1.68:8001
 
 ************************************************************************
+
+after hybernate to auto register
+cd ~/eyenet-platform && bash ./reregister-discovery-services.sh
+
+cd ~/eyenet-platform
+docker compose --project-name pplmeta --env-file .env -f docker-compose.yml up -d
+
+
+When	Say
+Frequent code land
+“Stage 1: bump version xxxx and push code to GitHub per platform-release-cicd.md”
+Refresh containers
+“Stage 2: build and push images for VERSION X.Y.Z per platform-release-cicd.md”
+Both + labs
+“Full release to X.Y.Z (Stage 1 + Stage 2; then upgrade both labs)”
+
+Stage 2 pin bump 2.25.82→2.25.83: rebuild cameras, retag-forward the rest, finalize manifest.
+
+
 
 *** Speed optimization
 
@@ -393,6 +469,44 @@ Each compute module shoud be able to make their users plus their analytics endpo
 
 ******************************************
 
+
+Before Stage 2: Stage 1 must include every eyenet-demo hotfix from 2026-10-19 —
+vmeta persist skip for missing mvr_people uuids, DeepFace weights path (no GitHub re-download),
+vision MODELS_SERVICE_URL, media_processing_status trigger, and identify-face so returned
+uuids exist in mvr_people. Then:
+
+
+Full release to X.Y.Z per platform-release-cicd.md (Stage 1 + Stage 2 on lab-work-dual-64g + Stage 3 on the labs I name). Do not stop after images exist in GHCR.
+
+Stage 1 — code on GitHub
+- Commit and push every service and path this fix touches. A lab docker cp, .env edit, or one-off ALTER is not Stage 1.
+- If the code writes a database column, add it to deployment/windows-installer/schema/pack/ and to schema/verify.sh in this same push, then run bash deployment/mac-lima/sync-schema-pack.sh and include schema/pack.tar.gz.
+- A CHANGELOG Notes line that a column is missing, or that persist can 500 until a later schema follow-up, means Stage 1 is not done. Do not cut the pin.
+- Update root CHANGELOG.md. If this is a new pin, bump VERSION and every installer pin together and run ./scripts/check_installer_pins.sh.
+- Push to GitHub before Stage 2. Refuse Stage 2 if those sources are not on origin/main.
+
+Stage 2 — images on lab-work-dual-64g
+- Build from that pushed main. Rebuild only services this change touched. Mode D retag-forward the rest from the previous pin.
+- Run stage2_finalize_manifest.sh. Then Stage 1 again: commit release-manifest.yml and the CHANGELOG Notes (which images were rebuilt, which were retagged) and push.
+- Do not upgrade any lab in this step.
+
+Stage 3 — install on each named lab
+- Compose pull of :X.Y.Z only. Image digests must match release-manifest.yml.
+- Run schema/apply.sh, then schema/verify.sh. Paste the full verify output in the lab note. A FAIL stops Stage 3. A compose pull that skips apply/verify is not Stage 3.
+- Reregister discovery. Update the fleet table in lab-machines.md (pin, digest match, date, verify result).
+
+Report each stage separately: commit SHA, GHCR digests, and the verify output. Stop at the first failed gate.
+
+
+For one step only, keep the same file and say which step:
+
+Stage 1 only: Stage 1: push code to GitHub per platform-release-cicd.md
+Stage 2 only: Stage 2: build and push images for VERSION X.Y.Z on lab-work-dual-64g per platform-release-cicd.md
+Stage 3 only: Stage 3: upgrade eyenet-demo per platform-release-cicd.md. Run schema/apply.sh and schema/verify.sh and paste the verify output.
+
+******************************************
+
+
 HARDWARE
 
 Top 3 Recommendations for a 24/7 Server Role
@@ -528,3 +642,19 @@ Conduct acceptance tests for users
 
 
 
+***********************************
+
+wiki comments
+
+
+***********************************
+
+eyenet value documentation
+
+/Users/nickgklezakos/Documents/ppl-meta-code/docs/product
+https://eyenet-vision.com/
+https://wiki.eyenet-vision.com/
+file:///Users/nickgklezakos/Documents/ppl-meta-code/docs/commercial/brochures/shipping/eyenet-for-shipping-pdf.html
+https://eyenet-vision.com/bp/#home
+file:///Users/nickgklezakos/Documents/ppl-meta-code/docs/commercial/cooperation/Talosgroup/eyenet/eyenet-talos-cooperation-proposal.html
+file:///Users/nickgklezakos/Documents/ppl-meta-code/docs/commercial/leads/delloitte/deloitte-door-entrance-offer-final.html

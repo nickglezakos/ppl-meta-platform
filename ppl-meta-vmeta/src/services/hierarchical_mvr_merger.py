@@ -269,22 +269,20 @@ class HierarchicalMVRMerger:
             logger.error(f"Hierarchical merge failed: {e}", exc_info=True)
             raise HierarchicalMVRMergerError(f"Merge failed: {e}")
 
-    async def preview_hierarchical_merge(
+    async def preview_hierarchical_merge_records(
         self,
-        mvr_uuids: List[UUID],
+        mvr_people: List[Dict[str, Any]],
         similarity_threshold: float = 0.60,
         min_similarity_check: float = 0.50,
         force_merge: bool = False,
     ) -> Dict[str, Any]:
-        """Build hierarchical merge groups without writing any persisted state."""
+        """
+        Build hierarchical merge groups from in-memory MVR-shaped records.
+
+        Same algorithm as preview_hierarchical_merge / search-by-videos auto-merge,
+        without requiring DB fetches. Used by Instant Detection Y-window flush.
+        """
         try:
-            logger.info(
-                f"Previewing hierarchical merge of {len(mvr_uuids)} MVR people "
-                f"(threshold: {similarity_threshold}, force_merge: {force_merge})"
-            )
-
-            mvr_people = await self._fetch_mvr_people(mvr_uuids)
-
             if not mvr_people:
                 return {
                     "super_individuals": [],
@@ -298,9 +296,17 @@ class HierarchicalMVRMerger:
                     },
                 }
 
+            logger.info(
+                "Previewing hierarchical merge of %d in-memory MVR records "
+                "(threshold: %s, force_merge: %s)",
+                len(mvr_people),
+                similarity_threshold,
+                force_merge,
+            )
+
             if force_merge:
                 mvr_people_sorted = sorted(
-                    mvr_people, key=lambda x: x["quality_score"], reverse=True
+                    mvr_people, key=lambda x: float(x.get("quality_score") or 0.0), reverse=True
                 )
                 merge_groups = (
                     [mvr_people_sorted]
@@ -344,9 +350,10 @@ class HierarchicalMVRMerger:
                         "merged_mvr_uuids": merged_mvr_uuids,
                         "mvr_count": len(group),
                         "is_standalone": len(group) == 1,
-                        "winner_quality": winner["quality_score"],
+                        "winner_quality": winner.get("quality_score"),
                         "similarities": similarities,
                         "demographics": self._select_best_demographics(group),
+                        "members": group,
                     }
                 )
 
@@ -363,6 +370,33 @@ class HierarchicalMVRMerger:
                 "merge_groups": merge_metadata,
                 "statistics": statistics,
             }
+        except Exception as e:
+            logger.error(f"Hierarchical merge preview (records) failed: {e}", exc_info=True)
+            raise HierarchicalMVRMergerError(f"Merge preview failed: {e}")
+
+    async def preview_hierarchical_merge(
+        self,
+        mvr_uuids: List[UUID],
+        similarity_threshold: float = 0.60,
+        min_similarity_check: float = 0.50,
+        force_merge: bool = False,
+    ) -> Dict[str, Any]:
+        """Build hierarchical merge groups without writing any persisted state."""
+        try:
+            logger.info(
+                f"Previewing hierarchical merge of {len(mvr_uuids)} MVR people "
+                f"(threshold: {similarity_threshold}, force_merge: {force_merge})"
+            )
+
+            mvr_people = await self._fetch_mvr_people(mvr_uuids)
+            return await self.preview_hierarchical_merge_records(
+                mvr_people=mvr_people,
+                similarity_threshold=similarity_threshold,
+                min_similarity_check=min_similarity_check,
+                force_merge=force_merge,
+            )
+        except HierarchicalMVRMergerError:
+            raise
         except Exception as e:
             logger.error(f"Hierarchical merge preview failed: {e}", exc_info=True)
             raise HierarchicalMVRMergerError(f"Merge preview failed: {e}")

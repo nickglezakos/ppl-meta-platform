@@ -40,12 +40,14 @@ from .trigger import (
     TriggerAction,
 )
 from .trigger_execution_log import TriggerExecutionLog
+from .instant_detection_log import InstantDetectionLog
 from .user_trigger_action import UserTriggerAction
 from .workflow import MediaWorkflow
 
 __all__ = [
     "Base",
     "BaseModel",
+    "InstantDetectionLog",
     "MediaType",
     "ProcessingStatus",
     "StorageProvider",

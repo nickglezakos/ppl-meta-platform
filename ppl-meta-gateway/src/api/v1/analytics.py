@@ -20,10 +20,29 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Service URLs (compose sets these; localhost only works in host-network/dev)
-CAMERAS_SERVICE_URL = (os.getenv("CAMERAS_SERVICE_URL") or "http://ppl-meta-cameras:8005").rstrip("/")
-MEDIA_SERVICE_URL = (os.getenv("MEDIA_SERVICE_URL") or "http://ppl-meta-media:8000").rstrip("/")
-VMETA_SERVICE_URL = (os.getenv("VMETA_SERVICE_URL") or "http://ppl-meta-vmeta:8008").rstrip("/")
+def _local_or_compose(env_name: str, compose_url: str, local_url: str) -> str:
+    """Prefer explicit env; otherwise compose DNS in containers, localhost on host."""
+    explicit = (os.getenv(env_name) or "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    in_docker = os.path.exists("/.dockerenv") or os.getenv("RUNNING_IN_DOCKER", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    return (compose_url if in_docker else local_url).rstrip("/")
+
+
+# Compose sets these; on Mac/host IDE falls back to 127.0.0.1 (not ppl-meta-* DNS).
+CAMERAS_SERVICE_URL = _local_or_compose(
+    "CAMERAS_SERVICE_URL", "http://ppl-meta-cameras:8005", "http://127.0.0.1:8005"
+)
+MEDIA_SERVICE_URL = _local_or_compose(
+    "MEDIA_SERVICE_URL", "http://ppl-meta-media:8000", "http://127.0.0.1:8000"
+)
+VMETA_SERVICE_URL = _local_or_compose(
+    "VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008", "http://127.0.0.1:8008"
+)
 
 
 def _normalize_source_type(source_type: Optional[str]) -> str:
@@ -207,32 +226,45 @@ def _normalize_age_group(age: Optional[int]) -> str:
     return "adult"
 
 
+# Short TTL cache: Instant Detection analytics hits this dataset 4–5 times per page load.
+_INSTANT_DATASET_TTL_SECONDS = 20.0
+_instant_dataset_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+
+
+async def _fetch_media_collections(auth_token: str) -> List[Dict[str, Any]]:
+    try:
+        headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"{MEDIA_SERVICE_URL}/api/v1/media/collections",
+                headers=headers,
+                params={"limit": 1000},
+            )
+            return resp.json() if resp.status_code == 200 else []
+    except Exception as e:
+        logger.warning("Could not fetch collections for instant detection: %s", e)
+        return []
+
+
 async def _resolve_instant_detection_camera_ids(
     auth_token: str,
     collection_ids: Optional[str],
+    collections: Optional[List[Dict[str, Any]]] = None,
 ) -> List[str]:
     if collection_ids:
         selected_ids = [cid.strip() for cid in collection_ids.split(",") if cid.strip()]
     else:
         selected_ids = []
 
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(
-                f"{MEDIA_SERVICE_URL}/api/v1/media/collections",
-                headers={"Authorization": f"Bearer {auth_token}"},
-                params={"limit": 1000},
-            )
-            collections = resp.json() if resp.status_code == 200 else []
-    except Exception as e:
-        logger.warning("Could not fetch collections for instant detection camera resolution: %s", e)
-        collections = []
+    if collections is None:
+        collections = await _fetch_media_collections(auth_token)
 
+    filtered = collections
     if selected_ids:
-        collections = [col for col in collections if _collection_matches_selected_ids(col, selected_ids)]
+        filtered = [col for col in collections if _collection_matches_selected_ids(col, selected_ids)]
 
     device_ids: List[str] = []
-    for col in collections:
+    for col in filtered:
         for key in ("camera_device_id", "device_id", "collection_name", "name"):
             value = col.get(key)
             if value:
@@ -246,37 +278,205 @@ async def _resolve_instant_detection_camera_ids(
     return selected_ids
 
 
-async def _fetch_instant_detection_approximation(
-    auth_token: str,
-    camera_id: str,
-    start_time: datetime,
-    end_time: datetime,
-) -> Dict[str, Any]:
-    params = {
-        "camera_id": camera_id,
-        "start_time": start_time.isoformat(),
-        "end_time": end_time.isoformat(),
-    }
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.get(
-            f"{VMETA_SERVICE_URL}/api/v1/instant-detection/approx-people",
-            headers={"Authorization": f"Bearer {auth_token}"},
-            params=params,
+def _as_utc(value: datetime) -> datetime:
+    """Normalize datetimes for comparison (DB may return aware; filters are often naive)."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _parse_optional_dt(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return _as_utc(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return _as_utc(parsed)
+    except ValueError:
+        return None
+
+
+def _age_from_age_gender(age_gender: Any) -> Optional[int]:
+    if not isinstance(age_gender, dict):
+        return None
+    for key in ("age", "age_estimate", "estimated_age"):
+        raw = age_gender.get(key)
+        if isinstance(raw, (int, float)):
+            return int(raw)
+    age_range = age_gender.get("age_range")
+    if isinstance(age_range, str) and "-" in age_range:
+        digits = "".join(ch if ch.isdigit() or ch == "-" else " " for ch in age_range)
+        parts = [p for p in digits.replace("(", " ").replace(")", " ").split() if p]
+        nums = []
+        for part in parts:
+            try:
+                nums.append(int(part))
+            except ValueError:
+                continue
+        if len(nums) >= 2:
+            return int((nums[0] + nums[1]) / 2)
+        if len(nums) == 1:
+            return nums[0]
+    amin, amax = age_gender.get("age_min"), age_gender.get("age_max")
+    if isinstance(amin, (int, float)) and isinstance(amax, (int, float)):
+        return int((amin + amax) / 2)
+    return None
+
+
+def _people_from_flush_log(log: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Build analytics people rows from one Media instant_detection_logs payload."""
+    camera_id = str(log.get("camera_device_id") or "").strip()
+    payload = log.get("payload_json") or {}
+    if not isinstance(payload, dict):
+        payload = {}
+    flush_ts = (
+        _parse_optional_dt(log.get("flush_ended_at"))
+        or _parse_optional_dt(log.get("flush_started_at"))
+        or datetime.now(timezone.utc)
+    )
+    flush_iso = flush_ts.isoformat()
+    instant_mvrs = [
+        m for m in (payload.get("instant_mvrs") or []) if isinstance(m, dict)
+    ]
+    mvrs_by_id: Dict[str, Dict[str, Any]] = {}
+    for mvr in instant_mvrs:
+        uid = mvr.get("instant_mvr_uuid") or mvr.get("mvr_people_uuid")
+        if uid:
+            mvrs_by_id[str(uid)] = mvr
+
+    merge = payload.get("hierarchical_merge") if isinstance(payload.get("hierarchical_merge"), dict) else {}
+    person_groups = [
+        g for g in (payload.get("person_groups") or []) if isinstance(g, dict)
+    ]
+
+    people: List[Dict[str, Any]] = []
+
+    def _append_person(person_id: str, mvr: Optional[Dict[str, Any]] = None) -> None:
+        age_gender = (mvr or {}).get("age_gender") if isinstance((mvr or {}).get("age_gender"), dict) else {}
+        gender = (
+            age_gender.get("gender")
+            or (mvr or {}).get("gender")
+            or "unknown"
         )
-        if resp.status_code != 200:
-            logger.warning(
-                "Instant detection approx endpoint returned %s for %s: %s",
-                resp.status_code,
-                camera_id,
-                resp.text[:200],
-            )
-            return {
-                "success": False,
+        age = _age_from_age_gender(age_gender)
+        quality = (mvr or {}).get("quality_score") or (mvr or {}).get("face_quality")
+        people.append(
+            {
+                "person_id": str(person_id),
                 "camera_id": camera_id,
-                "approx_unique_people": 0,
-                "people": [],
+                "gender": gender,
+                "age": age,
+                "quality_score": quality,
+                "first_seen": flush_iso,
+                "last_seen": flush_iso,
+                "flush_log_id": log.get("id"),
+                "source": "instant_detection_logs",
             }
-        return resp.json()
+        )
+
+    merge_groups = merge.get("merge_groups") or []
+    if merge_groups:
+        for idx, group in enumerate(merge_groups):
+            if not isinstance(group, dict):
+                continue
+            members = (
+                group.get("members")
+                or group.get("mvr_uuids")
+                or group.get("mvr_people_uuids")
+                or []
+            )
+            member_mvrs = [mvrs_by_id[str(m)] for m in members if str(m) in mvrs_by_id]
+            best = None
+            if member_mvrs:
+                best = max(
+                    member_mvrs,
+                    key=lambda m: float(m.get("quality_score") or m.get("face_quality") or 0),
+                )
+            pid = (
+                group.get("group_id")
+                or group.get("super_individual_uuid")
+                or (members[0] if members else f"flush-{log.get('id')}-{idx}")
+            )
+            _append_person(str(pid), best)
+    elif person_groups:
+        for idx, group in enumerate(person_groups):
+            member_ids = group.get("instant_mvr_uuids") or []
+            member_mvrs = [mvrs_by_id[str(m)] for m in member_ids if str(m) in mvrs_by_id]
+            best = None
+            if member_mvrs:
+                best = max(
+                    member_mvrs,
+                    key=lambda m: float(m.get("quality_score") or m.get("face_quality") or 0),
+                )
+            elif instant_mvrs:
+                # Prefer highest-quality InstantMvr when group ids don't match cycle UUIDs
+                # (common for backfilled / fallback person_groups).
+                best = max(
+                    instant_mvrs,
+                    key=lambda m: float(m.get("quality_score") or m.get("face_quality") or 0),
+                )
+            pid = group.get("person_object_uuid") or f"flush-{log.get('id')}-pg-{idx}"
+            _append_person(str(pid), best)
+    else:
+        supers = merge.get("super_individuals") or []
+        if supers:
+            for sid in supers:
+                _append_person(str(sid), mvrs_by_id.get(str(sid)))
+        elif instant_mvrs:
+            for mvr in instant_mvrs:
+                uid = mvr.get("instant_mvr_uuid") or mvr.get("mvr_people_uuid") or uuid_like()
+                _append_person(str(uid), mvr)
+        else:
+            # Last resort: honor stored people_count with unknown demographics
+            for i in range(int(log.get("people_count") or 0)):
+                _append_person(f"flush-{log.get('id')}-person-{i}", None)
+
+    return people
+
+
+def uuid_like() -> str:
+    import uuid as _uuid
+
+    return str(_uuid.uuid4())
+
+
+async def _fetch_instant_detection_flush_logs(
+    auth_token: str,
+    *,
+    camera_device_id: Optional[str] = None,
+    limit: int = 500,
+) -> List[Dict[str, Any]]:
+    params: Dict[str, Any] = {"limit": limit, "offset": 0}
+    if camera_device_id:
+        params["camera_device_id"] = camera_device_id
+    headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{MEDIA_SERVICE_URL}/api/v1/instant-detection-logs",
+                headers=headers,
+                params=params,
+            )
+            if resp.status_code != 200:
+                logger.warning(
+                    "Media instant-detection-logs returned %s: %s",
+                    resp.status_code,
+                    resp.text[:200],
+                )
+                return []
+            data = resp.json()
+            return data if isinstance(data, list) else []
+    except Exception as exc:
+        logger.warning(
+            "Media instant-detection-logs fetch failed (%s): %s",
+            MEDIA_SERVICE_URL,
+            exc,
+        )
+        return []
 
 
 async def _get_instant_detection_approx_dataset(
@@ -286,58 +486,107 @@ async def _get_instant_detection_approx_dataset(
     start_date: Optional[str],
     end_date: Optional[str],
 ) -> Dict[str, Any]:
+    """
+    Instant Detection analytics SoT: Media `instant_detection_logs` (Y-flush),
+    not VMeta tracking-session approx-people.
+    """
+    cache_key = "|".join(
+        [
+            (auth_token or "")[:24],
+            time_filter or "",
+            collection_ids or "",
+            start_date or "",
+            end_date or "",
+        ]
+    )
+    now_mono = datetime.now(timezone.utc).timestamp()
+    cached = _instant_dataset_cache.get(cache_key)
+    if cached and (now_mono - cached[0]) <= _INSTANT_DATASET_TTL_SECONDS:
+        return cached[1]
+
     start_time, end_time = _parse_time_filter(time_filter, start_date, end_date)
-    camera_ids = await _resolve_instant_detection_camera_ids(auth_token, collection_ids)
+    start_time, end_time = _as_utc(start_time), _as_utc(end_time)
+
+    # One collections fetch shared by id resolution + naming (was 2 round-trips).
+    collections = await _fetch_media_collections(auth_token)
+    camera_ids = await _resolve_instant_detection_camera_ids(
+        auth_token, collection_ids, collections=collections
+    )
     camera_names: Dict[str, str] = {}
+    for collection in collections:
+        display_name = _get_collection_display_name(collection)
+        for key in ("camera_device_id", "device_id"):
+            value = collection.get(key)
+            if value is not None and str(value).strip():
+                camera_names[str(value).strip()] = display_name
 
-    if camera_ids:
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.get(
-                    f"{MEDIA_SERVICE_URL}/api/v1/media/collections",
-                    headers={"Authorization": f"Bearer {auth_token}"},
-                    params={"limit": 1000},
-                )
-                collections = resp.json() if resp.status_code == 200 else []
-        except Exception as e:
-            logger.warning("Could not fetch collections for instant detection camera naming: %s", e)
-            collections = []
+    # Always include raw selected IDs — FE may pass device_id directly (cameras pane).
+    selected: Optional[Set[str]] = None
+    if camera_ids or collection_ids:
+        selected = set(camera_ids or [])
+        if collection_ids:
+            selected.update(
+                cid.strip() for cid in collection_ids.split(",") if cid.strip()
+            )
 
-        for collection in collections:
-            display_name = _get_collection_display_name(collection)
-            for key in ("camera_device_id", "device_id"):
-                value = collection.get(key)
-                if value is not None and str(value).strip():
-                    camera_names[str(value).strip()] = display_name
+    logs = await _fetch_instant_detection_flush_logs(auth_token, limit=500)
 
-    if not camera_ids:
-        return {
-            "start_time": start_time,
-            "end_time": end_time,
-            "camera_ids": [],
-            "camera_names": {},
-            "camera_results": [],
-            "people": [],
-        }
+    filtered_logs: List[Dict[str, Any]] = []
+    for log in logs:
+        cam = str(log.get("camera_device_id") or "").strip()
+        if selected is not None and cam and cam not in selected:
+            continue
+        ts = (
+            _parse_optional_dt(log.get("flush_ended_at"))
+            or _parse_optional_dt(log.get("flush_started_at"))
+        )
+        if ts is None:
+            continue
+        if ts < start_time or ts > end_time:
+            continue
+        filtered_logs.append(log)
 
-    camera_results: List[Dict[str, Any]] = []
     all_people: List[Dict[str, Any]] = []
-    for camera_id in camera_ids:
-        result = await _fetch_instant_detection_approximation(auth_token, camera_id, start_time, end_time)
-        camera_results.append(result)
-        for person in result.get("people", []):
-            person_copy = dict(person)
-            person_copy["camera_id"] = camera_id
-            all_people.append(person_copy)
+    camera_results: List[Dict[str, Any]] = []
+    cameras_seen: List[str] = []
+    for log in filtered_logs:
+        cam = str(log.get("camera_device_id") or "").strip()
+        if cam and cam not in cameras_seen:
+            cameras_seen.append(cam)
+        people = _people_from_flush_log(log)
+        all_people.extend(people)
+        camera_results.append(
+            {
+                "success": True,
+                "camera_id": cam,
+                "flush_log_id": log.get("id"),
+                "approx_unique_people": len(people),
+                "people": people,
+                "cycle_count": log.get("cycle_count"),
+                "people_count": log.get("people_count"),
+            }
+        )
 
-    return {
+    if not cameras_seen and camera_ids:
+        cameras_seen = list(camera_ids)
+
+    dataset = {
         "start_time": start_time,
         "end_time": end_time,
-        "camera_ids": camera_ids,
+        "camera_ids": cameras_seen,
         "camera_names": camera_names,
         "camera_results": camera_results,
         "people": all_people,
+        "flush_logs": filtered_logs,
+        "flush_count": len(filtered_logs),
+        "source": "instant_detection_logs",
     }
+    _instant_dataset_cache[cache_key] = (now_mono, dataset)
+    # Bound cache size for long-lived gateway processes.
+    if len(_instant_dataset_cache) > 64:
+        oldest_key = min(_instant_dataset_cache.items(), key=lambda kv: kv[1][0])[0]
+        _instant_dataset_cache.pop(oldest_key, None)
+    return dataset
 
 
 def _filter_instant_detection_people(
@@ -1467,11 +1716,13 @@ async def _get_instant_detection_summary(
         })
 
     last_detection = max((person.get("last_seen") for person in people if person.get("last_seen")), default=None)
+    flush_count = int(dataset.get("flush_count") or 0)
 
     return {
         "total_people": len(people),
         "active_cameras": len(camera_breakdown),
-        "total_videos": 0,
+        # Instant Detection: treat flush windows as "sessions" for the Videos/Sessions card.
+        "total_videos": flush_count,
         "last_detection": last_detection,
         "time_filter": time_filter,
         "demographics": demographics,
@@ -1479,6 +1730,8 @@ async def _get_instant_detection_summary(
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "cached": False,
         "source_type": "instant_detection",
+        "source": dataset.get("source") or "instant_detection_logs",
+        "flush_count": flush_count,
     }
 
 
@@ -2328,9 +2581,60 @@ async def get_mvr_quality_metrics(
         )
         
         effective_source = _normalize_source_type(source_type)
+        auth_token = request.headers.get("Authorization", "").replace("Bearer ", "")
+
+        if effective_source == "instant_detection":
+            dataset = await _get_instant_detection_approx_dataset(
+                auth_token=auth_token,
+                time_filter=time_filter,
+                collection_ids=collection_ids,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            quality_scores: List[float] = []
+            for person in dataset.get("people") or []:
+                score = person.get("quality_score")
+                if isinstance(score, (int, float)):
+                    quality_scores.append(float(score))
+            flush_count = int(dataset.get("flush_count") or 0)
+            total_people = len(dataset.get("people") or [])
+            total_mvrs = 0
+            for log in dataset.get("flush_logs") or []:
+                payload = log.get("payload_json") or {}
+                if isinstance(payload, dict):
+                    total_mvrs += len(payload.get("instant_mvrs") or [])
+            avg = (sum(quality_scores) / len(quality_scores)) if quality_scores else None
+            with_q = len(quality_scores)
+            without_q = max(total_people - with_q, 0)
+            metrics = {
+                "time_filter": time_filter,
+                "collection_name": collection_name,
+                "tracking_sessions_count": flush_count,
+                "total_individuals": total_people,
+                "total_mvr_people": total_mvrs or total_people,
+                "total_videos_processed": flush_count,
+                "mvr_with_quality": with_q,
+                "mvr_without_quality": without_q,
+                "average_quality": avg,
+                "min_quality": min(quality_scores) if quality_scores else None,
+                "max_quality": max(quality_scores) if quality_scores else None,
+                "quality_std_dev": None,
+                "data_completeness": {
+                    "total": total_people,
+                    "with_data": with_q,
+                    "without_data": without_q,
+                    "percentage": round((with_q / total_people) * 100, 2) if total_people else 0.0,
+                },
+                "start_time": dataset.get("start_time").isoformat() if dataset.get("start_time") else None,
+                "end_time": dataset.get("end_time").isoformat() if dataset.get("end_time") else None,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "data_source": "instant_detection_logs",
+                "source_type": "instant_detection",
+            }
+            metrics["quality_grade"] = _get_quality_grade(avg or 0.0)
+            return metrics
 
         if explicit_video_uuid_list and effective_source == "recording_pipeline":
-            auth_token = request.headers.get("Authorization", "").replace("Bearer ", "")
             dataset = await _build_recording_pipeline_search_dataset(
                 auth_token,
                 time_filter,

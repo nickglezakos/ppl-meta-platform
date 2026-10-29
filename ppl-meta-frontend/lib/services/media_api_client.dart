@@ -2208,6 +2208,52 @@ class MediaApiClient {
       return ApiResponse.error('Unexpected error: $e');
     }
   }
+
+  /// List Instant Detection flush logs (Automation Instant Detection log type).
+  Future<List<Map<String, dynamic>>> listInstantDetectionLogs({
+    String? cameraDeviceId,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final queryParams = <String, dynamic>{
+      'limit': limit,
+      'offset': offset,
+      if (cameraDeviceId != null && cameraDeviceId.isNotEmpty)
+        'camera_device_id': cameraDeviceId,
+    };
+    final response = await _apiClient.get(
+      '/api/v1/instant-detection-logs',
+      queryParameters: queryParams,
+    );
+    final data = response.data;
+    if (data is List) {
+      return data
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return const [];
+  }
+
+  /// Instant Detection flush analytics summary from Media logs.
+  Future<Map<String, dynamic>> getInstantDetectionLogsAnalyticsSummary({
+    String? cameraDeviceId,
+    int limit = 100,
+  }) async {
+    final queryParams = <String, dynamic>{
+      'limit': limit,
+      if (cameraDeviceId != null && cameraDeviceId.isNotEmpty)
+        'camera_device_id': cameraDeviceId,
+    };
+    final response = await _apiClient.get(
+      '/api/v1/instant-detection-logs/analytics/summary',
+      queryParameters: queryParams,
+    );
+    final data = response.data;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    return const {};
+  }
 }
 
 

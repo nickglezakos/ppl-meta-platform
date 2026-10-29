@@ -19,9 +19,14 @@ export MEDIA_SERVICE_URL="http://127.0.0.1:8000"
 export CAMERAS_SERVICE_URL="http://127.0.0.1:8005"
 # Orchestrator reads CAMERA_SERVICE_URL (singular); keep both in sync for local Python.
 export CAMERA_SERVICE_URL="${CAMERA_SERVICE_URL:-http://127.0.0.1:8005}"
-export NODE_SERVICE_URL="${NODE_SERVICE_URL:-http://127.0.0.1:8001/api/v1}"
+# Gateway proxies append the full request path (/api/v1/...), so these bases
+# must NOT include a trailing /api/v1 (that double-prefixes and 404s).
+# Callers that append relative paths (e.g. Presence -> /audit/log) should add
+# /api/v1 themselves — do not put it here for Gateway.
+export NODE_SERVICE_URL="${NODE_SERVICE_URL:-http://127.0.0.1:8001}"
+export USER_SERVICE_URL="${USER_SERVICE_URL:-http://127.0.0.1:8001}"
 export GATEWAY_SERVICE_URL="${GATEWAY_SERVICE_URL:-http://127.0.0.1:8080}"
-export COMMUNICATIONS_SERVICE_URL="${COMMUNICATIONS_SERVICE_URL:-http://127.0.0.1:8009/api/v1}"
+export COMMUNICATIONS_SERVICE_URL="${COMMUNICATIONS_SERVICE_URL:-http://127.0.0.1:8009}"
 export DISCOVERY_SERVICE_URL="${DISCOVERY_SERVICE_URL:-http://127.0.0.1:8006}"
 export VISION_SERVICE_URL="${VISION_SERVICE_URL:-http://127.0.0.1:8003}"
 export VMETA_SERVICE_URL="${VMETA_SERVICE_URL:-http://127.0.0.1:8008}"

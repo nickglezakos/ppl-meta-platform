@@ -1,9 +1,11 @@
 """Instant-detection analytics endpoints."""
 
 import logging
+import os
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
+import httpx
 from fastapi import APIRouter, Depends, Query
 
 from api.dependencies import get_current_user, get_db_connection
@@ -17,6 +19,44 @@ from services.instant_detection_approximation import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get(
+    "/instant-detection/flush-analytics",
+    summary="Instant Detection analytics from Automation flush logs",
+)
+async def get_instant_detection_flush_analytics(
+    camera_device_id: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=1000),
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """
+    Preferred Instant Detection analytics SoT: Media `instant_detection_logs`
+    written by the Y-window flush (re-group + contamination + hierarchical merge).
+    """
+    media_url = os.getenv("MEDIA_SERVICE_URL", "http://localhost:8000")
+    params: Dict[str, Any] = {"limit": limit}
+    if camera_device_id:
+        params["camera_device_id"] = camera_device_id
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.get(
+            f"{media_url}/api/v1/instant-detection-logs/analytics/summary",
+            params=params,
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "flush-analytics media proxy failed: %s %s",
+                resp.status_code,
+                resp.text[:200],
+            )
+            return {
+                "success": False,
+                "source": "instant_detection_logs",
+                "error": f"media returned {resp.status_code}",
+            }
+        payload = resp.json()
+        payload["success"] = True
+        return payload
 
 
 @router.get(

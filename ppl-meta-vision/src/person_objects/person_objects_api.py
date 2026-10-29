@@ -224,6 +224,13 @@ class GroupFromFacesRequest(BaseModel):
         default=False,
         description="Enable lazy FaceNet512 extraction for Tier 3 (slower)",
     )
+    enable_contamination_filter: bool = Field(
+        default=False,
+        description=(
+            "Apply recording route contamination filter after grouping "
+            "(Instant Detection Y-window flush; off for live cycles)"
+        ),
+    )
     grouping_metadata: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Optional caller metadata (camera_id, etc.)",
@@ -616,6 +623,7 @@ async def group_person_objects_from_faces(request: GroupFromFacesRequest):
             tolerance_percent=tolerance,
             enable_quality_analysis=request.enable_quality_analysis,
             enable_tier3_embedding=request.enable_tier3_embedding,
+            enable_contamination_filter=request.enable_contamination_filter,
             grouping_metadata=request.grouping_metadata,
         )
         return GroupFromFacesResponse(**result)

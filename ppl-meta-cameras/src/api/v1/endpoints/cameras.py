@@ -3261,6 +3261,13 @@ async def get_pipeline_settings(
             "segment_duration_seconds": camera.segment_duration_seconds,
             "storage_multiple": camera.storage_multiple if camera.storage_multiple is not None else 1,
             "tracking_session_duration_minutes": camera.tracking_session_duration_minutes if camera.tracking_session_duration_minutes is not None else 0,
+            "frames_per_cycle": getattr(camera, "frames_per_cycle", None) or 3,
+            "flush_interval_cycles": getattr(camera, "flush_interval_cycles", None) or 12,
+            "flush_merge_similarity_threshold": (
+                getattr(camera, "flush_merge_similarity_threshold", None)
+                if getattr(camera, "flush_merge_similarity_threshold", None) is not None
+                else 0.60
+            ),
             "created_at": camera.created_at.isoformat() if camera.created_at else None,
             "updated_at": camera.updated_at.isoformat() if camera.updated_at else None,
         }
@@ -3284,6 +3291,9 @@ async def update_pipeline_settings(
     segment_duration_seconds: int = 30,
     storage_multiple: int = 1,
     tracking_session_duration_minutes: int = 0,
+    frames_per_cycle: int = 3,
+    flush_interval_cycles: int = 12,
+    flush_merge_similarity_threshold: float = 0.60,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
 ) -> Dict:
@@ -3337,6 +3347,22 @@ async def update_pipeline_settings(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Tracking session duration must be between 0 and 480 minutes",
             )
+
+        if frames_per_cycle < 1 or frames_per_cycle > 15:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="frames_per_cycle must be between 1 and 15",
+            )
+        if flush_interval_cycles < 1 or flush_interval_cycles > 3600:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="flush_interval_cycles must be between 1 and 3600",
+            )
+        if flush_merge_similarity_threshold < 0.30 or flush_merge_similarity_threshold > 0.95:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="flush_merge_similarity_threshold must be between 0.30 and 0.95",
+            )
         
         # Get camera from database
         camera = db.query(Camera).filter(Camera.device_id == device_id).first()
@@ -3353,6 +3379,9 @@ async def update_pipeline_settings(
         camera.segment_duration_seconds = segment_duration_seconds
         camera.storage_multiple = storage_multiple
         camera.tracking_session_duration_minutes = tracking_session_duration_minutes
+        camera.frames_per_cycle = frames_per_cycle
+        camera.flush_interval_cycles = flush_interval_cycles
+        camera.flush_merge_similarity_threshold = flush_merge_similarity_threshold
         # Recording pipeline = continuous segment → Enhanced V2 → individuals/MVR.
         # Keep auto_face_detection aligned so a separate workflow save cannot leave
         # recording ON while post-segment face/MVR stays permanently skipped.
@@ -3406,6 +3435,13 @@ async def update_pipeline_settings(
             "segment_duration_seconds": camera.segment_duration_seconds,
             "storage_multiple": camera.storage_multiple if camera.storage_multiple is not None else 1,
             "tracking_session_duration_minutes": camera.tracking_session_duration_minutes if camera.tracking_session_duration_minutes is not None else 0,
+            "frames_per_cycle": getattr(camera, "frames_per_cycle", None) or 3,
+            "flush_interval_cycles": getattr(camera, "flush_interval_cycles", None) or 12,
+            "flush_merge_similarity_threshold": (
+                getattr(camera, "flush_merge_similarity_threshold", None)
+                if getattr(camera, "flush_merge_similarity_threshold", None) is not None
+                else 0.60
+            ),
             "updated_at": camera.updated_at.isoformat() if camera.updated_at else None,
         }
     except HTTPException:

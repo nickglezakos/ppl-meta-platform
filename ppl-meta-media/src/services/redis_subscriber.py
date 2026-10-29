@@ -496,23 +496,49 @@ class InstantDetectionSubscriber:
                         )
                         continue
 
-                    # Fetch source embeddings — use deep-extracted UUIDs (same as legacy ppl_match) because
-                    # Redis event-level source_mvr_uuids may be empty. deep extraction finds MVR UUIDs
-                    # from person_objects, metadata, and individual fields.
+                    # Redis-first only: Instant Detection publishes face embeddings on
+                    # the event. No VMeta resolve-embeddings / DB fallback — empty
+                    # cycle embeddings mean skip (nothing useful to match).
                     source_mvr_uuids_for_vprofile = source_mvr_uuids if source_mvr_uuids else event_source_mvr_uuids
-                    logger.info("  📋 vprofile source UUIDs (deep=%d, event=%d) => using %d", 
-                               len(source_mvr_uuids), len(event_source_mvr_uuids), len(source_mvr_uuids_for_vprofile))
-                    source_embedding_map = await worker.fetch_source_embeddings(source_mvr_uuids_for_vprofile)
+                    source_embedding_map = {}
+                    for item in (data.get("source_embeddings") or []):
+                        if not isinstance(item, dict):
+                            continue
+                        emb = item.get("face_embedding")
+                        uid = item.get("instant_mvr_uuid") or item.get("mvr_people_uuid")
+                        if emb and uid:
+                            try:
+                                import numpy as np
+                                arr = np.array(emb, dtype=np.float32)
+                                norm = float(np.linalg.norm(arr))
+                                if norm > 0:
+                                    arr = arr / norm
+                                source_embedding_map[str(uid)] = arr
+                                if str(uid) not in source_mvr_uuids_for_vprofile:
+                                    source_mvr_uuids_for_vprofile.append(str(uid))
+                            except Exception:
+                                continue
 
                     if not source_embedding_map:
-                        logger.info("  ❌ SKIP: No source embeddings resolved")
+                        logger.info(
+                            "  ❌ SKIP: No Redis source embeddings on event "
+                            "(deep_uuids=%d event_uuids=%d) — not resolving from DB",
+                            len(source_mvr_uuids),
+                            len(event_source_mvr_uuids),
+                        )
                         self._log_execution(
                             db=db, trigger=trigger, passed=False,
-                            reason="No source embeddings resolved",
+                            reason="No Redis source embeddings on instant-detection event",
                             match_info=None, detection_data=self._current_detection_data,
                             action_executed=False,
                         )
                         continue
+
+                    logger.info(
+                        "  📋 vprofile source embeddings from Redis: %d (uuids=%d)",
+                        len(source_embedding_map),
+                        len(source_mvr_uuids_for_vprofile),
+                    )
 
                     passed, reason, match_info = await worker.evaluate(trigger, {**data, 'source_mvr_uuids': source_mvr_uuids_for_vprofile}, source_embedding_map)
 

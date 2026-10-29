@@ -15,6 +15,13 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+### Changed
+
+- Instant Detection is Redis-first: live cycles embed faces (`/ml/embed-face`) without gallery `identify-face` / `mvr_people` creates; Vprofile uses Redis `source_embeddings` only (no DB `resolve-embeddings` fallback when the cycle has none).
+- Cameras content pane: three-way toggle Analytics / Instant Detection logs / Pipeline settings; logs load from Media `instant_detection_logs` via gateway.
+- Every `flush_interval_cycles` (default 12): Y-window Vision re-group with contamination + hierarchical merge preview (same core as multi-video search), then flush only to Media `instant_detection_logs` (separate from action / trigger_execution logs). Analytics: Media `/instant-detection-logs/analytics/summary` and VMeta `/instant-detection/flush-analytics`.
+- Camera pipeline settings add `frames_per_cycle` (default 3), `flush_interval_cycles`, `flush_merge_similarity_threshold`. Schema: `052_instant_detection_flush_settings.sql`, `053_add_instant_detection_logs.sql`.
+
 ## [2.25.104] — 2026-10-27
 
 ### Fixed

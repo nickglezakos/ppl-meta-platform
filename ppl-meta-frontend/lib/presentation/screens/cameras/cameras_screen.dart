@@ -13,9 +13,13 @@ import '../../../widgets/custom_app_bar.dart';
 import '../../../widgets/automatic_face_detection_status.dart';
 import 'multi_stream_page.dart';
 import 'camera_pipeline_settings_screen.dart';
+import 'instant_detection_logs_pane.dart';
 import '../../../screens/analytics_screen.dart';
 import '../../../presentation/widgets/common/ux_breakpoints.dart';
 import '../../../presentation/widgets/common/content_pane.dart';
+
+/// Right content pane mode on Cameras (master/detail).
+enum _CameraPaneMode { analytics, instantLogs, settings }
 
 /// Enhanced cameras screen with real-time status monitoring
 class CamerasScreen extends ConsumerStatefulWidget {
@@ -34,9 +38,8 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
   bool _showArchivedCameras = false; // Toggle to show/hide archived cameras
   String? _selectedDeviceId;
 
-  /// Right pane mode: false = analytics (default, empty for now),
-  /// true = pipeline settings.
-  bool _showCameraSettings = false;
+  /// Right pane: Analytics (default) / Instant Detection logs / Pipeline settings.
+  _CameraPaneMode _paneMode = _CameraPaneMode.analytics;
 
   Camera _selectedCamera(CameraListState state) {
     for (final c in state.cameras) {
@@ -48,14 +51,14 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
   void _selectCamera(String deviceId) {
     setState(() {
       _selectedDeviceId = deviceId;
-      _showCameraSettings = false;
+      _paneMode = _CameraPaneMode.analytics;
     });
   }
 
   void _clearMobileSelection() {
     setState(() {
       _selectedDeviceId = null;
-      _showCameraSettings = false;
+      _paneMode = _CameraPaneMode.analytics;
     });
     // Deep links land on `/cameras/:id`; return to the list route.
     if (widget.initialDeviceId != null) {
@@ -463,49 +466,57 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
     );
   }
 
-  /// Right content pane (desktop master/detail) with a mode pill toggling
-  /// between the analytics view (default; empty for now) and the selected
-  /// camera's pipeline settings form inline — the same view the gear icon
-  /// opens.
+  /// Right content pane (desktop master/detail): Analytics / Instant logs /
+  /// Pipeline settings for the selected camera.
   Widget _rightPane(CameraListState state) {
     if (state.cameras.isEmpty) {
       return _buildEmptyPane();
     }
     final camera = _selectedCamera(state);
     final scheme = Theme.of(context).colorScheme;
+    final modeIndex = _paneMode.index;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ContentBar(
           title: camera.name,
-          showSettings: _showCameraSettings,
-          onToggleMode: () =>
-              setState(() => _showCameraSettings = !_showCameraSettings),
-          trailing: ContentBar.modePill(
-            showSettings: _showCameraSettings,
-            onTap: () =>
-                setState(() => _showCameraSettings = !_showCameraSettings),
+          trailing: ContentBar.tripleModePill(
+            selectedIndex: modeIndex,
+            onChanged: (i) => setState(
+              () => _paneMode = _CameraPaneMode.values[i],
+            ),
             scheme: scheme,
-            firstIcon: Icons.insert_chart_outlined,
-            secondIcon: Icons.settings_outlined,
+            icons: const [
+              Icons.insert_chart_outlined,
+              Icons.receipt_long_outlined,
+              Icons.settings_outlined,
+            ],
+            tooltips: const [
+              'Analytics',
+              'Instant Detection logs',
+              'Pipeline settings',
+            ],
           ),
         ),
         const SizedBox(height: 8),
         Expanded(
-          child: _showCameraSettings
-              ? // Keying by deviceId forces the StatefulWidget's state to be
-                // recreated (and its settings reloaded) when a different
-                // camera is selected.
-                CameraPipelineSettingsScreen(
-                  key: ValueKey(camera.deviceId),
-                  camera: camera,
-                  showAppBar: false,
-                )
-              : AnalyticsScreen(
-                  key: ValueKey(camera.deviceId),
-                  initialCameraId: camera.deviceId,
-                  showAppBar: false,
-                ),
+          child: switch (_paneMode) {
+            _CameraPaneMode.settings => CameraPipelineSettingsScreen(
+                key: ValueKey('settings-${camera.deviceId}'),
+                camera: camera,
+                showAppBar: false,
+              ),
+            _CameraPaneMode.instantLogs => InstantDetectionLogsPane(
+                key: ValueKey('id-logs-${camera.deviceId}'),
+                cameraDeviceId: camera.deviceId,
+              ),
+            _CameraPaneMode.analytics => AnalyticsScreen(
+                key: ValueKey('analytics-${camera.deviceId}'),
+                initialCameraId: camera.deviceId,
+                initialDataSource: 'instant_detection',
+                showAppBar: false,
+              ),
+          },
         ),
       ],
     );

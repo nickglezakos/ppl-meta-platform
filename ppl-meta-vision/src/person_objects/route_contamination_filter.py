@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import math
 import statistics
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,45 @@ def _face_width_from_bbox(bbox: Any) -> float:
 
 def _point_frame(point: Dict[str, Any]) -> int:
     return int(point.get("frame_number") or 0)
+
+
+# Unix epochs before this are treated as relative offsets (Instant Detection
+# historically stored 0.0 / 0.5 / 1.0s within a cycle), not wall-clock time.
+_EPOCH_FLOOR = 1_000_000_000.0  # ~2001-09-09
+
+
+def _source_epoch_seconds(face: Dict[str, Any]) -> Optional[float]:
+    """Wall-clock epoch for a face; ignores relative in-cycle offsets."""
+    for key in ("timestamp", "created_at", "captured_at", "source_timestamp"):
+        value = face.get(key)
+        if value is None:
+            continue
+        if isinstance(value, (int, float)):
+            epoch = float(value)
+            if epoch >= _EPOCH_FLOOR:
+                return epoch
+            continue
+        if isinstance(value, datetime):
+            aware = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+            try:
+                return aware.timestamp()
+            except Exception:
+                continue
+        if isinstance(value, str) and value.strip():
+            text = value.strip()
+            try:
+                as_float = float(text)
+                if as_float >= _EPOCH_FLOOR:
+                    return as_float
+            except ValueError:
+                pass
+            try:
+                dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+                aware = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+                return aware.timestamp()
+            except ValueError:
+                continue
+    return None
 
 
 def infer_video_fps_from_points(
@@ -320,7 +360,7 @@ def build_route_points_for_person(
         if face is not None:
             cx, cy = _center_from_face(face)
             bbox = _bbox_from_face(face)
-            timestamp = face.get("timestamp")
+            timestamp = _source_epoch_seconds(face)
         else:
             cx = _safe_float(mapping.get("position_x", (mapping.get("position") or {}).get("x")))
             cy = _safe_float(mapping.get("position_y", (mapping.get("position") or {}).get("y")))

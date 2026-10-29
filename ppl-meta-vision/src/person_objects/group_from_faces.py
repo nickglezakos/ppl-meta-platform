@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from .face_grouping_engine import VisionFaceGroupingEngine
@@ -34,7 +34,10 @@ def _parse_created_at(value: Any) -> Optional[datetime]:
 
 
 def _to_xyxy_bbox(face: Dict[str, Any]) -> Tuple[int, int, int, int]:
-    if all(key in face for key in ("bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2")):
+    # Keys may be present with null (Instant Detection flush payloads) — treat
+    # null as missing and fall through to the list `bbox`.
+    xyxy_keys = ("bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2")
+    if all(face.get(key) is not None for key in xyxy_keys):
         return (
             int(face["bbox_x1"]),
             int(face["bbox_y1"]),
@@ -85,6 +88,44 @@ def normalize_face_record(
         created_at = cycle_base_time + timedelta(milliseconds=offset_ms)
     if created_at is not None:
         normalized["created_at"] = created_at
+
+    # Preserve wall-clock source timestamps for route-contamination metrics.
+    # Instant Detection historically used relative offsets (0.0/0.5/1.0s); those
+    # must not be treated as Unix epochs.
+    _EPOCH_FLOOR = 1_000_000_000.0
+    source_ts = face.get("timestamp")
+    epoch: Optional[float] = None
+    if isinstance(source_ts, (int, float)):
+        candidate = float(source_ts)
+        if candidate >= _EPOCH_FLOOR:
+            epoch = candidate
+    elif isinstance(source_ts, str) and source_ts.strip():
+        parsed = _parse_created_at(source_ts)
+        if parsed is not None:
+            aware = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            try:
+                epoch = aware.timestamp()
+            except Exception:
+                epoch = None
+        else:
+            try:
+                candidate = float(source_ts.strip())
+                if candidate >= _EPOCH_FLOOR:
+                    epoch = candidate
+            except ValueError:
+                pass
+    if epoch is None and created_at is not None:
+        try:
+            aware = (
+                created_at
+                if created_at.tzinfo
+                else created_at.replace(tzinfo=timezone.utc)
+            )
+            epoch = aware.timestamp()
+        except Exception:
+            epoch = None
+    if epoch is not None:
+        normalized["timestamp"] = epoch
 
     for optional_key in ("position_x", "position_y", "sharpness", "brightness"):
         if optional_key in face:
@@ -138,6 +179,7 @@ async def group_faces_in_memory(
     tolerance_percent: float = 20.0,
     enable_quality_analysis: bool = True,
     enable_tier3_embedding: bool = False,
+    enable_contamination_filter: bool = False,
     grouping_metadata: Optional[Dict[str, Any]] = None,
     cycle_base_time: Optional[datetime] = None,
 ) -> Dict[str, Any]:
@@ -159,6 +201,42 @@ async def group_faces_in_memory(
     grouping_results = await engine.apply_percentage_based_tracking(
         normalized_faces, tolerance_percent
     )
+
+    if enable_contamination_filter and grouping_results.get("person_objects"):
+        from .route_contamination_filter import (
+            build_route_points_for_person,
+            filter_contaminated_person_tracks,
+            infer_sample_frame_step,
+            infer_video_fps_from_points,
+        )
+
+        step = infer_sample_frame_step(normalized_faces)
+        probe_points = []
+        for person in grouping_results.get("person_objects") or []:
+            probe_points.extend(
+                build_route_points_for_person(
+                    str(person.get("person_id")),
+                    grouping_results.get("face_mappings") or [],
+                    normalized_faces,
+                )
+            )
+        fps = infer_video_fps_from_points(probe_points, default=30.0)
+        before = len(grouping_results.get("person_objects") or [])
+        filter_contaminated_person_tracks(
+            grouping_results,
+            normalized_faces,
+            sample_frame_step=step,
+            video_fps=fps,
+        )
+        after = len(grouping_results.get("person_objects") or [])
+        if before != after:
+            logger.info(
+                "group-from-faces contamination filter dropped %d/%d tracks "
+                "(correlation=%s)",
+                before - after,
+                before,
+                correlation_id[:8],
+            )
 
     best_quality_faces: Dict[str, Any] = {}
     if enable_quality_analysis and grouping_results["person_objects"]:

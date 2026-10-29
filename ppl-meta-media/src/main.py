@@ -67,6 +67,7 @@ from src.models.signage import (
 )
 from src.models.trigger import Trigger
 from src.models.trigger_execution_log import TriggerExecutionLog
+from src.models.instant_detection_log import InstantDetectionLog  # noqa: F401
 from src.models.user_trigger_action import UserTriggerAction
 
 from src.services.signage_etl_worker import start_etl_worker, stop_etl_worker

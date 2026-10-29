@@ -320,6 +320,13 @@ async def start_instant_detection(
             state.session_duration_minutes = session_duration
             state.cycle_counter = 0
             state.auth_token = internal_service_token
+            state.frames_per_cycle = getattr(camera, "frames_per_cycle", None) or 3
+            state.flush_interval_cycles = getattr(camera, "flush_interval_cycles", None) or 12
+            state.flush_merge_similarity_threshold = (
+                getattr(camera, "flush_merge_similarity_threshold", None)
+                if getattr(camera, "flush_merge_similarity_threshold", None) is not None
+                else 0.60
+            )
             manager._samplers[camera_id] = state
 
         return {
@@ -331,6 +338,8 @@ async def start_instant_detection(
             "session_uuid": session_uuid,
             "storage_multiple": storage_multiple,
             "tracking_session_duration_minutes": session_duration,
+            "frames_per_cycle": state.frames_per_cycle,
+            "flush_interval_cycles": state.flush_interval_cycles,
             "mode": "edge_worker",
         }
 
@@ -412,6 +421,14 @@ async def start_instant_detection(
             sampling_interval=sampling_interval,
         )
 
+        frames_per_cycle = getattr(camera, "frames_per_cycle", None) or 3
+        flush_interval_cycles = getattr(camera, "flush_interval_cycles", None) or 12
+        flush_merge_similarity_threshold = (
+            getattr(camera, "flush_merge_similarity_threshold", None)
+            if getattr(camera, "flush_merge_similarity_threshold", None) is not None
+            else 0.60
+        )
+
         # Configure per-camera state that was just created
         with manager._lock:
             state = manager._samplers.get(camera_id)
@@ -423,6 +440,9 @@ async def start_instant_detection(
                 state.sampling_interval = sampling_interval
                 state.cycle_counter = 0
                 state.auth_token = internal_service_token
+                state.frames_per_cycle = frames_per_cycle
+                state.flush_interval_cycles = flush_interval_cycles
+                state.flush_merge_similarity_threshold = flush_merge_similarity_threshold
         
         return {
             "success": True,
@@ -433,6 +453,9 @@ async def start_instant_detection(
             "session_uuid": session_uuid,
             "storage_multiple": storage_multiple,
             "tracking_session_duration_minutes": session_duration,
+            "frames_per_cycle": frames_per_cycle,
+            "flush_interval_cycles": flush_interval_cycles,
+            "flush_merge_similarity_threshold": flush_merge_similarity_threshold,
         }
         
     except Exception as e:
@@ -467,7 +490,9 @@ async def stop_instant_detection(
         }
         with manager._lock:
             active_states = list(manager._samplers.values())
+        flush_targets = []
         for state in active_states:
+            flush_targets.append(state)
             if state.session_uuid:
                 try:
                     resp = http_requests.post(
@@ -483,6 +508,26 @@ async def stop_instant_detection(
                     logger.warning(f"⚠️ Could not complete tracking session for {state.camera_id}: {e}")
 
         manager.stop_sampling()
+
+        # Always flush leftover Redis cycles into Media Instant Detection logs.
+        try:
+            from src.services.instant_detection_flush import enqueue_y_window_flush
+
+            for state in flush_targets:
+                enqueue_y_window_flush(
+                    state.camera_id,
+                    session_uuid=state.session_uuid,
+                    auth_token=getattr(state, "auth_token", None) or stop_token,
+                    frames_per_cycle=int(getattr(state, "frames_per_cycle", None) or 3),
+                    flush_interval_cycles=int(
+                        getattr(state, "flush_interval_cycles", None) or 12
+                    ),
+                    merge_threshold=float(
+                        getattr(state, "flush_merge_similarity_threshold", None) or 0.60
+                    ),
+                )
+        except Exception as flush_exc:
+            logger.warning("⚠️ Stop flush enqueue failed: %s", flush_exc)
         
         return {
             "success": True,
@@ -528,14 +573,15 @@ async def stop_instant_detection_for_camera(
                 "Edge worker stop_detection for %s: %s", camera_id, edge_stop_err
             )
 
+        stop_token = os.getenv(
+            "INTERNAL_SERVICE_TOKEN",
+            "ppl-meta-internal-service-secret-key-change-in-production",
+        )
+        was_running = bool(state and state.running)
         if state and state.running:
             # Complete tracking session in VMeta before stopping
             if state.session_uuid:
                 vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008")
-                stop_token = os.getenv(
-                    "INTERNAL_SERVICE_TOKEN",
-                    "ppl-meta-internal-service-secret-key-change-in-production",
-                )
                 svc_headers = {
                     "Authorization": f"Bearer {stop_token}",
                     "Content-Type": "application/json",
@@ -555,15 +601,45 @@ async def stop_instant_detection_for_camera(
                     logger.warning(f"⚠️ Could not complete tracking session: {e}")
 
             manager.stop_sampling(camera_id)
-            return {
-                "success": True,
-                "message": f"Instant detection stopped for {camera_id}"
-            }
-        else:
-            return {
-                "success": True,
-                "message": f"Instant detection was not running for {camera_id}"
-            }
+
+        # Flush leftover cycles even if already stopped (buffer can remain in Redis).
+        try:
+            from src.services.instant_detection_flush import enqueue_y_window_flush
+
+            enqueue_y_window_flush(
+                camera_id,
+                session_uuid=getattr(state, "session_uuid", None) if state else None,
+                auth_token=(getattr(state, "auth_token", None) if state else None)
+                or stop_token,
+                frames_per_cycle=int(
+                    (getattr(state, "frames_per_cycle", None) if state else None) or 3
+                ),
+                flush_interval_cycles=int(
+                    (getattr(state, "flush_interval_cycles", None) if state else None)
+                    or 12
+                ),
+                merge_threshold=float(
+                    (
+                        getattr(state, "flush_merge_similarity_threshold", None)
+                        if state
+                        else None
+                    )
+                    or 0.60
+                ),
+            )
+        except Exception as flush_exc:
+            logger.warning(
+                "⚠️ Stop flush enqueue failed for %s: %s", camera_id, flush_exc
+            )
+
+        return {
+            "success": True,
+            "message": (
+                f"Instant detection stopped for {camera_id}"
+                if was_running
+                else f"Instant detection was not running for {camera_id}"
+            ),
+        }
     except Exception as e:
         logger.error(f"Failed to stop instant detection for {camera_id}: {e}")
         raise HTTPException(
