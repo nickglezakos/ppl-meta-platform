@@ -821,6 +821,18 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     color: Colors.purple,
                     subtitle: 'Most recent',
                   ),
+                _buildMetricCard(
+                  title: 'Avg Movement Velocity',
+                  value: (_analyticsSummary?.averageRouteVelocity != null &&
+                          _analyticsSummary!.averageRouteVelocity! > 0)
+                      ? '${_analyticsSummary!.averageRouteVelocity!.toStringAsFixed(2)} px/s'
+                      : '--',
+                  icon: Icons.speed,
+                  color: Colors.deepPurple,
+                  subtitle: _dataSource == 'instant_detection'
+                      ? 'Across flush individuals'
+                      : 'Across people in range',
+                ),
               ],
             );
           },

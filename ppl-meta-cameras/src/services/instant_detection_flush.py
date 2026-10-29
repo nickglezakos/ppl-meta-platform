@@ -282,6 +282,320 @@ def collect_faces_for_y_regroup(
     return out
 
 
+def _face_center_xy(face: Dict[str, Any]) -> tuple:
+    """Return (center_x, center_y) from face center fields or bbox."""
+    if face.get("center_x") is not None and face.get("center_y") is not None:
+        try:
+            return float(face["center_x"]), float(face["center_y"])
+        except (TypeError, ValueError):
+            pass
+    position = face.get("position") if isinstance(face.get("position"), dict) else {}
+    if position.get("x") is not None and position.get("y") is not None:
+        try:
+            return float(position["x"]), float(position["y"])
+        except (TypeError, ValueError):
+            pass
+    bbox = face.get("bbox")
+    if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+        try:
+            x1, y1, x2, y2 = [float(v) for v in bbox[:4]]
+            return (x1 + x2) / 2.0, (y1 + y2) / 2.0
+        except (TypeError, ValueError):
+            pass
+    try:
+        x1 = float(face.get("bbox_x1"))
+        y1 = float(face.get("bbox_y1"))
+        x2 = float(face.get("bbox_x2"))
+        y2 = float(face.get("bbox_y2"))
+        return (x1 + x2) / 2.0, (y1 + y2) / 2.0
+    except (TypeError, ValueError):
+        return 0.0, 0.0
+
+
+def _face_timestamp_seconds(face: Dict[str, Any], fallback_index: int = 0) -> float:
+    """Prefer wall-clock epoch; fall back to relative/frame-based ordering."""
+    for key in ("timestamp", "created_at", "captured_at", "source_timestamp"):
+        epoch = _to_epoch_seconds(face.get(key))
+        if epoch is not None:
+            return epoch
+    raw = face.get("timestamp")
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, str):
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    frame = face.get("frame_number", face.get("frame_index", fallback_index))
+    try:
+        return float(frame) / 30.0
+    except (TypeError, ValueError):
+        return float(fallback_index)
+
+
+def _bbox_from_face(face: Dict[str, Any]) -> Optional[List[float]]:
+    bbox = face.get("bbox")
+    if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+        try:
+            return [float(v) for v in bbox[:4]]
+        except (TypeError, ValueError):
+            return None
+    try:
+        return [
+            float(face["bbox_x1"]),
+            float(face["bbox_y1"]),
+            float(face["bbox_x2"]),
+            float(face["bbox_y2"]),
+        ]
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def generate_movement_tracking(group_faces: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Build recording-pipeline-compatible movement_tracking from Instant faces.
+
+    Shape matches Orchestrator `_generate_movement_tracking`:
+    route_points + movement_statistics (incl. average_velocity).
+    """
+    if not group_faces:
+        return {
+            "route_points": [],
+            "movement_statistics": {
+                "total_route_points": 0,
+                "total_distance_pixels": 0.0,
+                "average_velocity": 0.0,
+                "max_velocity": 0.0,
+                "time_in_frame_seconds": 0.0,
+            },
+            "average_route_velocity": 0.0,
+        }
+
+    enriched: List[Dict[str, Any]] = []
+    for i, face in enumerate(group_faces):
+        if not isinstance(face, dict):
+            continue
+        cx, cy = _face_center_xy(face)
+        ts = _face_timestamp_seconds(face, fallback_index=i)
+        item = dict(face)
+        item["center_x"] = cx
+        item["center_y"] = cy
+        item["timestamp"] = ts
+        item["_sort_frame"] = int(
+            face.get("frame_number", face.get("frame_index", i)) or i
+        )
+        enriched.append(item)
+
+    enriched.sort(key=lambda f: (f.get("timestamp") or 0.0, f.get("_sort_frame") or 0))
+
+    route_points: List[Dict[str, Any]] = []
+    velocities: List[float] = []
+    for i, face in enumerate(enriched):
+        velocity_x = velocity_y = velocity_magnitude = 0.0
+        if i > 0:
+            prev = enriched[i - 1]
+            time_diff = float(face["timestamp"]) - float(prev["timestamp"])
+            if time_diff > 0:
+                velocity_x = (float(face["center_x"]) - float(prev["center_x"])) / time_diff
+                velocity_y = (float(face["center_y"]) - float(prev["center_y"])) / time_diff
+                velocity_magnitude = (velocity_x**2 + velocity_y**2) ** 0.5
+
+        point: Dict[str, Any] = {
+            "sequence_number": i + 1,
+            "frame_number": face.get("frame_number", face.get("frame_index")),
+            "timestamp": face["timestamp"],
+            "center_x": face["center_x"],
+            "center_y": face["center_y"],
+            "distance_from_camera": face.get("distance_from_camera"),
+            "velocity_x": round(velocity_x, 2),
+            "velocity_y": round(velocity_y, 2),
+            "velocity_magnitude": round(velocity_magnitude, 2),
+            "confidence": face.get("confidence"),
+        }
+        bbox = _bbox_from_face(face)
+        if bbox is not None:
+            point["bbox"] = bbox
+        route_points.append(point)
+        if velocity_magnitude > 0:
+            velocities.append(velocity_magnitude)
+
+    average_velocity = sum(velocities) / len(velocities) if velocities else 0.0
+    max_velocity = max(velocities) if velocities else 0.0
+    time_in_frame = (
+        float(route_points[-1]["timestamp"]) - float(route_points[0]["timestamp"])
+        if len(route_points) > 1
+        else 0.0
+    )
+    # total_distance_pixels: integrate velocity*dt ≈ sum of segment lengths
+    total_distance = 0.0
+    for i in range(1, len(route_points)):
+        dx = float(route_points[i]["center_x"]) - float(route_points[i - 1]["center_x"])
+        dy = float(route_points[i]["center_y"]) - float(route_points[i - 1]["center_y"])
+        total_distance += (dx**2 + dy**2) ** 0.5
+
+    return {
+        "route_points": route_points,
+        "movement_statistics": {
+            "total_route_points": len(route_points),
+            "total_distance_pixels": round(total_distance, 2),
+            "average_velocity": round(average_velocity, 2),
+            "max_velocity": round(max_velocity, 2),
+            "time_in_frame_seconds": round(time_in_frame, 2),
+        },
+        "average_route_velocity": round(average_velocity, 2),
+    }
+
+
+def _merge_movement_trackings(
+    trackings: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Concatenate route points from multiple trackings and recompute stats."""
+    faces: List[Dict[str, Any]] = []
+    for tracking in trackings:
+        if not isinstance(tracking, dict):
+            continue
+        for point in tracking.get("route_points") or []:
+            if isinstance(point, dict):
+                faces.append(point)
+    return generate_movement_tracking(faces)
+
+
+def attach_movement_tracking_to_person_groups(
+    person_groups: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Attach movement_tracking / route_points / average_route_velocity on groups."""
+    for group in person_groups or []:
+        if not isinstance(group, dict):
+            continue
+        faces = group.get("faces") or []
+        if not faces and isinstance(group.get("best_face"), dict):
+            faces = [group["best_face"]]
+        tracking = generate_movement_tracking(
+            [f for f in faces if isinstance(f, dict)]
+        )
+        group["movement_tracking"] = {
+            "route_points": tracking["route_points"],
+            "movement_statistics": tracking["movement_statistics"],
+        }
+        group["route_points"] = tracking["route_points"]
+        group["average_route_velocity"] = tracking["average_route_velocity"]
+    return person_groups
+
+
+def attach_movement_tracking_to_instant_mvrs(
+    instant_mvrs: List[Dict[str, Any]],
+    person_groups: List[Dict[str, Any]],
+    cycles: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Copy / build movement_tracking onto InstantMvrs.
+
+    Prefer matching person_groups by person_object_uuid; else use cycle
+    person_objects faces; else a single-point route from InstantMvr bbox.
+    """
+    group_by_pou: Dict[str, Dict[str, Any]] = {}
+    for group in person_groups or []:
+        if not isinstance(group, dict):
+            continue
+        pou = group.get("person_object_uuid") or group.get("person_id")
+        if pou:
+            group_by_pou[str(pou)] = group
+
+    cycle_persons_by_pou: Dict[str, Dict[str, Any]] = {}
+    for cycle in cycles or []:
+        for person in cycle.get("person_objects") or []:
+            if not isinstance(person, dict):
+                continue
+            pou = person.get("person_object_uuid") or person.get("person_id")
+            if pou:
+                cycle_persons_by_pou[str(pou)] = person
+
+    for mvr in instant_mvrs or []:
+        if not isinstance(mvr, dict):
+            continue
+        pou = mvr.get("person_object_uuid")
+        tracking = None
+        if pou and str(pou) in group_by_pou:
+            group = group_by_pou[str(pou)]
+            tracking = group.get("movement_tracking")
+            if not tracking and group.get("route_points"):
+                tracking = generate_movement_tracking(group.get("faces") or [])
+        if tracking is None and pou and str(pou) in cycle_persons_by_pou:
+            person = cycle_persons_by_pou[str(pou)]
+            tracking = generate_movement_tracking(person.get("faces") or [])
+        if tracking is None:
+            # Single-point fallback from InstantMvr best bbox.
+            bbox = mvr.get("bbox")
+            faces = []
+            if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+                faces = [
+                    {
+                        "bbox": list(bbox),
+                        "confidence": mvr.get("face_quality") or mvr.get("quality_score"),
+                        "frame_number": 0,
+                        "timestamp": mvr.get("timestamp") or mvr.get("flush_started_at"),
+                    }
+                ]
+            tracking = generate_movement_tracking(faces)
+
+        mvr["movement_tracking"] = {
+            "route_points": tracking.get("route_points") or [],
+            "movement_statistics": tracking.get("movement_statistics") or {},
+        }
+        mvr["route_points"] = tracking.get("route_points") or []
+        mvr["average_route_velocity"] = tracking.get("average_route_velocity") or 0.0
+    return instant_mvrs
+
+
+def attach_movement_tracking_to_merge_result(
+    merge_result: Dict[str, Any],
+    instant_mvrs: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Union member InstantMvr routes onto each hierarchical merge group."""
+    if not isinstance(merge_result, dict):
+        return merge_result
+    mvr_by_uid: Dict[str, Dict[str, Any]] = {}
+    for mvr in instant_mvrs or []:
+        if not isinstance(mvr, dict):
+            continue
+        uid = mvr.get("instant_mvr_uuid") or mvr.get("mvr_people_uuid")
+        if uid:
+            mvr_by_uid[str(uid)] = mvr
+
+    for group in merge_result.get("merge_groups") or []:
+        if not isinstance(group, dict):
+            continue
+        member_uids: List[str] = []
+        super_uid = group.get("super_individual_uuid")
+        if super_uid:
+            member_uids.append(str(super_uid))
+        for uid in group.get("merged_mvr_uuids") or []:
+            if uid is not None:
+                member_uids.append(str(uid))
+        for member in group.get("members") or []:
+            if isinstance(member, dict):
+                uid = member.get("instant_mvr_uuid") or member.get("mvr_people_uuid")
+                if uid:
+                    member_uids.append(str(uid))
+
+        trackings = []
+        for uid in member_uids:
+            mvr = mvr_by_uid.get(uid)
+            if not mvr:
+                continue
+            tracking = mvr.get("movement_tracking")
+            if isinstance(tracking, dict):
+                trackings.append(tracking)
+        combined = _merge_movement_trackings(trackings)
+        group["movement_tracking"] = {
+            "route_points": combined["route_points"],
+            "movement_statistics": combined["movement_statistics"],
+        }
+        group["route_points"] = combined["route_points"]
+        group["average_route_velocity"] = combined["average_route_velocity"]
+    return merge_result
+
+
 def _person_groups_from_instant_mvrs(
     instant_mvrs: List[Dict[str, Any]],
     merge_result: Dict[str, Any],
@@ -506,6 +820,16 @@ def run_y_window_flush(
             camera_id,
             len(person_groups),
         )
+
+    # Recording-parity movement trajectories for Instant Detection consumers.
+    attach_movement_tracking_to_person_groups(person_groups)
+    attach_movement_tracking_to_instant_mvrs(
+        all_mvrs,
+        person_groups,
+        cycles=cycles,
+    )
+    attach_movement_tracking_to_merge_result(merge_result, all_mvrs)
+
     ended = datetime.now(timezone.utc)
     people_count = (
         len(merge_result.get("super_individuals") or [])

@@ -127,6 +127,7 @@ class AnalyticsSummary {
   final String timeFilter;
   final Demographics? demographics;
   final List<CameraAnalytics> cameraBreakdown;
+  final double? averageRouteVelocity;
   final DateTime generatedAt;
   final bool cached;
 
@@ -138,6 +139,7 @@ class AnalyticsSummary {
     required this.timeFilter,
     this.demographics,
     this.cameraBreakdown = const [],
+    this.averageRouteVelocity,
     required this.generatedAt,
     required this.cached,
   });
@@ -159,6 +161,8 @@ class AnalyticsSummary {
               .map((c) => CameraAnalytics.fromJson(c as Map<String, dynamic>))
               .toList()
           : [],
+      averageRouteVelocity:
+          (json['average_route_velocity'] as num?)?.toDouble(),
       generatedAt: json['generated_at'] != null
           ? DateTime.parse(json['generated_at'] as String)
           : DateTime.now(),
@@ -175,6 +179,8 @@ class AnalyticsSummary {
       'time_filter': timeFilter,
       if (demographics != null) 'demographics': demographics!.toJson(),
       'camera_breakdown': cameraBreakdown.map((c) => c.toJson()).toList(),
+      if (averageRouteVelocity != null)
+        'average_route_velocity': averageRouteVelocity,
       'generated_at': generatedAt.toIso8601String(),
       'cached': cached,
     };

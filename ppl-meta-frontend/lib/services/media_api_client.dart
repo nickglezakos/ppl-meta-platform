@@ -2212,6 +2212,8 @@ class MediaApiClient {
   /// List Instant Detection flush logs (Automation Instant Detection log type).
   Future<List<Map<String, dynamic>>> listInstantDetectionLogs({
     String? cameraDeviceId,
+    DateTime? startTime,
+    DateTime? endTime,
     int limit = 50,
     int offset = 0,
   }) async {
@@ -2220,6 +2222,9 @@ class MediaApiClient {
       'offset': offset,
       if (cameraDeviceId != null && cameraDeviceId.isNotEmpty)
         'camera_device_id': cameraDeviceId,
+      if (startTime != null)
+        'start_time': startTime.toUtc().toIso8601String(),
+      if (endTime != null) 'end_time': endTime.toUtc().toIso8601String(),
     };
     final response = await _apiClient.get(
       '/api/v1/instant-detection-logs',
@@ -2233,6 +2238,74 @@ class MediaApiClient {
           .toList();
     }
     return const [];
+  }
+
+  /// Search Instant Detection InstantMvrs (optional hierarchical auto-merge).
+  Future<ApiResponse<Map<String, dynamic>>> searchMVRPeopleByInstantLogs({
+    required String cameraDeviceId,
+    required List<Map<String, dynamic>> instantMvrs,
+    DateTime? startTime,
+    DateTime? endTime,
+    bool autoMerge = false,
+    double? similarityThreshold,
+    int limit = 500,
+  }) async {
+    try {
+      final data = <String, dynamic>{
+        'camera_device_id': cameraDeviceId,
+        'instant_mvrs': instantMvrs,
+        'auto_merge': autoMerge,
+        'limit': limit,
+        if (startTime != null) 'start_time': startTime.toUtc().toIso8601String(),
+        if (endTime != null) 'end_time': endTime.toUtc().toIso8601String(),
+        if (similarityThreshold != null)
+          'similarity_threshold': similarityThreshold,
+      };
+      final response = await _apiClient.post(
+        '/api/v1/mvr-people/search/by-instant-logs',
+        data: data,
+      );
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Instant log MVR search failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Instant log MVR search unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Backend-owned Instant Detection analysis from in-memory InstantMvr records.
+  Future<ApiResponse<Map<String, dynamic>>> getInstantMvrSearchAnalysis({
+    required List<String> mvrUuids,
+    required String sessionUuid,
+    required List<Map<String, dynamic>> instantMvrs,
+    DateTime? startTime,
+    DateTime? endTime,
+    List<Map<String, dynamic>>? ephemeralGroups,
+  }) async {
+    try {
+      final data = <String, dynamic>{
+        'mvr_uuids': mvrUuids,
+        'session_uuid': sessionUuid,
+        'instant_mvrs': instantMvrs,
+        if (ephemeralGroups != null) 'ephemeral_groups': ephemeralGroups,
+        if (startTime != null) 'start_time': startTime.toUtc().toIso8601String(),
+        if (endTime != null) 'end_time': endTime.toUtc().toIso8601String(),
+      };
+      final response = await _apiClient.post(
+        '/api/v1/mvr-people/analysis/from-instant-records',
+        data: data,
+      );
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint(
+          '❌ Instant record analysis failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Instant record analysis unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
   }
 
   /// Instant Detection flush analytics summary from Media logs.

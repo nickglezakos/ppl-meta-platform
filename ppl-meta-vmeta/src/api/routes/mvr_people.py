@@ -837,6 +837,29 @@ class MVRSearchAnalysisRequest(BaseModel):
     ephemeral_groups: Optional[List[Dict[str, Any]]] = None
 
 
+class InstantLogMVRSearchRequest(BaseModel):
+    """Search InstantMvrs collected from Instant Detection flush logs."""
+
+    camera_device_id: str
+    instant_mvrs: List[Dict[str, Any]]
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    auto_merge: bool = False
+    similarity_threshold: float = 0.70
+    limit: int = 500
+
+
+class InstantRecordAnalysisRequest(BaseModel):
+    """Build AggregatedIndividualAnalysis from ephemeral InstantMvr records."""
+
+    mvr_uuids: List[str]
+    session_uuid: str
+    instant_mvrs: List[Dict[str, Any]]
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    ephemeral_groups: Optional[List[Dict[str, Any]]] = None
+
+
 async def _get_mvr_stored_comparison_enabled() -> bool:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -6514,6 +6537,639 @@ async def hierarchical_merge_preview_from_records(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"preview-from-records failed: {e}",
+        ) from e
+
+
+def _parse_optional_datetime(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
+
+
+def _instant_mvr_record_uuid(record: Dict[str, Any]) -> Optional[str]:
+    uid = record.get("instant_mvr_uuid") or record.get("mvr_people_uuid")
+    return str(uid) if uid else None
+
+
+def _instant_mvr_appearance(record: Dict[str, Any]) -> MVRIndividualAppearance:
+    log_id = record.get("log_id")
+    video_uuid = (
+        f"instant_log_{log_id}" if log_id is not None else "instant_log_unknown"
+    )
+    person_object_uuid = str(
+        record.get("person_object_uuid")
+        or _instant_mvr_record_uuid(record)
+        or uuid4()
+    )
+    start_ts = (
+        _parse_optional_datetime(record.get("flush_started_at"))
+        or _parse_optional_datetime(record.get("timestamp"))
+        or datetime.now(timezone.utc)
+    )
+    end_ts = (
+        _parse_optional_datetime(record.get("flush_ended_at"))
+        or start_ts
+    )
+    confidence = float(
+        record.get("confidence")
+        or record.get("face_quality")
+        or record.get("quality_score")
+        or 0.0
+    )
+    return MVRIndividualAppearance(
+        video_uuid=video_uuid,
+        person_object_uuid=person_object_uuid,
+        start_timestamp=start_ts,
+        end_timestamp=end_ts,
+        confidence=confidence,
+    )
+
+
+def _instant_mvr_demographics(record: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    age_gender = record.get("age_gender") if isinstance(record.get("age_gender"), dict) else {}
+    gender = (
+        age_gender.get("gender")
+        if age_gender
+        else record.get("gender") or record.get("estimated_gender")
+    )
+    age_min = age_gender.get("age_min") if age_gender else record.get("age_min")
+    age_max = age_gender.get("age_max") if age_gender else record.get("age_max")
+    age_display = None
+    if age_min is not None and age_max is not None:
+        age_display = f"{age_min}-{age_max}"
+    elif record.get("estimated_age") is not None:
+        age_display = str(record.get("estimated_age"))
+    return age_display, str(gender) if gender is not None else None
+
+
+def _build_instant_mvr_person_result(record: Dict[str, Any]) -> MVRPersonResult:
+    mvr_uuid = _instant_mvr_record_uuid(record) or str(uuid4())
+    appearance = _instant_mvr_appearance(record)
+    age_display, gender = _instant_mvr_demographics(record)
+    quality = float(record.get("quality_score") or record.get("face_quality") or 0.0)
+    return MVRPersonResult(
+        mvr_people_uuid=mvr_uuid,
+        individual_uuids=[
+            str(record.get("person_object_uuid") or mvr_uuid)
+        ],
+        total_appearances=1,
+        unique_videos=1,
+        first_seen=appearance.start_timestamp,
+        last_seen=appearance.end_timestamp,
+        confidence_score=float(appearance.confidence),
+        quality_score=quality,
+        appearances=[appearance],
+        merged_mvr_uuids=[],
+        is_super_individual=False,
+        estimated_age=age_display,
+        estimated_gender=gender,
+    )
+
+
+def _dedupe_instant_mvrs(instant_mvrs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    deduped: List[Dict[str, Any]] = []
+    seen: set = set()
+    for raw in instant_mvrs or []:
+        if not isinstance(raw, dict):
+            continue
+        uid = _instant_mvr_record_uuid(raw)
+        if not uid:
+            uid = str(uuid4())
+            raw = {**raw, "instant_mvr_uuid": uid, "mvr_people_uuid": uid}
+        if uid in seen:
+            continue
+        seen.add(uid)
+        item = dict(raw)
+        item["instant_mvr_uuid"] = uid
+        item["mvr_people_uuid"] = uid
+        if item.get("quality_score") is None:
+            item["quality_score"] = float(item.get("face_quality") or 0.5)
+        deduped.append(item)
+    return deduped
+
+
+def _instant_record_movement_tracking(record: Dict[str, Any]) -> Dict[str, Any]:
+    tracking = record.get("movement_tracking")
+    if isinstance(tracking, dict) and tracking.get("route_points") is not None:
+        return {
+            "route_points": list(tracking.get("route_points") or []),
+            "movement_statistics": dict(tracking.get("movement_statistics") or {}),
+        }
+    route_points = record.get("route_points")
+    if isinstance(route_points, list):
+        return {
+            "route_points": list(route_points),
+            "movement_statistics": dict(record.get("movement_statistics") or {}),
+        }
+    return {"route_points": [], "movement_statistics": {}}
+
+
+def _instant_average_route_velocity(
+    records: List[Dict[str, Any]],
+    combined_tracking: Dict[str, Any],
+) -> Optional[float]:
+    stats = combined_tracking.get("movement_statistics") or {}
+    if stats.get("average_velocity") is not None:
+        try:
+            return float(stats["average_velocity"])
+        except (TypeError, ValueError):
+            pass
+    values: List[float] = []
+    for record in records:
+        raw = record.get("average_route_velocity")
+        if raw is None:
+            nested = (record.get("movement_tracking") or {}).get(
+                "movement_statistics"
+            ) or {}
+            raw = nested.get("average_velocity")
+        if raw is None:
+            continue
+        try:
+            values.append(float(raw))
+        except (TypeError, ValueError):
+            continue
+    if not values:
+        return None
+    return round(sum(values) / len(values), 3)
+
+
+def _merge_instant_route_points(
+    records: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Union Instant movement trajectories across member records."""
+    merged_points: List[Dict[str, Any]] = []
+    for record in records:
+        tracking = _instant_record_movement_tracking(record)
+        for point in tracking.get("route_points") or []:
+            if isinstance(point, dict):
+                merged_points.append(dict(point))
+    if not merged_points:
+        return {"route_points": [], "movement_statistics": {}}
+
+    def _sort_key(point: Dict[str, Any]) -> tuple:
+        ts = point.get("timestamp")
+        try:
+            ts_val = float(ts) if ts is not None else 0.0
+        except (TypeError, ValueError):
+            ts_val = 0.0
+        try:
+            frame = int(point.get("frame_number") or point.get("sequence_number") or 0)
+        except (TypeError, ValueError):
+            frame = 0
+        return (ts_val, frame)
+
+    merged_points.sort(key=_sort_key)
+    for index, point in enumerate(merged_points):
+        point["sequence_number"] = index + 1
+
+    velocities = [
+        float(p.get("velocity_magnitude") or 0.0)
+        for p in merged_points
+        if float(p.get("velocity_magnitude") or 0.0) > 0
+    ]
+    total_distance = 0.0
+    for i in range(1, len(merged_points)):
+        try:
+            dx = float(merged_points[i].get("center_x") or 0) - float(
+                merged_points[i - 1].get("center_x") or 0
+            )
+            dy = float(merged_points[i].get("center_y") or 0) - float(
+                merged_points[i - 1].get("center_y") or 0
+            )
+            total_distance += (dx**2 + dy**2) ** 0.5
+        except (TypeError, ValueError):
+            continue
+    try:
+        t0 = float(merged_points[0].get("timestamp") or 0)
+        t1 = float(merged_points[-1].get("timestamp") or 0)
+        time_in_frame = max(t1 - t0, 0.0)
+    except (TypeError, ValueError):
+        time_in_frame = 0.0
+    average_velocity = sum(velocities) / len(velocities) if velocities else 0.0
+    return {
+        "route_points": merged_points,
+        "movement_statistics": {
+            "total_route_points": len(merged_points),
+            "total_distance_pixels": round(total_distance, 2),
+            "average_velocity": round(average_velocity, 2),
+            "max_velocity": round(max(velocities) if velocities else 0.0, 2),
+            "time_in_frame_seconds": round(time_in_frame, 2),
+        },
+    }
+
+
+def _build_analysis_from_instant_records(
+    *,
+    mvr_person_uuid: str,
+    session_uuid: str,
+    member_records: List[Dict[str, Any]],
+    ephemeral_group: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    if not member_records:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"InstantMvr {mvr_person_uuid} not found in request records",
+        )
+
+    winner = next(
+        (
+            r
+            for r in member_records
+            if _instant_mvr_record_uuid(r) == mvr_person_uuid
+        ),
+        member_records[0],
+    )
+    appearances: List[Dict[str, Any]] = []
+    person_object_uuids: List[str] = []
+    unique_videos = set()
+    first_seen: Optional[datetime] = None
+    last_seen: Optional[datetime] = None
+    total_duration_seconds = 0.0
+    quality_scores: List[float] = []
+    combined_tracking = _merge_instant_route_points(member_records)
+
+    for record in member_records:
+        appearance_model = _instant_mvr_appearance(record)
+        start_ts = appearance_model.start_timestamp
+        end_ts = appearance_model.end_timestamp
+        if first_seen is None or start_ts < first_seen:
+            first_seen = start_ts
+        if last_seen is None or end_ts > last_seen:
+            last_seen = end_ts
+        unique_videos.add(appearance_model.video_uuid)
+        person_object_uuid = appearance_model.person_object_uuid
+        person_object_uuids.append(person_object_uuid)
+        mvr_uuid = _instant_mvr_record_uuid(record) or mvr_person_uuid
+        record_tracking = _instant_record_movement_tracking(record)
+        appearances.append(
+            {
+                "individual_uuid": mvr_uuid,
+                "video_uuid": appearance_model.video_uuid,
+                "person_object_uuid": person_object_uuid,
+                "mvr_people_uuid": mvr_uuid,
+                "start_timestamp": start_ts.isoformat(),
+                "end_timestamp": end_ts.isoformat(),
+                "entry_bbox": record.get("bbox"),
+                "exit_bbox": None,
+                "confidence_score": round(float(appearance_model.confidence), 3),
+                "camera_id": record.get("camera_id") or record.get("camera_device_id"),
+                "movement_pattern": record_tracking,
+                "route_points": record_tracking.get("route_points") or [],
+            }
+        )
+        duration = (end_ts - start_ts).total_seconds()
+        if duration > 0:
+            total_duration_seconds += duration
+        quality_scores.append(
+            float(record.get("quality_score") or record.get("face_quality") or 0.0)
+        )
+
+    age_display, gender = _instant_mvr_demographics(winner)
+    age_gender = winner.get("age_gender") if isinstance(winner.get("age_gender"), dict) else {}
+    demographics_source = {
+        "gender": gender or age_gender.get("gender"),
+        "gender_confidence": age_gender.get("gender_confidence") or winner.get("gender_confidence"),
+        "age_min": age_gender.get("age_min") if age_gender else winner.get("age_min"),
+        "age_max": age_gender.get("age_max") if age_gender else winner.get("age_max"),
+        "age_confidence": age_gender.get("age_confidence") or winner.get("age_confidence"),
+    }
+    demographics = _build_demographics_payload(demographics_source)
+
+    similarity_map = {
+        str(key): float(value)
+        for key, value in (ephemeral_group or {}).get("similarities", {}).items()
+    }
+    merged_children = []
+    for record in member_records:
+        child_uuid = _instant_mvr_record_uuid(record)
+        if not child_uuid or child_uuid == mvr_person_uuid:
+            continue
+        child_age, child_gender = _instant_mvr_demographics(record)
+        child_age_gender = (
+            record.get("age_gender") if isinstance(record.get("age_gender"), dict) else {}
+        )
+        merged_children.append(
+            {
+                "mvr_people_uuid": child_uuid,
+                "featured_individual_uuid": str(
+                    record.get("person_object_uuid") or child_uuid
+                ),
+                "quality_score": float(
+                    record.get("quality_score") or record.get("face_quality") or 0.0
+                ),
+                "confidence_score": float(
+                    record.get("confidence")
+                    or record.get("face_quality")
+                    or record.get("quality_score")
+                    or 0.0
+                ),
+                "gender": child_gender or child_age_gender.get("gender"),
+                "age_min": child_age_gender.get("age_min"),
+                "age_max": child_age_gender.get("age_max"),
+                "orphaned_at": None,
+                "merged_into_mvr_uuid": mvr_person_uuid,
+                "similarity_to_featured": similarity_map.get(child_uuid, 0.0),
+                "name": record.get("name"),
+                "name_updated_at": None,
+                "name_updated_by": None,
+            }
+        )
+
+    average_quality = (
+        round(sum(quality_scores) / len(quality_scores), 3) if quality_scores else 0.0
+    )
+    average_route_velocity = _instant_average_route_velocity(
+        member_records,
+        combined_tracking,
+    )
+    now_iso = datetime.now(timezone.utc).isoformat()
+    return {
+        "individual_uuid": mvr_person_uuid,
+        "individual_id": mvr_person_uuid,
+        "session_uuid": session_uuid,
+        "total_appearances": len(appearances),
+        "unique_videos": len(unique_videos),
+        "first_seen": first_seen.isoformat() if first_seen else now_iso,
+        "last_seen": last_seen.isoformat() if last_seen else now_iso,
+        "total_duration_seconds": round(total_duration_seconds, 3),
+        "average_confidence": round(
+            float(
+                winner.get("confidence")
+                or winner.get("face_quality")
+                or winner.get("quality_score")
+                or 0.0
+            ),
+            3,
+        ),
+        "average_quality_score": average_quality,
+        "average_route_velocity": average_route_velocity,
+        "movement_tracking": combined_tracking,
+        "route_points": combined_tracking.get("route_points") or [],
+        "demographics": demographics,
+        "aggregate_demographics": None,
+        "appearances": appearances,
+        "person_object_uuids": person_object_uuids,
+        "analysis_timestamp": now_iso,
+        "is_super_individual": bool(merged_children),
+        "merged_mvr_count": len(member_records),
+        "merged_mvr_people": merged_children,
+        "best_face_thumbnail": winner.get("person_object_uuid") or mvr_person_uuid,
+        "name": winner.get("name"),
+        "name_updated_at": None,
+        "name_updated_by": None,
+        "merged_children_total": len(merged_children),
+        "merged_children_page": 1,
+        "merged_children_page_size": max(len(merged_children), 1),
+        "merged_children_has_more": False,
+        "estimated_age": age_display,
+        "estimated_gender": gender,
+    }
+
+
+@router.post(
+    "/search/by-instant-logs",
+    response_model=MVRPeopleSearchResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Search InstantMvrs from Instant Detection logs",
+    description=(
+        "Aggregate ephemeral InstantMvr records from Instant Detection flush logs "
+        "and optionally apply hierarchical merge preview (same core as by-videos auto)."
+    ),
+)
+async def search_mvr_people_by_instant_logs(
+    request: InstantLogMVRSearchRequest,
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    mvr_matcher: MVRMatcher = Depends(get_mvr_matcher),
+):
+    try:
+        records = _dedupe_instant_mvrs(request.instant_mvrs)[: max(1, min(request.limit, 2000))]
+        results: List[MVRPersonResult] = [
+            _build_instant_mvr_person_result(record) for record in records
+        ]
+
+        if request.auto_merge and len(results) > 1:
+            from services.hierarchical_mvr_merger import HierarchicalMVRMerger
+
+            merger = HierarchicalMVRMerger(
+                repository=mvr_repository,
+                mvr_matcher=mvr_matcher,
+            )
+            merge_input = []
+            for record in records:
+                item = dict(record)
+                uid = _instant_mvr_record_uuid(item)
+                if not uid or not item.get("face_embedding"):
+                    continue
+                try:
+                    item["mvr_people_uuid"] = UUID(uid)
+                except ValueError:
+                    item["mvr_people_uuid"] = uid
+                merge_input.append(item)
+
+            if len(merge_input) > 1:
+                merge_result = await merger.preview_hierarchical_merge_records(
+                    mvr_people=merge_input,
+                    similarity_threshold=request.similarity_threshold,
+                    min_similarity_check=min(0.50, request.similarity_threshold),
+                    force_merge=False,
+                )
+                result_by_uuid = {r.mvr_people_uuid: r for r in results}
+                grouped_results: List[MVRPersonResult] = []
+                for group in merge_result.get("merge_groups", []):
+                    super_uuid = str(group["super_individual_uuid"])
+                    member_uuids = [super_uuid, *group.get("merged_mvr_uuids", [])]
+                    member_results = [
+                        result_by_uuid[uid]
+                        for uid in member_uuids
+                        if uid in result_by_uuid
+                    ]
+                    if not member_results:
+                        continue
+                    winner_result = member_results[0]
+                    combined_appearances = sorted(
+                        [
+                            appearance
+                            for member_result in member_results
+                            for appearance in member_result.appearances
+                        ],
+                        key=lambda appearance: appearance.start_timestamp,
+                    )
+                    combined_individual_uuids = sorted(
+                        {
+                            individual_uuid
+                            for member_result in member_results
+                            for individual_uuid in member_result.individual_uuids
+                        }
+                    )
+                    combined_videos = {
+                        appearance.video_uuid for appearance in combined_appearances
+                    }
+                    first_seen = min(
+                        appearance.start_timestamp for appearance in combined_appearances
+                    )
+                    last_seen = max(
+                        appearance.end_timestamp for appearance in combined_appearances
+                    )
+                    demographics = group.get("demographics") or {}
+                    age_display = None
+                    if demographics.get("age_min") is not None and demographics.get("age_max") is not None:
+                        age_display = (
+                            f"{demographics.get('age_min')}-{demographics.get('age_max')}"
+                        )
+                    grouped_results.append(
+                        MVRPersonResult(
+                            mvr_people_uuid=super_uuid,
+                            individual_uuids=combined_individual_uuids,
+                            total_appearances=len(combined_appearances),
+                            unique_videos=len(combined_videos),
+                            first_seen=first_seen,
+                            last_seen=last_seen,
+                            confidence_score=winner_result.confidence_score,
+                            quality_score=float(
+                                group.get("winner_quality")
+                                or winner_result.quality_score
+                            ),
+                            appearances=combined_appearances,
+                            merged_mvr_uuids=list(group.get("merged_mvr_uuids") or []),
+                            is_super_individual=not group.get("is_standalone", True),
+                            estimated_age=age_display or winner_result.estimated_age,
+                            estimated_gender=(
+                                demographics.get("gender")
+                                or winner_result.estimated_gender
+                            ),
+                        )
+                    )
+                covered = {
+                    uid
+                    for group in merge_result.get("merge_groups", [])
+                    for uid in [
+                        str(group["super_individual_uuid"]),
+                        *[str(m) for m in (group.get("merged_mvr_uuids") or [])],
+                    ]
+                }
+                for leftover in results:
+                    if leftover.mvr_people_uuid not in covered:
+                        grouped_results.append(leftover)
+                results = sorted(grouped_results, key=lambda result: result.first_seen)
+
+        response_data = {
+            "success": True,
+            "total_results": len(results),
+            "mvr_people": [r.dict() for r in results],
+            "search_parameters": {
+                "camera_device_id": request.camera_device_id,
+                "start_time": (
+                    request.start_time.isoformat() if request.start_time else None
+                ),
+                "end_time": request.end_time.isoformat() if request.end_time else None,
+                "limit": request.limit,
+                "auto_merge": request.auto_merge,
+                "similarity_threshold": (
+                    request.similarity_threshold if request.auto_merge else None
+                ),
+                "source": "instant_detection_logs",
+                "instant_mvr_count": len(records),
+            },
+            "message": f"Found {len(results)} Instant Detection individuals",
+        }
+        return MVRPeopleSearchResponse(**response_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("search/by-instant-logs failed: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search InstantMvrs: {e}",
+        ) from e
+
+
+@router.post(
+    "/analysis/from-instant-records",
+    summary="Get Instant Detection analysis from in-memory InstantMvr records",
+    description=(
+        "Build AggregatedIndividualAnalysis-compatible payloads from ephemeral "
+        "InstantMvr records without looking up persisted mvr_people rows."
+    ),
+)
+async def get_mvr_search_analysis_from_instant_records(
+    request: InstantRecordAnalysisRequest,
+):
+    try:
+        records = _dedupe_instant_mvrs(request.instant_mvrs)
+        records_by_uuid = {
+            uid: record
+            for record in records
+            if (uid := _instant_mvr_record_uuid(record))
+        }
+        ephemeral_groups_by_super = {
+            str(group.get("super_individual_uuid")): group
+            for group in (request.ephemeral_groups or [])
+            if group.get("super_individual_uuid")
+        }
+
+        analyses: List[Dict[str, Any]] = []
+        for requested_uuid in request.mvr_uuids:
+            requested = str(requested_uuid)
+            ephemeral_group = ephemeral_groups_by_super.get(requested)
+            member_uuids = [requested]
+            if ephemeral_group is not None:
+                member_uuids.extend(
+                    [
+                        str(member_uuid)
+                        for member_uuid in ephemeral_group.get("merged_mvr_uuids", [])
+                    ]
+                )
+            # Prefer search_results-style winner even if only children are in records
+            member_records = [
+                records_by_uuid[uid]
+                for uid in member_uuids
+                if uid in records_by_uuid
+            ]
+            if not member_records and requested in records_by_uuid:
+                member_records = [records_by_uuid[requested]]
+            if not member_records:
+                logger.warning(
+                    "Skipping Instant analysis UUID with no in-memory record: %s",
+                    requested,
+                )
+                continue
+            analyses.append(
+                _build_analysis_from_instant_records(
+                    mvr_person_uuid=requested,
+                    session_uuid=request.session_uuid,
+                    member_records=member_records,
+                    ephemeral_group=ephemeral_group,
+                )
+            )
+
+        analyses.sort(key=lambda item: (item["first_seen"], item["individual_uuid"]))
+        return {
+            "success": True,
+            "view_type": "mvr",
+            "stored_comparison_enabled": False,
+            "requested_mvr_uuids": [str(u) for u in request.mvr_uuids],
+            "resolved_super_individual_uuids": [
+                a["individual_uuid"] for a in analyses if a.get("is_super_individual")
+            ],
+            "skipped_duplicate_inputs": [],
+            "analyses": analyses,
+            "source": "instant_detection_logs",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("analysis/from-instant-records failed: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to build Instant analysis: {e}",
         ) from e
 
 

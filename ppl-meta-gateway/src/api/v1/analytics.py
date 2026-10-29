@@ -327,6 +327,42 @@ def _age_from_age_gender(age_gender: Any) -> Optional[int]:
     return None
 
 
+def _extract_route_velocity(entity: Optional[Dict[str, Any]]) -> Optional[float]:
+    """Pull average route velocity from Instant/MVR-shaped entities."""
+    if not isinstance(entity, dict):
+        return None
+    for key in ("average_route_velocity", "average_velocity"):
+        raw = entity.get(key)
+        if isinstance(raw, (int, float)) and float(raw) > 0:
+            return float(raw)
+    tracking = entity.get("movement_tracking")
+    if isinstance(tracking, dict):
+        stats = tracking.get("movement_statistics")
+        if isinstance(stats, dict):
+            raw = stats.get("average_velocity")
+            if isinstance(raw, (int, float)) and float(raw) > 0:
+                return float(raw)
+        raw = tracking.get("average_route_velocity")
+        if isinstance(raw, (int, float)) and float(raw) > 0:
+            return float(raw)
+    return None
+
+
+def _mean_route_velocity(people: List[Dict[str, Any]]) -> Optional[float]:
+    values: List[float] = []
+    for person in people or []:
+        if not isinstance(person, dict):
+            continue
+        raw = person.get("average_route_velocity")
+        if raw is None:
+            raw = _extract_route_velocity(person)
+        if isinstance(raw, (int, float)) and float(raw) > 0:
+            values.append(float(raw))
+    if not values:
+        return None
+    return round(sum(values) / len(values), 3)
+
+
 def _people_from_flush_log(log: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Build analytics people rows from one Media instant_detection_logs payload."""
     camera_id = str(log.get("camera_device_id") or "").strip()
@@ -355,7 +391,12 @@ def _people_from_flush_log(log: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     people: List[Dict[str, Any]] = []
 
-    def _append_person(person_id: str, mvr: Optional[Dict[str, Any]] = None) -> None:
+    def _append_person(
+        person_id: str,
+        mvr: Optional[Dict[str, Any]] = None,
+        *,
+        velocity_source: Optional[Dict[str, Any]] = None,
+    ) -> None:
         age_gender = (mvr or {}).get("age_gender") if isinstance((mvr or {}).get("age_gender"), dict) else {}
         gender = (
             age_gender.get("gender")
@@ -364,6 +405,10 @@ def _people_from_flush_log(log: Dict[str, Any]) -> List[Dict[str, Any]]:
         )
         age = _age_from_age_gender(age_gender)
         quality = (mvr or {}).get("quality_score") or (mvr or {}).get("face_quality")
+        velocity = (
+            _extract_route_velocity(velocity_source)
+            or _extract_route_velocity(mvr)
+        )
         people.append(
             {
                 "person_id": str(person_id),
@@ -371,6 +416,7 @@ def _people_from_flush_log(log: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "gender": gender,
                 "age": age,
                 "quality_score": quality,
+                "average_route_velocity": velocity,
                 "first_seen": flush_iso,
                 "last_seen": flush_iso,
                 "flush_log_id": log.get("id"),
@@ -401,7 +447,7 @@ def _people_from_flush_log(log: Dict[str, Any]) -> List[Dict[str, Any]]:
                 or group.get("super_individual_uuid")
                 or (members[0] if members else f"flush-{log.get('id')}-{idx}")
             )
-            _append_person(str(pid), best)
+            _append_person(str(pid), best, velocity_source=group)
     elif person_groups:
         for idx, group in enumerate(person_groups):
             member_ids = group.get("instant_mvr_uuids") or []
@@ -420,7 +466,7 @@ def _people_from_flush_log(log: Dict[str, Any]) -> List[Dict[str, Any]]:
                     key=lambda m: float(m.get("quality_score") or m.get("face_quality") or 0),
                 )
             pid = group.get("person_object_uuid") or f"flush-{log.get('id')}-pg-{idx}"
-            _append_person(str(pid), best)
+            _append_person(str(pid), best, velocity_source=group)
     else:
         supers = merge.get("super_individuals") or []
         if supers:
@@ -806,6 +852,7 @@ def _build_quality_metrics_from_dataset(dataset: Dict[str, Any], time_filter: st
         "min_quality": min(quality_scores) if quality_scores else None,
         "max_quality": max(quality_scores) if quality_scores else None,
         "quality_std_dev": quality_std_dev,
+        "average_route_velocity": _mean_route_velocity(mvr_people),
         "data_completeness": {
             "total": completeness_total,
             "with_data": mvr_with_quality,
@@ -1415,6 +1462,7 @@ def _build_summary_from_search(
             },
         },
         "camera_breakdown": list(camera_breakdown.values()),
+        "average_route_velocity": _mean_route_velocity(filtered_people),
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "cached": False,
         "search_session_uuid": dataset.get("search_session_uuid"),
@@ -1727,6 +1775,7 @@ async def _get_instant_detection_summary(
         "time_filter": time_filter,
         "demographics": demographics,
         "camera_breakdown": camera_breakdown,
+        "average_route_velocity": _mean_route_velocity(people),
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "cached": False,
         "source_type": "instant_detection",
@@ -1748,6 +1797,7 @@ def _empty_summary(time_filter: str, error: Optional[str] = None) -> Dict:
             "age": {"young": 0, "adult": 0, "elderly": 0, "young_percentage": 0.0, "adult_percentage": 0.0, "elderly_percentage": 0.0},
         },
         "camera_breakdown": [],
+        "average_route_velocity": None,
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "cached": False,
     }
@@ -2619,6 +2669,9 @@ async def get_mvr_quality_metrics(
                 "min_quality": min(quality_scores) if quality_scores else None,
                 "max_quality": max(quality_scores) if quality_scores else None,
                 "quality_std_dev": None,
+                "average_route_velocity": _mean_route_velocity(
+                    dataset.get("people") or []
+                ),
                 "data_completeness": {
                     "total": total_people,
                     "with_data": with_q,

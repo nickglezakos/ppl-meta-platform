@@ -3178,6 +3178,12 @@ async def search_mvr_people_by_videos(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.post("/mvr-people/search/by-instant-logs")
+async def search_mvr_people_by_instant_logs(request: Request):
+    """Proxy Instant Detection InstantMvr search/merge to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
 @api_router.post("/mvr-people/search/by-videos/persisted-merge-session")
 async def search_mvr_people_by_videos_persisted_merge_session(request: Request):
     """Proxy persisted merge-session MVR search request to vmeta service."""
@@ -3260,6 +3266,12 @@ async def merge_mvr_people(request: Request):
 @api_router.post("/mvr-people/analysis")
 async def get_mvr_search_analysis(request: Request):
     """Proxy backend-owned MVR search analysis request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.post("/mvr-people/analysis/from-instant-records")
+async def get_mvr_search_analysis_from_instant_records(request: Request):
+    """Proxy Instant Detection in-memory analysis to vmeta service."""
     return await _proxy_to_vmeta_service(request)
 
 

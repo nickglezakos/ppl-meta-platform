@@ -10,6 +10,44 @@ def test_flush_buffer_key():
     assert flush_buffer_key("cam-1") == "instant_detection_flush_buffer:cam-1"
 
 
+def test_generate_movement_tracking_from_faces():
+    from src.services.instant_detection_flush import (
+        attach_movement_tracking_to_person_groups,
+        generate_movement_tracking,
+    )
+
+    faces = [
+        {
+            "bbox": [10, 20, 30, 40],
+            "confidence": 0.9,
+            "frame_number": 0,
+            "timestamp": 1700000000.0,
+        },
+        {
+            "bbox": [12, 22, 32, 42],
+            "confidence": 0.8,
+            "frame_number": 1,
+            "timestamp": 1700000000.5,
+        },
+        {
+            "bbox": [20, 30, 40, 50],
+            "confidence": 0.7,
+            "frame_number": 2,
+            "timestamp": 1700000001.0,
+        },
+    ]
+    tracking = generate_movement_tracking(faces)
+    assert tracking["movement_statistics"]["total_route_points"] == 3
+    assert tracking["average_route_velocity"] > 0
+    assert len(tracking["route_points"]) == 3
+    assert tracking["route_points"][0]["center_x"] == 20.0
+
+    groups = [{"faces": faces, "person_object_uuid": "p1"}]
+    attach_movement_tracking_to_person_groups(groups)
+    assert groups[0]["movement_tracking"]["route_points"]
+    assert groups[0]["average_route_velocity"] > 0
+
+
 def test_embed_endpoint_exists_in_ml_module():
     # Importability smoke check for cameras-side expectations
     from src.services import instant_detection_flush as flush_mod

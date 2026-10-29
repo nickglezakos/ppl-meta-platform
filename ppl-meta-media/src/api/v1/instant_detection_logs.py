@@ -88,6 +88,12 @@ def create_instant_detection_log(
 @router.get("", response_model=List[InstantDetectionLogResponse])
 def list_instant_detection_logs(
     camera_device_id: Optional[str] = Query(None),
+    start_time: Optional[datetime] = Query(
+        None, description="Include logs whose flush window overlaps this start"
+    ),
+    end_time: Optional[datetime] = Query(
+        None, description="Include logs whose flush window overlaps this end"
+    ),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -97,6 +103,11 @@ def list_instant_detection_logs(
     )
     if camera_device_id:
         q = q.filter(InstantDetectionLog.camera_device_id == camera_device_id)
+    # Overlap: flush_started_at <= end_time AND flush_ended_at >= start_time
+    if start_time is not None:
+        q = q.filter(InstantDetectionLog.flush_ended_at >= start_time)
+    if end_time is not None:
+        q = q.filter(InstantDetectionLog.flush_started_at <= end_time)
     rows = (
         q.order_by(InstantDetectionLog.flush_started_at.desc())
         .offset(offset)
