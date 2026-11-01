@@ -1187,11 +1187,13 @@ class ListableCard extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         title,
                         if (titleBadge != null) ...[
                           const SizedBox(height: AppSpacing.xs),
+                          // Stretch so badge Rows with Expanded/ellipsis get a
+                          // finite max width (avoids RenderFlex overflow).
                           titleBadge!,
                         ],
                       ],
@@ -1199,12 +1201,8 @@ class ListableCard extends StatelessWidget {
                   ),
                   if (statusBadge != null) ...[
                     const SizedBox(width: AppSpacing.sm),
-                    // Badge keeps natural width; Expanded title fills the rest,
-                    // pinning the badge to the far right of the card.
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: statusBadge!,
-                    ),
+                    // Intrinsic width only; never flex-expand into the title.
+                    statusBadge!,
                   ],
                 ],
               ),

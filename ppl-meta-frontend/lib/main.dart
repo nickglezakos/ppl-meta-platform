@@ -134,7 +134,10 @@ class _PPLMetaBootstrapAppState extends State<PPLMetaBootstrapApp> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
+      // Explicit initialRoute '/' so Flutter web does not treat the browser
+      // path (e.g. /triggers) as a Navigator initialRoute before GoRouter mounts.
       return const MaterialApp(
+        initialRoute: '/',
         home: Scaffold(
           body: Center(
             child: CircularProgressIndicator(),
@@ -145,6 +148,7 @@ class _PPLMetaBootstrapAppState extends State<PPLMetaBootstrapApp> {
 
     if (_needsSetup) {
       return MaterialApp(
+        initialRoute: '/',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
         home: PlatformConnectionSetupScreen(

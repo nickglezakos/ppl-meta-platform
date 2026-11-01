@@ -1,6 +1,71 @@
+import 'dart:convert';
+
 import 'package:json_annotation/json_annotation.dart';
 
 part 'trigger_model.g.dart';
+
+/// Web-safe JSON normalization for TriggerModel (dart2js Map casts).
+Map<String, dynamic> _normalizeTriggerJson(Map<String, dynamic> json) {
+  final out = Map<String, dynamic>.from(json);
+
+  Map<String, dynamic>? asStringKeyedMap(dynamic value) {
+    if (value == null) return null;
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) {
+      return value.map((k, v) => MapEntry(k.toString(), v));
+    }
+    return null;
+  }
+
+  List<dynamic>? asList(dynamic value) {
+    if (value == null) return null;
+    if (value is List) return value;
+    if (value is String && value.trim().isNotEmpty) {
+      try {
+        final parsed = jsonDecode(value);
+        if (parsed is List) return parsed;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  final lastMatch = asStringKeyedMap(out['last_match_info']);
+  if (out.containsKey('last_match_info')) {
+    out['last_match_info'] = lastMatch;
+  }
+
+  for (final key in const [
+    'demographic_conditions',
+    'behavioural_conditions',
+    'motion_conditions',
+    'action_uuids',
+    'action_names',
+    'ppl_match_group_ids',
+    'camera_device_ids',
+    'search_camera_device_ids',
+    'left_object_class_allowlist',
+    'vehicle_class_allowlist',
+    'motion_roi',
+    'left_object_roi',
+    'vehicle_roi',
+  ]) {
+    if (!out.containsKey(key)) continue;
+    final list = asList(out[key]);
+    if (list != null) {
+      out[key] = list.map((e) {
+        if (e is Map && e is! Map<String, dynamic>) {
+          return e.map((k, v) => MapEntry(k.toString(), v));
+        }
+        return e;
+      }).toList();
+    } else if (out[key] is String) {
+      // Empty / invalid JSON string → null so generated cast does not throw.
+      out[key] = null;
+    }
+  }
+
+  return out;
+}
 
 /// Demographic condition for trigger evaluation
 @JsonSerializable()
@@ -273,7 +338,7 @@ class TriggerModel {
   });
 
   factory TriggerModel.fromJson(Map<String, dynamic> json) {
-    return _$TriggerModelFromJson(json);
+    return _$TriggerModelFromJson(_normalizeTriggerJson(json));
   }
 
   Map<String, dynamic> toJson() => _$TriggerModelToJson(this);
@@ -564,8 +629,30 @@ class TriggerListResponse {
     required this.totalPages,
   });
 
-  factory TriggerListResponse.fromJson(Map<String, dynamic> json) =>
-      _$TriggerListResponseFromJson(json);
+  factory TriggerListResponse.fromJson(Map<String, dynamic> json) {
+    final triggersRaw = json['triggers'];
+    final triggers = <TriggerModel>[];
+    if (triggersRaw is List) {
+      for (final item in triggersRaw) {
+        if (item is Map) {
+          triggers.add(
+            TriggerModel.fromJson(
+              item is Map<String, dynamic>
+                  ? item
+                  : item.map((k, v) => MapEntry(k.toString(), v)),
+            ),
+          );
+        }
+      }
+    }
+    return TriggerListResponse(
+      triggers: triggers,
+      total: (json['total'] as num?)?.toInt() ?? triggers.length,
+      page: (json['page'] as num?)?.toInt() ?? 1,
+      pageSize: (json['page_size'] as num?)?.toInt() ?? triggers.length,
+      totalPages: (json['total_pages'] as num?)?.toInt() ?? 1,
+    );
+  }
 
   Map<String, dynamic> toJson() => _$TriggerListResponseToJson(this);
 }

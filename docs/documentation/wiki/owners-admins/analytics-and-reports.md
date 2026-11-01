@@ -105,7 +105,7 @@ The bar shows `Time: …` and, when collections are checked, `Collections: N sel
 
 Pick **one** source. There is no combined “both” toggle on this screen. The last choice can persist for later visits.
 
-Site-wide Instant Detection uses session / flush-derived people metrics for the collections you select. For **calendar-span merged people** on a single camera (and the coming behavioural layer built on those spans), use Cameras → **Analytics** → **Normalised** (section C.2) and [pipeline normalisation settings](./cameras-and-detection.md#normalisation-cross-flush-spans).
+Site-wide Instant Detection uses session / flush-derived people metrics for the collections you select. For **calendar-span merged people** on a single camera, use Cameras → **Analytics** → **Normalised** (section C.2) and [pipeline normalisation settings](./cameras-and-detection.md#normalisation-cross-flush-spans). For occupancy / dwell / path **alerts**, use Vradar [Behavioural](./alerts-and-automation.md#behavioural) triggers (section [C.3](#c3-behavioural-layer-instant-detection--vradar)).
 
 ### Time Range
 
@@ -264,31 +264,37 @@ Configure flush and normalisation on the camera pipeline settings — see [Camer
 
 ---
 
-## C.3 Imminent behavioural layer (normalised Instant Detection)
+## C.3 Behavioural layer (Instant Detection + Vradar)
 
-**Coming soon** — not shipped as named dwell / meeting widgets yet. This section describes the planned layer so operators know what normalised Instant Detection is for.
+Two surfaces share the same intent themes:
 
-The behavioural layer builds on:
+| Surface | Status |
+|---|---|
+| **Vradar → Behavioural triggers** | **Shipped** — alerts on Occupancy / Peak occupancy / Dwell / Path velocity / Co-presence over a flush lookback. See [Behavioural](./alerts-and-automation.md#behavioural) and [Trigger metrics by analytics intent](./alerts-and-automation.md#trigger-metrics-by-analytics-intent). |
+| **Analytics dwell / meeting widgets** | **Later** — no separate named dwell / meeting cards on MVR Analytics yet. Level 4 behavioural blocks remain the Analytics UI for those themes. |
+
+Analytics behavioural views build on:
 
 - **Per-camera normalised spans** (section C.2), and
 - **Site-wide Instant Detection** on MVR Analytics when you select one or more collections (sections A–C) for multi-camera compare over a time range.
 
-### Intended derivations
+Vradar Behavioural triggers instead use a **per-camera Redis ring of Instant Detection flush snapshots** (lookback in flush cycles), not the Analytics Normalised span store.
+
+### Derivations (alerts today · Analytics cards later)
 
 | Theme | Operator meaning |
 |---|---|
-| **Dwell-like presence** | Same person keeps appearing across adjacent normalised spans (or stays long enough in one FOV) |
-| **Co-presence / hangout** | Two or more distinct people in the same camera × time span; stronger when that repeats over neighbouring spans |
-| **Motion behaviour** | Still vs moving bands from motion metrics (speed, gait, motion class) when those fields are populated |
-| **Common spaces** | Busy camera FOVs over the selected range — compare multiple cameras on the site Instant Detection view to see where people concentrate |
+| **Dwell-like presence** | Same person keeps appearing across adjacent flushes/spans (or stays long enough in one FOV) — alert via Behavioural **Dwell** |
+| **Co-presence / hangout** | Two or more people in the same camera × time window — alert via Behavioural **Co-presence** |
+| **Motion / path behaviour** | Velocity and motion class — alert via Behavioural **Path velocity** or Motion triggers |
+| **Common spaces / occupancy** | Busy FOVs — alert via Behavioural **Occupancy** / **Peak occupancy**; compare cameras on site Instant Detection Analytics |
 
 ### Boundaries (today)
 
-- No separate “dwell time” or “meeting space” cards on MVR Analytics yet — Level 4 behavioural blocks above remain the current shipped behavioural UI.
+- Analytics: no separate “dwell time” or “meeting space” cards yet.
 - Normalisation is **per camera**; treating the same person across different rooms may need further cross-camera identity work beyond span merge.
 - Co-presence in one FOV is a **proxy** for hanging out or meeting, not proof of interaction.
-
-When this layer ships, expect it to sit on **Normalised** Instant Detection data (and multi-camera Instant Detection selections), not on rewriting Raw flush logs.
+- Behavioural triggers need Instant Detection running on the selected camera and Media schema columns for `behavioural_*` on lab installs.
 
 ---
 

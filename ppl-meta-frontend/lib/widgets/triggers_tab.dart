@@ -676,17 +676,17 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
   // ─────────────────────────────────────────────────
 
   static const _modeLabels = {
-    'demographic': 'Instant Demographic',
+    'demographic': 'Demographic',
     'behavioural': 'Behavioural',
-    'ppl_match': 'Instant People Match',
-    'search': 'Search People Match',
-    'search_demographic': 'Search Demographic',
-    'vprofile_match': 'VProfile Multi-Group',
+    'ppl_match': 'People Match',
+    'search': 'Search Match',
+    'search_demographic': 'Search Demo',
+    'vprofile_match': 'VProfile',
     'body_posture': 'Body Posture',
     'motion': 'Motion',
     'velocity': 'Motion',
-    'left_object': 'Left / Stationary Object',
-    'vehicle_plate': 'Vehicle + Plate',
+    'left_object': 'Left Object',
+    'vehicle_plate': 'Vehicle',
   };
 
   static const _leftObjectClassOptions = [
@@ -742,35 +742,28 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     const values = <bool?>[null, true, false];
     const labels = <String>['All', 'Active', 'Inactive'];
 
-    return ToggleButtons(
-      constraints: const BoxConstraints(minHeight: 32),
-      borderRadius: BorderRadius.circular(AppRadius.sm),
-      isSelected: [for (final v in values) v == _filterIsActive],
-      onPressed: (index) {
-        setState(() => _filterIsActive = values[index]);
-        _loadTriggers();
-      },
-      selectedColor: AppColors.accent,
-      fillColor: AppColors.accent.withValues(alpha: 0.1),
-      borderColor: AppColors.gray700,
-      selectedBorderColor: AppColors.accent.withValues(alpha: 0.4),
-      children: [
-        for (final label in labels)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  label == 'All' ? Icons.dashboard_outlined : AppIcons.active,
-                  size: AppIconSize.sm,
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Text(label, style: AppTextStyles.caption),
-              ],
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: ToggleButtons(
+        constraints: const BoxConstraints(minHeight: 32),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        isSelected: [for (final v in values) v == _filterIsActive],
+        onPressed: (index) {
+          setState(() => _filterIsActive = values[index]);
+          _loadTriggers();
+        },
+        selectedColor: AppColors.accent,
+        fillColor: AppColors.accent.withValues(alpha: 0.1),
+        borderColor: AppColors.gray700,
+        selectedBorderColor: AppColors.accent.withValues(alpha: 0.4),
+        children: [
+          for (final label in labels)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+              child: Text(label, style: AppTextStyles.caption),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1044,6 +1037,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
         overflow: TextOverflow.ellipsis,
       ),
       titleBadge: Container(
+        width: double.infinity,
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.sm,
           vertical: AppSpacing.xs,
@@ -1057,11 +1051,10 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
           ),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(modeIcon, size: 12, color: AppColors.secondary),
             const SizedBox(width: AppSpacing.xs),
-            Flexible(
+            Expanded(
               child: Text(
                 modeLabel,
                 style: AppTextStyles.caption.copyWith(
@@ -1092,26 +1085,10 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
             width: 1,
           ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              trigger.isActive ? Icons.check_circle : Icons.remove_circle,
-              size: 10,
-              color: trigger.isActive ? AppColors.success : AppColors.error,
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            Flexible(
-              child: Text(
-                trigger.isActive ? 'Active' : 'Inactive',
-                style: AppTextStyles.caption.copyWith(
-                  color: trigger.isActive ? AppColors.success : AppColors.error,
-                  fontWeight: FontWeight.w500,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
+        child: Icon(
+          trigger.isActive ? Icons.check_circle : Icons.remove_circle,
+          size: 14,
+          color: trigger.isActive ? AppColors.success : AppColors.error,
         ),
       ),
       body: Column(
@@ -1522,7 +1499,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                         ),
                         DropdownMenuItem(
                           value: 'behavioural',
-                          child: Text('Behavioural (Flush Lookback)'),
+                          child: Text('Behavioural'),
                         ),
                         DropdownMenuItem(
                           value: 'ppl_match',
@@ -1559,13 +1536,13 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                       ],
                       selectedItemBuilder: (context) => const [
                         Text('Instant Demographic', overflow: TextOverflow.ellipsis),
-                        Text('Behavioural (Flush Lookback)', overflow: TextOverflow.ellipsis),
+                        Text('Behavioural', overflow: TextOverflow.ellipsis),
                         Text('Instant People Match', overflow: TextOverflow.ellipsis),
                         Text('Search People Match', overflow: TextOverflow.ellipsis),
                         Text('Search Demographic', overflow: TextOverflow.ellipsis),
-                        Text('VProfile Match (Multi-Group, Multi-Camera)', overflow: TextOverflow.ellipsis),
-                        Text('Body Posture (Multi-Camera)', overflow: TextOverflow.ellipsis),
-                        Text('Motion (Multi-Camera)', overflow: TextOverflow.ellipsis),
+                        Text('VProfile Match', overflow: TextOverflow.ellipsis),
+                        Text('Body Posture', overflow: TextOverflow.ellipsis),
+                        Text('Motion', overflow: TextOverflow.ellipsis),
                         Text('Left / Stationary Object', overflow: TextOverflow.ellipsis),
                         Text('Vehicle + Plate', overflow: TextOverflow.ellipsis),
                       ],
@@ -1808,7 +1785,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                       SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
-                                          'Behavioural Conditions (Flush Lookback)',
+                                          'Behavioural conditions',
                                           style: TextStyle(fontWeight: FontWeight.bold),
                                         ),
                                       ),
@@ -1816,7 +1793,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    'Metrics are computed over the last N Instant Detection flush cycles for this camera. Wall time ≈ N × flush interval. Buffer warms up as flushes arrive.',
+                                    'Over the last N Instant Detection flushes (≈ N × flush interval). Warms up as flushes arrive.',
                                     style: TextStyle(fontSize: 12, color: AppColors.gray600),
                                   ),
                                   const SizedBox(height: 12),
@@ -1824,8 +1801,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                     controller: lookbackFlushesController,
                                     decoration: InputDecoration(
                                       labelText: 'Lookback flushes (2–60)',
-                                      helperText:
-                                          '≈ $behaviouralLookbackFlushes × your camera flush interval',
+                                      helperText: '≈ $behaviouralLookbackFlushes × flush interval',
                                       border: const OutlineInputBorder(),
                                     ),
                                     keyboardType: TextInputType.number,
@@ -1841,13 +1817,14 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                   const SizedBox(height: 12),
                                   DropdownButtonFormField<String>(
                                     value: behaviouralConditionLogic,
+                                    isExpanded: true,
                                     decoration: const InputDecoration(
-                                      labelText: 'Condition logic',
+                                      labelText: 'Logic',
                                       border: OutlineInputBorder(),
                                     ),
                                     items: const [
-                                      DropdownMenuItem(value: 'and', child: Text('AND (all must match)')),
-                                      DropdownMenuItem(value: 'or', child: Text('OR (any match)')),
+                                      DropdownMenuItem(value: 'and', child: Text('AND')),
+                                      DropdownMenuItem(value: 'or', child: Text('OR')),
                                     ],
                                     onChanged: (value) {
                                       if (value == null) return;
@@ -1891,6 +1868,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
 
                                     final fieldDropdown = DropdownButtonFormField<String>(
                                       value: field,
+                                      isExpanded: true,
                                       decoration: const InputDecoration(
                                         labelText: 'Field',
                                         border: OutlineInputBorder(),
@@ -1899,24 +1877,31 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                       items: const [
                                         DropdownMenuItem(
                                           value: 'occupancy_span_count',
-                                          child: Text('Occupancy (latest flush)'),
+                                          child: Text('Occupancy', overflow: TextOverflow.ellipsis),
                                         ),
                                         DropdownMenuItem(
                                           value: 'peak_occupancy_window',
-                                          child: Text('Peak occupancy (window)'),
+                                          child: Text('Peak occupancy', overflow: TextOverflow.ellipsis),
                                         ),
                                         DropdownMenuItem(
                                           value: 'dwell_seconds',
-                                          child: Text('Dwell seconds'),
+                                          child: Text('Dwell', overflow: TextOverflow.ellipsis),
                                         ),
                                         DropdownMenuItem(
                                           value: 'path_velocity_avg',
-                                          child: Text('Path velocity avg'),
+                                          child: Text('Path velocity', overflow: TextOverflow.ellipsis),
                                         ),
                                         DropdownMenuItem(
                                           value: 'co_presence_count',
-                                          child: Text('Co-presence count'),
+                                          child: Text('Co-presence', overflow: TextOverflow.ellipsis),
                                         ),
+                                      ],
+                                      selectedItemBuilder: (context) => const [
+                                        Text('Occupancy', overflow: TextOverflow.ellipsis),
+                                        Text('Peak occupancy', overflow: TextOverflow.ellipsis),
+                                        Text('Dwell', overflow: TextOverflow.ellipsis),
+                                        Text('Path velocity', overflow: TextOverflow.ellipsis),
+                                        Text('Co-presence', overflow: TextOverflow.ellipsis),
                                       ],
                                       onChanged: (value) {
                                         setDialogState(() {
@@ -2019,12 +2004,12 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                             )
                                           : Row(
                                               children: [
-                                                Expanded(flex: 3, child: fieldDropdown),
+                                                Expanded(flex: 4, child: fieldDropdown),
                                                 const SizedBox(width: 8),
-                                                Expanded(flex: 2, child: operatorDropdown),
+                                                Expanded(flex: 1, child: operatorDropdown),
                                                 const SizedBox(width: 8),
                                                 Expanded(flex: 2, child: valueField),
-                                                const SizedBox(width: 8),
+                                                const SizedBox(width: 4),
                                                 removeButton,
                                               ],
                                             ),

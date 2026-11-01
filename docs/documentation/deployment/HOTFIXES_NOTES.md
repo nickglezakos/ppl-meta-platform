@@ -17,7 +17,17 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-_(none)_
+### 2026-11-01 — Behavioural triggers Media schema (next full Stage 1–3)
+- **Status:** Pending (source on `main`; **not** in GHCR pin / lab schema yet)
+- **VERSION / pin:** next cut after `2.25.104` (do **not** enable Behavioural on labs until Stage 3 verify)
+- **Stage 1 must include:**
+  - Pack `ppl-meta-media/migrations/add_behavioural_trigger_fields.sql` (`bash deployment/mac-lima/sync-schema-pack.sh`)
+  - `schema/verify.sh` checks for `triggers.behavioural_lookback_flushes`, `triggers.behavioural_conditions`, `triggers.behavioural_condition_logic`
+  - CHANGELOG + pin bump; images for **media** + **frontend** (Behavioural UI + worker already committed)
+- **Stage 2:** Mode D rebuild media + frontend (retag-forward others unless also dirty)
+- **Stage 3:** `schema/apply.sh` + `schema/verify.sh` on each lab **before** using Behavioural in lab/prod
+- **Summary:** Adds lookback flush / intent-metric columns on `triggers`. Without Stage 3 DDL, Behavioural create/eval fails even if images are new.
+- **Canonical note:** [`platform-release-cicd.md`](./platform-release-cicd.md) § Open for next full Stage 1 → 2 → 3
 
 ---
 

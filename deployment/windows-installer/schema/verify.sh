@@ -91,6 +91,16 @@ check "table.face_detection_sessions" \
 check "table.session_individuals" \
   "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='session_individuals'" \
   "1"
+# Behavioural triggers (Media) — required before enabling Behavioural mode in lab/prod
+check "triggers.behavioural_lookback_flushes" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='behavioural_lookback_flushes'" \
+  "1"
+check "triggers.behavioural_conditions" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='behavioural_conditions'" \
+  "1"
+check "triggers.behavioural_condition_logic" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='behavioural_condition_logic'" \
+  "1"
 
 if [[ "$fail" -ne 0 ]]; then
   echo
