@@ -598,6 +598,7 @@ def process_instant_detection(
                     face_detections=result.get("face_detections_for_flush") or [],
                     person_objects=result.get("person_objects") or [],
                     instant_mvrs=result.get("instant_mvrs") or [],
+                    body_persons=result.get("body_persons") or [],
                 )
                 # Threshold flush from the worker (in case sampler Y-counter missed
                 # a stop / restart before cycle_counter % Y).

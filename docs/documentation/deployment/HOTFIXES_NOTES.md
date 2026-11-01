@@ -17,6 +17,16 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
+### 2026-11-01 — Analytics Face | Body | Both (images only; no DDL)
+- **Status:** Pending (source in workspace / next Stage 1 push; **no new migration**)
+- **VERSION / pin:** next cut after `2.25.104` (ship with Behavioural Media DDL in the same pin if cutting together)
+- **DB migration:** **Not required.** Relies on existing `mvr_people_body` (`022_mvr_people_body.sql`) + Instant flush/span JSON `body_persons`. Do **not** invent a new schema pack file or verify checks for this feature.
+- **Stage 1 must include:** CHANGELOG; rebuild list **gateway**, **cameras**, **vmeta**, **frontend** (owner wiki markdown is docs-only)
+- **Stage 2:** Mode D rebuild those four (retag-forward others unless also dirty); if Behavioural ships in same pin, also rebuild **media**
+- **Stage 3:** Standard compose pull + existing `schema/apply.sh` / `schema/verify.sh` (Behavioural columns still the only new verify gate when packing that SQL)
+- **Summary:** Analytics filter `detection_modality=face|body|both` with Both-mode face↔body route overlap merge. No new tables/columns.
+- **Canonical note:** [`platform-release-cicd.md`](./platform-release-cicd.md) § Open for next full Stage 1 → 2 → 3
+
 ### 2026-11-01 — Behavioural triggers Media schema (next full Stage 1–3)
 - **Status:** Pending (source on `main`; **not** in GHCR pin / lab schema yet)
 - **VERSION / pin:** next cut after `2.25.104` (do **not** enable Behavioural on labs until Stage 3 verify)

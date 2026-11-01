@@ -47,6 +47,7 @@ class AnalyticsScreen extends ConsumerStatefulWidget {
 
 class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   static const String _dataSourcePreferenceKey = 'analytics_data_source';
+  static const String _detectionModalityPreferenceKey = 'analytics_detection_modality';
 
   // Filter state
   String _timeFilter = 'today'; // today, last_hour, last_3_hours, last_week, last_month, custom
@@ -54,6 +55,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   List<String> _selectedGenders = []; // empty = all genders (male, female)
   List<String> _selectedAgeGroups = []; // empty = all ages (young, adult, elderly)
   String _dataSource = 'recording'; // 'recording' or 'instant_detection'
+  String _detectionModality = 'face'; // face | body | both
   bool _autoRefresh = false;
   DateTime? _startDate;
   DateTime? _endDate;
@@ -167,21 +169,25 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   Future<void> _restorePreferencesAndLoadAnalytics() async {
     final prefs = await SharedPreferences.getInstance();
     final storedDataSource = prefs.getString(_dataSourcePreferenceKey);
+    final storedModality = prefs.getString(_detectionModalityPreferenceKey);
     if (!mounted) {
       return;
     }
 
     final override = widget.initialDataSource?.trim();
-    if (override == 'instant_detection' || override == 'recording') {
-      setState(() {
+    setState(() {
+      if (override == 'instant_detection' || override == 'recording') {
         _dataSource = override!;
-      });
-    } else if (storedDataSource == 'instant_detection' ||
-        storedDataSource == 'recording') {
-      setState(() {
+      } else if (storedDataSource == 'instant_detection' ||
+          storedDataSource == 'recording') {
         _dataSource = storedDataSource!;
-      });
-    }
+      }
+      if (storedModality == 'face' ||
+          storedModality == 'body' ||
+          storedModality == 'both') {
+        _detectionModality = storedModality!;
+      }
+    });
 
     await _loadAnalytics();
   }
@@ -189,6 +195,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   Future<void> _persistDataSourcePreference() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_dataSourcePreferenceKey, _dataSource);
+    await prefs.setString(_detectionModalityPreferenceKey, _detectionModality);
   }
 
   Future<void> _loadAnalytics() async {
@@ -254,6 +261,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         genders: genders,
         ageGroups: ageGroups,
         dataSource: _dataSource,
+        detectionModality: _detectionModality,
         normalised: useNormalised,
       );
       final qualityFuture = analyticsApiClient.getMvrQualityMetrics(
@@ -266,6 +274,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         genders: genders,
         ageGroups: ageGroups,
         dataSource: _dataSource,
+        detectionModality: _detectionModality,
         normalised: useNormalised,
       );
       final overviewQualityFuture = needsSplitQuality
@@ -278,6 +287,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               genders: genders,
               ageGroups: ageGroups,
               dataSource: _dataSource,
+              detectionModality: _detectionModality,
               normalised: useNormalised,
             )
           : null;
@@ -289,6 +299,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         startDate: _startDate,
         endDate: _endDate,
         dataSource: _dataSource,
+        detectionModality: _detectionModality,
         normalised: useNormalised,
       );
       final demographicsFuture = apiClient.getDemographicsBreakdown(
@@ -300,6 +311,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         genders: genders,
         ageGroups: ageGroups,
         dataSource: _dataSource,
+        detectionModality: _detectionModality,
         normalised: useNormalised,
       );
       final behavioralFuture = apiClient.getBehavioralAnalytics(
@@ -311,6 +323,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         genders: genders,
         ageGroups: ageGroups,
         dataSource: _dataSource,
+        detectionModality: _detectionModality,
         normalised: useNormalised,
       );
 
@@ -334,6 +347,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                   startDate: _startDate,
                   endDate: _endDate,
                   dataSource: _dataSource,
+                  detectionModality: _detectionModality,
                 )
               : null;
 
@@ -590,6 +604,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                       child: Text(
                         [
                           'Time: ${_getTimeFilterLabel()}',
+                          if (_detectionModality != 'face')
+                            'Modality: ${_detectionModality == 'body' ? 'Body' : 'Both'}',
                           if (_selectedCollectionIds.isNotEmpty)
                             'Collections: ${_selectedCollectionIds.length} selected',
                           if (_selectedGenders.isNotEmpty ||
@@ -621,6 +637,27 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               deleteIcon: const Icon(Icons.close, size: 16),
               onDeleted: () {
                 setState(() => _dataSource = 'recording');
+                _loadAnalytics();
+              },
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+          if (_detectionModality != 'face') ...[
+            const SizedBox(width: 8),
+            Chip(
+              label: Text(_detectionModality == 'body' ? 'Body' : 'Both'),
+              avatar: Icon(
+                _detectionModality == 'body'
+                    ? Icons.accessibility_new
+                    : Icons.merge_type,
+                size: 16,
+              ),
+              backgroundColor: Colors.teal.shade100,
+              deleteIcon: const Icon(Icons.close, size: 16),
+              onDeleted: () {
+                setState(() => _detectionModality = 'face');
+                _persistDataSourcePreference();
                 _loadAnalytics();
               },
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -2321,6 +2358,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         selectedGenders: _selectedGenders,
         selectedAgeGroups: _selectedAgeGroups,
         dataSource: _dataSource,
+        detectionModality: _detectionModality,
         autoRefresh: _autoRefresh,
         cameras: _cameras,
         startDate: _startDate,
@@ -2335,6 +2373,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         _selectedGenders = result['genders'] as List<String>;
         _selectedAgeGroups = result['ageGroups'] as List<String>;
         _dataSource = result['dataSource'] as String? ?? 'recording';
+        _detectionModality = result['detectionModality'] as String? ?? 'face';
         _autoRefresh = result['autoRefresh'] as bool;
         _startDate = result['startDate'] as DateTime?;
         _endDate = result['endDate'] as DateTime?;
@@ -3102,6 +3141,7 @@ class _FilterDialog extends StatefulWidget {
   final List<String> selectedGenders;
   final List<String> selectedAgeGroups;
   final String dataSource;
+  final String detectionModality;
   final bool autoRefresh;
   final List<Map<String, dynamic>> cameras;
   final DateTime? startDate;
@@ -3113,6 +3153,7 @@ class _FilterDialog extends StatefulWidget {
     required this.selectedGenders,
     required this.selectedAgeGroups,
     this.dataSource = 'recording',
+    this.detectionModality = 'face',
     required this.autoRefresh,
     required this.cameras,
     this.startDate,
@@ -3129,6 +3170,7 @@ class _FilterDialogState extends State<_FilterDialog> {
   late List<String> _selectedGenders;
   late List<String> _selectedAgeGroups;
   late String _dataSource;
+  late String _detectionModality;
   late bool _autoRefresh;
   DateTime? _startDate;
   DateTime? _endDate;
@@ -3141,6 +3183,7 @@ class _FilterDialogState extends State<_FilterDialog> {
     _selectedGenders = List.from(widget.selectedGenders);
     _selectedAgeGroups = List.from(widget.selectedAgeGroups);
     _dataSource = widget.dataSource;
+    _detectionModality = widget.detectionModality;
     _autoRefresh = widget.autoRefresh;
     _startDate = widget.startDate;
     _endDate = widget.endDate;
@@ -3225,6 +3268,50 @@ class _FilterDialogState extends State<_FilterDialog> {
                 _dataSource == 'recording'
                     ? 'Analytics from video recording sessions (default)'
                     : 'Analytics from real-time instant detection sessions',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Detection Modality',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('Face'),
+                    selected: _detectionModality == 'face',
+                    onSelected: (_) =>
+                        setState(() => _detectionModality = 'face'),
+                    selectedColor: Colors.teal.shade100,
+                  ),
+                  ChoiceChip(
+                    label: const Text('Body'),
+                    selected: _detectionModality == 'body',
+                    onSelected: (_) =>
+                        setState(() => _detectionModality = 'body'),
+                    selectedColor: Colors.teal.shade100,
+                  ),
+                  ChoiceChip(
+                    label: const Text('Both'),
+                    selected: _detectionModality == 'both',
+                    onSelected: (_) =>
+                        setState(() => _detectionModality = 'both'),
+                    selectedColor: Colors.teal.shade100,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _detectionModality == 'face'
+                    ? 'Count face MVR people only (default)'
+                    : _detectionModality == 'body'
+                        ? 'Count body MVR people only'
+                        : 'Merge overlapping face and body tracks into one person',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
               const SizedBox(height: 20),
@@ -3448,6 +3535,7 @@ class _FilterDialogState extends State<_FilterDialog> {
               'genders': _selectedGenders,
               'ageGroups': _selectedAgeGroups,
               'dataSource': _dataSource,
+              'detectionModality': _detectionModality,
               'autoRefresh': _autoRefresh,
               'startDate': _timeFilter == 'custom' ? _startDate : null,
               'endDate': _timeFilter == 'custom' ? _endDate : null,

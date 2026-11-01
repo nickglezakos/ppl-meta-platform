@@ -206,6 +206,49 @@ def _annotate_individual(
     return out
 
 
+def collect_flush_body_persons(logs: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Collect body_persons from flush log payloads, preferring longest trajectories."""
+    collected: List[Dict[str, Any]] = []
+    by_id: Dict[str, Dict[str, Any]] = {}
+    for log in logs:
+        payload = log.get("payload_json") or {}
+        if not isinstance(payload, dict):
+            continue
+        camera_id = str(
+            log.get("camera_device_id") or payload.get("camera_id") or ""
+        ).strip()
+        for person in payload.get("body_persons") or []:
+            if not isinstance(person, dict):
+                continue
+            pid = str(
+                person.get("body_person_id")
+                or person.get("mvr_people_body_uuid")
+                or ""
+            ).strip()
+            if not pid:
+                pid = f"body-flush-{log.get('id')}-{len(collected)}"
+            enriched = dict(person)
+            enriched["identity_modality"] = "body"
+            if camera_id and not enriched.get("camera_id"):
+                enriched["camera_id"] = camera_id
+            if not enriched.get("flush_log_id"):
+                enriched["flush_log_id"] = log.get("id")
+            existing = by_id.get(pid)
+            if existing is None:
+                by_id[pid] = enriched
+                collected.append(enriched)
+                continue
+            if len(enriched.get("route_points") or []) > len(
+                existing.get("route_points") or []
+            ) or len(enriched.get("bbox_trajectory") or []) > len(
+                existing.get("bbox_trajectory") or []
+            ):
+                idx = collected.index(existing)
+                by_id[pid] = enriched
+                collected[idx] = enriched
+    return collected
+
+
 def collect_flush_individuals(logs: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Mirror FE `_collectFlushIndividuals`: merge winners → person_groups → raw mvrs."""
     collected: List[Dict[str, Any]] = []
@@ -519,6 +562,7 @@ def normalize_instant_detection_span(
         auth_token=auth_token,
     )
     individuals = _build_merged_individuals(source_individuals, merge_result)
+    body_persons = collect_flush_body_persons(filtered)
     computed_at = datetime.now(timezone.utc)
     body = {
         "camera_device_id": camera_device_id,
@@ -533,6 +577,7 @@ def normalize_instant_detection_span(
             "individuals": individuals,
             "source_individuals": source_individuals,
             "hierarchical_merge": merge_result,
+            "body_persons": body_persons,
             "source_log_count": len(filtered),
         },
     }

@@ -797,14 +797,16 @@ class MediaApiClient {
     List<String>? genders,
     List<String>? ageGroups,
     String? dataSource,
+    String detectionModality = 'face',
     bool normalised = false,
   }) async {
     try {
-      debugPrint('📊 Fetching analytics summary (timeFilter: $timeFilter, collections: ${cameraIds?.length ?? "all"}, source: ${dataSource ?? "recording"}, normalised: $normalised)');
+      debugPrint('📊 Fetching analytics summary (timeFilter: $timeFilter, collections: ${cameraIds?.length ?? "all"}, source: ${dataSource ?? "recording"}, modality: $detectionModality, normalised: $normalised)');
       
       final queryParams = <String, dynamic>{
         'time_filter': timeFilter,
         'force_refresh': forceRefresh,
+        'detection_modality': detectionModality,
       };
       
       if (cameraIds != null && cameraIds.isNotEmpty) {
@@ -855,6 +857,7 @@ class MediaApiClient {
     DateTime? startDate,
     DateTime? endDate,
     String? dataSource,
+    String detectionModality = 'face',
     int gridSize = 8,
     int maxVideos = 50,
   }) async {
@@ -863,6 +866,7 @@ class MediaApiClient {
         'time_filter': timeFilter,
         'grid_size': gridSize,
         'max_videos': maxVideos,
+        'detection_modality': detectionModality,
       };
       if (cameraIds != null && cameraIds.isNotEmpty) {
         queryParams['camera_ids'] = cameraIds.join(',');
@@ -915,6 +919,7 @@ class MediaApiClient {
     DateTime? startDate,
     DateTime? endDate,
     String? dataSource,
+    String detectionModality = 'face',
     bool normalised = false,
   }) async {
     try {
@@ -923,6 +928,7 @@ class MediaApiClient {
       final queryParams = <String, dynamic>{
         'time_filter': timeFilter,
         'interval': interval,
+        'detection_modality': detectionModality,
       };
       
       if (cameraIds != null && cameraIds.isNotEmpty) {
@@ -984,6 +990,7 @@ class MediaApiClient {
     List<String>? genders,
     List<String>? ageGroups,
     String? dataSource,
+    String detectionModality = 'face',
     bool normalised = false,
   }) async {
     try {
@@ -993,6 +1000,7 @@ class MediaApiClient {
       
       final queryParams = <String, dynamic>{
         'time_filter': timeFilter,
+        'detection_modality': detectionModality,
       };
       
       if (cameraIds != null && cameraIds.isNotEmpty) {
@@ -1068,6 +1076,7 @@ class MediaApiClient {
     List<String>? genders,
     List<String>? ageGroups,
     String? dataSource,
+    String detectionModality = 'face',
     bool normalised = false,
   }) async {
     try {
@@ -1077,6 +1086,7 @@ class MediaApiClient {
       
       final queryParams = <String, dynamic>{
         'time_filter': timeFilter,
+        'detection_modality': detectionModality,
       };
       
       if (cameraIds != null && cameraIds.isNotEmpty) {

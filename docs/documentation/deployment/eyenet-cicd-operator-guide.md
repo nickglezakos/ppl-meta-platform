@@ -119,7 +119,7 @@ This is “save your homework to the cloud.” Labs can pull **installer scripts
 
 A CHANGELOG **Notes** line that a column is missing, or that persist can 500 until a later schema follow-up, means Stage 1 is not done. That column belongs in the schema pack and in `schema/verify.sh` in the same push.
 
-**Next full Stage 1–3 reminder:** Behavioural triggers need Media DDL (`add_behavioural_trigger_fields.sql`) packed + applied before lab/prod use — see [`platform-release-cicd.md`](./platform-release-cicd.md) § Open for next full Stage 1 → 2 → 3 and [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) Pending.
+**Next full Stage 1–3 reminder:** Behavioural triggers need Media DDL (`add_behavioural_trigger_fields.sql`) packed + applied before lab/prod use — see [`platform-release-cicd.md`](./platform-release-cicd.md) § Open for next full Stage 1 → 2 → 3 and [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) Pending. **Analytics Face | Body | Both does not need a new migration** (existing `mvr_people_body` + flush JSON); rebuild gateway/cameras/vmeta/frontend only.
 
 #### CHANGELOG (mandatory on meaningful Stage 1)
 

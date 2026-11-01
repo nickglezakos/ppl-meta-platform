@@ -1,7 +1,7 @@
 ---
 software_ref:
   platform_version: "2.25.82"
-  policy_revision: "2026-09-10"
+  policy_revision: "2026-11-01"
   channels_documented:
     - sandbox
     - pilot
@@ -29,31 +29,33 @@ How EyeNet turns camera frames into people you can review, group, and use in Vra
 
 ---
 
-## A. Instant detection vs face detection on a recording
+## A. Instant detection vs detection on a recording
 
-Both paths use the same face-detection quality. They differ in **when** they run and **how** results are stored for review.
+Live and recording paths differ in **when** they run and **how** results are stored for review. On each path, **Face** and **Body** are separate camera capabilities (they can both be on).
 
 ### Instant detection (live)
 
 - Started from a camera card with the **instant detection** controls (eye / detection controls), **independent of recording**.
 - Samples a few frames from the live stream on a short cycle (on the order of every few seconds).
-- Detects faces, groups them into people in the current view, estimates age/gender, and can resolve against known identities.
-- Results feed the live counters on the camera card, **Analytics** (filter **Instant Detection**), and **Vradar** triggers that listen to live events.
-- Some results are also persisted as tracking sessions / people records so they can appear in analytics later.
+- With **Face** on: detects faces, groups them into people in the current view, estimates age/gender, and can resolve against known identities.
+- With **Body** on: detects body / pose tracks in parallel (body person objects; posture / height — not age/gender).
+- Results feed the live counters on the camera card, **Analytics** (Data Source **Instant Detection**, modality **Face** / **Body** / **Both**), and **Vradar** triggers that listen to live events.
+- Flush logs carry face people and, when Body is on, body persons for later analytics.
 
-See [Cameras and detection](./cameras-and-detection.md) for how to start it.
+See [Cameras and detection](./cameras-and-detection.md) for how to start it and enable Face / Body.
 
-### Face detection on a recording (bulk / media pipeline)
+### Face (and optional Body) on a recording (bulk / media pipeline)
 
 - Runs after a **recording stops** (or when media is uploaded / you press **Compute** on preview).
-- Processes the full video (or segments) through the vision pipeline:
+- **Face** path through the vision pipeline:
   1. Detect faces across sampled frames
   2. Group faces into **person objects** (one person within that video)
   3. Materialize **individuals** / **MVR people** (stable biometric records with embeddings and demographics)
-  4. Make those people available in Media Preview → **Details**, Analytics (**Video Recording**), and Individual Groups
-- Richer for review: routes, face lists, and cross-video linking when the same person appears in more than one video.
+  4. Make those people available in Media Preview → **Details**, Analytics (**Video Recording** + modality **Face**), and Individual Groups
+- **Body** path (when Body detection is on for that camera / Compute): body detections → **body person objects** → **MVR People Body** (posture / height). Review in Media Preview body detail; Analytics modality **Body** or **Both**.
+- Richer for review: routes, face lists, and cross-video linking when the same person appears in more than one video (face identity). Body tracks do not invent face demographics.
 
-**Rule of thumb:** use **instant detection** for live ops and Vradar; use **recording + preview** when you need a durable review of who appeared in a clip.
+**Rule of thumb:** use **instant detection** for live ops and Vradar; use **recording + preview** when you need a durable review of who appeared in a clip. Use Analytics **Both** when Face and Body run together and you want one count per visitor — see [Detection Modality](./analytics-and-reports.md#detection-modality-face--body--both).
 
 ---
 

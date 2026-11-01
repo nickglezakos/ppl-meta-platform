@@ -22,7 +22,7 @@ Capabilities shared across Presence, Signage, Vradar, Gate, Sentinel, and Matrix
 |---|---|
 | **Cameras** | Any IP, WiFi, phone, or NVR/VMS camera; live detection and recorded video |
 | **Vision** | Face and body detection, cross-camera identity, demographics, people counts, routes, and dwell time |
-| **Analytics** | Occupancy, time trends, demographics, and behaviour (peak hours, visit frequency, heatmaps) |
+| **Analytics** | Occupancy, time trends, demographics, and behaviour (peak hours, visit frequency, heatmaps); filter by Face, Body, or Both (merged overlapping tracks) |
 | **Automation (Vradar)** | Product view of triggers/actions on instant detection — demographics or known people → email, webhooks, alerts, or signage |
 | **Access & licensing** | Roles and permissions, invitations, and installation licences |
 | **Operations** | On-site recording and archives, system health, and remote access over VPN |

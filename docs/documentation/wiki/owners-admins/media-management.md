@@ -273,7 +273,7 @@ For one clip only:
 
 1. Open the video from Collections / Gallery → **Actions** → **Full Screen Preview**.
 2. Optional: app-bar **Compute** (run pipeline & create/update MVR people).
-3. Overlay **Details** → single-video tabs (**Persons** · **Routes** · **Overview** · **Face Details**).
+3. Overlay **Details** → single-video tabs (**Persons** · **Routes** · **Overview** · **Face Details**). When **Body** detection ran for that clip, body tracks appear as **MVR People Body** (posture / height) alongside face people — use Analytics modality **Body** / **Both** for site counts ([Detection Modality](./analytics-and-reports.md#detection-modality-face--body--both)).
 
 Use collection date/time search when you need **many videos / many people** in one Analysis view; use single-video Details when reviewing one recording.
 

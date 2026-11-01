@@ -1,6 +1,6 @@
 ---
 software_ref:
-  platform_version: "2.25.101"
+  platform_version: "2.25.104"
   policy_revision: "2026-11-01"
   channels_documented:
     - sandbox
@@ -321,13 +321,25 @@ On stream / camera detail views you may also see pipeline switches:
 
 Turn **Instant Detection** on for real-time person detection with triggers. **Recording Pipeline** is a separate product path and can stay off while you only run instant detection.
 
+### Face and Body detection (capability)
+
+On pipeline / camera settings you can enable **Face** and **Body** detection independently (both may be on at once):
+
+| Capability | What it produces | Analytics filter |
+|---|---|---|
+| **Face** | Face detections → person objects → face MVR people (age/gender when available) | **Detection Modality → Face** (default) |
+| **Body** | Body / pose tracks → body person objects → **MVR People Body** (posture / height; no age/gender) | **Detection Modality → Body** |
+| **Face + Body** | Parallel pipelines on the same camera | **Detection Modality → Both** merges overlapping face and body tracks into one person for counts and routes |
+
+Analytics defaults to **Face** so counts stay unchanged until you opt into Body or Both. See [Analytics — Detection Modality](./analytics-and-reports.md#detection-modality-face--body--both).
+
 ### Instant Detection pipeline settings
 
 On desktop, select a camera → mode pill **Settings** (gear), or open the camera’s pipeline settings screen. Beyond the Instant Detection on/off switch you can tune how live detections become stored analytics.
 
 #### Flush (Y-window)
 
-While Instant Detection runs, each cycle samples frames into a short buffer. After enough cycles the service **flushes** that window into an immutable Instant Detection log (used by Analytics and Vradar).
+While Instant Detection runs, each cycle samples frames into a short buffer. After enough cycles the service **flushes** that window into an immutable Instant Detection log (used by Analytics and Vradar). When **Body** detection is on, flush payloads also carry body persons (with trajectories) alongside face people.
 
 | Setting | What it does |
 |---|---|
@@ -347,13 +359,14 @@ With normalisation enabled, a background worker merges people **across** flush l
 | **Span length (seconds)** | Calendar bucket size for each normalised span (typically 60–3600; default 300) |
 | **Normalise merge threshold** | Similarity used when merging the same person across flushes inside a span (higher = stricter) |
 
-Use Cameras → **Analytics** (not Instant Detection logs) with **Raw** / **Normalised** and **Analytics intents** (Counting, Occupancy, Heatmap, Path) — see [Analytics and reports](./analytics-and-reports.md#c2-per-camera-analytics-cameras-content-pane) and [C.4 Camera analytics intents](./analytics-and-reports.md#c4-camera-analytics-intents). Instant Detection logs are flush/span history and search only. For Vradar conditions per intent, see [Trigger metrics by analytics intent](./alerts-and-automation.md#trigger-metrics-by-analytics-intent).
+Use Cameras → **Analytics** (not Instant Detection logs) with **Raw** / **Normalised**, **Detection Modality** (**Face** / **Body** / **Both**), and **Analytics intents** (Counting, Occupancy, Heatmap, Path) — see [Analytics and reports](./analytics-and-reports.md#c2-per-camera-analytics-cameras-content-pane) and [C.4 Camera analytics intents](./analytics-and-reports.md#c4-camera-analytics-intents). Instant Detection logs are flush/span history and search only. For Vradar conditions per intent, see [Trigger metrics by analytics intent](./alerts-and-automation.md#trigger-metrics-by-analytics-intent).
 
 #### What good looks like (pipeline)
 
 - Instant Detection is on and live counts update.
+- Face and/or Body capability matches what you expect in Analytics modality filters.
 - After a few flush intervals, **Raw** Instant Detection logs appear for that camera.
-- With normalisation on, **Normalised** spans appear after each span window closes (not instantly mid-span).
+- With normalisation on, **Normalised** spans appear after each span window closes (not instantly mid-span); body persons are retained on spans when Body was on during those flushes.
 - Recording Pipeline can stay off if you only need live detection and Instant Detection analytics.
 
 ## Record video (standalone)

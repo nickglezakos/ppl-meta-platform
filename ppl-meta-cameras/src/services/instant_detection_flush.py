@@ -43,8 +43,9 @@ def push_cycle_to_flush_buffer(
     face_detections: List[Dict[str, Any]],
     person_objects: List[Dict[str, Any]],
     instant_mvrs: List[Dict[str, Any]],
+    body_persons: Optional[List[Dict[str, Any]]] = None,
 ) -> int:
-    """Append one cycle's faces / InstantMvrs for the Y-window flush.
+    """Append one cycle's faces / InstantMvrs / body persons for the Y-window flush.
 
     Returns the buffer length after push (for threshold-triggered flush).
     """
@@ -56,6 +57,7 @@ def push_cycle_to_flush_buffer(
         "face_detections": face_detections or [],
         "person_objects": person_objects or [],
         "instant_mvrs": instant_mvrs or [],
+        "body_persons": body_persons or [],
     }
     r.lpush(key, json.dumps(payload))
     r.ltrim(key, 0, FLUSH_BUFFER_MAX - 1)
@@ -349,6 +351,170 @@ def _bbox_from_face(face: Dict[str, Any]) -> Optional[List[float]]:
         ]
     except (TypeError, ValueError, KeyError):
         return None
+
+
+# Instant body trajectories use ~0.5s frame spacing (see instant_velocity).
+BODY_FRAME_DT_SEC = 0.5
+
+
+def _bbox_center_xy(bbox: Any) -> Optional[tuple]:
+    if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+        return None
+    try:
+        x1, y1, x2, y2 = [float(v) for v in bbox[:4]]
+        return (x1 + x2) / 2.0, (y1 + y2) / 2.0
+    except (TypeError, ValueError):
+        return None
+
+
+def route_points_from_body_trajectory(
+    body_person: Dict[str, Any],
+    *,
+    cycle_epoch: Optional[float] = None,
+    frame_dt_sec: float = BODY_FRAME_DT_SEC,
+) -> List[Dict[str, Any]]:
+    """Derive analytics-compatible route_points from body bbox_trajectory."""
+    trajectory = body_person.get("bbox_trajectory") or []
+    if not isinstance(trajectory, list) or not trajectory:
+        avg = body_person.get("average_bbox") or body_person.get("best_bbox")
+        center = _bbox_center_xy(avg)
+        if center is None:
+            return []
+        ts = float(cycle_epoch) if cycle_epoch is not None else 0.0
+        point: Dict[str, Any] = {
+            "sequence_number": 1,
+            "frame_number": body_person.get("first_frame"),
+            "timestamp": ts,
+            "center_x": center[0],
+            "center_y": center[1],
+            "bbox": list(avg) if isinstance(avg, (list, tuple)) else None,
+            "confidence": body_person.get("quality_score"),
+        }
+        return [point]
+
+    frames = []
+    for i, raw in enumerate(trajectory):
+        if not isinstance(raw, dict):
+            continue
+        try:
+            frame = int(raw.get("frame", i) if raw.get("frame") is not None else i)
+        except (TypeError, ValueError):
+            frame = i
+        frames.append(frame)
+    base_frame = min(frames) if frames else 0
+    route_points: List[Dict[str, Any]] = []
+    for i, raw in enumerate(trajectory):
+        if not isinstance(raw, dict):
+            continue
+        bbox = raw.get("bbox")
+        center = _bbox_center_xy(bbox)
+        if center is None:
+            continue
+        try:
+            frame = int(raw.get("frame", i) if raw.get("frame") is not None else i)
+        except (TypeError, ValueError):
+            frame = i
+        rel = max(0.0, float(frame - base_frame) * float(frame_dt_sec))
+        ts = (float(cycle_epoch) + rel) if cycle_epoch is not None else rel
+        route_points.append(
+            {
+                "sequence_number": len(route_points) + 1,
+                "frame_number": frame,
+                "timestamp": ts,
+                "center_x": center[0],
+                "center_y": center[1],
+                "bbox": list(bbox) if isinstance(bbox, (list, tuple)) else None,
+                "confidence": raw.get("confidence"),
+            }
+        )
+    return route_points
+
+
+def enrich_body_person_for_flush(
+    body_person: Dict[str, Any],
+    *,
+    cycle_id: Optional[str] = None,
+    cycle_timestamp: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Copy a body person and attach route_points / first_seen / last_seen for analytics."""
+    out = dict(body_person) if isinstance(body_person, dict) else {}
+    cycle_epoch = _to_epoch_seconds(cycle_timestamp)
+    route_points = route_points_from_body_trajectory(out, cycle_epoch=cycle_epoch)
+    out["route_points"] = route_points
+    out["movement_tracking"] = {
+        "route_points": route_points,
+        "movement_statistics": {
+            "total_route_points": len(route_points),
+        },
+    }
+    if route_points:
+        first_ts = route_points[0].get("timestamp")
+        last_ts = route_points[-1].get("timestamp")
+        if isinstance(first_ts, (int, float)):
+            out["first_seen"] = datetime.fromtimestamp(
+                float(first_ts), tz=timezone.utc
+            ).isoformat()
+        if isinstance(last_ts, (int, float)):
+            out["last_seen"] = datetime.fromtimestamp(
+                float(last_ts), tz=timezone.utc
+            ).isoformat()
+        velocities: List[float] = []
+        for i in range(1, len(route_points)):
+            dt = float(route_points[i]["timestamp"]) - float(route_points[i - 1]["timestamp"])
+            if dt <= 0:
+                continue
+            dx = float(route_points[i]["center_x"]) - float(route_points[i - 1]["center_x"])
+            dy = float(route_points[i]["center_y"]) - float(route_points[i - 1]["center_y"])
+            velocities.append(((dx**2 + dy**2) ** 0.5) / dt)
+        if velocities:
+            out["average_route_velocity"] = round(sum(velocities) / len(velocities), 2)
+    if cycle_id:
+        out["cycle_id"] = cycle_id
+    if cycle_timestamp:
+        out["cycle_timestamp"] = cycle_timestamp
+    out["identity_modality"] = "body"
+    return out
+
+
+def collect_body_persons_for_flush(cycles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Aggregate enriched body persons across drained flush cycles."""
+    collected: List[Dict[str, Any]] = []
+    seen: set = set()
+    for cycle in cycles or []:
+        if not isinstance(cycle, dict):
+            continue
+        cycle_id = cycle.get("cycle_id")
+        cycle_ts = cycle.get("timestamp")
+        for person in cycle.get("body_persons") or []:
+            if not isinstance(person, dict):
+                continue
+            enriched = enrich_body_person_for_flush(
+                person, cycle_id=cycle_id, cycle_timestamp=cycle_ts
+            )
+            pid = str(
+                enriched.get("body_person_id")
+                or enriched.get("mvr_people_body_uuid")
+                or f"{cycle_id}-{len(collected)}"
+            )
+            # Same body_person_id across cycles: keep the longest trajectory.
+            if pid in seen:
+                for idx, existing in enumerate(collected):
+                    existing_id = str(
+                        existing.get("body_person_id")
+                        or existing.get("mvr_people_body_uuid")
+                        or ""
+                    )
+                    if existing_id != pid:
+                        continue
+                    if len(enriched.get("route_points") or []) > len(
+                        existing.get("route_points") or []
+                    ):
+                        collected[idx] = enriched
+                    break
+                continue
+            seen.add(pid)
+            collected.append(enriched)
+    return collected
 
 
 def generate_movement_tracking(group_faces: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1246,6 +1412,7 @@ def run_y_window_flush(
     for cycle in cycles:
         for mvr in cycle.get("instant_mvrs") or []:
             all_mvrs.append(mvr)
+    all_body_persons = collect_body_persons_for_flush(cycles)
 
     person_groups = _regroup_faces(
         all_faces,
@@ -1296,6 +1463,7 @@ def run_y_window_flush(
             "person_groups": person_groups,
             "instant_mvrs": all_mvrs,
             "hierarchical_merge": merge_result,
+            "body_persons": all_body_persons,
             "cycle_ids": [c.get("cycle_id") for c in cycles],
             "flush_interval_cycles": flush_interval_cycles,
         },

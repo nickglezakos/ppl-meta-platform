@@ -18,6 +18,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Added
 
 - Behavioural trigger mode (Media + frontend): intent metrics over Instant Detection flush lookback (`lookback_flushes`). Source on `main`; **DDL not live on labs until next Stage 1–3** packs `add_behavioural_trigger_fields.sql` and Stage 3 apply/verify passes (see `docs/documentation/deployment/platform-release-cicd.md` § Open for next full Stage 1 → 2 → 3).
+- Analytics **Face | Body | Both** (`detection_modality`): counts/routes can use face MVRs, body MVRs, or Both with temporal+spatial overlap merge (no double-count). Instant flush/span payloads carry `body_persons`; recording loads existing `mvr_people_body`. Owner wiki updated.
 
 ### Changed
 
@@ -29,6 +30,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 ### Notes
 
 - Next pin cut must run `bash deployment/mac-lima/sync-schema-pack.sh` (includes behavioural Media columns) and fail Stage 3 if `schema/verify.sh` does not OK `triggers.behavioural_*`. Do not enable Behavioural on lab/prod before that.
+- **Analytics Face | Body | Both: no new DB migration.** Uses existing `mvr_people_body` + flush JSON. Rebuild gateway / cameras / vmeta / frontend on the next pin; Stage 3 needs no extra DDL beyond the Behavioural Media columns above.
 
 ## [2.25.104] — 2026-10-27
 

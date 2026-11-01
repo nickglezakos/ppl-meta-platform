@@ -25,11 +25,13 @@ class AnalyticsApiClient {
     List<String>? genders,
     List<String>? ageGroups,
     String? dataSource,
+    String detectionModality = 'face',
     bool normalised = false,
   }) async {
     try {
       final queryParams = <String, dynamic>{
         'time_filter': timeFilter,
+        'detection_modality': detectionModality,
         if (collectionName != null && collectionName.isNotEmpty) 
           'collection_name': collectionName,
         if (cameraIds != null && cameraIds.isNotEmpty)

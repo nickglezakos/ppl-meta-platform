@@ -18,6 +18,8 @@
 
 Tracker: [`HOTFIXES_NOTES.md`](../documentation/deployment/HOTFIXES_NOTES.md) § Pending. Clear that Pending entry only after Stage 3 verify passes on the target labs.
 
+**Analytics Face | Body | Both — no new DB migration.** Gateway/cameras/vmeta/frontend work for `detection_modality` uses existing `mvr_people_body` (pack `022_mvr_people_body.sql` / already on labs that ran body detection) and JSON `body_persons` on Instant flush/span payloads. Next pin Stage 1–2 must rebuild **gateway**, **cameras**, **vmeta**, **frontend** (and wiki source is docs-only). Stage 3: normal compose pull + existing schema apply/verify is enough — **do not** add a new DDL file or `schema/verify.sh` checks for this feature. (Behavioural Media columns above remain the only open DDL gate.)
+
 **How we ship (memorize this):**
 
 1. **Commit + push source** to GitHub for **every service/path the fixes touched** (Stage 1 hard gate)  

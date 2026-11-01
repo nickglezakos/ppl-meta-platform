@@ -60,10 +60,11 @@ async def materialize_body_persons(
 @router.get("/media/{media_id}")
 async def list_media_mvr_people_body(
     media_id: str,
+    include_all: bool = False,
     _user: dict = Depends(get_current_user_or_internal_service),
     conn: asyncpg.Connection = Depends(get_db_connection),
 ):
-    items = await svc.list_for_media(conn, media_id)
+    items = await svc.list_for_media(conn, media_id, include_all=bool(include_all))
     return {"media_id": media_id, "mvr_people_body": items, "count": len(items)}
 
 

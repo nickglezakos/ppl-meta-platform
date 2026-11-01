@@ -199,7 +199,12 @@ def _normalize_dominant_colors(raw: Any) -> Any:
     return raw
 
 
-async def list_for_media(conn: asyncpg.Connection, media_id: str) -> List[Dict[str, Any]]:
+async def list_for_media(
+    conn: asyncpg.Connection,
+    media_id: str,
+    *,
+    include_all: bool = False,
+) -> List[Dict[str, Any]]:
     await ensure_mvr_people_body_schema(conn)
     rows = await conn.fetch(
         """
@@ -207,7 +212,7 @@ async def list_for_media(conn: asyncpg.Connection, media_id: str) -> List[Dict[s
                height_px, height_relative, height_m, dominant_colors,
                fallen, fallen_confidence, quality_score,
                featured_body_person_uuid, source_media_uuid, camera_id,
-               total_appearances, bbox_trajectory, created_at
+               total_appearances, bbox_trajectory, first_seen, last_seen, created_at
         FROM mvr_people_body
         WHERE source_media_uuid::text = $1 OR featured_video_uuid::text = $1
         ORDER BY created_at DESC
@@ -240,12 +245,16 @@ async def list_for_media(conn: asyncpg.Connection, media_id: str) -> List[Dict[s
                 "camera_id": row["camera_id"],
                 "total_appearances": row["total_appearances"],
                 "bbox_trajectory": row["bbox_trajectory"],
+                "first_seen": row["first_seen"].isoformat() if row["first_seen"] else None,
+                "last_seen": row["last_seen"].isoformat() if row["last_seen"] else None,
                 "created_at": row["created_at"].isoformat() if row["created_at"] else None,
             }
         )
     if not out:
         return out
-    # Prefer newest row with computed colors; otherwise newest overall.
+    if include_all:
+        return out
+    # Detail-panel default: prefer newest row with computed colors; otherwise newest.
     with_colors = [item for item in out if item.get("dominant_colors")]
     if with_colors:
         return [with_colors[0]]

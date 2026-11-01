@@ -15,6 +15,15 @@ from fastapi import APIRouter, Depends, Query, Request, HTTPException
 
 from core.auth import get_current_user
 from core.redis_client import cache_client
+from services.face_body_analytics_merge import (
+    apply_detection_modality,
+    body_people_from_flush_log,
+    body_people_from_normalised_span,
+    filter_people_for_demographics,
+    normalize_detection_modality,
+    recording_body_person_to_analytics,
+    route_points_from_bbox_trajectory,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +66,11 @@ def _normalize_source_type(source_type: Optional[str]) -> str:
     if source_type in ("instant_detection",):
         return "instant_detection"
     return "recording_pipeline"  # Safe default
+
+
+def _normalize_detection_modality(detection_modality: Optional[str]) -> str:
+    """Normalize analytics Face | Body | Both filter (default face)."""
+    return normalize_detection_modality(detection_modality)
 
 
 def _parse_time_filter(
@@ -770,12 +784,17 @@ async def _get_instant_detection_approx_dataset(
     start_date: Optional[str],
     end_date: Optional[str],
     normalised: bool = False,
+    detection_modality: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Instant Detection analytics SoT:
     - Raw: Media `instant_detection_logs` (Y-flush)
     - Normalised: Media `instant_detection_normalised_spans`
+
+    Cache stores face + body people; modality is applied on return so Face default
+    stays unchanged while Body/Both reuse the same flush fetch.
     """
+    modality = _normalize_detection_modality(detection_modality)
     cache_key = "|".join(
         [
             (auth_token or "")[:24],
@@ -789,7 +808,8 @@ async def _get_instant_detection_approx_dataset(
     now_mono = datetime.now(timezone.utc).timestamp()
     cached = _instant_dataset_cache.get(cache_key)
     if cached and (now_mono - cached[0]) <= _INSTANT_DATASET_TTL_SECONDS:
-        return cached[1]
+        base = cached[1]
+        return _with_instant_modality(base, modality)
 
     start_time, end_time = _parse_time_filter(time_filter, start_date, end_date)
     start_time, end_time = _as_utc(start_time), _as_utc(end_time)
@@ -816,7 +836,8 @@ async def _get_instant_detection_approx_dataset(
                 cid.strip() for cid in collection_ids.split(",") if cid.strip()
             )
 
-    all_people: List[Dict[str, Any]] = []
+    all_face_people: List[Dict[str, Any]] = []
+    all_body_people: List[Dict[str, Any]] = []
     camera_results: List[Dict[str, Any]] = []
     cameras_seen: List[str] = []
     filtered_logs: List[Dict[str, Any]] = []
@@ -844,15 +865,18 @@ async def _get_instant_detection_approx_dataset(
             filtered_logs.append(span)
             if cam and cam not in cameras_seen:
                 cameras_seen.append(cam)
-            people = _people_from_normalised_span(span)
-            all_people.extend(people)
+            face_people = _people_from_normalised_span(span)
+            body_people = body_people_from_normalised_span(span)
+            all_face_people.extend(face_people)
+            all_body_people.extend(body_people)
             camera_results.append(
                 {
                     "success": True,
                     "camera_id": cam,
                     "normalised_span_id": span.get("id"),
-                    "approx_unique_people": len(people),
-                    "people": people,
+                    "approx_unique_people": len(face_people),
+                    "people": face_people,
+                    "body_people": body_people,
                     "people_count": span.get("people_count"),
                     "span_start": span.get("span_start"),
                     "span_end": span.get("span_end"),
@@ -877,15 +901,18 @@ async def _get_instant_detection_approx_dataset(
             filtered_logs.append(log)
             if cam and cam not in cameras_seen:
                 cameras_seen.append(cam)
-            people = _people_from_flush_log(log)
-            all_people.extend(people)
+            face_people = _people_from_flush_log(log)
+            body_people = body_people_from_flush_log(log)
+            all_face_people.extend(face_people)
+            all_body_people.extend(body_people)
             camera_results.append(
                 {
                     "success": True,
                     "camera_id": cam,
                     "flush_log_id": log.get("id"),
-                    "approx_unique_people": len(people),
-                    "people": people,
+                    "approx_unique_people": len(face_people),
+                    "people": face_people,
+                    "body_people": body_people,
                     "cycle_count": log.get("cycle_count"),
                     "people_count": log.get("people_count"),
                 }
@@ -902,7 +929,9 @@ async def _get_instant_detection_approx_dataset(
         "camera_ids": cameras_seen,
         "camera_names": camera_names,
         "camera_results": camera_results,
-        "people": all_people,
+        "face_people": all_face_people,
+        "body_people": all_body_people,
+        "people": all_face_people,
         "flush_logs": filtered_logs,
         "flush_count": flush_count,
         "source": source,
@@ -913,7 +942,21 @@ async def _get_instant_detection_approx_dataset(
     if len(_instant_dataset_cache) > 64:
         oldest_key = min(_instant_dataset_cache.items(), key=lambda kv: kv[1][0])[0]
         _instant_dataset_cache.pop(oldest_key, None)
-    return dataset
+    return _with_instant_modality(dataset, modality)
+
+
+def _with_instant_modality(dataset: Dict[str, Any], modality: str) -> Dict[str, Any]:
+    """Return a shallow copy with people filtered/merged for detection_modality."""
+    mode = _normalize_detection_modality(modality)
+    face_people = list(dataset.get("face_people") or dataset.get("people") or [])
+    body_people = list(dataset.get("body_people") or [])
+    people = apply_detection_modality(face_people, body_people, mode)
+    out = dict(dataset)
+    out["face_people"] = face_people
+    out["body_people"] = body_people
+    out["people"] = people
+    out["detection_modality"] = mode
+    return out
 
 
 def _filter_instant_detection_people(
@@ -921,19 +964,13 @@ def _filter_instant_detection_people(
     selected_genders: Optional[List[str]],
     selected_age_groups: Optional[List[str]],
 ) -> List[Dict[str, Any]]:
-    filtered: List[Dict[str, Any]] = []
-    normalized_genders = {g.strip().lower() for g in selected_genders or [] if g.strip()}
-    normalized_ages = {a.strip().lower() for a in selected_age_groups or [] if a.strip()}
-
-    for person in people:
-        gender = _normalize_gender_label(person.get("gender"))
-        age_group = _normalize_age_group(person.get("age"))
-        if normalized_genders and gender not in normalized_genders:
-            continue
-        if normalized_ages and age_group not in normalized_ages:
-            continue
-        filtered.append(person)
-    return filtered
+    return filter_people_for_demographics(
+        people,
+        selected_genders,
+        selected_age_groups,
+        gender_of=lambda p: _normalize_gender_label(p.get("gender")),
+        age_group_of=lambda p: _normalize_age_group(p.get("age")),
+    )
 
 
 def _build_instant_detection_demographics(people: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1600,8 +1637,11 @@ async def _build_recording_pipeline_search_dataset(
                 "video_uuids": [],
                 "video_details": [],
                 "video_details_by_uuid": {},
+                "face_people": [],
+                "body_people": [],
                 "mvr_people": [],
                 "search_session_uuid": None,
+                "detection_modality": "face",
             }
 
         search_response = await client.post(
@@ -1635,6 +1675,9 @@ async def _build_recording_pipeline_search_dataset(
     search_data = search_response.json()
     result_payload = search_data.get("result_payload") or {}
     mvr_people = result_payload.get("mvr_people") or []
+    face_people = [person for person in mvr_people if isinstance(person, dict)]
+    for person in face_people:
+        person.setdefault("identity_modality", "face")
 
     return {
         "start_time": start_time,
@@ -1643,9 +1686,90 @@ async def _build_recording_pipeline_search_dataset(
         "video_uuids": video_uuids,
         "video_details": video_details,
         "video_details_by_uuid": video_details_by_uuid,
-        "mvr_people": [person for person in mvr_people if isinstance(person, dict)],
+        "face_people": face_people,
+        "body_people": [],
+        "mvr_people": face_people,
         "search_session_uuid": search_data.get("search_session_uuid"),
+        "detection_modality": "face",
     }
+
+
+async def _load_recording_body_people(
+    auth_token: str,
+    video_uuids: List[str],
+    video_details_by_uuid: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Fetch mvr_people_body rows per video and shape them for analytics."""
+    if not video_uuids:
+        return []
+    body_people: List[Dict[str, Any]] = []
+    headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for video_uuid in video_uuids:
+            try:
+                resp = await client.get(
+                    f"{VMETA_SERVICE_URL}/api/v1/mvr-people-body/media/{video_uuid}",
+                    headers=headers,
+                    params={"include_all": "true"},
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load mvr_people_body for media %s: %s", video_uuid, exc
+                )
+                continue
+            if resp.status_code != 200:
+                continue
+            payload = resp.json() if resp.content else {}
+            items = payload.get("mvr_people_body") if isinstance(payload, dict) else None
+            if not isinstance(items, list):
+                continue
+            details = video_details_by_uuid.get(video_uuid) or {}
+            media_ts = details.get("media_timestamp")
+            if isinstance(media_ts, str):
+                media_ts = _parse_iso_datetime(media_ts)
+            fps = details.get("fps")
+            try:
+                fps_val = float(fps) if fps is not None else None
+            except (TypeError, ValueError):
+                fps_val = None
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                body_people.append(
+                    recording_body_person_to_analytics(
+                        item,
+                        video_uuid=video_uuid,
+                        camera_id=details.get("camera_id") or item.get("camera_id"),
+                        camera_name=details.get("camera_name"),
+                        media_timestamp=media_ts if isinstance(media_ts, datetime) else None,
+                        fps=fps_val,
+                    )
+                )
+    return body_people
+
+
+async def _with_recording_modality(
+    dataset: Dict[str, Any],
+    auth_token: str,
+    detection_modality: Optional[str],
+) -> Dict[str, Any]:
+    """Attach body people (lazy) and apply Face | Body | Both to mvr_people."""
+    mode = _normalize_detection_modality(detection_modality)
+    out = dict(dataset)
+    face_people = list(out.get("face_people") or out.get("mvr_people") or [])
+    body_people = list(out.get("body_people") or [])
+    if mode in ("body", "both") and not body_people:
+        body_people = await _load_recording_body_people(
+            auth_token,
+            list(out.get("video_uuids") or []),
+            out.get("video_details_by_uuid") or {},
+        )
+    people = apply_detection_modality(face_people, body_people, mode)
+    out["face_people"] = face_people
+    out["body_people"] = body_people
+    out["mvr_people"] = people
+    out["detection_modality"] = mode
+    return out
 
 
 def _filter_people_for_analytics(
@@ -1653,11 +1777,13 @@ def _filter_people_for_analytics(
     selected_genders: Optional[List[str]],
     selected_age_groups: Optional[List[str]],
 ) -> List[Dict[str, Any]]:
-    return [
-        person
-        for person in dataset.get("mvr_people", [])
-        if _matches_person_filters(person, selected_genders, selected_age_groups)
-    ]
+    return filter_people_for_demographics(
+        list(dataset.get("mvr_people") or []),
+        selected_genders,
+        selected_age_groups,
+        gender_of=_resolve_gender,
+        age_group_of=_resolve_age_group,
+    )
 
 
 def _build_summary_from_search(
@@ -2010,6 +2136,7 @@ async def _get_instant_detection_summary(
     genders: Optional[str],
     age_groups: Optional[str],
     normalised: bool = False,
+    detection_modality: Optional[str] = None,
 ) -> Dict:
     """Fetch analytics summary from the instant-detection approximation endpoint."""
     try:
@@ -2020,6 +2147,7 @@ async def _get_instant_detection_summary(
             start_date=start_date,
             end_date=end_date,
             normalised=normalised,
+            detection_modality=detection_modality,
         )
     except ValueError as e:
         logger.error("Invalid time filter for instant detection summary: %s", e)
@@ -2068,6 +2196,7 @@ async def _get_instant_detection_summary(
         "source": dataset.get("source") or "instant_detection_logs",
         "flush_count": flush_count,
         "normalised": bool(dataset.get("normalised")),
+        "detection_modality": dataset.get("detection_modality") or "face",
     }
 
 
@@ -2114,6 +2243,10 @@ async def get_analytics_summary(
     genders: Optional[str] = Query(None, description="Comma-separated gender filter: male,female"),
     age_groups: Optional[str] = Query(None, description="Comma-separated age group filter: young,adult,elderly"),
     source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'. Default: recording_pipeline"),
+    detection_modality: Optional[str] = Query(
+        "face",
+        description="Identity modality: face (default), body, or both (merge overlapping tracks)",
+    ),
     normalised: bool = Query(
         False,
         description="Instant Detection only: use derived normalised spans instead of raw flush logs",
@@ -2130,6 +2263,7 @@ async def get_analytics_summary(
         auth_header = request.headers.get("authorization", "")
         auth_token = auth_header.replace("Bearer ", "") if auth_header else ""
         effective_source = _normalize_source_type(source_type)
+        modality = _normalize_detection_modality(detection_modality)
 
         if effective_source == "instant_detection":
             return await _get_instant_detection_summary(
@@ -2141,6 +2275,7 @@ async def get_analytics_summary(
                 genders=genders,
                 age_groups=age_groups,
                 normalised=bool(normalised),
+                detection_modality=modality,
             )
 
         selected_genders = [g.strip().lower() for g in genders.split(",") if g.strip()] if genders else None
@@ -2153,8 +2288,11 @@ async def get_analytics_summary(
             end_date,
             explicit_video_uuids=_parse_csv_query_values(video_uuids),
         )
+        dataset = await _with_recording_modality(dataset, auth_token, modality)
         filtered_people = _filter_people_for_analytics(dataset, selected_genders, selected_age_groups)
-        return _build_summary_from_search(dataset, filtered_people, time_filter)
+        result = _build_summary_from_search(dataset, filtered_people, time_filter)
+        result["detection_modality"] = modality
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -2219,8 +2357,10 @@ async def _build_recording_route_fov(
     video_uuids: Optional[str],
     grid_size: int = 8,
     max_videos: int = 50,
+    detection_modality: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Sample orchestrator person_groups.route_points into a coarse FOV heatmap."""
+    """Sample route points into a coarse FOV heatmap (face orchestrator and/or body)."""
+    modality = _normalize_detection_modality(detection_modality)
     dataset = await _build_recording_pipeline_search_dataset(
         auth_token,
         time_filter,
@@ -2229,6 +2369,7 @@ async def _build_recording_route_fov(
         end_date,
         explicit_video_uuids=_parse_csv_query_values(video_uuids),
     )
+    dataset = await _with_recording_modality(dataset, auth_token, modality)
     uuids = list(dataset.get("video_uuids") or [])
     # Prefer newest first when video_details carry timestamps.
     details = dataset.get("video_details_by_uuid") or {}
@@ -2245,6 +2386,53 @@ async def _build_recording_route_fov(
     tif_sum = 0.0
     tif_n = 0
     videos_ok = 0
+
+    # Body / Both: paint merged or body-only analytics routes (no double-count).
+    if modality in ("body", "both"):
+        people = list(dataset.get("mvr_people") or [])
+        seen_media: Set[str] = set()
+        for person in people:
+            route_points = (
+                (person.get("movement_tracking") or {}).get("route_points")
+                if isinstance(person.get("movement_tracking"), dict)
+                else None
+            ) or person.get("route_points") or []
+            if not isinstance(route_points, list):
+                route_points = route_points_from_bbox_trajectory(
+                    person.get("bbox_trajectory")
+                )
+            used = _accumulate_route_points_into_fov(
+                route_points if isinstance(route_points, list) else [],
+                grid=grid,
+                grid_size=grid_size,
+                sample_paths=sample_paths,
+            )
+            if not used:
+                continue
+            path_count += 1
+            media_id = str(
+                person.get("source_media_uuid")
+                or person.get("video_uuid")
+                or ""
+            ).strip()
+            if media_id:
+                seen_media.add(media_id)
+            vel = _extract_route_velocity(person)
+            if vel is not None:
+                vel_sum += vel
+                vel_n += 1
+        videos_ok = len(seen_media) or min(len(uuids), max_videos)
+        return {
+            "heatmap": grid,
+            "sample_paths": sample_paths,
+            "path_count": path_count,
+            "avg_velocity": round(vel_sum / vel_n, 3) if vel_n else 0.0,
+            "avg_time_in_frame": round(tif_sum / tif_n, 3) if tif_n else 0.0,
+            "videos_sampled": videos_ok,
+            "grid_size": grid_size,
+            "source_type": "recording_pipeline",
+            "detection_modality": modality,
+        }
 
     async with httpx.AsyncClient(timeout=20.0) as client:
         for media_id in uuids:
@@ -2305,6 +2493,7 @@ async def _build_recording_route_fov(
         "videos_sampled": videos_ok,
         "grid_size": grid_size,
         "source_type": "recording_pipeline",
+        "detection_modality": modality,
     }
 
 
@@ -2324,6 +2513,10 @@ async def get_analytics_route_fov(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     source_type: Optional[str] = Query(None),
+    detection_modality: Optional[str] = Query(
+        "face",
+        description="Identity modality: face (default), body, or both",
+    ),
     grid_size: int = Query(8, ge=4, le=32),
     max_videos: int = Query(50, ge=1, le=100),
     current_user: dict = Depends(get_current_user),
@@ -2333,12 +2526,15 @@ async def get_analytics_route_fov(
         auth_header = request.headers.get("authorization", "")
         auth_token = auth_header.replace("Bearer ", "") if auth_header else ""
         effective = _normalize_source_type(source_type)
+        modality = _normalize_detection_modality(detection_modality)
         # Instant FOV is computed client-side from flush/span payloads today.
         if effective == "instant_detection":
-            return _empty_route_fov(
+            empty = _empty_route_fov(
                 grid_size,
                 error="Use Instant Detection log/span payloads for FOV; route-fov is recording-only",
             )
+            empty["detection_modality"] = modality
+            return empty
         return await _build_recording_route_fov(
             auth_token=auth_token,
             time_filter=time_filter,
@@ -2348,6 +2544,7 @@ async def get_analytics_route_fov(
             video_uuids=video_uuids,
             grid_size=grid_size,
             max_videos=max_videos,
+            detection_modality=modality,
         )
     except HTTPException:
         raise
@@ -2368,6 +2565,7 @@ async def _get_instant_detection_time_series(
     start_date: Optional[str],
     end_date: Optional[str],
     normalised: bool = False,
+    detection_modality: Optional[str] = None,
 ) -> Dict:
     """Fetch time-series data from the instant-detection approximation endpoint."""
     try:
@@ -2378,6 +2576,7 @@ async def _get_instant_detection_time_series(
             start_date=start_date,
             end_date=end_date,
             normalised=normalised,
+            detection_modality=detection_modality,
         )
     except ValueError as e:
         return {
@@ -2426,6 +2625,7 @@ async def _get_instant_detection_time_series(
         "total_count": len(dataset["people"]),
         "source_type": "instant_detection",
         "normalised": bool(dataset.get("normalised")),
+        "detection_modality": dataset.get("detection_modality") or "face",
     }
 
 
@@ -2438,6 +2638,7 @@ async def _get_instant_detection_demographics(
     genders: Optional[str],
     age_groups: Optional[str],
     normalised: bool = False,
+    detection_modality: Optional[str] = None,
 ) -> Dict:
     """Fetch demographics from the instant-detection approximation endpoint."""
     try:
@@ -2448,6 +2649,7 @@ async def _get_instant_detection_demographics(
             start_date=start_date,
             end_date=end_date,
             normalised=normalised,
+            detection_modality=detection_modality,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -2483,6 +2685,7 @@ async def _get_instant_detection_demographics(
         "camera_breakdown": camera_demographics,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source_type": "instant_detection",
+        "detection_modality": dataset.get("detection_modality") or "face",
     }
 
 
@@ -2495,6 +2698,7 @@ async def _get_instant_detection_behavioral(
     genders: Optional[str],
     age_groups: Optional[str],
     normalised: bool = False,
+    detection_modality: Optional[str] = None,
 ) -> Dict:
     """Fetch behavioral analytics from the instant-detection approximation endpoint."""
     try:
@@ -2505,6 +2709,7 @@ async def _get_instant_detection_behavioral(
             start_date=start_date,
             end_date=end_date,
             normalised=normalised,
+            detection_modality=detection_modality,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -2573,6 +2778,7 @@ async def _get_instant_detection_behavioral(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source_type": "instant_detection",
         "normalised": bool(dataset.get("normalised")),
+        "detection_modality": dataset.get("detection_modality") or "face",
     }
 
 
@@ -2665,6 +2871,10 @@ async def get_time_series_analytics(
     start_date: Optional[str] = Query(None, description="ISO 8601 start datetime (required when time_filter=custom)"),
     end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
     source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'"),
+    detection_modality: Optional[str] = Query(
+        "face",
+        description="Identity modality: face (default), body, or both",
+    ),
     normalised: bool = Query(
         False,
         description="Instant Detection only: use derived normalised spans instead of raw flush logs",
@@ -2692,6 +2902,7 @@ async def get_time_series_analytics(
         auth_header = request.headers.get("authorization", "")
         auth_token = auth_header.replace("Bearer ", "") if auth_header else ""
         effective_source = _normalize_source_type(source_type)
+        modality = _normalize_detection_modality(detection_modality)
 
         if effective_source == "instant_detection":
             return await _get_instant_detection_time_series(
@@ -2702,6 +2913,7 @@ async def get_time_series_analytics(
                 start_date=start_date,
                 end_date=end_date,
                 normalised=bool(normalised),
+                detection_modality=modality,
             )
 
         dataset = await _build_recording_pipeline_search_dataset(
@@ -2712,7 +2924,13 @@ async def get_time_series_analytics(
             end_date,
             explicit_video_uuids=_parse_csv_query_values(video_uuids),
         )
-        return _build_time_series_from_search(dataset, dataset.get("mvr_people", []), time_filter, interval)
+        dataset = await _with_recording_modality(dataset, auth_token, modality)
+        result = _build_time_series_from_search(
+            dataset, dataset.get("mvr_people", []), time_filter, interval
+        )
+        if isinstance(result, dict):
+            result["detection_modality"] = modality
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -2746,6 +2964,10 @@ async def get_demographics_breakdown(
     genders: Optional[str] = Query(None, description="Comma-separated gender filter: male,female"),
     age_groups: Optional[str] = Query(None, description="Comma-separated age group filter: young,adult,elderly"),
     source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'"),
+    detection_modality: Optional[str] = Query(
+        "face",
+        description="Identity modality: face (default), body, or both",
+    ),
     normalised: bool = Query(
         False,
         description="Instant Detection only: use derived normalised spans instead of raw flush logs",
@@ -2766,6 +2988,7 @@ async def get_demographics_breakdown(
     try:
         auth_token = request.headers.get("Authorization", "").replace("Bearer ", "")
         effective_source = _normalize_source_type(source_type)
+        modality = _normalize_detection_modality(detection_modality)
 
         if effective_source == "instant_detection":
             return await _get_instant_detection_demographics(
@@ -2777,6 +3000,7 @@ async def get_demographics_breakdown(
                 genders=genders,
                 age_groups=age_groups,
                 normalised=bool(normalised),
+                detection_modality=modality,
             )
 
         selected_genders = [g.strip().lower() for g in genders.split(",") if g.strip()] if genders else None
@@ -2789,8 +3013,12 @@ async def get_demographics_breakdown(
             end_date,
             explicit_video_uuids=_parse_csv_query_values(video_uuids),
         )
+        dataset = await _with_recording_modality(dataset, auth_token, modality)
         filtered_people = _filter_people_for_analytics(dataset, selected_genders, selected_age_groups)
-        return _build_demographics_from_search(dataset, filtered_people, time_filter)
+        result = _build_demographics_from_search(dataset, filtered_people, time_filter)
+        if isinstance(result, dict):
+            result["detection_modality"] = modality
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -2813,6 +3041,10 @@ async def get_behavioral_analytics(
     genders: Optional[str] = Query(None, description="Comma-separated gender filter (male,female)"),
     age_groups: Optional[str] = Query(None, description="Comma-separated age groups (young,adult,middle_aged,elderly)"),
     source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'"),
+    detection_modality: Optional[str] = Query(
+        "face",
+        description="Identity modality: face (default), body, or both",
+    ),
     normalised: bool = Query(
         False,
         description="Instant Detection only: use derived normalised spans instead of raw flush logs",
@@ -2840,6 +3072,7 @@ async def get_behavioral_analytics(
         auth_header = request.headers.get("authorization", "")
         auth_token = auth_header.replace("Bearer ", "") if auth_header else ""
         effective_source = _normalize_source_type(source_type)
+        modality = _normalize_detection_modality(detection_modality)
 
         if effective_source == "instant_detection":
             return await _get_instant_detection_behavioral(
@@ -2851,6 +3084,7 @@ async def get_behavioral_analytics(
                 genders=genders,
                 age_groups=age_groups,
                 normalised=bool(normalised),
+                detection_modality=modality,
             )
 
         selected_genders = [g.strip().lower() for g in genders.split(",") if g.strip()] if genders else None
@@ -2863,8 +3097,12 @@ async def get_behavioral_analytics(
             end_date,
             explicit_video_uuids=_parse_csv_query_values(video_uuids),
         )
+        dataset = await _with_recording_modality(dataset, auth_token, modality)
         filtered_people = _filter_people_for_analytics(dataset, selected_genders, selected_age_groups)
-        return _build_behavioral_from_search(dataset, filtered_people, time_filter)
+        result = _build_behavioral_from_search(dataset, filtered_people, time_filter)
+        if isinstance(result, dict):
+            result["detection_modality"] = modality
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -3087,6 +3325,10 @@ async def get_mvr_quality_metrics(
     start_date: Optional[str] = Query(None, description="ISO 8601 start datetime (required when time_filter=custom)"),
     end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
     source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'"),
+    detection_modality: Optional[str] = Query(
+        "face",
+        description="Identity modality: face (default), body, or both",
+    ),
     normalised: bool = Query(
         False,
         description="Instant Detection only: use derived normalised spans instead of raw flush logs",
@@ -3149,6 +3391,7 @@ async def get_mvr_quality_metrics(
         )
         
         effective_source = _normalize_source_type(source_type)
+        modality = _normalize_detection_modality(detection_modality)
         auth_token = request.headers.get("Authorization", "").replace("Bearer ", "")
 
         if effective_source == "instant_detection":
@@ -3159,6 +3402,7 @@ async def get_mvr_quality_metrics(
                 start_date=start_date,
                 end_date=end_date,
                 normalised=bool(normalised),
+                detection_modality=modality,
             )
             quality_scores: List[float] = []
             for person in dataset.get("people") or []:
@@ -3167,11 +3411,13 @@ async def get_mvr_quality_metrics(
                     quality_scores.append(float(score))
             flush_count = int(dataset.get("flush_count") or 0)
             total_people = len(dataset.get("people") or [])
-            total_mvrs = 0
-            for log in dataset.get("flush_logs") or []:
-                payload = log.get("payload_json") or {}
-                if isinstance(payload, dict):
-                    total_mvrs += len(payload.get("instant_mvrs") or [])
+            total_mvrs = total_people
+            if modality == "face":
+                total_mvrs = 0
+                for log in dataset.get("flush_logs") or []:
+                    payload = log.get("payload_json") or {}
+                    if isinstance(payload, dict):
+                        total_mvrs += len(payload.get("instant_mvrs") or [])
             avg = (sum(quality_scores) / len(quality_scores)) if quality_scores else None
             with_q = len(quality_scores)
             without_q = max(total_people - with_q, 0)
@@ -3202,23 +3448,34 @@ async def get_mvr_quality_metrics(
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "data_source": "instant_detection_logs",
                 "source_type": "instant_detection",
+                "detection_modality": modality,
             }
             metrics["quality_grade"] = _get_quality_grade(avg or 0.0)
             return metrics
 
-        if explicit_video_uuid_list and effective_source == "recording_pipeline":
+        # Body / Both (and explicit video Face path): build from recording search + modality.
+        if (
+            modality != "face"
+            or (explicit_video_uuid_list and effective_source == "recording_pipeline")
+        ):
             dataset = await _build_recording_pipeline_search_dataset(
                 auth_token,
                 time_filter,
                 collection_ids,
                 start_date,
                 end_date,
-                explicit_video_uuids=explicit_video_uuid_list,
+                explicit_video_uuids=explicit_video_uuid_list or None,
             )
+            dataset = await _with_recording_modality(dataset, auth_token, modality)
             metrics = _build_quality_metrics_from_dataset(dataset, time_filter)
             metrics["quality_grade"] = _get_quality_grade(metrics.get("average_quality") or 0.0)
             metrics["generated_at"] = datetime.now(timezone.utc).isoformat()
-            metrics["data_source"] = "MVR search by explicit video UUIDs"
+            metrics["data_source"] = (
+                "MVR search by explicit video UUIDs"
+                if explicit_video_uuid_list
+                else "MVR face/body modality merge"
+            )
+            metrics["detection_modality"] = modality
             return metrics
         
         vmeta_url = f"{VMETA_SERVICE_URL}/api/v1/mvr/quality-metrics"

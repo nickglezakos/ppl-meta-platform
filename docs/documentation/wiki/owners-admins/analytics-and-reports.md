@@ -22,8 +22,8 @@ Review who was detected, when, and where — summary metrics, quality, time tren
 
 | Surface | Path | Scope |
 |---|---|---|
-| **Site-wide MVR Analytics** | Home → **Analytics** (`/analytics`) — app bar **MVR Analytics** | Multiple cameras / collections via Filters; Recording or Instant Detection |
-| **Per-camera Analytics** | **Cameras** → select a camera → mode pill **Analytics** | One camera; same intents + Levels; Instant Detection default with Raw / Normalised |
+| **Site-wide MVR Analytics** | Home → **Analytics** (`/analytics`) — app bar **MVR Analytics** | Multiple cameras / collections via Filters; Recording or Instant Detection; Face / Body / Both modality |
+| **Per-camera Analytics** | **Cameras** → select a camera → mode pill **Analytics** | One camera; same intents + Levels; Instant Detection default with Raw / Normalised; same modality filter |
 
 **Instant Detection logs** (Cameras → receipt icon) are flush/span history and search only — **Analytics intents** live on the Analytics views above, not on the logs pane.
 
@@ -39,9 +39,9 @@ A cyan ring in a figure is a marker for that control, not a highlight in the app
 
 - Cameras producing either:
   - **Instant detection** sessions (live), or
-  - **Recorded video** that has finished face-detection / MVR processing
+  - **Recorded video** that has finished face-detection / MVR processing (and body detection when using Body / Both modality)
 - Collections visible in the filter list (camera collections after recordings)
-- Demographics and behavioural charts need enough samples in the selected time range
+- Demographics and behavioural charts need enough samples in the selected time range (Face or Both; Body alone has no age/gender)
 
 See [Cameras and detection](./cameras-and-detection.md) and [Detections, individuals and persons](./detections-individuals-persons.md).
 
@@ -82,11 +82,11 @@ The tile is admin-only. Its status chip is **Enabled**, **Paused**, or **Disable
 
 1. App bar → **Filters** (tooltip **Filters**).
 2. Dialog **Filter Analytics** — set options below → **Apply** (or **Cancel**).
-3. Confirm the summary bar under the app bar (for example `Time: Today`, `Collections: N selected`, demographics chips, or an **Instant Detection** chip).
+3. Confirm the summary bar under the app bar (for example `Time: Today`, `Modality: Body` / `Both` when not Face, `Collections: N selected`, demographics chips, or an **Instant Detection** chip).
 
 ![Full MVR Analytics screen with Filter Analytics open. Instant Detection and Today are selected; Front Door is an example collection.](./images/filter-analytics.png)
 
-Pick one **Data Source**. **Video Recording** is the default; its helper is *Analytics from video recording sessions (default)*. **Instant Detection** uses *Analytics from real-time instant detection sessions*. This figure shows Instant Detection selected. **Front Door** is an example collection name. None selected reads *All collections (N)*. **Clear** resets the collection checks. Gender and Age Group chips are optional. **Auto-refresh (10 min)** (*Automatically update data*) stays off until you turn it on. **Apply** saves the filter.
+Pick one **Data Source**. **Video Recording** is the default; its helper is *Analytics from video recording sessions (default)*. **Instant Detection** uses *Analytics from real-time instant detection sessions*. This figure shows Instant Detection selected. Then pick **Detection Modality** — **Face** (default), **Body**, or **Both** (see below). **Front Door** is an example collection name. None selected reads *All collections (N)*. **Clear** resets the collection checks. Gender and Age Group chips are optional. **Auto-refresh (10 min)** (*Automatically update data*) stays off until you turn it on. **Apply** saves the filter.
 
 ![Full MVR Analytics screen with Filter Analytics open. Custom Range is marked; Start Date and End Date are still empty.](./images/analytics-custom-range.png)
 
@@ -94,7 +94,7 @@ Pick one **Data Source**. **Video Recording** is the default; its helper is *Ana
 
 ![Full MVR Analytics screen after Apply. Filter bar shows Time Today, one collection, and Instant Detection.](./images/analytics-filter-bar.png)
 
-The bar shows `Time: …` and, when collections are checked, `Collections: N selected`. A demographics line appears when gender or age chips are set. The **Instant Detection** chip appears only for that source; its × switches the source back to Video Recording and reloads. When auto-refresh is on, the bar also shows an **Auto-refresh** badge.
+The bar shows `Time: …` and, when collections are checked, `Collections: N selected`. When modality is not Face, the summary includes `Modality: Body` or `Modality: Both`, and a **Body** / **Both** chip appears (× resets to Face and reloads). A demographics line appears when gender or age chips are set. The **Instant Detection** chip appears only for that source; its × switches the source back to Video Recording and reloads. When auto-refresh is on, the bar also shows an **Auto-refresh** badge.
 
 ### Data Source
 
@@ -103,9 +103,25 @@ The bar shows `Time: …` and, when collections are checked, `Collections: N sel
 | **Video Recording** | Default. Analytics from the recording / media pipeline (processed videos) |
 | **Instant Detection** | Analytics from live instant-detection sessions across the selected collections (multi-camera when more than one is checked) |
 
-Pick **one** source. There is no combined “both” toggle on this screen. The last choice can persist for later visits.
+Pick **one** source. There is no combined “both sources” toggle on this screen. The last choice can persist for later visits.
 
 Site-wide Instant Detection uses session / flush-derived people metrics for the collections you select. For **calendar-span merged people** on a single camera, use Cameras → **Analytics** → **Normalised** (section C.2) and [pipeline normalisation settings](./cameras-and-detection.md#normalisation-cross-flush-spans). For occupancy / dwell / path **alerts**, use Vradar [Behavioural](./alerts-and-automation.md#behavioural) triggers (section [C.3](#c3-behavioural-layer-instant-detection--vradar)).
+
+### Detection Modality (Face | Body | Both)
+
+Controls **which identity pipeline** feeds people counts, trends, quality, demographics, behavioural views, and recording heatmaps / paths. Default is **Face** so existing dashboards stay unchanged until you opt in.
+
+| Option | Meaning |
+|---|---|
+| **Face** | Default. Counts face-based MVR people only (same behaviour as before this filter). |
+| **Body** | Counts body / pose tracks only (`mvr_people_body` on recordings; body persons on Instant Detection flushes). No age/gender from body — demographics stay unknown for body-only people. |
+| **Both** | Loads face and body, then **merges** a face track with a body track into **one person** when they are on the same camera (and same video or flush window) and their routes **overlap in time** (or are within a few seconds) **and** are close in the frame. Face keeps demographics; routes are combined. Unmatched face-only and body-only people still count separately. |
+
+**Why Both exists:** face and body detection spans are rarely identical. Without merge, enabling both pipelines would double-count the same visitor. Both mode normalises overlapping tracks so LEVEL 1 **Total People** and FOV paths stay consistent.
+
+**Demographics filters:** if you set Gender or Age Group chips, body-only people are excluded (body has no real demographics). Merged people still use the face demographics.
+
+**Prerequisites:** camera **Face** and/or **Body** detection must be enabled in pipeline settings for that modality to produce data — see [Cameras and detection](./cameras-and-detection.md).
 
 ### Time Range
 
@@ -140,9 +156,10 @@ Toggle **Auto-refresh (10 min)** (*Automatically update data*). The badge may sh
 ### Recommended first pass
 
 1. **Data Source** = **Video Recording** (or **Instant Detection** if you only ran live detection).  
-2. **Time Range** = **Today** or **Last Week**.  
-3. Optionally select the entrance / site collections you care about.  
-4. **Apply** → read Levels 1–4.
+2. **Detection Modality** = **Face** for classic people counts; use **Body** when faces are scarce but body detection is on; use **Both** when face and body run together and you need one person per visitor.  
+3. **Time Range** = **Today** or **Last Week**.  
+4. Optionally select the entrance / site collections you care about.  
+5. **Apply** → read Levels 1–4.
 
 ---
 
@@ -233,6 +250,8 @@ Charts on this screen do **not** open a person or media preview. To review indiv
 
 - LEVEL 1 numbers move after new detections or processed recordings
 - Switching **Video Recording** ↔ **Instant Detection** changes counts and labels (Videos vs Sessions)
+- Switching **Face** → **Both** does **not** roughly double Total People when the same visitors have overlapping face and body tracks (merge is working)
+- **Body** alone can show people with unknown gender/age; **Face** / merged rows keep demographics when available
 - Demographics and behavioural sections populate when the range has enough samples
 
 ---
@@ -243,7 +262,7 @@ Use this when you need people analytics for **one** camera (not the multi-collec
 
 1. Home → **Cameras** → select the camera.
 2. Mode pill **Analytics** (chart icon) — same dashboard chrome as `/analytics`, scoped to that camera.
-3. Open **Filters** (filter bar) for time range and Data Source (**Instant Detection** or **Video Recording**).
+3. Open **Filters** (filter bar) for time range, Data Source (**Instant Detection** or **Video Recording**), and **Detection Modality** (**Face** / **Body** / **Both**).
 4. For Instant Detection, switch **Raw** ↔ **Normalised** on the filter bar as needed.
 
 | Data source | Intents feed |
@@ -304,10 +323,10 @@ Intents are **view presets + metric catalogs** shown only under **Analytics** (C
 
 | Intent | Instant Detection | Recording | Per-camera Analytics | Site `/analytics` | Readiness |
 |---|---|---|---|---|---|
-| **People Counting** | Flush/span `people_count` (Normalised preferred) | Summary `total_people` + time-series buckets | Yes | Yes | **Now** |
+| **People Counting** | Flush/span people (Face / Body / Both via modality filter; Normalised preferred for Instant) | Summary `total_people` + time-series (same modality) | Yes | Yes | **Now** |
 | **Occupancy Monitoring** | Span/flush people series, peak, % above threshold | Time-series people counts per bucket (not concurrent frame occupancy) | Yes | Yes | **Now** |
-| **Heatmaps (FOV)** | Aggregate Instant `route_points` | Sampled recording `route_points` via route-FOV aggregate | Yes | Yes | **Now** |
-| **Path Analysis (FOV)** | Instant `movement_tracking.route_points` | Same recording route sample (overlays, avg velocity, time in frame) | Yes | Yes | **Now** |
+| **Heatmaps (FOV)** | Aggregate Instant `route_points` (face payloads today; Body/Both when body routes are in flush/span) | Face: sampled recording routes; Body/Both: body / merged routes via route-FOV | Yes | Yes | **Now** |
+| **Path Analysis (FOV)** | Instant `movement_tracking.route_points` | Same as Heatmaps for the selected modality | Yes | Yes | **Now** |
 | **Queue Analytics** | Normalised + ROI + dwell | Later | Later | Later | **Later** (needs ROI) |
 | **SOP Monitoring** | Instant + Vradar templates | — | Later | Later | **Later** |
 | **Loss Prevention Support** | Left object + match + motion | — | Later | Later | **Later** |
@@ -359,8 +378,10 @@ For entrance / corridor ops, compose Cameras + this Analytics page + Automation 
 ## Common issues
 
 - **Empty LEVEL 1 / Failed to load** — Discovery / services unhealthy, or no data for the filter; **Retry**, then check cameras and processing
-- **Demographics / Level 4 missing** — zero people in range, or not enough samples; widen time or switch Data Source
-- **Counts look “wrong”** — confirm **Video Recording** vs **Instant Detection**, collection selection, and time chips
+- **Demographics / Level 4 missing** — zero people in range, or not enough samples; widen time or switch Data Source / modality
+- **Counts look “wrong”** — confirm **Video Recording** vs **Instant Detection**, **Face** vs **Body** vs **Both**, collection selection, and time chips
+- **Both roughly doubles Face** — face and body tracks may not overlap in time/space (different FOV angles, body-only periods); check that Body detection is on the same cameras and time window
+- **Body shows people but demographics empty** — expected for body-only; switch to Face or Both, or clear Gender/Age filters
 - **Site Instant Detection empty while camera Raw has data** — wrong collections, time range, or Data Source on `/analytics`; open Cameras → Analytics for that device to confirm flushes exist
 - **Empty Normalised on a camera** — normalisation disabled in pipeline settings, span not closed yet, worker not running, or no flushes in the selected dates
 - **Export fails** — no data under current filters; clear demographics / widen range
@@ -370,9 +391,9 @@ For entrance / corridor ops, compose Cameras + this Analytics page + Automation 
 
 ## Recommended order
 
-1. Run instant detection and/or record + process videos; enable normalisation on cameras you care about for span analytics.  
-2. Open **Analytics** → **Filters** → Data Source + Today/Last Week → select collections → **Apply**.  
-3. Read LEVEL 1–4; adjust collections or demographics if needed.  
+1. Run instant detection and/or record + process videos; enable Face and/or Body detection (and normalisation) on cameras you care about.  
+2. Open **Analytics** → **Filters** → Data Source + **Detection Modality** + Today/Last Week → select collections → **Apply**.  
+3. Read LEVEL 1–4; adjust collections, modality, or demographics if needed.  
 4. For one camera’s flush vs span detail and intent cards: Cameras → Analytics → **Raw** / **Normalised**.  
 5. **Export** → Excel when you need a shareable site summary.
 

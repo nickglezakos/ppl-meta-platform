@@ -59,15 +59,15 @@ Archived (not published online): [`../archived-wiki/distributors/release-channel
 | [`owners-admins/index.md`](./owners-admins/index.md) | First install: licence key, Windows/Linux install, after-install TOC | 15 |
 | [`owners-admins/bootstrap.md`](./owners-admins/bootstrap.md) | First-install `/bootstrap` activation with screenshots | 25 |
 | [`owners-admins/users-and-roles.md`](./owners-admins/users-and-roles.md) | User management: local users/roles UI | 27 |
-| [`owners-admins/cameras-and-detection.md`](./owners-admins/cameras-and-detection.md) | Add cameras and start live detection | 30 |
-| [`owners-admins/detections-individuals-persons.md`](./owners-admins/detections-individuals-persons.md) | Instant vs recording detection, preview tabs, person groups | 35 |
+| [`owners-admins/cameras-and-detection.md`](./owners-admins/cameras-and-detection.md) | Add cameras, Face/Body capability, Instant Detection flush/normalise | 30 |
+| [`owners-admins/detections-individuals-persons.md`](./owners-admins/detections-individuals-persons.md) | Instant vs recording; face + body paths; preview tabs; person groups | 35 |
 | [`owners-admins/media-management.md`](./owners-admins/media-management.md) | Upload, collections CRUD, assign media, MVR date/time search → Analysis | 36 |
 | [`owners-admins/alerts-and-automation.md`](./owners-admins/alerts-and-automation.md) | Vradar: triggers/actions on instant detection (`/triggers`) | 40 |
 | [`owners-admins/presence-attendance.md`](./owners-admins/presence-attendance.md) | Presence sessions, people, settings | 50 |
 | [`owners-admins/presence-authenticator.md`](./owners-admins/presence-authenticator.md) | EyeNet Authenticator (phone Presence, sandbox/pilot) | 51 |
 | [`owners-admins/digital-signage.md`](./owners-admins/digital-signage.md) | Playlists, devices, playback | 60 |
 | [`owners-admins/entrances-and-activity.md`](./owners-admins/entrances-and-activity.md) | Compose cameras + analytics + Vradar + presence; two entrance use cases | 70 |
-| [`owners-admins/analytics-and-reports.md`](./owners-admins/analytics-and-reports.md) | MVR Analytics filters, Levels 1–4, Excel export | 80 |
+| [`owners-admins/analytics-and-reports.md`](./owners-admins/analytics-and-reports.md) | MVR Analytics filters (incl. Face / Body / Both), Levels 1–4, Excel export | 80 |
 | [`owners-admins/multi-site-and-remote.md`](./owners-admins/multi-site-and-remote.md) | EyeNet VPN (licence), Network enroll/tokens, platform + mobile/signage, Matrix | 90 |
 
 Sidebar order is controlled by optional `nav_order` frontmatter on each page (lower first).
