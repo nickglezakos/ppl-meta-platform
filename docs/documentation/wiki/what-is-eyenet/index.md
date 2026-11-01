@@ -65,14 +65,15 @@ Also see [Shared platform](./shared-platform.md) for cameras, vision, analytics,
 
 ## Primary use cases
 
-1. **Staff presence & attendance** — dual-factor check-in and attendance history
-2. **Audience-aware digital signage** — content that follows the audience
-3. **Entrance & gate monitoring** — counts, demographics, POI, and live annotated video
-4. **Restricted area protection** — virtual perimeters and unauthorised-presence alerts
-5. **VIP & personnel protection** — Vradar (Automation) POI / demographic alerts from instant detection
-6. **Remote operational control** — VPN access to cameras, triggers, and dashboards
-7. **Maritime & fleet compliance** — presence and analytics with offline-capable sites
-8. **Multi-site aggregated reporting** — Matrix dashboards across all installations
+Aligned with the [Most Valuable Cases](https://value.eyenet-vision.com/why/) on the EyeNet Value site:
+
+1. **Know who is present and who is not** — one flexible Presence tool from doorbell to office, warehouse, ship, and security post
+2. **Screens that sell themselves** — audience-aware signage with measurable views, dwell, and ROI
+3. **See how shoppers move** — counts, paths, heatmaps, dwell, and behavioural alerts on the shop floor
+4. **Peace of mind at home — and away** — home and remote protection without forced cloud video
+5. **Hospital-grade care at home** — presence, fall, help-call, and zone events for Virtual Ward care
+6. **Night shifts that never blink** — guard-post vigilance, perimeter, and forensics that escalate automatically
+7. **Who’s onboard. Who’s on site. Who fell.** — shipping and industrial presence, Matrix offline ops, and fall detection in special areas
 
 ## Next steps
 
