@@ -60,6 +60,12 @@ TriggerModel _$TriggerModelFromJson(Map<String, dynamic> json) => TriggerModel(
           ? null
           : DateTime.parse(json['last_fired_at'] as String),
       triggerMode: json['trigger_mode'] as String? ?? 'demographic',
+      behaviouralLookbackFlushes:
+          (json['behavioural_lookback_flushes'] as num?)?.toInt(),
+      behaviouralConditions: (json['behavioural_conditions'] as List<dynamic>?)
+          ?.map((e) => DemographicCondition.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      behaviouralConditionLogic: json['behavioural_condition_logic'] as String?,
       pplMatchGroupId: json['ppl_match_group_id'] as String?,
       pplMatchGroupIds: (json['ppl_match_group_ids'] as List<dynamic>?)
           ?.map((e) => e as String)
@@ -159,6 +165,9 @@ Map<String, dynamic> _$TriggerModelToJson(TriggerModel instance) =>
       'cooldown_seconds': instance.cooldownSeconds,
       'last_fired_at': instance.lastFiredAt?.toIso8601String(),
       'trigger_mode': instance.triggerMode,
+      'behavioural_lookback_flushes': instance.behaviouralLookbackFlushes,
+      'behavioural_conditions': instance.behaviouralConditions,
+      'behavioural_condition_logic': instance.behaviouralConditionLogic,
       'ppl_match_group_id': instance.pplMatchGroupId,
       'ppl_match_group_ids': instance.pplMatchGroupIds,
       'camera_device_ids': instance.cameraDeviceIds,
@@ -219,6 +228,12 @@ TriggerCreateRequest _$TriggerCreateRequestFromJson(
       isActive: json['is_active'] as bool? ?? true,
       cooldownSeconds: (json['cooldown_seconds'] as num?)?.toInt() ?? 60,
       triggerMode: json['trigger_mode'] as String? ?? 'demographic',
+      behaviouralLookbackFlushes:
+          (json['behavioural_lookback_flushes'] as num?)?.toInt(),
+      behaviouralConditions: (json['behavioural_conditions'] as List<dynamic>?)
+          ?.map((e) => DemographicCondition.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      behaviouralConditionLogic: json['behavioural_condition_logic'] as String?,
       pplMatchGroupId: json['ppl_match_group_id'] as String?,
       pplMatchGroupIds: (json['ppl_match_group_ids'] as List<dynamic>?)
           ?.map((e) => e as String)
@@ -306,6 +321,12 @@ Map<String, dynamic> _$TriggerCreateRequestToJson(
       'is_active': instance.isActive,
       'cooldown_seconds': instance.cooldownSeconds,
       'trigger_mode': instance.triggerMode,
+      if (instance.behaviouralLookbackFlushes case final value?)
+        'behavioural_lookback_flushes': value,
+      if (instance.behaviouralConditions case final value?)
+        'behavioural_conditions': value.map((e) => e.toJson()).toList(),
+      if (instance.behaviouralConditionLogic case final value?)
+        'behavioural_condition_logic': value,
       if (instance.pplMatchGroupId case final value?)
         'ppl_match_group_id': value,
       if (instance.pplMatchGroupIds case final value?)

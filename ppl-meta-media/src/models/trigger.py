@@ -111,7 +111,24 @@ class Trigger(BaseModel):
         nullable=False,
         default="demographic",
         index=True,
-        comment="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match | body_posture | motion | left_object | vehicle_plate (velocity alias→motion)"
+        comment="Trigger mode: demographic | behavioural | ppl_match | search | search_demographic | vprofile_match | body_posture | motion | left_object | vehicle_plate (velocity alias→motion)"
+    )
+    behavioural_lookback_flushes = Column(
+        Integer,
+        nullable=True,
+        default=6,
+        comment="Behavioural mode: Instant Detection flush cycles kept in Redis ring (2-60)",
+    )
+    behavioural_conditions = Column(
+        Text,
+        nullable=True,
+        comment='JSON array of behavioural conditions: [{"field":"occupancy_span_count|peak_occupancy_window|dwell_seconds|path_velocity_avg|co_presence_count","operator":"...","value":...}]',
+    )
+    behavioural_condition_logic = Column(
+        String(8),
+        nullable=True,
+        default="and",
+        comment="Combine behavioural_conditions with and | or",
     )
     ppl_match_group_id = Column(
         String(255),

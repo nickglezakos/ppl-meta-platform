@@ -124,12 +124,22 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     return field;
   }
 
+  static const _behaviouralConditionFields = <String>{
+    'occupancy_span_count',
+    'peak_occupancy_window',
+    'dwell_seconds',
+    'path_velocity_avg',
+    'co_presence_count',
+  };
+
   double _defaultConditionValueForField(String field) {
     if (_isPercentageConditionField(field)) return 50;
     if (_isAgeThresholdField(field)) return 18;
     if (field == 'dwell_seconds') return 30;
     if (field == 'path_velocity_avg') return 10;
     if (field == 'occupancy_span_count') return 1;
+    if (field == 'peak_occupancy_window') return 5;
+    if (field == 'co_presence_count') return 2;
     return 1;
   }
 
@@ -156,6 +166,18 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     if (field == 'dwell_seconds') return 's';
     if (field == 'path_velocity_avg') return 'px/s';
     return null;
+  }
+
+  DemographicCondition _stripIntentFromDemographic(DemographicCondition condition) {
+    final normalized = _normalizeConditionForEdit(condition);
+    if (_behaviouralConditionFields.contains(normalized.field)) {
+      return DemographicCondition(
+        field: 'people_count',
+        operator: normalized.operator,
+        value: 1,
+      );
+    }
+    return normalized;
   }
 
   String _formatConditionInputValue(double value) {
@@ -489,6 +511,19 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
       final cam = match['source_camera_id']?.toString() ?? '';
       return '$target $count/$window • $cam';
     }
+    if (trigger.triggerMode == 'behavioural') {
+      final match = trigger.lastMatchInfo;
+      if (match == null || match.isEmpty) return 'No match yet';
+      final bufferLen = match['buffer_len'] ?? match['buffer_fill'];
+      final lookback = match['lookback_flushes'] ?? trigger.behaviouralLookbackFlushes ?? 6;
+      final span = match['window_span_seconds'];
+      final spanText = span is num ? ' • ${span.toStringAsFixed(0)}s' : '';
+      final metrics = match['metrics'];
+      final occupancy = match['occupancy_span_count'] ??
+          (metrics is Map ? metrics['occupancy_span_count'] : null);
+      final occText = occupancy is num ? 'occ $occupancy • ' : '';
+      return '${occText}buffer $bufferLen/$lookback$spanText';
+    }
     if (trigger.triggerMode != 'ppl_match' && trigger.triggerMode != 'vprofile_match') {
       return '—';
     }
@@ -642,6 +677,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
 
   static const _modeLabels = {
     'demographic': 'Instant Demographic',
+    'behavioural': 'Behavioural',
     'ppl_match': 'Instant People Match',
     'search': 'Search People Match',
     'search_demographic': 'Search Demographic',
@@ -675,6 +711,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
 
   static const _modeIcons = {
     'demographic': Icons.tune,
+    'behavioural': Icons.timeline,
     'ppl_match': Icons.psychology,
     'search': Icons.search,
     'search_demographic': Icons.analytics,
@@ -688,6 +725,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
 
   static const _modeColors = {
     'demographic': AppColors.primary,
+    'behavioural': Colors.deepOrange,
     'ppl_match': AppColors.secondary,
     'search': AppColors.secondary,
     'search_demographic': AppColors.error,
@@ -1263,9 +1301,31 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     }
     
     // Demographic conditions — migrate legacy age bracket fields to age_threshold
+    // and strip intent metrics (those belong on Behavioural mode).
     List<DemographicCondition> demographicConditions = (trigger?.demographicConditions ?? [
       DemographicCondition(field: 'people_count', operator: 'gte', value: 1),
-    ]).map(_normalizeConditionForEdit).toList();
+    ]).map(_stripIntentFromDemographic).toList();
+
+    int behaviouralLookbackFlushes = trigger?.behaviouralLookbackFlushes ?? 6;
+    if (behaviouralLookbackFlushes < 2) behaviouralLookbackFlushes = 2;
+    if (behaviouralLookbackFlushes > 60) behaviouralLookbackFlushes = 60;
+    String behaviouralConditionLogic =
+        (trigger?.behaviouralConditionLogic ?? 'and').toLowerCase() == 'or' ? 'or' : 'and';
+    List<DemographicCondition> behaviouralConditions = (trigger?.behaviouralConditions ?? [
+      DemographicCondition(field: 'peak_occupancy_window', operator: 'gte', value: 5),
+    ]).map((c) {
+      final field = _behaviouralConditionFields.contains(c.field)
+          ? c.field
+          : 'peak_occupancy_window';
+      return DemographicCondition(
+        field: field,
+        operator: c.operator,
+        value: c.value,
+      );
+    }).toList();
+    final lookbackFlushesController = TextEditingController(
+      text: behaviouralLookbackFlushes.toString(),
+    );
     
     // Parse tracking duration
     int trackingNumber = 10;
@@ -1314,6 +1374,11 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
           cooldownSeconds: int.tryParse(cooldownController.text) ?? 60,
           isActive: isActive,
           triggerMode: triggerMode == 'velocity' ? 'motion' : triggerMode,
+          behaviouralLookbackFlushes: triggerMode == 'behavioural'
+              ? (int.tryParse(lookbackFlushesController.text)?.clamp(2, 60) ?? behaviouralLookbackFlushes)
+              : null,
+          behaviouralConditions: triggerMode == 'behavioural' ? behaviouralConditions : null,
+          behaviouralConditionLogic: triggerMode == 'behavioural' ? behaviouralConditionLogic : null,
           pplMatchGroupId: (triggerMode == 'ppl_match' || triggerMode == 'search')
             ? selectedPplMatchGroupId : null,
           pplMatchGroupIds: triggerMode == 'vprofile_match' ? selectedVProfileGroupIds : null,
@@ -1456,6 +1521,10 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                           child: Text('Instant Demographic'),
                         ),
                         DropdownMenuItem(
+                          value: 'behavioural',
+                          child: Text('Behavioural (Flush Lookback)'),
+                        ),
+                        DropdownMenuItem(
                           value: 'ppl_match',
                           child: Text('Instant People Match'),
                         ),
@@ -1490,6 +1559,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                       ],
                       selectedItemBuilder: (context) => const [
                         Text('Instant Demographic', overflow: TextOverflow.ellipsis),
+                        Text('Behavioural (Flush Lookback)', overflow: TextOverflow.ellipsis),
                         Text('Instant People Match', overflow: TextOverflow.ellipsis),
                         Text('Search People Match', overflow: TextOverflow.ellipsis),
                         Text('Search Demographic', overflow: TextOverflow.ellipsis),
@@ -1595,9 +1665,6 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                       ),
                                       items: const [
                                         DropdownMenuItem(value: 'people_count', child: Text('People Count')),
-                                        DropdownMenuItem(value: 'occupancy_span_count', child: Text('Occupancy (span)')),
-                                        DropdownMenuItem(value: 'dwell_seconds', child: Text('Dwell seconds')),
-                                        DropdownMenuItem(value: 'path_velocity_avg', child: Text('Path velocity avg')),
                                         DropdownMenuItem(value: 'percent_male', child: Text('Male %')),
                                         DropdownMenuItem(value: 'percent_female', child: Text('Female %')),
                                         DropdownMenuItem(value: 'age_threshold', child: Text('Age')),
@@ -1681,6 +1748,250 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                           ? () {
                                               setDialogState(() {
                                                 demographicConditions.removeAt(index);
+                                              });
+                                            }
+                                          : null,
+                                      tooltip: 'Remove condition',
+                                    );
+
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 8),
+                                      child: isCompact
+                                          ? Column(
+                                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                                              children: [
+                                                fieldDropdown,
+                                                const SizedBox(height: 8),
+                                                Row(
+                                                  children: [
+                                                    Expanded(child: operatorDropdown),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(child: valueField),
+                                                    const SizedBox(width: 8),
+                                                    removeButton,
+                                                  ],
+                                                ),
+                                              ],
+                                            )
+                                          : Row(
+                                              children: [
+                                                Expanded(flex: 3, child: fieldDropdown),
+                                                const SizedBox(width: 8),
+                                                Expanded(flex: 2, child: operatorDropdown),
+                                                const SizedBox(width: 8),
+                                                Expanded(flex: 2, child: valueField),
+                                                const SizedBox(width: 8),
+                                                removeButton,
+                                              ],
+                                            ),
+                                    );
+                                  }),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      )
+                    else if (triggerMode == 'behavioural')
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final isCompact = constraints.maxWidth < 360;
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Row(
+                                    children: [
+                                      Icon(Icons.timeline, color: Colors.deepOrange, size: 20),
+                                      SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Behavioural Conditions (Flush Lookback)',
+                                          style: TextStyle(fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Metrics are computed over the last N Instant Detection flush cycles for this camera. Wall time ≈ N × flush interval. Buffer warms up as flushes arrive.',
+                                    style: TextStyle(fontSize: 12, color: AppColors.gray600),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  TextField(
+                                    controller: lookbackFlushesController,
+                                    decoration: InputDecoration(
+                                      labelText: 'Lookback flushes (2–60)',
+                                      helperText:
+                                          '≈ $behaviouralLookbackFlushes × your camera flush interval',
+                                      border: const OutlineInputBorder(),
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                    onChanged: (value) {
+                                      final parsed = int.tryParse(value);
+                                      if (parsed == null) return;
+                                      setDialogState(() {
+                                        behaviouralLookbackFlushes = parsed.clamp(2, 60);
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(height: 12),
+                                  DropdownButtonFormField<String>(
+                                    value: behaviouralConditionLogic,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Condition logic',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(value: 'and', child: Text('AND (all must match)')),
+                                      DropdownMenuItem(value: 'or', child: Text('OR (any match)')),
+                                    ],
+                                    onChanged: (value) {
+                                      if (value == null) return;
+                                      setDialogState(() => behaviouralConditionLogic = value);
+                                    },
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          behaviouralConditionLogic == 'or'
+                                              ? 'Conditions (Any must match)'
+                                              : 'Conditions (All must match)',
+                                          style: const TextStyle(fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.add_circle, color: Colors.deepOrange),
+                                        onPressed: () {
+                                          setDialogState(() {
+                                            behaviouralConditions.add(
+                                              DemographicCondition(
+                                                field: 'peak_occupancy_window',
+                                                operator: 'gte',
+                                                value: 5,
+                                              ),
+                                            );
+                                          });
+                                        },
+                                        tooltip: 'Add condition',
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ...List.generate(behaviouralConditions.length, (index) {
+                                    final condition = behaviouralConditions[index];
+                                    final field = _behaviouralConditionFields.contains(condition.field)
+                                        ? condition.field
+                                        : 'peak_occupancy_window';
+
+                                    final fieldDropdown = DropdownButtonFormField<String>(
+                                      value: field,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Field',
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
+                                      ),
+                                      items: const [
+                                        DropdownMenuItem(
+                                          value: 'occupancy_span_count',
+                                          child: Text('Occupancy (latest flush)'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'peak_occupancy_window',
+                                          child: Text('Peak occupancy (window)'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'dwell_seconds',
+                                          child: Text('Dwell seconds'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'path_velocity_avg',
+                                          child: Text('Path velocity avg'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'co_presence_count',
+                                          child: Text('Co-presence count'),
+                                        ),
+                                      ],
+                                      onChanged: (value) {
+                                        setDialogState(() {
+                                          final nextField = value!;
+                                          behaviouralConditions[index] = DemographicCondition(
+                                            field: nextField,
+                                            operator: condition.operator,
+                                            value: _normalizedConditionValueForField(
+                                              previousField: field,
+                                              nextField: nextField,
+                                              currentValue: condition.value,
+                                            ),
+                                          );
+                                        });
+                                      },
+                                    );
+
+                                    final operatorDropdown = DropdownButtonFormField<String>(
+                                      value: condition.operator,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Op',
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
+                                      ),
+                                      items: const [
+                                        DropdownMenuItem(value: 'gt', child: Text('>')),
+                                        DropdownMenuItem(value: 'gte', child: Text('≥')),
+                                        DropdownMenuItem(value: 'lt', child: Text('<')),
+                                        DropdownMenuItem(value: 'lte', child: Text('≤')),
+                                        DropdownMenuItem(value: 'eq', child: Text('=')),
+                                      ],
+                                      onChanged: (value) {
+                                        setDialogState(() {
+                                          behaviouralConditions[index] = DemographicCondition(
+                                            field: field,
+                                            operator: value!,
+                                            value: condition.value,
+                                          );
+                                        });
+                                      },
+                                    );
+
+                                    final valueField = TextFormField(
+                                      key: ValueKey('behavioural-condition-$index-${condition.field}'),
+                                      initialValue: _formatConditionInputValue(condition.value),
+                                      decoration: InputDecoration(
+                                        labelText: _conditionValueLabel(field),
+                                        suffixText: _conditionValueSuffix(field),
+                                        border: const OutlineInputBorder(),
+                                        isDense: true,
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      inputFormatters: field == 'path_velocity_avg'
+                                          ? [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$'))]
+                                          : [FilteringTextInputFormatter.digitsOnly],
+                                      onChanged: (value) {
+                                        final numValue = double.tryParse(value);
+                                        if (numValue != null) {
+                                          setDialogState(() {
+                                            behaviouralConditions[index] = DemographicCondition(
+                                              field: field,
+                                              operator: condition.operator,
+                                              value: numValue,
+                                            );
+                                          });
+                                        }
+                                      },
+                                    );
+
+                                    final removeButton = IconButton(
+                                      icon: const Icon(Icons.remove_circle, color: AppColors.error),
+                                      onPressed: behaviouralConditions.length > 1
+                                          ? () {
+                                              setDialogState(() {
+                                                behaviouralConditions.removeAt(index);
                                               });
                                             }
                                           : null,
@@ -2063,9 +2374,6 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                           ),
                                           items: const [
                                             DropdownMenuItem(value: 'people_count', child: Text('People Count')),
-                                            DropdownMenuItem(value: 'occupancy_span_count', child: Text('Occupancy (span)')),
-                                            DropdownMenuItem(value: 'dwell_seconds', child: Text('Dwell seconds')),
-                                            DropdownMenuItem(value: 'path_velocity_avg', child: Text('Path velocity avg')),
                                             DropdownMenuItem(value: 'percent_male', child: Text('Male %')),
                                             DropdownMenuItem(value: 'percent_female', child: Text('Female %')),
                                             DropdownMenuItem(value: 'age_threshold', child: Text('Age')),
@@ -3368,6 +3676,22 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                       const SnackBar(content: Text('At least one condition is required')),
                     );
                     return;
+                  }
+
+                  if (triggerMode == 'behavioural') {
+                    if (behaviouralConditions.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('At least one behavioural condition is required')),
+                      );
+                      return;
+                    }
+                    final lookback = int.tryParse(lookbackFlushesController.text) ?? 0;
+                    if (lookback < 2 || lookback > 60) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Lookback flushes must be between 2 and 60')),
+                      );
+                      return;
+                    }
                   }
 
                   if (triggerMode == 'ppl_match' && selectedPplMatchGroupId == null) {

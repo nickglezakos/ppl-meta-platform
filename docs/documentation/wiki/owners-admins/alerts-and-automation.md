@@ -248,7 +248,7 @@ These stay visible for every mode. Changing **Trigger Mode** swaps only the conf
 
 | Pattern | Modes | Control |
 |---|---|---|
-| Single camera | Instant Demographic, Instant People Match | **Camera \*** → **Select Camera** (any registered camera; detection should be running for live firings) |
+| Single camera | Instant Demographic, Behavioural, Instant People Match | **Camera \*** → **Select Camera** (any registered camera; detection should be running for live firings) |
 | Multi-camera inside the mode card | Search *, VProfile, Body Posture, Motion, Left Object, Vehicle + Plate | **Cameras \*** / **Cameras to Search \*** checkboxes inside the mode card — the single **Select Camera** dropdown is hidden |
 
 ### Trigger Mode catalogue
@@ -257,17 +257,17 @@ Exact dropdown labels, grouped by family:
 
 | Family | Modes |
 |---|---|
-| **Core Vradar (live)** | [Instant Demographic](#instant-demographic), [Instant People Match](#instant-people-match) |
+| **Core Vradar (live)** | [Instant Demographic](#instant-demographic), [Behavioural (Flush Lookback)](#behavioural-flush-lookback), [Instant People Match](#instant-people-match) |
 | **Search (scheduler)** | [Search People Match](#search-people-match), [Search Demographic](#search-demographic) |
 | **Specialised** | [VProfile Match (Multi-Group, Multi-Camera)](#vprofile-match-multi-group-multi-camera), [Body Posture (Multi-Camera)](#body-posture-multi-camera), [Motion (Multi-Camera)](#motion-multi-camera), [Left / Stationary Object](#left--stationary-object), [Vehicle + Plate](#vehicle--plate) |
 
-Prefer Instant Demographic and Instant People Match for a standard Vradar setup unless your distributor has enabled a specialised path.
+Prefer Instant Demographic and Instant People Match for a standard Vradar setup. Use **Behavioural** when you need occupancy / dwell / path metrics over several Instant Detection flush cycles (see [analytics intents](./analytics-and-reports.md#c4-camera-analytics-intents)).
 
 ---
 
 ### Instant Demographic
 
-Live evaluation of demographic conditions from instant detection on **one** camera. All conditions use **AND** logic.
+Live evaluation of demographic conditions from instant detection on **one** camera. All conditions use **AND** logic. Occupancy / dwell / path metrics live on [Behavioural](#behavioural-flush-lookback), not here.
 
 **Mode card:** **Demographic Conditions (All must match)** — use **+** to add rows. At least one condition is required. New row defaults: Field **People Count**, Op **≥**, value **1**.
 
@@ -275,9 +275,9 @@ Live evaluation of demographic conditions from instant detection on **one** came
 
 | Field | Values | Explanation |
 |---|---|---|
-| **Field** | `People Count` · `Occupancy (span)` · `Dwell seconds` · `Path velocity avg` · `Male %` · `Female %` · `Age` | What is measured in the live detection / route payload. Occupancy (span), Dwell, and Path velocity support analytics intents (see [Trigger metrics by analytics intent](#trigger-metrics-by-analytics-intent)). |
+| **Field** | `People Count` · `Male %` · `Female %` · `Age` | Classic people / gender / age measures on the live Instant Detection payload. |
 | **Op** | `>` `≥` `<` `≤` `=` | Comparison operator. |
-| Value | Depends on Field | Label becomes **Count**, **Seconds**, **Velocity** (suffix `px/s`), **Percent** (suffix `%`), or **Age** (suffix `yrs`). Changing Field resets a sensible default: percent → `50`, Age → `18`, dwell → `30`, path velocity → `10`, count → `1`. Age input is clamped to **1–100**. |
+| Value | Depends on Field | Label becomes **Count**, **Percent** (suffix `%`), or **Age** (suffix `yrs`). Changing Field resets a sensible default: percent → `50`, Age → `18`, count → `1`. Age input is clamped to **1–100**. |
 
 #### Camera
 
@@ -290,6 +290,42 @@ Then complete the [common fields](#common-fields-every-trigger-mode) (Time Span,
 ![Full Automation Triggers screen with Create Trigger open for Instant Demographic.](./images/create-trigger-demographic.png)
 
 Example only: **People Count ≥ 2** on camera **Front Door**, Time Span `any`, User Actions linked to the alert, Cooldown **60**, **Active** on.
+
+---
+
+### Behavioural (Flush Lookback)
+
+Evaluates analytics-intent metrics over the last **N Instant Detection flush cycles** for **one** camera. Window unit is flush cycles (not wall-clock minutes). Wall time spanned by the buffer is approximately **N × that camera’s flush interval**; the UI hint shows `≈ N × your camera flush interval`.
+
+History fills as flushes arrive in Redis. Until the ring has enough samples the trigger may show a warming-up buffer (e.g. `2/6`) and still evaluates with whatever flushes exist.
+
+**Mode card:** **Behavioural Conditions (Flush Lookback)**
+
+| Field | Required | Default | Explanation |
+|---|---|---|---|
+| **Lookback flushes (2–60)** | Yes | `6` | How many Instant Detection flush cycles to keep for this camera when evaluating the rule. |
+| **Condition logic** | Yes | `AND` | **AND** (all must match) or **OR** (any match). |
+| **Conditions** | Yes (≥1) | Peak occupancy (window) ≥ 5 | Field / Op / value rows (see table below). |
+
+#### Behavioural metrics (Phase 1)
+
+| Field (UI) | Meaning over last N flushes |
+|---|---|
+| **Occupancy (latest flush)** | `people_count` of the newest flush in the lookback |
+| **Peak occupancy (window)** | Maximum `people_count` across the N flushes |
+| **Dwell seconds** | Max person dwell in the buffer (`time_in_frame_seconds`, with continuity across adjacent flushes when the same person id reappears) |
+| **Path velocity avg** | Mean of per-flush mean `average_route_velocity` (people with routes) |
+| **Co-presence count** | Max `people_count` among flushes where count ≥ 2 |
+
+ROI metrics (`route_density_cell`, `queue_wait_estimate`) are not in this mode yet — see [Trigger metrics by analytics intent](#trigger-metrics-by-analytics-intent).
+
+#### Camera
+
+| Field | Required | Explanation |
+|---|---|---|
+| **Camera \*** / **Select Camera** | Yes | Single live camera whose Instant Detection flushes feed the Redis lookback ring. |
+
+Then complete the common fields.
 
 ---
 
@@ -557,32 +593,33 @@ Used in supported action text fields at fire time (`{variable_name}`).
 
 ## Trigger metrics by analytics intent
 
-Use these Vradar condition fields when a camera is used for a given [analytics intent](./analytics-and-reports.md#c4-camera-analytics-intents). Prefer Instant Detection running (and normalisation when the metric is span-based).
+Use these Vradar condition fields when a camera is used for a given [analytics intent](./analytics-and-reports.md#c4-camera-analytics-intents). Prefer Instant Detection running. Occupancy / dwell / path / co-presence over flush history use **Behavioural**; Instant / Search Demographic stay on people / gender / age.
 
 ### Available now
 
 | Intent | Trigger mode | Condition metrics |
 |---|---|---|
-| **People Counting** | Instant Demographic · Search Demographic | **People Count** ≥ / ≤ N; optional **Male %** · **Female %** · **Age** |
-| **Occupancy Monitoring** | Instant Demographic | **People Count** ≥ capacity; Search Demographic for multi-camera lookback |
-| **Heatmaps / Path** (behaviour alerts) | Motion | **Speed band** · **Motion class** (Stationary · Directed transit · Loitering · Pacing · Erratic) · **ROI transit** (Approach · Retreat · Inside) |
+| **People Counting** | Instant Demographic · Search Demographic · Behavioural | **People Count** ≥ / ≤ N; optional **Male %** · **Female %** · **Age**; Behavioural **Peak occupancy (window)** |
+| **Occupancy Monitoring** | Behavioural · Instant Demographic | Behavioural **Occupancy (latest)** / **Peak occupancy**; Demographic **People Count** ≥ capacity |
+| **Heatmaps / Path** (behaviour alerts) | Behavioural · Motion | Behavioural **Path velocity avg**; Motion **Speed band** · **Motion class** · **ROI transit** |
+| **Queue / dwell** | Behavioural | **Dwell seconds** · **Co-presence count** |
 | **SOP Monitoring** | Body Posture · Motion · Instant Demographic | Target posture; speed / class; people count |
 | **Loss Prevention** | Left / Stationary Object · People Match / VProfile · Motion | Object abandon; match / NOT match; loitering class |
 
-### Shipped on Instant / Search Demographic (analytics intents)
+### Shipped on Behavioural (analytics intents)
 
 | Metric (UI label) | Intent | Suggested ops | Notes |
 |---|---|---|---|
-| `occupancy_span_count` (**Occupancy (span)**) | Occupancy | ≥ N | Uses current people count until span worker publishes an explicit value |
-| `dwell_seconds` (**Dwell seconds**) | Queue · Occupancy | ≥ T | Max `time_in_frame_seconds` from people / movement_tracking in the event |
-| `path_velocity_avg` (**Path velocity avg**) | Path | ≤ / ≥ px/s | Mean `average_route_velocity` across people with routes |
+| `occupancy_span_count` (**Occupancy (latest flush)**) | Occupancy | ≥ N | `people_count` of newest flush in lookback |
+| `peak_occupancy_window` (**Peak occupancy (window)**) | Occupancy · Counting | ≥ N | Max `people_count` across last N flushes |
+| `dwell_seconds` (**Dwell seconds**) | Queue · Occupancy | ≥ T | Max dwell in the flush ring (continuity across adjacent flushes when ids match) |
+| `path_velocity_avg` (**Path velocity avg**) | Path | ≤ / ≥ px/s | Mean of per-flush mean route velocity |
+| `co_presence_count` (**Co-presence count**) | Queue · hangout | ≥ N | Max people count among flushes with count ≥ 2 |
 
-### Still planned
+### Still planned (ROI)
 
 | Metric | Intent | Suggested ops | Notes |
 |---|---|---|---|
-| `peak_occupancy_window` | Occupancy · Counting | ≥ N in last T minutes | Rolling max over spans |
-| `co_presence_count` | Queue · hangout | ≥ N distinct people in one span | Normalised people with min dwell |
 | `route_density_cell` | Heatmap | ≥ hits in FOV cell / ROI | Needs ROI or grid id |
 | `queue_wait_estimate` | Queue | ≥ T | Later: ROI + dwell model |
 

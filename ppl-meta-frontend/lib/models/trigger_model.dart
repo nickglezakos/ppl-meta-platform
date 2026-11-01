@@ -85,6 +85,15 @@ class TriggerModel {
   @JsonKey(name: 'trigger_mode')
   final String triggerMode;
 
+  @JsonKey(name: 'behavioural_lookback_flushes')
+  final int? behaviouralLookbackFlushes;
+
+  @JsonKey(name: 'behavioural_conditions')
+  final List<DemographicCondition>? behaviouralConditions;
+
+  @JsonKey(name: 'behavioural_condition_logic')
+  final String? behaviouralConditionLogic;
+
   @JsonKey(name: 'ppl_match_group_id')
   final String? pplMatchGroupId;
 
@@ -218,6 +227,9 @@ class TriggerModel {
     this.cooldownSeconds = 60,
     this.lastFiredAt,
     this.triggerMode = 'demographic',
+    this.behaviouralLookbackFlushes,
+    this.behaviouralConditions,
+    this.behaviouralConditionLogic,
     this.pplMatchGroupId,
     this.pplMatchGroupIds,
     this.cameraDeviceIds,
@@ -320,6 +332,11 @@ class TriggerModel {
       final condCount = demographicConditions.length;
       return 'Demo Search: $cameraCount cam(s), $condCount cond(s), every ${searchIntervalSeconds ?? 300}s';
     }
+    if (triggerMode == 'behavioural') {
+      final n = behaviouralLookbackFlushes ?? 6;
+      final condCount = behaviouralConditions?.length ?? 0;
+      return 'Behavioural: $condCount cond(s), last $n flush(es)';
+    }
     if (demographicConditions.isEmpty) return 'No conditions';
     return '${demographicConditions.length} condition(s)';
   }
@@ -356,6 +373,15 @@ class TriggerCreateRequest {
 
   @JsonKey(name: 'trigger_mode')
   final String triggerMode;
+
+  @JsonKey(name: 'behavioural_lookback_flushes')
+  final int? behaviouralLookbackFlushes;
+
+  @JsonKey(name: 'behavioural_conditions')
+  final List<DemographicCondition>? behaviouralConditions;
+
+  @JsonKey(name: 'behavioural_condition_logic')
+  final String? behaviouralConditionLogic;
 
   @JsonKey(name: 'ppl_match_group_id')
   final String? pplMatchGroupId;
@@ -473,6 +499,9 @@ class TriggerCreateRequest {
     this.isActive = true,
     this.cooldownSeconds = 60,
     this.triggerMode = 'demographic',
+    this.behaviouralLookbackFlushes,
+    this.behaviouralConditions,
+    this.behaviouralConditionLogic,
     this.pplMatchGroupId,
     this.pplMatchGroupIds,
     this.cameraDeviceIds,

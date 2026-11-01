@@ -49,55 +49,14 @@ def enrich_intent_metrics_demographics(
     event_data: Optional[Dict] = None,
 ) -> Dict:
     """
-    Attach analytics-intent Soon metrics onto demographics for condition eval.
+    Deprecated for Instant Demographic eval.
 
-    - occupancy_span_count: current people_count (span worker may override later)
-    - dwell_seconds: max time_in_frame_seconds from people / movement_tracking
-    - path_velocity_avg: mean average_route_velocity across people with routes
+    Intent metrics (occupancy / dwell / path) now live on Behavioural triggers
+    over the Redis flush ring. This helper is a no-op pass-through kept for
+    call-site compatibility.
     """
-    demo: Dict = dict(demographics or {})
-    demo.setdefault("occupancy_span_count", float(people_count))
-
-    people: List = []
-    if isinstance(event_data, dict):
-        for key in ("people", "person_groups", "instant_mvrs", "individuals"):
-            raw = event_data.get(key)
-            if isinstance(raw, list):
-                people.extend([p for p in raw if isinstance(p, dict)])
-        meta = event_data.get("metadata")
-        if isinstance(meta, dict):
-            for key in ("people", "person_groups"):
-                raw = meta.get(key)
-                if isinstance(raw, list):
-                    people.extend([p for p in raw if isinstance(p, dict)])
-
-    dwells: List[float] = []
-    velocities: List[float] = []
-    for person in people:
-        tracking = person.get("movement_tracking")
-        if not isinstance(tracking, dict):
-            tracking = {}
-        stats = tracking.get("movement_statistics")
-        if not isinstance(stats, dict):
-            stats = {}
-        tif = stats.get("time_in_frame_seconds")
-        if tif is None:
-            tif = person.get("time_in_frame_seconds")
-        if isinstance(tif, (int, float)) and tif > 0:
-            dwells.append(float(tif))
-        vel = person.get("average_route_velocity")
-        if vel is None:
-            vel = tracking.get("average_route_velocity")
-        if vel is None:
-            vel = stats.get("average_velocity")
-        if isinstance(vel, (int, float)) and vel > 0:
-            velocities.append(float(vel))
-
-    if dwells and "dwell_seconds" not in demo:
-        demo["dwell_seconds"] = max(dwells)
-    if velocities and "path_velocity_avg" not in demo:
-        demo["path_velocity_avg"] = sum(velocities) / len(velocities)
-    return demo
+    _ = people_count, event_data
+    return dict(demographics or {})
 
 
 class DemographicData:
@@ -130,14 +89,6 @@ class DemographicData:
         """Get value for a demographic field."""
         if field == 'people_count':
             return float(self.people_count)
-
-        if field == 'occupancy_span_count':
-            raw = self.demographics.get('occupancy_span_count', self.people_count)
-            return float(raw) if raw is not None else None
-
-        if field in ('dwell_seconds', 'path_velocity_avg'):
-            raw = self.demographics.get(field)
-            return float(raw) if raw is not None else None
 
         if field == 'age_threshold':
             # Prefer direct average_age (published by instant-detection pipeline)

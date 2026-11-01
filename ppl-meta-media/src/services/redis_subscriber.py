@@ -25,6 +25,11 @@ from src.services.communications_client import CommunicationsClient
 from src.services.vprofile_match_worker import get_vprofile_worker
 from src.services.body_posture_worker import get_body_posture_worker
 from src.services.motion_trigger_worker import get_motion_trigger_worker
+from src.services.behavioural_trigger_worker import get_behavioural_trigger_worker
+from src.services.behavioural_flush_ring import (
+    max_lookback_for_camera,
+    push_flush_snapshot,
+)
 from src.services.left_object_worker import get_left_object_worker
 from src.services.vehicle_plate_worker import get_vehicle_plate_worker
 from src.services.people_profile_enrichment import (
@@ -334,13 +339,7 @@ class InstantDetectionSubscriber:
         """
         camera_id = data.get("camera_id")
         people_count = data.get("people_count", 0)
-        from ..services.trigger_evaluation import enrich_intent_metrics_demographics
-
-        demographics = enrich_intent_metrics_demographics(
-            data.get("demographics", {}) or {},
-            int(people_count or 0),
-            data,
-        )
+        demographics = dict(data.get("demographics", {}) or {})
         timestamp = data.get("timestamp")
         is_search_trigger = data.get("source") == "search_trigger"
         
@@ -400,6 +399,20 @@ class InstantDetectionSubscriber:
         db: Session = SessionLocal()
         
         try:
+            # Push Instant Detection flush into behavioural Redis ring (skip search events).
+            if camera_id and not is_search_trigger and self.redis is not None:
+                try:
+                    max_n = await max_lookback_for_camera(db, str(camera_id))
+                    await push_flush_snapshot(
+                        self.redis, str(camera_id), data, max_lookback=max_n
+                    )
+                except Exception as ring_err:
+                    logger.warning(
+                        "⚠️ behavioural flush ring push failed for %s: %s",
+                        camera_id,
+                        ring_err,
+                    )
+
             # Find active triggers for this camera.
             # For search triggers, camera_id is "search:<trigger_uuid>" — match by
             # camera_device_id directly (set during trigger creation) or by UUID suffix.
@@ -604,6 +617,25 @@ class InstantDetectionSubscriber:
                         )
                         continue
                     logger.info(f"  ✅ body_posture MET: {reason}")
+                elif trigger_mode == "behavioural":
+                    logger.info("  🔎 Evaluating behavioural mode (flush lookback metrics)")
+                    worker = get_behavioural_trigger_worker()
+                    passed, reason, match_info = await worker.evaluate(
+                        trigger, self.redis, data
+                    )
+                    if not passed:
+                        logger.info(f"  ❌ SKIP: {reason}")
+                        self._log_execution(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason=reason,
+                            match_info=match_info,
+                            detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+                    logger.info(f"  ✅ behavioural MET: {reason}")
                 elif trigger_mode in ("motion", "velocity"):
                     logger.info("  🔎 Evaluating motion mode (speed / class / ROI)")
                     worker = get_motion_trigger_worker()
@@ -799,7 +831,7 @@ class InstantDetectionSubscriber:
                     trigger.last_match_info = json.dumps(match_info)
                     trigger.last_matched_at = datetime.now(timezone.utc)
 
-                if trigger_mode in ("ppl_match", "vprofile_match", "body_posture", "motion", "velocity", "left_object", "vehicle_plate") and reason:
+                if trigger_mode in ("ppl_match", "vprofile_match", "body_posture", "behavioural", "motion", "velocity", "left_object", "vehicle_plate") and reason:
                     success_reason = reason
                 else:
                     success_reason = "Demographic conditions met"
@@ -1065,14 +1097,6 @@ class InstantDetectionSubscriber:
             if field == 'people_count':
                 actual_value = people_count
                 logger.info(f"       Actual people_count: {actual_value}")
-            elif field == 'occupancy_span_count':
-                actual_value = demographics.get(
-                    'occupancy_span_count', people_count
-                )
-                logger.info(f"       Actual occupancy_span_count: {actual_value}")
-            elif field in ('dwell_seconds', 'path_velocity_avg'):
-                actual_value = demographics.get(field)
-                logger.info(f"       Actual {field}: {actual_value}")
             elif field == 'age_threshold':
                 # Prefer direct average_age (published by instant-detection pipeline)
                 if demographics.get('average_age') is not None:

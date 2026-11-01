@@ -9,6 +9,15 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+INTENT_METRIC_FIELDS = frozenset({
+    'occupancy_span_count',
+    'dwell_seconds',
+    'path_velocity_avg',
+    'peak_occupancy_window',
+    'co_presence_count',
+})
+
+
 class DemographicCondition(BaseModel):
     """Single demographic condition."""
     LEGACY_AGE_FIELD_MAP: ClassVar[Dict[str, str]] = {
@@ -25,9 +34,7 @@ class DemographicCondition(BaseModel):
     field: str = Field(
         ...,
         description=(
-            "Demographic / behavioural field: people_count, percent_male, "
-            "percent_female, age_*, occupancy_span_count, dwell_seconds, "
-            "path_velocity_avg"
+            "Demographic field: people_count, percent_male, percent_female, age_*"
         )
     )
     operator: str = Field(
@@ -45,20 +52,54 @@ class DemographicCondition(BaseModel):
         if v in cls.LEGACY_AGE_FIELD_MAP:
             v = cls.LEGACY_AGE_FIELD_MAP[v]
 
+        # Intent metrics are accepted only so TriggerCreate/Update can migrate
+        # them onto behavioural mode (see validate_mode_config). They are not
+        # evaluated on demographic mode.
         valid = [
             'people_count', 'percent_male', 'percent_female',
             'age_threshold',
             'age_count_0_12', 'age_count_13_17', 'age_count_18_24',
             'age_count_25_34', 'age_count_35_44', 'age_count_45_54',
             'age_count_55_64', 'age_count_65_plus',
-            # Analytics-intent Soon metrics (span / route derived)
-            'occupancy_span_count',
-            'dwell_seconds',
-            'path_velocity_avg',
+            *sorted(INTENT_METRIC_FIELDS),
         ]
         if v not in valid:
             raise ValueError(f'field must be one of {valid}')
         return v
+    @field_validator('operator')
+    @classmethod
+    def validate_operator(cls, v: str) -> str:
+        valid = ['gt', 'gte', 'lt', 'lte', 'eq']
+        if v not in valid:
+            raise ValueError(f'operator must be one of {valid}')
+        return v
+
+
+class BehaviouralCondition(BaseModel):
+    """Single behavioural (flush-window) intent metric condition."""
+
+    field: str = Field(
+        ...,
+        description=(
+            "Behavioural field over flush lookback: occupancy_span_count, "
+            "peak_occupancy_window, dwell_seconds, path_velocity_avg, "
+            "co_presence_count"
+        ),
+    )
+    operator: str = Field(
+        ...,
+        description="Comparison operator: gt, gte, lt, lte, eq",
+    )
+    value: float = Field(..., description="Threshold value")
+
+    @field_validator('field')
+    @classmethod
+    def validate_field(cls, v: str) -> str:
+        valid = sorted(INTENT_METRIC_FIELDS)
+        if v not in INTENT_METRIC_FIELDS:
+            raise ValueError(f'field must be one of {valid}')
+        return v
+
     @field_validator('operator')
     @classmethod
     def validate_operator(cls, v: str) -> str:
@@ -189,7 +230,25 @@ class TriggerBase(BaseModel):
     )
     trigger_mode: str = Field(
         default="demographic",
-        description="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match | body_posture | motion | left_object | vehicle_plate (velocity accepted as alias)"
+        description=(
+            "Trigger mode: demographic | behavioural | ppl_match | search | "
+            "search_demographic | vprofile_match | body_posture | motion | "
+            "left_object | vehicle_plate (velocity accepted as alias)"
+        ),
+    )
+    behavioural_lookback_flushes: Optional[int] = Field(
+        default=6,
+        ge=2,
+        le=60,
+        description="Behavioural mode: number of Instant Detection flush cycles to keep in Redis",
+    )
+    behavioural_conditions: Optional[List[BehaviouralCondition]] = Field(
+        default=None,
+        description="Behavioural intent metric conditions over the flush lookback window",
+    )
+    behavioural_condition_logic: Optional[str] = Field(
+        default="and",
+        description="Combine behavioural_conditions with and | or",
     )
     ppl_match_group_id: Optional[str] = Field(
         None,
@@ -364,6 +423,7 @@ class TriggerBase(BaseModel):
             return 'motion'
         valid = [
             'demographic',
+            'behavioural',
             'ppl_match',
             'search',
             'search_demographic',
@@ -386,6 +446,16 @@ class TriggerBase(BaseModel):
         valid = ['horizontal', 'upright', 'either']
         if v not in valid:
             raise ValueError(f'body_posture_target must be one of {valid}')
+        return v
+
+    @field_validator('behavioural_condition_logic')
+    @classmethod
+    def validate_behavioural_logic(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return 'and'
+        valid = ['and', 'or']
+        if v not in valid:
+            raise ValueError(f'behavioural_condition_logic must be one of {valid}')
         return v
 
     @field_validator('velocity_scope', 'motion_scope')
@@ -420,6 +490,28 @@ class TriggerBase(BaseModel):
 
     @model_validator(mode='after')
     def validate_mode_config(self):
+        # Migrate legacy demographic intent-metric conditions → behavioural
+        intent_conds = [
+            c for c in (self.demographic_conditions or [])
+            if getattr(c, 'field', None) in INTENT_METRIC_FIELDS
+        ]
+        if intent_conds and self.trigger_mode in ('demographic', 'search_demographic'):
+            self.trigger_mode = 'behavioural'
+            existing = list(self.behavioural_conditions or [])
+            for c in intent_conds:
+                existing.append(
+                    BehaviouralCondition(field=c.field, operator=c.operator, value=c.value)
+                )
+            self.behavioural_conditions = existing
+            self.demographic_conditions = [
+                c for c in (self.demographic_conditions or [])
+                if getattr(c, 'field', None) not in INTENT_METRIC_FIELDS
+            ]
+            if self.behavioural_lookback_flushes is None:
+                self.behavioural_lookback_flushes = 6
+            if not self.behavioural_condition_logic:
+                self.behavioural_condition_logic = 'and'
+
         # Normalize velocity_* aliases onto motion_*
         if self.motion_scope is None and self.velocity_scope:
             self.motion_scope = self.velocity_scope
@@ -427,6 +519,17 @@ class TriggerBase(BaseModel):
             self.motion_conditions = [
                 MotionCondition(field='speed_band', operator='gte', value=self.velocity_band)
             ]
+
+        if self.trigger_mode == 'behavioural':
+            if not self.camera_device_id:
+                raise ValueError('camera_device_id is required for behavioural mode')
+            if not self.behavioural_conditions:
+                raise ValueError(
+                    'behavioural_conditions must contain at least one condition in behavioural mode'
+                )
+            if self.behavioural_lookback_flushes is None:
+                self.behavioural_lookback_flushes = 6
+            return self
 
         if self.trigger_mode == 'vprofile_match':
             if not self.ppl_match_group_ids:
@@ -506,6 +609,9 @@ class TriggerUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     trigger_mode: Optional[str] = None
+    behavioural_lookback_flushes: Optional[int] = Field(default=None, ge=2, le=60)
+    behavioural_conditions: Optional[List[BehaviouralCondition]] = None
+    behavioural_condition_logic: Optional[str] = None
     ppl_match_group_id: Optional[str] = None
     ppl_match_group_ids: Optional[List[str]] = None
     camera_device_ids: Optional[List[str]] = None
@@ -550,6 +656,7 @@ class TriggerUpdate(BaseModel):
             return 'motion'
         valid = [
             'demographic',
+            'behavioural',
             'ppl_match',
             'search',
             'search_demographic',
@@ -661,6 +768,9 @@ class TriggerResponse(BaseModel):
     cooldown_seconds: int
     last_fired_at: Optional[datetime]
     trigger_mode: str
+    behavioural_lookback_flushes: Optional[int] = 6
+    behavioural_conditions: Optional[List[BehaviouralCondition]] = None
+    behavioural_condition_logic: Optional[str] = "and"
     ppl_match_group_id: Optional[str]
     ppl_match_group_ids: Optional[List[str]] = None
     camera_device_ids: Optional[List[str]] = None
@@ -710,6 +820,19 @@ class TriggerResponse(BaseModel):
             import json
             parsed = json.loads(v)
             return [DemographicCondition(**item) for item in parsed]
+        return v
+
+    @field_validator('behavioural_conditions', mode='before')
+    @classmethod
+    def parse_behavioural_conditions(cls, v):
+        if isinstance(v, str):
+            import json
+            try:
+                parsed = json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                return None
+            if isinstance(parsed, list):
+                return [BehaviouralCondition(**item) for item in parsed]
         return v
 
     @field_validator('motion_conditions', mode='before')

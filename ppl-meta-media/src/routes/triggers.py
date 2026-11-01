@@ -305,6 +305,20 @@ async def create_trigger(
             )
         if 'vehicle_roi' in trigger_data and trigger_data['vehicle_roi'] is not None:
             trigger_data['vehicle_roi'] = json.dumps(trigger_data['vehicle_roi'])
+        if 'behavioural_conditions' in trigger_data and trigger_data['behavioural_conditions'] is not None:
+            conds = trigger_data['behavioural_conditions']
+            if isinstance(conds, list):
+                serializable = []
+                for c in conds:
+                    if hasattr(c, 'model_dump'):
+                        serializable.append(c.model_dump())
+                    elif isinstance(c, dict):
+                        serializable.append(c)
+                    else:
+                        serializable.append(dict(c))
+                trigger_data['behavioural_conditions'] = json.dumps(serializable)
+            elif not isinstance(conds, str):
+                trigger_data['behavioural_conditions'] = json.dumps(conds)
         if 'motion_conditions' in trigger_data and trigger_data['motion_conditions'] is not None:
             conds = trigger_data['motion_conditions']
             if isinstance(conds, list):
@@ -562,6 +576,20 @@ async def update_trigger(
         )
     if 'vehicle_roi' in update_data and update_data['vehicle_roi'] is not None:
         update_data['vehicle_roi'] = json.dumps(update_data['vehicle_roi'])
+    if 'behavioural_conditions' in update_data and update_data['behavioural_conditions'] is not None:
+        conds = update_data['behavioural_conditions']
+        if isinstance(conds, list):
+            serializable = []
+            for c in conds:
+                if hasattr(c, 'model_dump'):
+                    serializable.append(c.model_dump())
+                elif isinstance(c, dict):
+                    serializable.append(c)
+                else:
+                    serializable.append(dict(c))
+            update_data['behavioural_conditions'] = json.dumps(serializable)
+        elif not isinstance(conds, str):
+            update_data['behavioural_conditions'] = json.dumps(conds)
     if 'motion_conditions' in update_data and update_data['motion_conditions'] is not None:
         conds = update_data['motion_conditions']
         if isinstance(conds, list):
@@ -1421,14 +1449,6 @@ async def _evaluate_demographic_conditions(
         # Get actual value from demographics or people_count
         if field == "people_count":
             actual_value = people_count
-        elif field == "occupancy_span_count":
-            # Span-aligned occupancy; live path uses current people_count until
-            # span worker publishes explicit occupancy_span_count.
-            actual_value = demographics.get("occupancy_span_count", people_count)
-        elif field == "dwell_seconds":
-            actual_value = demographics.get("dwell_seconds")
-        elif field == "path_velocity_avg":
-            actual_value = demographics.get("path_velocity_avg")
         elif field == "age_threshold":
             # Compute weighted-average age from bracket percentages
             actual_value = sum(
