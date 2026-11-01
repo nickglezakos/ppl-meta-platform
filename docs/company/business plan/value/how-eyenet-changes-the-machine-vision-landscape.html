@@ -242,6 +242,11 @@
     .tag.user { color: var(--warn); }
     .tag.safety { color: var(--danger); }
     .tag.ok { color: var(--ok); }
+    .tag.category {
+      color: #1a2a3a;
+      background: #e8eef4;
+      border-color: #c5d0db;
+    }
 
     .side-note {
       margin-top: 12px; font-size: 9pt; color: var(--soft);
@@ -625,6 +630,8 @@
             <h4>Why it matters</h4>
             <p>Differentiator vs vitals-only RPM: the home becomes a monitored care environment. Privacy by architecture — vision stays on-prem; only fall / help / presence / zone events reach the health stack.</p>
             <div class="tags">
+              <span class="tag category">home</span>
+              <span class="tag category">care</span>
               <span class="tag">Presence</span>
               <span class="tag">Automation</span>
               <span class="tag safety">Fall</span>
@@ -643,15 +650,16 @@
 
       <div class="persona alt">
         <h4><span class="n">2</span> HR Presence — SME &amp; enterprise</h4>
-        <p class="who">HR · facilities · office ops — automatic staff presence, zero HR effort</p>
+        <p class="who">Home · office · warehouse · industrial · shipping · security — one Presence fabric everywhere</p>
         <div class="cols-2">
           <div>
             <ul>
+              <li><strong>Intelligent doorbell</strong> — who is at the door at home; presence without cloud video</li>
               <li><strong>Entrance / exit stations</strong> — Presence stations at doors for check-in / check-out</li>
-              <li><strong>Vprofile cameras</strong> — entrances, meeting rooms, mess / break areas</li>
+              <li><strong>Vprofile cameras</strong> — offices, warehouses, industrial floors, and watch posts</li>
               <li><strong>Presence apps</strong> — staff mobile phones and desk PCs</li>
-              <li><strong>Remote employees</strong> — same Presence stack works when staff work from home</li>
-              <li><strong>Hands-off HR</strong> — purely automatic; no manual roll-call or HR staff effort</li>
+              <li><strong>Shipping &amp; security posts</strong> — same stack for crew, shifts, and perimeter stations</li>
+              <li><strong>Hands-off ops</strong> — purely automatic; no manual roll-call or chase</li>
               <li><strong>HubSpot CRM</strong> — first CRM connector: sync contacts, post grants to HubSpot in real time</li>
             </ul>
             <div class="notify">
@@ -668,8 +676,14 @@
             <img class="card-visual" src="assets/hr-presence.png" alt="EyeNet staff presence" />
             <p class="card-visual-credit">Visual: eyenet-vision.com</p>
             <h4>Why it matters</h4>
-            <p>One Presence fabric for on-site and remote. Who is in, where, and when — without badges-only friction or spreadsheet attendance.</p>
+            <p>One Presence fabric across home, office, warehouse, industrial, shipping, and security — who is in, where, and when — without badges-only friction or spreadsheet attendance.</p>
             <div class="tags">
+              <span class="tag category">home</span>
+              <span class="tag category">office</span>
+              <span class="tag category">warehouse</span>
+              <span class="tag category">industrial</span>
+              <span class="tag category">shipping</span>
+              <span class="tag category">security</span>
               <span class="tag">Presence</span>
               <span class="tag mode">Stations</span>
               <span class="tag mode">Vprofile</span>
@@ -713,6 +727,7 @@
             <h4>Why it matters</h4>
             <p>Night coverage stops depending on hope. Auto-escalate when a post goes quiet; perimeter + Vradar catch motion before it becomes a breach.</p>
             <div class="tags">
+              <span class="tag category">security</span>
               <span class="tag">Presence</span>
               <span class="tag">Sentinel</span>
               <span class="tag safety">Vradar</span>
@@ -755,6 +770,7 @@
             <h4>Why it matters</h4>
             <p>Protect people and places that sit far from family — lightly, privately, without a full security team.</p>
             <div class="tags">
+              <span class="tag category">home</span>
               <span class="tag">Gate</span>
               <span class="tag">Presence</span>
               <span class="tag">Automation</span>
@@ -797,6 +813,8 @@
             <h4>Why it matters</h4>
             <p>Ships cannot depend on cloud VMS. EyeNet gives captain and shore the same truth: who is onboard, where they are, with reports that travel on minimal bandwidth.</p>
             <div class="tags">
+              <span class="tag category">shipping</span>
+              <span class="tag category">industrial</span>
               <span class="tag">Presence</span>
               <span class="tag">Gate</span>
               <span class="tag">Sentinel</span>
@@ -839,6 +857,8 @@
             <h4>Why it matters</h4>
             <p>Static screens burn budget. Vision-adaptive Signage turns mall foot traffic into measurable marketing intelligence — content that reacts, and numbers that justify spend.</p>
             <div class="tags">
+              <span class="tag category">shop</span>
+              <span class="tag category">marketing</span>
               <span class="tag">Signage</span>
               <span class="tag">Automation</span>
               <span class="tag mode">Spot · Gate · Area</span>
@@ -882,6 +902,7 @@
             <h4>Why it matters</h4>
             <p>Turn existing CCTV into floor intelligence — count, path, and act — without a separate analytics stack. Signage proves marketing ROI; shop floor proves how customers move.</p>
             <div class="tags">
+              <span class="tag category">shop</span>
               <span class="tag">Analytics</span>
               <span class="tag">Behavioural</span>
               <span class="tag mode">Counting · Path</span>

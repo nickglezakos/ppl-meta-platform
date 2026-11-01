@@ -242,6 +242,11 @@
     .tag.user { color: var(--warn); }
     .tag.safety { color: var(--danger); }
     .tag.ok { color: var(--ok); }
+    .tag.category {
+      color: #1a2a3a;
+      background: #e8eef4;
+      border-color: #c5d0db;
+    }
 
     .side-note {
       margin-top: 12px; font-size: 9pt; color: var(--soft);
@@ -626,6 +631,8 @@
             <h4>Γιατί μετράει</h4>
             <p>Διαφοροποίηση έναντι vitals-only RPM: το σπίτι γίνεται περιβάλλον παρακολουθούμενης φροντίδας. Ιδιωτικότητα by architecture — η όραση μένει on-prem· μόνο γεγονότα πτώσης / βοήθειας / παρουσίας / ζώνης φτάνουν στο health stack.</p>
             <div class="tags">
+              <span class="tag category">σπίτι</span>
+              <span class="tag category">φροντίδα</span>
               <span class="tag">Presence</span>
               <span class="tag">Automation</span>
               <span class="tag safety">Fall</span>
@@ -644,15 +651,16 @@
 
       <div class="persona alt">
         <h4><span class="n">2</span> HR Presence — SME &amp; enterprise</h4>
-        <p class="who">HR · εγκαταστάσεις · office ops — αυτόματη παρουσία προσωπικού, μηδέν προσπάθεια HR</p>
+        <p class="who">Σπίτι · γραφείο · αποθήκη · βιομηχανία · ναυτιλία · ασφάλεια — ένα Presence fabric παντού</p>
         <div class="cols-2">
           <div>
             <ul>
+              <li><strong>Έξυπνο κουδούνι</strong> — ποιος είναι στην πόρτα στο σπίτι· παρουσία χωρίς cloud video</li>
               <li><strong>Stations εισόδου / εξόδου</strong> — Presence stations στις πόρτες για check-in / check-out</li>
-              <li><strong>Κάμερες Vprofile</strong> — είσοδοι, αίθουσες συσκέψεων, χώροι φαγητού / διαλείμματος</li>
+              <li><strong>Κάμερες Vprofile</strong> — γραφεία, αποθήκες, βιομηχανικοί όροφοι και θέσεις φρουράς</li>
               <li><strong>Εφαρμογές Presence</strong> — κινητά και PCs προσωπικού</li>
-              <li><strong>Remote εργαζόμενοι</strong> — το ίδιο Presence stack δουλεύει όταν το προσωπικό εργάζεται από το σπίτι</li>
-              <li><strong>Hands-off HR</strong> — καθαρά αυτόματο· χωρίς χειροκίνητο roll-call ή προσπάθεια HR</li>
+              <li><strong>Ναυτιλία &amp; θέσεις ασφαλείας</strong> — το ίδιο stack για πλήρωμα, βάρδιες και περίμετρο</li>
+              <li><strong>Hands-off ops</strong> — καθαρά αυτόματο· χωρίς χειροκίνητο roll-call ή κυνήγι</li>
               <li><strong>HubSpot CRM</strong> — πρώτος CRM connector: συγχρονισμός επαφών, post grants στο HubSpot σε πραγματικό χρόνο</li>
             </ul>
             <div class="notify">
@@ -669,8 +677,14 @@
             <img class="card-visual" src="assets/hr-presence.png" alt="EyeNet παρουσία προσωπικού" />
             <p class="card-visual-credit">Οπτικό: eyenet-vision.com</p>
             <h4>Γιατί μετράει</h4>
-            <p>Μια Presence εφαρμογή για on-site και remote. Ποιος είναι μέσα, πού και πότε — χωρίς τριβή μόνο-badge ή παρουσίες σε spreadsheet.</p>
+            <p>Ένα Presence fabric σε σπίτι, γραφείο, αποθήκη, βιομηχανία, ναυτιλία και ασφάλεια — ποιος είναι μέσα, πού και πότε — χωρίς τριβή μόνο-badge ή παρουσίες σε spreadsheet.</p>
             <div class="tags">
+              <span class="tag category">σπίτι</span>
+              <span class="tag category">γραφείο</span>
+              <span class="tag category">αποθήκη</span>
+              <span class="tag category">βιομηχανία</span>
+              <span class="tag category">ναυτιλία</span>
+              <span class="tag category">ασφάλεια</span>
               <span class="tag">Presence</span>
               <span class="tag mode">Stations</span>
               <span class="tag mode">Vprofile</span>
@@ -714,6 +728,7 @@
             <h4>Γιατί μετράει</h4>
             <p>Η νυχτερινή κάλυψη σταματά να εξαρτάται από την ελπίδα. Αυτόματη κλιμάκωση όταν μια θέση σωπαίνει· περίμετρος + Vradar πιάνουν κίνηση πριν γίνει παραβίαση.</p>
             <div class="tags">
+              <span class="tag category">ασφάλεια</span>
               <span class="tag">Presence</span>
               <span class="tag">Sentinel</span>
               <span class="tag safety">Vradar</span>
@@ -756,6 +771,7 @@
             <h4>Γιατί μετράει</h4>
             <p>Προστασία ανθρώπων και χώρων μακριά από την οικογένεια — ελαφρά, ιδιωτικά, χωρίς πλήρη ομάδα ασφαλείας.</p>
             <div class="tags">
+              <span class="tag category">σπίτι</span>
               <span class="tag">Gate</span>
               <span class="tag">Presence</span>
               <span class="tag">Automation</span>
@@ -798,6 +814,8 @@
             <h4>Γιατί μετράει</h4>
             <p>Τα πλοία δεν μπορούν να βασίζονται σε cloud VMS. Το EyeNet δίνει σε πλοίαρχο και ξηρά την ίδια αλήθεια: ποιος είναι onboard, πού βρίσκεται, με αναφορές που ταξιδεύουν σε ελάχιστο bandwidth.</p>
             <div class="tags">
+              <span class="tag category">ναυτιλία</span>
+              <span class="tag category">βιομηχανία</span>
               <span class="tag">Presence</span>
               <span class="tag">Gate</span>
               <span class="tag">Sentinel</span>
@@ -840,6 +858,8 @@
             <h4>Γιατί μετράει</h4>
             <p>Οι στατικές οθόνες καίνε budget. Το vision-adaptive Signage μετατρέπει την κίνηση στο mall σε μετρήσιμη marketing νοημοσύνη — περιεχόμενο που αντιδρά και αριθμοί που δικαιολογούν τη δαπάνη.</p>
             <div class="tags">
+              <span class="tag category">κατάστημα</span>
+              <span class="tag category">marketing</span>
               <span class="tag">Signage</span>
               <span class="tag">Automation</span>
               <span class="tag mode">Spot · Gate · Area</span>
@@ -883,6 +903,7 @@
             <h4>Γιατί μετράει</h4>
             <p>Μετατρέψτε το υπάρχον CCTV σε νοημοσύνη ορόφου — μέτρηση, διαδρομή και δράση — χωρίς ξεχωριστό analytics stack. Το Signage αποδεικνύει marketing ROI· το κατάστημα αποδεικνύει πώς κινούνται οι πελάτες.</p>
             <div class="tags">
+              <span class="tag category">κατάστημα</span>
               <span class="tag">Analytics</span>
               <span class="tag">Behavioural</span>
               <span class="tag mode">Counting · Path</span>
