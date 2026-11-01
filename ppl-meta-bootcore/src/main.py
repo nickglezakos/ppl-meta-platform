@@ -78,6 +78,36 @@ async def lifespan(app: FastAPI):
         user_count = await user_service.get_user_count()
         logger.info(f"👤 User Count: {user_count}")
 
+        # Register with discovery + start heartbeats
+        try:
+            import socket
+
+            from shared.service_discovery import register_service
+
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                detected_ip = s.getsockname()[0]
+                s.close()
+            except Exception:
+                detected_ip = socket.gethostbyname(socket.gethostname())
+
+            await register_service(
+                service_name="ppl-meta-bootcore",
+                host=detected_ip,
+                port=int(os.getenv("PORT", "8007")),
+                health_endpoint="/health",
+                tags=["bootcore", "licensing", "platform-identity"],
+                metadata={
+                    "version": "1.0.0",
+                    "environment": os.getenv("ENVIRONMENT", "development"),
+                    "features": "licensing,platform_identity,user_management",
+                },
+            )
+            logger.info("✅ BootCore registered with discovery service")
+        except Exception as disc_exc:
+            logger.error("Failed to register BootCore with discovery: %s", disc_exc)
+
     except Exception as e:
         logger.error(f"❌ Failed to start BootCore Service: {e}")
         raise
@@ -86,6 +116,12 @@ async def lifespan(app: FastAPI):
 
     # Cleanup
     logger.info("🛑 Shutting down PPL Meta BootCore Service...")
+    try:
+        from shared.service_discovery import deregister_service
+
+        await deregister_service(service_name="ppl-meta-bootcore")
+    except Exception as disc_exc:
+        logger.error("Failed to deregister BootCore from discovery: %s", disc_exc)
     if license_service:
         await license_service.cleanup()
     if platform_service:

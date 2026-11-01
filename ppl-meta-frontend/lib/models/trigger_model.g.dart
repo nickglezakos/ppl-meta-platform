@@ -22,6 +22,20 @@ Map<String, dynamic> _$DemographicConditionToJson(
       'value': instance.value,
     };
 
+MotionCondition _$MotionConditionFromJson(Map<String, dynamic> json) =>
+    MotionCondition(
+      field: json['field'] as String,
+      operator: json['operator'] as String,
+      value: json['value'],
+    );
+
+Map<String, dynamic> _$MotionConditionToJson(MotionCondition instance) =>
+    <String, dynamic>{
+      'field': instance.field,
+      'operator': instance.operator,
+      'value': instance.value,
+    };
+
 TriggerModel _$TriggerModelFromJson(Map<String, dynamic> json) => TriggerModel(
       id: (json['id'] as num).toInt(),
       uuid: json['uuid'] as String,
@@ -68,6 +82,14 @@ TriggerModel _$TriggerModelFromJson(Map<String, dynamic> json) => TriggerModel(
           (json['body_posture_iou_threshold'] as num?)?.toDouble(),
       velocityScope: json['velocity_scope'] as String?,
       velocityBand: json['velocity_band'] as String?,
+      motionScope: json['motion_scope'] as String?,
+      motionConditions: (json['motion_conditions'] as List<dynamic>?)
+          ?.map((e) => MotionCondition.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      motionConditionLogic: json['motion_condition_logic'] as String?,
+      motionRoi: (json['motion_roi'] as List<dynamic>?)
+          ?.map((e) => (e as List<dynamic>).map((v) => (v as num).toDouble()).toList())
+          .toList(),
       leftObjectClassAllowlist:
           (json['left_object_class_allowlist'] as List<dynamic>?)
               ?.map((e) => e as String)
@@ -150,6 +172,11 @@ Map<String, dynamic> _$TriggerModelToJson(TriggerModel instance) =>
       'body_posture_iou_threshold': instance.bodyPostureIouThreshold,
       'velocity_scope': instance.velocityScope,
       'velocity_band': instance.velocityBand,
+      'motion_scope': instance.motionScope,
+      'motion_conditions':
+          instance.motionConditions?.map((e) => e.toJson()).toList(),
+      'motion_condition_logic': instance.motionConditionLogic,
+      'motion_roi': instance.motionRoi,
       'left_object_class_allowlist': instance.leftObjectClassAllowlist,
       'left_object_roi': instance.leftObjectRoi,
       'left_object_t_stable_seconds': instance.leftObjectTStableSeconds,
@@ -214,6 +241,14 @@ TriggerCreateRequest _$TriggerCreateRequestFromJson(
           (json['body_posture_iou_threshold'] as num?)?.toDouble(),
       velocityScope: json['velocity_scope'] as String?,
       velocityBand: json['velocity_band'] as String?,
+      motionScope: json['motion_scope'] as String?,
+      motionConditions: (json['motion_conditions'] as List<dynamic>?)
+          ?.map((e) => MotionCondition.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      motionConditionLogic: json['motion_condition_logic'] as String?,
+      motionRoi: (json['motion_roi'] as List<dynamic>?)
+          ?.map((e) => (e as List<dynamic>).map((v) => (v as num).toDouble()).toList())
+          .toList(),
       leftObjectClassAllowlist:
           (json['left_object_class_allowlist'] as List<dynamic>?)
               ?.map((e) => e as String)
@@ -293,6 +328,12 @@ Map<String, dynamic> _$TriggerCreateRequestToJson(
         'body_posture_iou_threshold': value,
       if (instance.velocityScope case final value?) 'velocity_scope': value,
       if (instance.velocityBand case final value?) 'velocity_band': value,
+      if (instance.motionScope case final value?) 'motion_scope': value,
+      if (instance.motionConditions case final value?)
+        'motion_conditions': value.map((e) => e.toJson()).toList(),
+      if (instance.motionConditionLogic case final value?)
+        'motion_condition_logic': value,
+      if (instance.motionRoi case final value?) 'motion_roi': value,
       if (instance.leftObjectClassAllowlist case final value?)
         'left_object_class_allowlist': value,
       if (instance.leftObjectRoi case final value?) 'left_object_roi': value,

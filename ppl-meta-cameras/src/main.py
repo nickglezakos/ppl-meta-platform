@@ -31,15 +31,22 @@ from src.models.recording_session import (
     RecordingStatus,
 )
 
-# Local gateway-style client at src/shared/service_discovery.py (PYTHONPATH includes /app/src)
+# Local gateway-style client at src/shared/service_discovery.py
+# Docker: PYTHONPATH includes /app/src → `shared.*`
+# Local start task: PYTHONPATH=repo root → `src.shared.*`
 try:
     from shared.service_discovery import deregister_service, register_service
 
     service_discovery_available = True
 except ImportError:
-    service_discovery_available = False
-    register_service = None  # type: ignore
-    deregister_service = None  # type: ignore
+    try:
+        from src.shared.service_discovery import deregister_service, register_service
+
+        service_discovery_available = True
+    except ImportError:
+        service_discovery_available = False
+        register_service = None  # type: ignore
+        deregister_service = None  # type: ignore
 
 # Initialize configuration
 config = get_config()

@@ -44,6 +44,12 @@ class _CameraPipelineSettingsScreenState
   late int _segmentDuration;
   late int _storageMultiple;
   late int _trackingSessionDurationMinutes;
+  late int _framesPerCycle;
+  late int _flushIntervalCycles;
+  late double _flushMergeSimilarityThreshold;
+  late bool _normaliseEnabled;
+  late int _normaliseSpanSeconds;
+  late double _normaliseMergeThreshold;
 
   // Workflow settings state
   late bool _autoFaceDetection;
@@ -81,6 +87,12 @@ class _CameraPipelineSettingsScreenState
     _segmentDuration = widget.camera.segmentDurationSeconds;
     _storageMultiple = widget.camera.storageMultiple;
     _trackingSessionDurationMinutes = widget.camera.trackingSessionDurationMinutes;
+    _framesPerCycle = 3;
+    _flushIntervalCycles = 12;
+    _flushMergeSimilarityThreshold = 0.60;
+    _normaliseEnabled = true;
+    _normaliseSpanSeconds = 300;
+    _normaliseMergeThreshold = 0.70;
     
     // Initialize workflow settings
     _autoFaceDetection = widget.camera.autoFaceDetection;
@@ -147,6 +159,19 @@ class _CameraPipelineSettingsScreenState
           _segmentDuration = pipelineSettings['segment_duration_seconds'] as int? ?? 30;
           _storageMultiple = pipelineSettings['storage_multiple'] as int? ?? 1;
           _trackingSessionDurationMinutes = pipelineSettings['tracking_session_duration_minutes'] as int? ?? 0;
+          _framesPerCycle = pipelineSettings['frames_per_cycle'] as int? ?? 3;
+          _flushIntervalCycles = pipelineSettings['flush_interval_cycles'] as int? ?? 12;
+          _flushMergeSimilarityThreshold =
+              (pipelineSettings['flush_merge_similarity_threshold'] as num?)
+                      ?.toDouble() ??
+                  0.60;
+          _normaliseEnabled = pipelineSettings['normalise_enabled'] as bool? ?? true;
+          _normaliseSpanSeconds =
+              pipelineSettings['normalise_span_seconds'] as int? ?? 300;
+          _normaliseMergeThreshold =
+              (pipelineSettings['normalise_merge_threshold'] as num?)
+                      ?.toDouble() ??
+                  0.70;
           
           // Workflow settings
           _autoFaceDetection = workflowSettings['auto_face_detection'] as bool? ?? false;
@@ -234,6 +259,28 @@ class _CameraPipelineSettingsScreenState
       return;
     }
 
+    if (_framesPerCycle < 1 || _framesPerCycle > 15) {
+      _showError('Frames per cycle must be between 1 and 15');
+      return;
+    }
+    if (_flushIntervalCycles < 1 || _flushIntervalCycles > 3600) {
+      _showError('Flush interval must be between 1 and 3600 cycles');
+      return;
+    }
+    if (_flushMergeSimilarityThreshold < 0.30 ||
+        _flushMergeSimilarityThreshold > 0.95) {
+      _showError('Flush merge threshold must be between 0.30 and 0.95');
+      return;
+    }
+    if (_normaliseSpanSeconds < 60 || _normaliseSpanSeconds > 3600) {
+      _showError('Normalisation window must be between 60 and 3600 seconds');
+      return;
+    }
+    if (_normaliseMergeThreshold < 0.30 || _normaliseMergeThreshold > 0.95) {
+      _showError('Normalisation merge threshold must be between 0.30 and 0.95');
+      return;
+    }
+
     setState(() {
       _isSaving = true;
       _error = null;
@@ -251,6 +298,12 @@ class _CameraPipelineSettingsScreenState
         segmentDurationSeconds: _segmentDuration,
         storageMultiple: _storageMultiple,
         trackingSessionDurationMinutes: _trackingSessionDurationMinutes,
+        framesPerCycle: _framesPerCycle,
+        flushIntervalCycles: _flushIntervalCycles,
+        flushMergeSimilarityThreshold: _flushMergeSimilarityThreshold,
+        normaliseEnabled: _normaliseEnabled,
+        normaliseSpanSeconds: _normaliseSpanSeconds,
+        normaliseMergeThreshold: _normaliseMergeThreshold,
       );
 
       // Save workflow settings
@@ -948,7 +1001,7 @@ class _CameraPipelineSettingsScreenState
                     ),
                     Text(
                       'How often to start a new detection cycle (1–60 seconds). '
-                      'Each cycle samples 3 frames; if the previous Celery job is '
+                      'Each cycle samples frames_per_cycle frames; if the previous Celery job is '
                       'still running, the next submit is skipped until this interval elapses. '
                       'Does not change Vision time per frame. Higher values reduce load '
                       '(recommended 15–30s for high-res RTSP on Lima).',
@@ -957,6 +1010,214 @@ class _CameraPipelineSettingsScreenState
                         color: AppColors.textSecondary,
                       ),
                     ),
+                    const SizedBox(height: 24),
+
+                    Text(
+                      'Flush (Y-window)',
+                      style: OfflineFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Re-group + merge cycles into Media Instant Detection logs',
+                      style: OfflineFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Frames per cycle: $_framesPerCycle',
+                      style: OfflineFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Slider(
+                      value: _framesPerCycle.toDouble().clamp(1, 15),
+                      min: 1,
+                      max: 15,
+                      divisions: 14,
+                      label: '$_framesPerCycle',
+                      onChanged: (value) {
+                        setState(() {
+                          _framesPerCycle = value.round();
+                        });
+                      },
+                      activeColor: AppColors.primary,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Flush interval: $_flushIntervalCycles cycles',
+                      style: OfflineFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Slider(
+                      value: _flushIntervalCycles.toDouble().clamp(1, 60),
+                      min: 1,
+                      max: 60,
+                      divisions: 59,
+                      label: '$_flushIntervalCycles',
+                      onChanged: (value) {
+                        setState(() {
+                          _flushIntervalCycles = value.round();
+                        });
+                      },
+                      activeColor: AppColors.primary,
+                    ),
+                    Text(
+                      'Y: how many cycles buffer before re-group + hierarchical merge '
+                      'and write to Instant Detection logs (1–60 shown; API allows up to 3600).',
+                      style: OfflineFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Flush merge threshold: ${_flushMergeSimilarityThreshold.toStringAsFixed(2)}',
+                      style: OfflineFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Slider(
+                      value: _flushMergeSimilarityThreshold.clamp(0.30, 0.95),
+                      min: 0.30,
+                      max: 0.95,
+                      divisions: 65,
+                      label: _flushMergeSimilarityThreshold.toStringAsFixed(2),
+                      onChanged: (value) {
+                        setState(() {
+                          _flushMergeSimilarityThreshold =
+                              double.parse(value.toStringAsFixed(2));
+                        });
+                      },
+                      activeColor: AppColors.primary,
+                    ),
+                    Text(
+                      'Similarity for in-flush hierarchical people merge (0.30–0.95).',
+                      style: OfflineFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    Text(
+                      'Normalisation',
+                      style: OfflineFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Cross-flush people merge into derived normalised spans '
+                      '(raw flush logs stay untouched)',
+                      style: OfflineFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'Enable normalisation worker',
+                        style: OfflineFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'After each Y-flush and on catch-up, merge people per calendar window',
+                        style: OfflineFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      value: _normaliseEnabled,
+                      activeColor: AppColors.primary,
+                      onChanged: (value) {
+                        setState(() {
+                          _normaliseEnabled = value;
+                        });
+                      },
+                    ),
+                    if (_normaliseEnabled) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Normalisation window: $_normaliseSpanSeconds seconds',
+                        style: OfflineFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Slider(
+                        value: _normaliseSpanSeconds.toDouble().clamp(60, 3600),
+                        min: 60,
+                        max: 3600,
+                        divisions: 59,
+                        label: '$_normaliseSpanSeconds s',
+                        onChanged: (value) {
+                          setState(() {
+                            // Snap to 60s steps for usability
+                            _normaliseSpanSeconds =
+                                ((value / 60).round() * 60).clamp(60, 3600);
+                          });
+                        },
+                        activeColor: AppColors.primary,
+                      ),
+                      Text(
+                        'Fixed UTC calendar bucket size for cross-flush merge (60–3600s).',
+                        style: OfflineFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Normalisation merge threshold: ${_normaliseMergeThreshold.toStringAsFixed(2)}',
+                        style: OfflineFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Slider(
+                        value: _normaliseMergeThreshold.clamp(0.30, 0.95),
+                        min: 0.30,
+                        max: 0.95,
+                        divisions: 65,
+                        label: _normaliseMergeThreshold.toStringAsFixed(2),
+                        onChanged: (value) {
+                          setState(() {
+                            _normaliseMergeThreshold =
+                                double.parse(value.toStringAsFixed(2));
+                          });
+                        },
+                        activeColor: AppColors.primary,
+                      ),
+                      Text(
+                        'Similarity for cross-flush hierarchical merge (0.30–0.95). '
+                        'Stored in the normalised span upsert key.',
+                        style: OfflineFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 24),
 
                     // Storage Multiple

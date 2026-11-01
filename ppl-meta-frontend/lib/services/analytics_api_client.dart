@@ -25,6 +25,7 @@ class AnalyticsApiClient {
     List<String>? genders,
     List<String>? ageGroups,
     String? dataSource,
+    bool normalised = false,
   }) async {
     try {
       final queryParams = <String, dynamic>{
@@ -45,6 +46,8 @@ class AnalyticsApiClient {
           'age_groups': ageGroups.join(','),
         if (dataSource != null && dataSource != 'recording')
           'source_type': dataSource,
+        if (normalised && dataSource == 'instant_detection')
+          'normalised': true,
       };
 
       final response = await _apiClient.get(

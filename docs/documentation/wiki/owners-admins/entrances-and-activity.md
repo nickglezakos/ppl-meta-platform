@@ -1,7 +1,7 @@
 ---
 software_ref:
   platform_version: "2.25.82"
-  policy_revision: "2026-09-10"
+  policy_revision: "2026-10-30"
   channels_documented:
     - sandbox
     - pilot
@@ -47,7 +47,7 @@ Use this page as the **entrance story**. The figures show the controls those scr
 
 1. **Cameras** — Add RTSP or mobile camera, connect stream, start **instant detection**; confirm health on **Camera Ops**. Details: [Cameras and detection](./cameras-and-detection.md).
 2. **People & groups** — After recordings or live matches, review people in Media Preview / Details; create watchlists under **Individual Groups**. Details: [Detections…](./detections-individuals-persons.md). For “who was at this door between 09:00–10:00?”, use Collections date/time search → **Details** → **Analysis**: [Media and collections](./media-management.md).
-3. **Analytics** — Home → **Analytics** → **Filters** → Data Source (**Instant Detection** for live door traffic, or **Video Recording** for processed clips) → select the entrance collections → **Apply**. Read LEVEL 1–4 (counts, trends, demographics, heatmap / peaks). Export Excel if needed. Details: [Analytics and reports](./analytics-and-reports.md).
+3. **Analytics** — Home → **Analytics** → **Filters** → Data Source (**Instant Detection** for live door traffic, or **Video Recording** for processed clips) → select the entrance collections → **Apply**. Read LEVEL 1–4 (counts, trends, demographics, heatmap / peaks). Export Excel if needed. For one door camera’s flush vs calendar-span detail, open Cameras → Analytics → **Raw** / **Normalised**; the planned behavioural layer on normalised multi-camera Instant Detection is summarised in [Analytics and reports](./analytics-and-reports.md#c3-imminent-behavioural-layer-normalised-instant-detection). Details: [Analytics and reports](./analytics-and-reports.md).
 4. **Vradar (triggers)** — Create **actions** first, then **triggers** (typically **Instant Demographic** or **Instant People Match**) on the entrance camera; link Alert / Email / Webhook / Digital Signage. Confirm firings on Automation → **Analytics**. Details: [Vradar — alerts and automation](./alerts-and-automation.md).
 5. **Presence (optional)** — When the entrance is also a **check-in point**, ensure Settings **Video readiness** is green (active people-match / Vprofile-match trigger with camera, group, and Presence action), reserve the platform camera under Presence → **Actions** for owner-QR decode, then run **Video Match**, **Render QR**, etc. Details: [Presence and attendance](./presence-attendance.md). Presence Actions are started from the Presence screen; Vradar does not replace them — you run both when you want alerts *and* attendance.
 

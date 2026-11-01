@@ -1,7 +1,7 @@
 ---
 software_ref:
   platform_version: "2.25.82"
-  policy_revision: "2026-09-10"
+  policy_revision: "2026-11-01"
   channels_documented:
     - sandbox
     - pilot
@@ -64,7 +64,7 @@ Common fields stay the same. Only the type/mode block changes. The rest of this 
 - For **Email**: communications / SMTP configured on the installation
 - For **Digital Signage** / **Signage Rich Message**: players and playlists (or rich-message templates) set up — see [Digital signage](./digital-signage.md)
 - For **Messaging App**: a Slack or Teams incoming webhook URL
-- Specialised trigger modes (body posture, velocity, left object, vehicle + plate) need the matching detection stages enabled on the camera
+- Specialised trigger modes (body posture, motion, left object, vehicle + plate) need the matching detection stages enabled on the camera
 
 ---
 
@@ -249,7 +249,7 @@ These stay visible for every mode. Changing **Trigger Mode** swaps only the conf
 | Pattern | Modes | Control |
 |---|---|---|
 | Single camera | Instant Demographic, Instant People Match | **Camera \*** → **Select Camera** (any registered camera; detection should be running for live firings) |
-| Multi-camera inside the mode card | Search *, VProfile, Body Posture, Velocity, Left Object, Vehicle + Plate | **Cameras \*** / **Cameras to Search \*** checkboxes inside the mode card — the single **Select Camera** dropdown is hidden |
+| Multi-camera inside the mode card | Search *, VProfile, Body Posture, Motion, Left Object, Vehicle + Plate | **Cameras \*** / **Cameras to Search \*** checkboxes inside the mode card — the single **Select Camera** dropdown is hidden |
 
 ### Trigger Mode catalogue
 
@@ -259,7 +259,7 @@ Exact dropdown labels, grouped by family:
 |---|---|
 | **Core Vradar (live)** | [Instant Demographic](#instant-demographic), [Instant People Match](#instant-people-match) |
 | **Search (scheduler)** | [Search People Match](#search-people-match), [Search Demographic](#search-demographic) |
-| **Specialised** | [VProfile Match (Multi-Group, Multi-Camera)](#vprofile-match-multi-group-multi-camera), [Body Posture (Multi-Camera)](#body-posture-multi-camera), [Velocity (Multi-Camera)](#velocity-multi-camera), [Left / Stationary Object](#left--stationary-object), [Vehicle + Plate](#vehicle--plate) |
+| **Specialised** | [VProfile Match (Multi-Group, Multi-Camera)](#vprofile-match-multi-group-multi-camera), [Body Posture (Multi-Camera)](#body-posture-multi-camera), [Motion (Multi-Camera)](#motion-multi-camera), [Left / Stationary Object](#left--stationary-object), [Vehicle + Plate](#vehicle--plate) |
 
 Prefer Instant Demographic and Instant People Match for a standard Vradar setup unless your distributor has enabled a specialised path.
 
@@ -275,9 +275,9 @@ Live evaluation of demographic conditions from instant detection on **one** came
 
 | Field | Values | Explanation |
 |---|---|---|
-| **Field** | `People Count` · `Male %` · `Female %` · `Age` | What is measured in the live detection. |
+| **Field** | `People Count` · `Occupancy (span)` · `Dwell seconds` · `Path velocity avg` · `Male %` · `Female %` · `Age` | What is measured in the live detection / route payload. Occupancy (span), Dwell, and Path velocity support analytics intents (see [Trigger metrics by analytics intent](#trigger-metrics-by-analytics-intent)). |
 | **Op** | `>` `≥` `<` `≤` `=` | Comparison operator. |
-| Value | Depends on Field | Label becomes **Count**, **Percent** (suffix `%`), or **Age** (suffix `yrs`). Changing Field resets a sensible default: percent → `50`, Age → `18`, count → `1`. Age input is clamped to **1–100**. |
+| Value | Depends on Field | Label becomes **Count**, **Seconds**, **Velocity** (suffix `px/s`), **Percent** (suffix `%`), or **Age** (suffix `yrs`). Changing Field resets a sensible default: percent → `50`, Age → `18`, dwell → `30`, path velocity → `10`, count → `1`. Age input is clamped to **1–100**. |
 
 #### Camera
 
@@ -382,17 +382,29 @@ Requires body / posture detection capability on those cameras.
 
 ---
 
-### Velocity (Multi-Camera)
+### Motion (Multi-Camera)
 
-Fires when estimated speed meets a gait-band floor on selected cameras.
+Fires when motion conditions match on selected cameras. Conditions use the same row style as Instant Demographic, across three dimensions, combined with **AND** or **OR**.
 
-**Mode card:** **Velocity Configuration**
+**Mode card:** **Motion Configuration**
 
 | Field | Required | Default | Explanation |
 |---|---|---|---|
 | **Cameras \*** | Yes (≥1) | none | Cameras to watch. |
-| **Scope** | Yes | **Crowd mean** | `Crowd mean` — mean speed of the crowd; `Any person` — at least one person exceeds the floor. Helper: “Crowd = mean speed; Any person = at least one exceeds”. |
-| **Gait band (fires when speed ≥ floor)** | Yes | Walking band | `Walking (≥ 1.25 m/s ≈ 4.5 km/h)` · `Light running (≥ 2.2 m/s ≈ 8 km/h)` · `Running (≥ 3.3 m/s ≈ 12 km/h)` · `Fast running (≥ 5.0 m/s ≈ 18 km/h)`. The trigger fires when measured speed is at or above that floor. |
+| **Speed scope** | Yes | **Crowd mean** | Applies to **Speed band** rows only: `Crowd mean` — mean speed; `Any person` — at least one person exceeds the floor. |
+| **Condition logic** | Yes | **AND** | `AND` — every condition row must pass; `OR` — any one row may pass. |
+| **Motion conditions** | Yes (≥1) | one Speed band = Walking | Add rows with **+**. Each row picks a field and value (see below). |
+| **ROI** | When any row is ROI transit | unset | **Use center 50% ROI** / **Clear ROI**. Required if any condition uses ROI transit. |
+
+#### Per-condition fields
+
+| Field | Values | Explanation |
+|---|---|---|
+| **Speed band** | Walking · Light running · Running · Fast running | Fires when measured speed ≥ that gait floor (same floors as the former Velocity trigger). |
+| **Motion class** | Stationary · Directed transit · Loitering · Pacing · Erratic | Rule-based class from route shape + speed (same classes as Instant analysis). |
+| **ROI transit** | Approach · Retreat · Inside | Approach/retreat from distance-to-ROI trend (and velocity toward/away); Inside when the person center is in the polygon. |
+
+Legacy **Velocity** triggers are migrated to Motion with a single Speed band condition.
 
 ---
 
@@ -482,9 +494,9 @@ Logs below are examples only — names, times, and delivery outcomes are illustr
 
 ![Full Automation Triggers screen. Body Posture trigger selected; content pane shows alert logs.](./images/trigger-logs-body-posture.png)
 
-#### Velocity — logs
+#### Motion — logs
 
-![Full Automation Triggers screen. Velocity trigger selected; content pane shows audit log entries.](./images/trigger-logs-velocity.png)
+![Full Automation Triggers screen. Motion trigger selected; content pane shows audit log entries.](./images/trigger-logs-velocity.png)
 
 #### Left / Stationary Object — logs
 
@@ -543,6 +555,39 @@ Used in supported action text fields at fire time (`{variable_name}`).
 
 ---
 
+## Trigger metrics by analytics intent
+
+Use these Vradar condition fields when a camera is used for a given [analytics intent](./analytics-and-reports.md#c4-camera-analytics-intents). Prefer Instant Detection running (and normalisation when the metric is span-based).
+
+### Available now
+
+| Intent | Trigger mode | Condition metrics |
+|---|---|---|
+| **People Counting** | Instant Demographic · Search Demographic | **People Count** ≥ / ≤ N; optional **Male %** · **Female %** · **Age** |
+| **Occupancy Monitoring** | Instant Demographic | **People Count** ≥ capacity; Search Demographic for multi-camera lookback |
+| **Heatmaps / Path** (behaviour alerts) | Motion | **Speed band** · **Motion class** (Stationary · Directed transit · Loitering · Pacing · Erratic) · **ROI transit** (Approach · Retreat · Inside) |
+| **SOP Monitoring** | Body Posture · Motion · Instant Demographic | Target posture; speed / class; people count |
+| **Loss Prevention** | Left / Stationary Object · People Match / VProfile · Motion | Object abandon; match / NOT match; loitering class |
+
+### Shipped on Instant / Search Demographic (analytics intents)
+
+| Metric (UI label) | Intent | Suggested ops | Notes |
+|---|---|---|---|
+| `occupancy_span_count` (**Occupancy (span)**) | Occupancy | ≥ N | Uses current people count until span worker publishes an explicit value |
+| `dwell_seconds` (**Dwell seconds**) | Queue · Occupancy | ≥ T | Max `time_in_frame_seconds` from people / movement_tracking in the event |
+| `path_velocity_avg` (**Path velocity avg**) | Path | ≤ / ≥ px/s | Mean `average_route_velocity` across people with routes |
+
+### Still planned
+
+| Metric | Intent | Suggested ops | Notes |
+|---|---|---|---|
+| `peak_occupancy_window` | Occupancy · Counting | ≥ N in last T minutes | Rolling max over spans |
+| `co_presence_count` | Queue · hangout | ≥ N distinct people in one span | Normalised people with min dwell |
+| `route_density_cell` | Heatmap | ≥ hits in FOV cell / ROI | Needs ROI or grid id |
+| `queue_wait_estimate` | Queue | ≥ T | Later: ROI + dwell model |
+
+---
+
 ## Analytics tab (verify firings)
 
 1. Open **Automation** → **Analytics**.
@@ -569,6 +614,7 @@ Failed rows usually mean SMTP misconfiguration, bad webhook URL, or an inactive 
 ## Related
 
 - [Cameras and detection](./cameras-and-detection.md)
+- [Analytics and reports](./analytics-and-reports.md) (intents C.4 · Raw / Normalised)
 - [Detections, individuals and persons](./detections-individuals-persons.md)
 - [Digital signage](./digital-signage.md) (Digital Signage and Signage Rich Message actions)
 - [Entrances and activity](./entrances-and-activity.md)

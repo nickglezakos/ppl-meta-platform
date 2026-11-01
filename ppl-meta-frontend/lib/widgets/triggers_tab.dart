@@ -127,6 +127,9 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
   double _defaultConditionValueForField(String field) {
     if (_isPercentageConditionField(field)) return 50;
     if (_isAgeThresholdField(field)) return 18;
+    if (field == 'dwell_seconds') return 30;
+    if (field == 'path_velocity_avg') return 10;
+    if (field == 'occupancy_span_count') return 1;
     return 1;
   }
 
@@ -142,12 +145,16 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
   String _conditionValueLabel(String field) {
     if (_isPercentageConditionField(field)) return 'Percent';
     if (_isAgeThresholdField(field)) return 'Age';
+    if (field == 'dwell_seconds') return 'Seconds';
+    if (field == 'path_velocity_avg') return 'Velocity';
     return 'Count';
   }
 
   String? _conditionValueSuffix(String field) {
     if (_isPercentageConditionField(field)) return '%';
     if (_isAgeThresholdField(field)) return 'yrs';
+    if (field == 'dwell_seconds') return 's';
+    if (field == 'path_velocity_avg') return 'px/s';
     return null;
   }
 
@@ -431,13 +438,24 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
   }
 
   String _latestMatchSummary(TriggerModel trigger) {
-    if (trigger.triggerMode == 'velocity') {
+    if (trigger.triggerMode == 'motion' || trigger.triggerMode == 'velocity') {
       final match = trigger.lastMatchInfo;
       if (match == null || match.isEmpty) return 'No match yet';
-      final scope = match['scope']?.toString() ?? 'velocity';
+      final logic = match['logic']?.toString().toUpperCase() ?? 'AND';
+      final cam = match['camera_id']?.toString() ?? '';
+      final conditions = match['conditions'];
+      if (conditions is List && conditions.isNotEmpty) {
+        final parts = conditions.map((c) {
+          if (c is! Map) return '?';
+          final field = c['field']?.toString() ?? '?';
+          final passed = c['passed'] == true ? '✓' : '✗';
+          return '$field$passed';
+        }).join(' ');
+        return '$logic $parts • $cam';
+      }
+      final scope = match['scope']?.toString() ?? 'crowd';
       final band = match['band']?.toString() ?? '';
       final measured = match['measured_mps'];
-      final cam = match['camera_id']?.toString() ?? '';
       return '$scope ≥ $band ${measured ?? ''} m/s • $cam';
     }
     if (trigger.triggerMode == 'left_object') {
@@ -629,7 +647,8 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     'search_demographic': 'Search Demographic',
     'vprofile_match': 'VProfile Multi-Group',
     'body_posture': 'Body Posture',
-    'velocity': 'Velocity',
+    'motion': 'Motion',
+    'velocity': 'Motion',
     'left_object': 'Left / Stationary Object',
     'vehicle_plate': 'Vehicle + Plate',
   };
@@ -661,6 +680,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     'search_demographic': Icons.analytics,
     'vprofile_match': Icons.people_outline,
     'body_posture': Icons.accessibility_new,
+    'motion': Icons.speed,
     'velocity': Icons.speed,
     'left_object': Icons.luggage,
     'vehicle_plate': Icons.directions_car,
@@ -673,6 +693,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     'search_demographic': AppColors.error,
     'vprofile_match': AppColors.info,
     'body_posture': AppColors.warning,
+    'motion': AppColors.info,
     'velocity': AppColors.info,
     'left_object': Colors.orange,
     'vehicle_plate': Colors.teal,
@@ -1127,6 +1148,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
       text: trigger?.pplMatchTopK.toString() ?? '1',
     );
     String triggerMode = trigger?.triggerMode ?? 'demographic';
+    if (triggerMode == 'velocity') triggerMode = 'motion';
     String? selectedPplMatchGroupId = trigger?.pplMatchGroupId;
     List<String> selectedSearchCameraIds = trigger?.searchCameraDeviceIds ?? [];
     int searchIntervalSeconds = trigger?.searchIntervalSeconds ?? 300;
@@ -1137,8 +1159,8 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
         trigger?.triggerMode == 'body_posture'
             ? (trigger?.cameraDeviceIds ?? [])
             : <String>[];
-    List<String> selectedVelocityCameraIds =
-        trigger?.triggerMode == 'velocity'
+    List<String> selectedMotionCameraIds =
+        (trigger?.triggerMode == 'motion' || trigger?.triggerMode == 'velocity')
             ? (trigger?.cameraDeviceIds ?? [])
             : <String>[];
     List<String> selectedLeftObjectCameraIds =
@@ -1162,8 +1184,27 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
     bool leftObjectRequirePersonLeft = trigger?.leftObjectRequirePersonLeft ?? false;
     bool vehiclePlateOcrEnabled = trigger?.vehiclePlateOcrEnabled ?? true;
     String bodyPostureTarget = trigger?.bodyPostureTarget ?? 'horizontal';
-    String velocityScope = trigger?.velocityScope ?? 'crowd';
-    String velocityBand = trigger?.velocityBand ?? 'walking';
+    String motionScope = trigger?.motionScope ?? trigger?.velocityScope ?? 'crowd';
+    String motionConditionLogic = trigger?.motionConditionLogic ?? 'and';
+    List<List<double>>? motionRoi = trigger?.motionRoi;
+    List<MotionCondition> motionConditions = List<MotionCondition>.from(
+      trigger?.motionConditions ??
+          (trigger?.velocityBand != null
+              ? [
+                  MotionCondition(
+                    field: 'speed_band',
+                    operator: 'gte',
+                    value: trigger!.velocityBand,
+                  ),
+                ]
+              : [
+                  MotionCondition(
+                    field: 'speed_band',
+                    operator: 'gte',
+                    value: 'walking',
+                  ),
+                ]),
+    );
     final bodyWindowController = TextEditingController(
       text: (trigger?.bodyPostureWindowSize ?? 4).toString(),
     );
@@ -1245,7 +1286,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
       try {
         final apiClient = ref.read(apiClientProvider);
 
-        final cameraName = (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match' || triggerMode == 'body_posture' || triggerMode == 'velocity' || triggerMode == 'left_object' || triggerMode == 'vehicle_plate')
+        final cameraName = (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match' || triggerMode == 'body_posture' || triggerMode == 'motion' || triggerMode == 'velocity' || triggerMode == 'left_object' || triggerMode == 'vehicle_plate')
             ? null
             : availableCameras.firstWhere(
                 (c) => c.deviceId == selectedCameraDeviceId,
@@ -1265,14 +1306,14 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
           description: descriptionController.text.trim().isEmpty ? null : descriptionController.text.trim(),
           demographicConditions: (triggerMode == 'demographic' || triggerMode == 'search_demographic') ? demographicConditions : const [],
           timeSpan: timeSpanController.text.trim(),
-          cameraDeviceId: (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match' || triggerMode == 'body_posture' || triggerMode == 'velocity' || triggerMode == 'left_object' || triggerMode == 'vehicle_plate') ? null : selectedCameraDeviceId,
+          cameraDeviceId: (triggerMode == 'search' || triggerMode == 'search_demographic' || triggerMode == 'vprofile_match' || triggerMode == 'body_posture' || triggerMode == 'motion' || triggerMode == 'velocity' || triggerMode == 'left_object' || triggerMode == 'vehicle_plate') ? null : selectedCameraDeviceId,
           cameraName: cameraName,
           actionUuid: selectedActionUuids.isNotEmpty ? selectedActionUuids.first : null,
           actionUuids: selectedActionUuids.isNotEmpty ? selectedActionUuids : null,
           trackingDuration: '$trackingNumber $trackingUnit',
           cooldownSeconds: int.tryParse(cooldownController.text) ?? 60,
           isActive: isActive,
-          triggerMode: triggerMode,
+          triggerMode: triggerMode == 'velocity' ? 'motion' : triggerMode,
           pplMatchGroupId: (triggerMode == 'ppl_match' || triggerMode == 'search')
             ? selectedPplMatchGroupId : null,
           pplMatchGroupIds: triggerMode == 'vprofile_match' ? selectedVProfileGroupIds : null,
@@ -1280,8 +1321,8 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
               ? selectedVProfileCameraIds
               : (triggerMode == 'body_posture'
                   ? selectedBodyPostureCameraIds
-                  : (triggerMode == 'velocity'
-                      ? selectedVelocityCameraIds
+                  : (triggerMode == 'motion' || triggerMode == 'velocity'
+                      ? selectedMotionCameraIds
                       : (triggerMode == 'left_object'
                       ? selectedLeftObjectCameraIds
                       : (triggerMode == 'vehicle_plate' ? selectedVehiclePlateCameraIds : null)))),
@@ -1304,8 +1345,10 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
               ? (double.tryParse(bodyMinConfidenceController.text) ?? 0.5)
               : null,
           bodyPostureIouThreshold: triggerMode == 'body_posture' ? 0.3 : null,
-          velocityScope: triggerMode == 'velocity' ? velocityScope : null,
-          velocityBand: triggerMode == 'velocity' ? velocityBand : null,
+          motionScope: (triggerMode == 'motion' || triggerMode == 'velocity') ? motionScope : null,
+          motionConditions: (triggerMode == 'motion' || triggerMode == 'velocity') ? motionConditions : null,
+          motionConditionLogic: (triggerMode == 'motion' || triggerMode == 'velocity') ? motionConditionLogic : null,
+          motionRoi: (triggerMode == 'motion' || triggerMode == 'velocity') ? motionRoi : null,
           leftObjectClassAllowlist: triggerMode == 'left_object'
               ? selectedLeftObjectClasses.toList()
               : null,
@@ -1433,8 +1476,8 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                           child: Text('Body Posture (Multi-Camera)'),
                         ),
                         DropdownMenuItem(
-                          value: 'velocity',
-                          child: Text('Velocity (Multi-Camera)'),
+                          value: 'motion',
+                          child: Text('Motion (Multi-Camera)'),
                         ),
                         DropdownMenuItem(
                           value: 'left_object',
@@ -1452,7 +1495,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                         Text('Search Demographic', overflow: TextOverflow.ellipsis),
                         Text('VProfile Match (Multi-Group, Multi-Camera)', overflow: TextOverflow.ellipsis),
                         Text('Body Posture (Multi-Camera)', overflow: TextOverflow.ellipsis),
-                        Text('Velocity (Multi-Camera)', overflow: TextOverflow.ellipsis),
+                        Text('Motion (Multi-Camera)', overflow: TextOverflow.ellipsis),
                         Text('Left / Stationary Object', overflow: TextOverflow.ellipsis),
                         Text('Vehicle + Plate', overflow: TextOverflow.ellipsis),
                       ],
@@ -1552,6 +1595,9 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                       ),
                                       items: const [
                                         DropdownMenuItem(value: 'people_count', child: Text('People Count')),
+                                        DropdownMenuItem(value: 'occupancy_span_count', child: Text('Occupancy (span)')),
+                                        DropdownMenuItem(value: 'dwell_seconds', child: Text('Dwell seconds')),
+                                        DropdownMenuItem(value: 'path_velocity_avg', child: Text('Path velocity avg')),
                                         DropdownMenuItem(value: 'percent_male', child: Text('Male %')),
                                         DropdownMenuItem(value: 'percent_female', child: Text('Female %')),
                                         DropdownMenuItem(value: 'age_threshold', child: Text('Age')),
@@ -2017,6 +2063,9 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                           ),
                                           items: const [
                                             DropdownMenuItem(value: 'people_count', child: Text('People Count')),
+                                            DropdownMenuItem(value: 'occupancy_span_count', child: Text('Occupancy (span)')),
+                                            DropdownMenuItem(value: 'dwell_seconds', child: Text('Dwell seconds')),
+                                            DropdownMenuItem(value: 'path_velocity_avg', child: Text('Path velocity avg')),
                                             DropdownMenuItem(value: 'percent_male', child: Text('Male %')),
                                             DropdownMenuItem(value: 'percent_female', child: Text('Female %')),
                                             DropdownMenuItem(value: 'age_threshold', child: Text('Age')),
@@ -2383,7 +2432,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                           ),
                         ),
                       ),
-                    if (triggerMode == 'velocity')
+                    if (triggerMode == 'motion' || triggerMode == 'velocity')
                       Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
@@ -2395,7 +2444,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                   Icon(Icons.speed, color: AppColors.info, size: 20),
                                   SizedBox(width: 8),
                                   Text(
-                                    'Velocity Configuration',
+                                    'Motion Configuration',
                                     style: TextStyle(fontWeight: FontWeight.bold),
                                   ),
                                 ],
@@ -2419,7 +2468,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                         itemCount: availableCameras.length,
                                         itemBuilder: (context, index) {
                                           final camera = availableCameras[index];
-                                          final isSelected = selectedVelocityCameraIds.contains(camera.deviceId);
+                                          final isSelected = selectedMotionCameraIds.contains(camera.deviceId);
                                           return CheckboxListTile(
                                             dense: true,
                                             title: Text(camera.name, style: const TextStyle(fontSize: 13)),
@@ -2428,9 +2477,9 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                             onChanged: (checked) {
                                               setDialogState(() {
                                                 if (checked == true) {
-                                                  selectedVelocityCameraIds.add(camera.deviceId);
+                                                  selectedMotionCameraIds.add(camera.deviceId);
                                                 } else {
-                                                  selectedVelocityCameraIds.remove(camera.deviceId);
+                                                  selectedMotionCameraIds.remove(camera.deviceId);
                                                 }
                                               });
                                             },
@@ -2438,17 +2487,17 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                         },
                                       ),
                               ),
-                              if (selectedVelocityCameraIds.isNotEmpty)
+                              if (selectedMotionCameraIds.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4),
-                                  child: Text('${selectedVelocityCameraIds.length} camera(s) selected',
+                                  child: Text('${selectedMotionCameraIds.length} camera(s) selected',
                                       style: TextStyle(fontSize: 12, color: AppColors.gray600)),
                                 ),
                               const SizedBox(height: 12),
                               DropdownButtonFormField<String>(
-                                value: velocityScope,
+                                value: motionScope,
                                 decoration: const InputDecoration(
-                                  labelText: 'Scope',
+                                  labelText: 'Speed scope',
                                   border: OutlineInputBorder(),
                                   helperText: 'Crowd = mean speed; Any person = at least one exceeds',
                                 ),
@@ -2458,39 +2507,234 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                                 ],
                                 onChanged: (value) {
                                   if (value == null) return;
-                                  setDialogState(() => velocityScope = value);
+                                  setDialogState(() => motionScope = value);
                                 },
                               ),
                               const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
-                                value: velocityBand,
-                                decoration: const InputDecoration(
-                                  labelText: 'Gait band (fires when speed ≥ floor)',
-                                  border: OutlineInputBorder(),
-                                ),
-                                items: const [
-                                  DropdownMenuItem(
-                                    value: 'walking',
-                                    child: Text('Walking (≥ 1.25 m/s ≈ 4.5 km/h)'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'light_running',
-                                    child: Text('Light running (≥ 2.2 m/s ≈ 8 km/h)'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'running',
-                                    child: Text('Running (≥ 3.3 m/s ≈ 12 km/h)'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'fast_running',
-                                    child: Text('Fast running (≥ 5.0 m/s ≈ 18 km/h)'),
+                              Row(
+                                children: [
+                                  const Text('Condition logic', style: TextStyle(fontWeight: FontWeight.w500)),
+                                  const Spacer(),
+                                  SegmentedButton<String>(
+                                    segments: const [
+                                      ButtonSegment(value: 'and', label: Text('AND')),
+                                      ButtonSegment(value: 'or', label: Text('OR')),
+                                    ],
+                                    selected: {motionConditionLogic},
+                                    onSelectionChanged: (set) {
+                                      if (set.isEmpty) return;
+                                      setDialogState(() => motionConditionLogic = set.first);
+                                    },
                                   ),
                                 ],
-                                onChanged: (value) {
-                                  if (value == null) return;
-                                  setDialogState(() => velocityBand = value);
-                                },
                               ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Text(
+                                    motionConditionLogic == 'or'
+                                        ? 'Motion Conditions (Any may match)'
+                                        : 'Motion Conditions (All must match)',
+                                    style: const TextStyle(fontWeight: FontWeight.w500),
+                                  ),
+                                  const Spacer(),
+                                  IconButton(
+                                    icon: const Icon(Icons.add, size: 20),
+                                    tooltip: 'Add condition',
+                                    onPressed: () {
+                                      setDialogState(() {
+                                        motionConditions.add(
+                                          MotionCondition(
+                                            field: 'speed_band',
+                                            operator: 'gte',
+                                            value: 'walking',
+                                          ),
+                                        );
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                              ...List.generate(motionConditions.length, (index) {
+                                final condition = motionConditions[index];
+                                final field = condition.field;
+                                String valueAsString() {
+                                  final v = condition.value;
+                                  if (v is List && v.isNotEmpty) return v.first.toString();
+                                  return v?.toString() ?? '';
+                                }
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        flex: 3,
+                                        child: DropdownButtonFormField<String>(
+                                          value: field,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Field',
+                                            border: OutlineInputBorder(),
+                                            isDense: true,
+                                          ),
+                                          items: const [
+                                            DropdownMenuItem(value: 'speed_band', child: Text('Speed band')),
+                                            DropdownMenuItem(value: 'motion_class', child: Text('Motion class')),
+                                            DropdownMenuItem(value: 'roi_transit', child: Text('ROI transit')),
+                                          ],
+                                          onChanged: (value) {
+                                            if (value == null) return;
+                                            setDialogState(() {
+                                              dynamic defaultValue;
+                                              String op;
+                                              if (value == 'speed_band') {
+                                                defaultValue = 'walking';
+                                                op = 'gte';
+                                              } else if (value == 'motion_class') {
+                                                defaultValue = 'loitering';
+                                                op = 'eq';
+                                              } else {
+                                                defaultValue = 'approach';
+                                                op = 'eq';
+                                              }
+                                              motionConditions[index] = MotionCondition(
+                                                field: value,
+                                                operator: op,
+                                                value: defaultValue,
+                                              );
+                                            });
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        flex: 4,
+                                        child: field == 'speed_band'
+                                            ? DropdownButtonFormField<String>(
+                                                value: valueAsString().isEmpty ? 'walking' : valueAsString(),
+                                                decoration: const InputDecoration(
+                                                  labelText: 'Band (≥ floor)',
+                                                  border: OutlineInputBorder(),
+                                                  isDense: true,
+                                                ),
+                                                items: const [
+                                                  DropdownMenuItem(value: 'walking', child: Text('Walking (≥ 1.25 m/s)')),
+                                                  DropdownMenuItem(value: 'light_running', child: Text('Light running (≥ 2.2 m/s)')),
+                                                  DropdownMenuItem(value: 'running', child: Text('Running (≥ 3.3 m/s)')),
+                                                  DropdownMenuItem(value: 'fast_running', child: Text('Fast running (≥ 5.0 m/s)')),
+                                                ],
+                                                onChanged: (value) {
+                                                  if (value == null) return;
+                                                  setDialogState(() {
+                                                    motionConditions[index] = MotionCondition(
+                                                      field: 'speed_band',
+                                                      operator: 'gte',
+                                                      value: value,
+                                                    );
+                                                  });
+                                                },
+                                              )
+                                            : field == 'motion_class'
+                                                ? DropdownButtonFormField<String>(
+                                                    value: valueAsString().isEmpty ? 'loitering' : valueAsString(),
+                                                    decoration: const InputDecoration(
+                                                      labelText: 'Class',
+                                                      border: OutlineInputBorder(),
+                                                      isDense: true,
+                                                    ),
+                                                    items: const [
+                                                      DropdownMenuItem(value: 'stationary', child: Text('Stationary')),
+                                                      DropdownMenuItem(value: 'directed_transit', child: Text('Directed transit')),
+                                                      DropdownMenuItem(value: 'loitering', child: Text('Loitering')),
+                                                      DropdownMenuItem(value: 'pacing', child: Text('Pacing')),
+                                                      DropdownMenuItem(value: 'erratic', child: Text('Erratic')),
+                                                    ],
+                                                    onChanged: (value) {
+                                                      if (value == null) return;
+                                                      setDialogState(() {
+                                                        motionConditions[index] = MotionCondition(
+                                                          field: 'motion_class',
+                                                          operator: 'eq',
+                                                          value: value,
+                                                        );
+                                                      });
+                                                    },
+                                                  )
+                                                : DropdownButtonFormField<String>(
+                                                    value: valueAsString().isEmpty ? 'approach' : valueAsString(),
+                                                    decoration: const InputDecoration(
+                                                      labelText: 'Transit',
+                                                      border: OutlineInputBorder(),
+                                                      isDense: true,
+                                                    ),
+                                                    items: const [
+                                                      DropdownMenuItem(value: 'approach', child: Text('Approach')),
+                                                      DropdownMenuItem(value: 'retreat', child: Text('Retreat')),
+                                                      DropdownMenuItem(value: 'inside', child: Text('Inside')),
+                                                    ],
+                                                    onChanged: (value) {
+                                                      if (value == null) return;
+                                                      setDialogState(() {
+                                                        motionConditions[index] = MotionCondition(
+                                                          field: 'roi_transit',
+                                                          operator: 'eq',
+                                                          value: value,
+                                                        );
+                                                      });
+                                                    },
+                                                  ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.remove_circle_outline, size: 20),
+                                        onPressed: motionConditions.length > 1
+                                            ? () {
+                                                setDialogState(() {
+                                                  motionConditions.removeAt(index);
+                                                });
+                                              }
+                                            : null,
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                              if (motionConditions.any((c) => c.field == 'roi_transit')) ...[
+                                const SizedBox(height: 8),
+                                const Text('ROI', style: TextStyle(fontWeight: FontWeight.w500)),
+                                const SizedBox(height: 4),
+                                Text(
+                                  motionRoi == null
+                                      ? 'Required for ROI transit (full frame not valid)'
+                                      : 'Custom ROI (${motionRoi!.length} points)',
+                                  style: TextStyle(fontSize: 12, color: AppColors.gray600),
+                                ),
+                                const SizedBox(height: 4),
+                                Wrap(
+                                  spacing: 8,
+                                  children: [
+                                    OutlinedButton(
+                                      onPressed: () {
+                                        setDialogState(() {
+                                          motionRoi = const [
+                                            [0.25, 0.25],
+                                            [0.75, 0.25],
+                                            [0.75, 0.75],
+                                            [0.25, 0.75],
+                                          ];
+                                        });
+                                      },
+                                      child: const Text('Use center 50% ROI'),
+                                    ),
+                                    if (motionRoi != null)
+                                      TextButton(
+                                        onPressed: () {
+                                          setDialogState(() => motionRoi = null);
+                                        },
+                                        child: const Text('Clear ROI'),
+                                      ),
+                                  ],
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -2870,7 +3114,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                     const SizedBox(height: 16),
                     
                     // Camera selector (hidden for search & multicamera modes — cameras selected in their panels)
-                    if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match' && triggerMode != 'body_posture' && triggerMode != 'velocity' && triggerMode != 'left_object' && triggerMode != 'vehicle_plate') ...[
+                    if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match' && triggerMode != 'body_posture' && triggerMode != 'motion' && triggerMode != 'velocity' && triggerMode != 'left_object' && triggerMode != 'vehicle_plate') ...[
                     const Text('Camera *', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     availableCameras.isEmpty
@@ -3112,7 +3356,7 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                     return;
                   }
                   
-                  if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match' && triggerMode != 'body_posture' && triggerMode != 'velocity' && triggerMode != 'left_object' && triggerMode != 'vehicle_plate' && selectedCameraDeviceId == null) {
+                  if (triggerMode != 'search' && triggerMode != 'search_demographic' && triggerMode != 'vprofile_match' && triggerMode != 'body_posture' && triggerMode != 'motion' && triggerMode != 'velocity' && triggerMode != 'left_object' && triggerMode != 'vehicle_plate' && selectedCameraDeviceId == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Camera is required')),
                     );
@@ -3260,10 +3504,23 @@ class TriggersTabState extends ConsumerState<TriggersTab> {
                     }
                   }
 
-                  if (triggerMode == 'velocity') {
-                    if (selectedVelocityCameraIds.isEmpty) {
+                  if (triggerMode == 'motion' || triggerMode == 'velocity') {
+                    if (selectedMotionCameraIds.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Select at least one camera for Velocity mode')),
+                        const SnackBar(content: Text('Select at least one camera for Motion mode')),
+                      );
+                      return;
+                    }
+                    if (motionConditions.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Add at least one motion condition')),
+                      );
+                      return;
+                    }
+                    final needsRoi = motionConditions.any((c) => c.field == 'roi_transit');
+                    if (needsRoi && (motionRoi == null || motionRoi!.isEmpty)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Set an ROI when using ROI transit conditions')),
                       );
                       return;
                     }

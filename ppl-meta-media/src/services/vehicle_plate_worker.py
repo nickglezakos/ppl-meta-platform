@@ -226,6 +226,7 @@ class VehiclePlateWorker:
             "body_posture",
             "vprofile_match",
             "velocity",
+            "motion",
         ):
             return [str(legacy)]
         return []

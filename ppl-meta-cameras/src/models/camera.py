@@ -101,6 +101,10 @@ class Camera(Base):
     frames_per_cycle = Column(Integer, default=3)
     flush_interval_cycles = Column(Integer, default=12)
     flush_merge_similarity_threshold = Column(Float, default=0.60)
+    # Instant Detection cross-flush normalisation (derived spans)
+    normalise_enabled = Column(Boolean, default=True)
+    normalise_span_seconds = Column(Integer, default=300)
+    normalise_merge_threshold = Column(Float, default=0.70)
 
     # Workflow Configuration (Face Detection & Performance)
     auto_face_detection = Column(Boolean, default=False)

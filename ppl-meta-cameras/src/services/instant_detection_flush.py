@@ -449,15 +449,94 @@ def generate_movement_tracking(group_faces: List[Dict[str, Any]]) -> Dict[str, A
 def _merge_movement_trackings(
     trackings: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Concatenate route points from multiple trackings and recompute stats."""
-    faces: List[Dict[str, Any]] = []
+    """
+    Concatenate route points from multiple trackings.
+
+    Preserve existing velocity_magnitude / speed_mps. Recomputing from merged
+    points often collapses duplicate flush timestamps into zero velocities.
+    """
+    merged_points: List[Dict[str, Any]] = []
     for tracking in trackings:
         if not isinstance(tracking, dict):
             continue
         for point in tracking.get("route_points") or []:
             if isinstance(point, dict):
-                faces.append(point)
-    return generate_movement_tracking(faces)
+                merged_points.append(dict(point))
+    if not merged_points:
+        return generate_movement_tracking([])
+
+    def _sort_key(point: Dict[str, Any]) -> float:
+        ts = point.get("timestamp")
+        if isinstance(ts, (int, float)):
+            return float(ts)
+        epoch = _to_epoch_seconds(ts)
+        if epoch is not None:
+            return epoch
+        return float(point.get("sequence_number") or 0)
+
+    merged_points.sort(key=_sort_key)
+
+    # If every magnitude is missing/zero, bump colliding timestamps and recompute.
+    has_positive_mag = any(
+        (_safe_float(p.get("velocity_magnitude")) or 0) > 0 for p in merged_points
+    )
+    has_positive_speed = any(
+        (_safe_float(p.get("speed_mps")) or 0) > 0 for p in merged_points
+    )
+    if not has_positive_mag and not has_positive_speed and len(merged_points) >= 2:
+        bumped: List[Dict[str, Any]] = []
+        last_ts: Optional[float] = None
+        for i, point in enumerate(merged_points):
+            item = dict(point)
+            ts = _sort_key(item)
+            if last_ts is not None and ts <= last_ts:
+                ts = last_ts + 0.05
+            item["timestamp"] = ts
+            last_ts = ts
+            bumped.append(item)
+        recomputed = generate_movement_tracking(bumped)
+        # Restore any original speed_mps annotations onto recomputed points.
+        for i, point in enumerate(recomputed.get("route_points") or []):
+            if i < len(merged_points) and merged_points[i].get("speed_mps") is not None:
+                point["speed_mps"] = merged_points[i]["speed_mps"]
+        return recomputed
+
+    velocities = [
+        float(p["velocity_magnitude"])
+        for p in merged_points
+        if (_safe_float(p.get("velocity_magnitude")) or 0) > 0
+    ]
+    average_velocity = sum(velocities) / len(velocities) if velocities else 0.0
+    max_velocity = max(velocities) if velocities else 0.0
+    total_distance = 0.0
+    for i in range(1, len(merged_points)):
+        try:
+            dx = float(merged_points[i].get("center_x") or 0) - float(
+                merged_points[i - 1].get("center_x") or 0
+            )
+            dy = float(merged_points[i].get("center_y") or 0) - float(
+                merged_points[i - 1].get("center_y") or 0
+            )
+            total_distance += (dx**2 + dy**2) ** 0.5
+        except (TypeError, ValueError):
+            continue
+    time_in_frame = 0.0
+    try:
+        time_in_frame = max(0.0, _sort_key(merged_points[-1]) - _sort_key(merged_points[0]))
+    except Exception:
+        time_in_frame = 0.0
+
+    return {
+        "route_points": merged_points,
+        "movement_statistics": {
+            "total_route_points": len(merged_points),
+            "total_distance_pixels": round(total_distance, 2),
+            "average_velocity": round(average_velocity, 2),
+            "max_velocity": round(max_velocity, 2),
+            "time_in_frame_seconds": round(time_in_frame, 2),
+        },
+        "average_route_velocity": round(average_velocity, 2),
+    }
 
 
 def attach_movement_tracking_to_person_groups(
@@ -482,6 +561,253 @@ def attach_movement_tracking_to_person_groups(
     return person_groups
 
 
+def _attach_motion_classification(entity: Dict[str, Any]) -> None:
+    """Classify motion from route + speed onto InstantMvr / merge group."""
+    if not isinstance(entity, dict):
+        return
+    tracking = entity.get("movement_tracking") if isinstance(entity.get("movement_tracking"), dict) else {}
+    route_points = (
+        tracking.get("route_points")
+        or entity.get("route_points")
+        or []
+    )
+    stats = tracking.get("movement_statistics") if isinstance(tracking.get("movement_statistics"), dict) else {}
+    speed = entity.get("speed_mps")
+    if speed is None:
+        speed = stats.get("average_speed_mps")
+    try:
+        from src.services.motion_classification import classify_motion
+
+        result = classify_motion(
+            route_points=route_points if isinstance(route_points, list) else [],
+            average_speed_mps=float(speed) if speed is not None else None,
+            movement_statistics=stats,
+        )
+    except Exception:
+        return
+    motion_class = result.get("motion_class")
+    if not motion_class:
+        return
+    entity["motion_class"] = motion_class
+    entity["motion_confidence"] = result.get("motion_confidence")
+    entity["motion_features"] = result.get("motion_features")
+    entity["route_caricature"] = result.get("route_caricature")
+    if isinstance(stats, dict):
+        stats["motion_class"] = motion_class
+        if result.get("motion_confidence") is not None:
+            stats["motion_confidence"] = result.get("motion_confidence")
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def collect_cycle_speed_samples(
+    cycles: Optional[List[Dict[str, Any]]],
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Build Instant Detection cycle speed history keyed by person_object_uuid
+    and instant_mvr_uuid.
+
+    Instant computes one scalar speed_mps per detection cycle. Person object
+    UUIDs change every cycle, so InstantMvr UUID keys are required to keep
+    speeds attached through flush / merge / log search.
+    """
+    by_key: Dict[str, List[Dict[str, Any]]] = {}
+
+    def _append(key: Optional[str], sample: Dict[str, Any]) -> None:
+        if not key:
+            return
+        bucket = by_key.setdefault(str(key), [])
+        bucket.append(dict(sample))
+
+    for cycle in cycles or []:
+        if not isinstance(cycle, dict):
+            continue
+        cycle_id = cycle.get("cycle_id")
+        cycle_ts = cycle.get("timestamp")
+        for person in cycle.get("person_objects") or []:
+            if not isinstance(person, dict):
+                continue
+            pou = person.get("person_object_uuid") or person.get("person_id")
+            speed = _safe_float(person.get("speed_mps"))
+            # Skip null/negative; keep true zeros as stationary cycle samples.
+            if speed is None or speed < 0:
+                continue
+            sample = {
+                "timestamp": cycle_ts
+                or person.get("timestamp")
+                or person.get("last_seen"),
+                "speed_mps": round(speed, 4),
+                "gait_band": person.get("gait_band"),
+                "cycle_id": cycle_id,
+                "person_object_uuid": str(pou) if pou else None,
+            }
+            _append(str(pou) if pou else None, sample)
+            nested = person.get("instant_mvr")
+            if isinstance(nested, dict):
+                muid = nested.get("instant_mvr_uuid") or nested.get("mvr_people_uuid")
+                sample["instant_mvr_uuid"] = str(muid) if muid else None
+                _append(str(muid) if muid else None, sample)
+
+        for mvr in cycle.get("instant_mvrs") or []:
+            if not isinstance(mvr, dict):
+                continue
+            muid = mvr.get("instant_mvr_uuid") or mvr.get("mvr_people_uuid")
+            if not muid:
+                continue
+            # Avoid duplicating samples already keyed from nested instant_mvr.
+            if by_key.get(str(muid)):
+                continue
+            speed = _safe_float(mvr.get("speed_mps"))
+            if speed is None or speed < 0:
+                continue
+            sample = {
+                "timestamp": cycle_ts
+                or mvr.get("timestamp")
+                or mvr.get("flush_started_at"),
+                "speed_mps": round(speed, 4),
+                "gait_band": mvr.get("gait_band"),
+                "cycle_id": cycle_id,
+                "instant_mvr_uuid": str(muid),
+                "person_object_uuid": mvr.get("person_object_uuid"),
+            }
+            _append(str(muid), sample)
+            pou = mvr.get("person_object_uuid")
+            if pou:
+                _append(str(pou), sample)
+    return by_key
+
+
+def _annotate_route_points_with_cycle_speeds(
+    route_points: List[Dict[str, Any]],
+    speed_samples: List[Dict[str, Any]],
+) -> None:
+    """Stamp each route point with nearest positive cycle speed_mps when missing."""
+    if not route_points or not speed_samples:
+        return
+    timed: List[tuple] = []
+    for sample in speed_samples:
+        speed = _safe_float(sample.get("speed_mps"))
+        # Never stamp 0 onto route points — that hides px velocity_magnitude.
+        if speed is None or speed <= 0:
+            continue
+        ts = sample.get("timestamp")
+        ts_num: Optional[float] = None
+        if isinstance(ts, (int, float)):
+            ts_num = float(ts)
+        elif isinstance(ts, str) and ts.strip():
+            try:
+                parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                ts_num = parsed.timestamp()
+            except ValueError:
+                ts_num = None
+        timed.append((ts_num, speed))
+    if not timed:
+        return
+    timed.sort(key=lambda item: item[0] if item[0] is not None else 0.0)
+
+    for point in route_points:
+        if not isinstance(point, dict):
+            continue
+        if _safe_float(point.get("speed_mps")) is not None:
+            continue
+        pts = point.get("timestamp")
+        pts_num: Optional[float] = None
+        if isinstance(pts, (int, float)):
+            pts_num = float(pts)
+            # Relative / short offsets stay relative; epoch seconds stay absolute.
+            if pts_num > 1e12:
+                pts_num = pts_num / 1000.0
+        elif isinstance(pts, str) and pts.strip():
+            try:
+                parsed = datetime.fromisoformat(pts.replace("Z", "+00:00"))
+                pts_num = parsed.timestamp()
+            except ValueError:
+                pts_num = None
+
+        best_speed = timed[-1][1]
+        if pts_num is not None:
+            best_dist = None
+            for ts_num, speed in timed:
+                if ts_num is None:
+                    continue
+                dist = abs(ts_num - pts_num)
+                if best_dist is None or dist < best_dist:
+                    best_dist = dist
+                    best_speed = speed
+        point["speed_mps"] = round(float(best_speed), 4)
+
+
+def _copy_person_speed_onto_mvr(
+    mvr: Dict[str, Any],
+    person: Optional[Dict[str, Any]],
+    *,
+    speed_samples: Optional[List[Dict[str, Any]]] = None,
+) -> None:
+    """Copy cycle person_object speed_mps / gait_band onto an InstantMvr record."""
+    samples = list(speed_samples or [])
+    if samples:
+        mvr["speed_samples"] = samples
+
+    # Person-level summary: mean of positive cycle speeds only. Stationary
+    # (0 m/s) cycles are kept in speed_samples for the Motion chart, but must
+    # not zero-out the InstantMvr average used by logs / Statistics.
+    positive_speeds = [
+        s
+        for s in (_safe_float(item.get("speed_mps")) for item in samples)
+        if s is not None and s > 0
+    ]
+    if positive_speeds:
+        mean_speed = round(sum(positive_speeds) / len(positive_speeds), 4)
+        mvr["speed_mps"] = mean_speed
+        # Prefer gait from the fastest positive sample.
+        best_sample = max(
+            (
+                item
+                for item in samples
+                if (_safe_float(item.get("speed_mps")) or 0) > 0
+            ),
+            key=lambda item: _safe_float(item.get("speed_mps")) or 0.0,
+        )
+        if best_sample.get("gait_band"):
+            mvr["gait_band"] = str(best_sample["gait_band"])
+        stats = (mvr.get("movement_tracking") or {}).get("movement_statistics")
+        if isinstance(stats, dict):
+            stats["average_speed_mps"] = mean_speed
+            if best_sample.get("gait_band"):
+                stats["gait_band"] = str(best_sample["gait_band"])
+        return
+
+    if not person:
+        return
+    speed = person.get("speed_mps")
+    gait = person.get("gait_band")
+    if speed is None and gait is None:
+        return
+    if speed is not None:
+        try:
+            speed = round(float(speed), 4)
+        except (TypeError, ValueError):
+            speed = None
+    # Do not publish a lone 0 average when we have no positive cycle evidence.
+    if speed is not None and speed > 0:
+        mvr["speed_mps"] = speed
+    if gait:
+        mvr["gait_band"] = str(gait)
+    stats = (mvr.get("movement_tracking") or {}).get("movement_statistics")
+    if isinstance(stats, dict):
+        if speed is not None and speed > 0:
+            stats["average_speed_mps"] = speed
+        if gait:
+            stats["gait_band"] = str(gait)
+
+
 def attach_movement_tracking_to_instant_mvrs(
     instant_mvrs: List[Dict[str, Any]],
     person_groups: List[Dict[str, Any]],
@@ -492,6 +818,7 @@ def attach_movement_tracking_to_instant_mvrs(
 
     Prefer matching person_groups by person_object_uuid; else use cycle
     person_objects faces; else a single-point route from InstantMvr bbox.
+    Also copies speed_mps / gait_band from cycle person_objects when present.
     """
     group_by_pou: Dict[str, Dict[str, Any]] = {}
     for group in person_groups or []:
@@ -508,21 +835,28 @@ def attach_movement_tracking_to_instant_mvrs(
                 continue
             pou = person.get("person_object_uuid") or person.get("person_id")
             if pou:
+                # Keep last cycle person for face/route fallback; speeds use samples.
                 cycle_persons_by_pou[str(pou)] = person
+
+    speed_samples_by_key = collect_cycle_speed_samples(cycles)
 
     for mvr in instant_mvrs or []:
         if not isinstance(mvr, dict):
             continue
         pou = mvr.get("person_object_uuid")
+        muid = mvr.get("instant_mvr_uuid") or mvr.get("mvr_people_uuid")
         tracking = None
-        if pou and str(pou) in group_by_pou:
-            group = group_by_pou[str(pou)]
+        matched_person: Optional[Dict[str, Any]] = None
+        pou_key = str(pou) if pou else None
+        if pou_key and pou_key in cycle_persons_by_pou:
+            matched_person = cycle_persons_by_pou[pou_key]
+        if pou_key and pou_key in group_by_pou:
+            group = group_by_pou[pou_key]
             tracking = group.get("movement_tracking")
             if not tracking and group.get("route_points"):
                 tracking = generate_movement_tracking(group.get("faces") or [])
-        if tracking is None and pou and str(pou) in cycle_persons_by_pou:
-            person = cycle_persons_by_pou[str(pou)]
-            tracking = generate_movement_tracking(person.get("faces") or [])
+        if tracking is None and matched_person is not None:
+            tracking = generate_movement_tracking(matched_person.get("faces") or [])
         if tracking is None:
             # Single-point fallback from InstantMvr best bbox.
             bbox = mvr.get("bbox")
@@ -538,12 +872,56 @@ def attach_movement_tracking_to_instant_mvrs(
                 ]
             tracking = generate_movement_tracking(faces)
 
+        route_points = list(tracking.get("route_points") or [])
+        person_samples: List[Dict[str, Any]] = []
+        if pou_key:
+            person_samples.extend(speed_samples_by_key.get(pou_key, []))
+        if muid:
+            for sample in speed_samples_by_key.get(str(muid), []):
+                person_samples.append(sample)
+        # Deduplicate by (cycle_id, timestamp, speed).
+        deduped: List[Dict[str, Any]] = []
+        seen_keys: set = set()
+        for sample in person_samples:
+            key = (
+                sample.get("cycle_id"),
+                sample.get("timestamp"),
+                sample.get("speed_mps"),
+            )
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            deduped.append(sample)
+        person_samples = deduped
+        # Seed from live InstantMvr speed when cycle lookup missed.
+        if not person_samples:
+            live_speed = _safe_float(mvr.get("speed_mps"))
+            if live_speed is not None and live_speed >= 0:
+                person_samples = [
+                    {
+                        "timestamp": mvr.get("timestamp") or mvr.get("flush_started_at"),
+                        "speed_mps": round(live_speed, 4),
+                        "gait_band": mvr.get("gait_band"),
+                        "instant_mvr_uuid": str(muid) if muid else None,
+                        "person_object_uuid": pou_key,
+                    }
+                ]
+
+        _annotate_route_points_with_cycle_speeds(route_points, person_samples)
+
+        stats = dict(tracking.get("movement_statistics") or {})
         mvr["movement_tracking"] = {
-            "route_points": tracking.get("route_points") or [],
-            "movement_statistics": tracking.get("movement_statistics") or {},
+            "route_points": route_points,
+            "movement_statistics": stats,
         }
-        mvr["route_points"] = tracking.get("route_points") or []
+        mvr["route_points"] = route_points
         mvr["average_route_velocity"] = tracking.get("average_route_velocity") or 0.0
+        _copy_person_speed_onto_mvr(
+            mvr,
+            matched_person,
+            speed_samples=person_samples,
+        )
+        _attach_motion_classification(mvr)
     return instant_mvrs
 
 
@@ -579,6 +957,8 @@ def attach_movement_tracking_to_merge_result(
                     member_uids.append(str(uid))
 
         trackings = []
+        speeds: List[float] = []
+        group_speed_samples: List[Dict[str, Any]] = []
         for uid in member_uids:
             mvr = mvr_by_uid.get(uid)
             if not mvr:
@@ -586,13 +966,78 @@ def attach_movement_tracking_to_merge_result(
             tracking = mvr.get("movement_tracking")
             if isinstance(tracking, dict):
                 trackings.append(tracking)
+            member_samples = mvr.get("speed_samples")
+            if isinstance(member_samples, list):
+                for sample in member_samples:
+                    if isinstance(sample, dict):
+                        group_speed_samples.append(dict(sample))
+            raw_speed = mvr.get("speed_mps")
+            if raw_speed is None:
+                nested = (tracking or {}).get("movement_statistics") or {}
+                raw_speed = nested.get("average_speed_mps")
+            if raw_speed is None:
+                continue
+            try:
+                speeds.append(float(raw_speed))
+            except (TypeError, ValueError):
+                continue
         combined = _merge_movement_trackings(trackings)
+        stats = dict(combined["movement_statistics"] or {})
+        fastest: Optional[Dict[str, Any]] = None
+        if speeds:
+            avg_speed = round(sum(speeds) / len(speeds), 4)
+            stats["average_speed_mps"] = avg_speed
+            group["speed_mps"] = avg_speed
+            # Prefer gait from the fastest member when available.
+            best = -1.0
+            for uid in member_uids:
+                mvr = mvr_by_uid.get(uid)
+                if not mvr or mvr.get("speed_mps") is None:
+                    continue
+                try:
+                    sp = float(mvr["speed_mps"])
+                except (TypeError, ValueError):
+                    continue
+                if sp > best:
+                    best = sp
+                    fastest = mvr
+            if fastest and fastest.get("gait_band"):
+                stats["gait_band"] = str(fastest["gait_band"])
+                group["gait_band"] = str(fastest["gait_band"])
+        if group_speed_samples:
+            group["speed_samples"] = group_speed_samples
+            # Fan out full cycle history onto every member so log-search winners
+            # keep Motion-tab samples even when only the super InstantMvr is sent.
+            for uid in member_uids:
+                mvr = mvr_by_uid.get(uid)
+                if not mvr:
+                    continue
+                existing = mvr.get("speed_samples")
+                if isinstance(existing, list) and len(existing) >= len(group_speed_samples):
+                    continue
+                mvr["speed_samples"] = [dict(s) for s in group_speed_samples]
+                positive = [
+                    s
+                    for s in (_safe_float(item.get("speed_mps")) for item in group_speed_samples)
+                    if s is not None and s > 0
+                ]
+                if positive and (_safe_float(mvr.get("speed_mps")) or 0) <= 0:
+                    mvr["speed_mps"] = round(sum(positive) / len(positive), 4)
         group["movement_tracking"] = {
             "route_points": combined["route_points"],
-            "movement_statistics": combined["movement_statistics"],
+            "movement_statistics": stats,
         }
         group["route_points"] = combined["route_points"]
         group["average_route_velocity"] = combined["average_route_velocity"]
+        # Prefer member motion_class from fastest; else classify combined route.
+        if fastest and fastest.get("motion_class"):
+            group["motion_class"] = fastest.get("motion_class")
+            group["motion_confidence"] = fastest.get("motion_confidence")
+            group["motion_features"] = fastest.get("motion_features")
+            group["route_caricature"] = fastest.get("route_caricature")
+            stats["motion_class"] = group["motion_class"]
+        else:
+            _attach_motion_classification(group)
     return merge_result
 
 
@@ -856,10 +1301,41 @@ def run_y_window_flush(
         },
     }
     log_id = _write_media_log(log_body, auth_token)
-    return {
+    result = {
         "success": bool(log_id),
         "flushed": True,
         "log_id": log_id,
         "people_count": people_count,
         "cycle_count": len(cycles),
+        "flush_started_at": started.isoformat(),
+        "flush_ended_at": ended.isoformat(),
     }
+    if log_id:
+        try:
+            from src.services.instant_detection_normalise import (
+                enqueue_normalise_spans_for_flush_window,
+                resolve_camera_normalise_settings,
+            )
+
+            settings = resolve_camera_normalise_settings(camera_id)
+            if not settings.get("enabled", True):
+                logger.info(
+                    "Normalise skipped after flush for %s (normalise_enabled=false)",
+                    camera_id,
+                )
+            else:
+                enqueue_normalise_spans_for_flush_window(
+                    camera_id,
+                    flush_started_at=started,
+                    flush_ended_at=ended,
+                    auth_token=auth_token,
+                    merge_threshold=float(settings["merge_threshold"]),
+                    span_seconds=int(settings["span_seconds"]),
+                )
+        except Exception as norm_exc:
+            logger.warning(
+                "Normalise enqueue after flush failed for %s: %s",
+                camera_id,
+                norm_exc,
+            )
+    return result

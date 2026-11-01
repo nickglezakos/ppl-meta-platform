@@ -3268,6 +3268,17 @@ async def get_pipeline_settings(
                 if getattr(camera, "flush_merge_similarity_threshold", None) is not None
                 else 0.60
             ),
+            "normalise_enabled": (
+                bool(getattr(camera, "normalise_enabled", True))
+                if getattr(camera, "normalise_enabled", None) is not None
+                else True
+            ),
+            "normalise_span_seconds": getattr(camera, "normalise_span_seconds", None) or 300,
+            "normalise_merge_threshold": (
+                getattr(camera, "normalise_merge_threshold", None)
+                if getattr(camera, "normalise_merge_threshold", None) is not None
+                else 0.70
+            ),
             "created_at": camera.created_at.isoformat() if camera.created_at else None,
             "updated_at": camera.updated_at.isoformat() if camera.updated_at else None,
         }
@@ -3294,6 +3305,9 @@ async def update_pipeline_settings(
     frames_per_cycle: int = 3,
     flush_interval_cycles: int = 12,
     flush_merge_similarity_threshold: float = 0.60,
+    normalise_enabled: bool = True,
+    normalise_span_seconds: int = 300,
+    normalise_merge_threshold: float = 0.70,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
 ) -> Dict:
@@ -3363,6 +3377,16 @@ async def update_pipeline_settings(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="flush_merge_similarity_threshold must be between 0.30 and 0.95",
             )
+        if normalise_span_seconds < 60 or normalise_span_seconds > 3600:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="normalise_span_seconds must be between 60 and 3600",
+            )
+        if normalise_merge_threshold < 0.30 or normalise_merge_threshold > 0.95:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="normalise_merge_threshold must be between 0.30 and 0.95",
+            )
         
         # Get camera from database
         camera = db.query(Camera).filter(Camera.device_id == device_id).first()
@@ -3382,6 +3406,9 @@ async def update_pipeline_settings(
         camera.frames_per_cycle = frames_per_cycle
         camera.flush_interval_cycles = flush_interval_cycles
         camera.flush_merge_similarity_threshold = flush_merge_similarity_threshold
+        camera.normalise_enabled = bool(normalise_enabled)
+        camera.normalise_span_seconds = normalise_span_seconds
+        camera.normalise_merge_threshold = normalise_merge_threshold
         # Recording pipeline = continuous segment → Enhanced V2 → individuals/MVR.
         # Keep auto_face_detection aligned so a separate workflow save cannot leave
         # recording ON while post-segment face/MVR stays permanently skipped.
@@ -3441,6 +3468,17 @@ async def update_pipeline_settings(
                 getattr(camera, "flush_merge_similarity_threshold", None)
                 if getattr(camera, "flush_merge_similarity_threshold", None) is not None
                 else 0.60
+            ),
+            "normalise_enabled": (
+                bool(getattr(camera, "normalise_enabled", True))
+                if getattr(camera, "normalise_enabled", None) is not None
+                else True
+            ),
+            "normalise_span_seconds": getattr(camera, "normalise_span_seconds", None) or 300,
+            "normalise_merge_threshold": (
+                getattr(camera, "normalise_merge_threshold", None)
+                if getattr(camera, "normalise_merge_threshold", None) is not None
+                else 0.70
             ),
             "updated_at": camera.updated_at.isoformat() if camera.updated_at else None,
         }

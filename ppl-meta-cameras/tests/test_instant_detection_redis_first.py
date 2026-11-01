@@ -10,6 +10,127 @@ def test_flush_buffer_key():
     assert flush_buffer_key("cam-1") == "instant_detection_flush_buffer:cam-1"
 
 
+def test_attach_movement_tracking_copies_speed_from_cycle_person():
+    from src.services.instant_detection_flush import (
+        attach_movement_tracking_to_instant_mvrs,
+    )
+
+    mvrs = [
+        {
+            "instant_mvr_uuid": "m1",
+            "person_object_uuid": "p1",
+            "bbox": [10, 20, 30, 40],
+        }
+    ]
+    cycles = [
+        {
+            "cycle_id": "c1",
+            "timestamp": "2024-01-01T00:00:00+00:00",
+            "person_objects": [
+                {
+                    "person_object_uuid": "p1",
+                    "speed_mps": 1.0,
+                    "gait_band": "walking",
+                    "faces": [
+                        {
+                            "bbox": [10, 20, 30, 40],
+                            "confidence": 0.9,
+                            "frame_number": 0,
+                            "timestamp": 1700000000.0,
+                        },
+                        {
+                            "bbox": [14, 24, 34, 44],
+                            "confidence": 0.8,
+                            "frame_number": 1,
+                            "timestamp": 1700000000.5,
+                        },
+                    ],
+                }
+            ],
+        },
+        {
+            "cycle_id": "c2",
+            "timestamp": "2024-01-01T00:00:05+00:00",
+            "person_objects": [
+                {
+                    "person_object_uuid": "p1",
+                    "speed_mps": 2.5,
+                    "gait_band": "light_running",
+                    "faces": [
+                        {
+                            "bbox": [20, 30, 40, 50],
+                            "confidence": 0.9,
+                            "frame_number": 2,
+                            "timestamp": 1700000005.0,
+                        },
+                    ],
+                }
+            ],
+        },
+    ]
+    attach_movement_tracking_to_instant_mvrs(mvrs, [], cycles=cycles)
+    assert mvrs[0]["speed_mps"] == 1.75  # mean of positive cycle samples
+    assert mvrs[0]["gait_band"] == "light_running"
+    assert len(mvrs[0]["speed_samples"]) == 2
+    assert mvrs[0]["speed_samples"][0]["speed_mps"] == 1.0
+    assert mvrs[0]["speed_samples"][1]["speed_mps"] == 2.5
+    stats = mvrs[0]["movement_tracking"]["movement_statistics"]
+    assert stats["average_speed_mps"] == 1.75
+    assert stats["gait_band"] == "light_running"
+    # Route points should carry nearest cycle speed_mps for Motion charts.
+    assert any(
+        (pt.get("speed_mps") or 0) > 0 for pt in mvrs[0]["route_points"]
+    )
+
+
+def test_attach_movement_tracking_ignores_zero_speeds_in_average():
+    from src.services.instant_detection_flush import (
+        attach_movement_tracking_to_instant_mvrs,
+    )
+
+    mvrs = [
+        {
+            "instant_mvr_uuid": "m1",
+            "person_object_uuid": "p1",
+            "bbox": [10, 20, 30, 40],
+        }
+    ]
+    cycles = [
+        {
+            "cycle_id": "c0",
+            "timestamp": "2024-01-01T00:00:00+00:00",
+            "person_objects": [
+                {
+                    "person_object_uuid": "p1",
+                    "speed_mps": 0.0,
+                    "gait_band": None,
+                    "faces": [{"bbox": [10, 20, 30, 40], "timestamp": 1.0}],
+                }
+            ],
+        },
+        {
+            "cycle_id": "c1",
+            "timestamp": "2024-01-01T00:00:05+00:00",
+            "person_objects": [
+                {
+                    "person_object_uuid": "p1",
+                    "speed_mps": 2.0,
+                    "gait_band": "light_running",
+                    "faces": [
+                        {"bbox": [10, 20, 30, 40], "timestamp": 5.0},
+                        {"bbox": [20, 30, 40, 50], "timestamp": 5.5},
+                    ],
+                }
+            ],
+        },
+    ]
+    attach_movement_tracking_to_instant_mvrs(mvrs, [], cycles=cycles)
+    assert mvrs[0]["speed_mps"] == 2.0
+    assert len(mvrs[0]["speed_samples"]) == 2
+    assert mvrs[0]["speed_samples"][0]["speed_mps"] == 0.0
+    assert mvrs[0]["movement_tracking"]["movement_statistics"]["average_speed_mps"] == 2.0
+
+
 def test_generate_movement_tracking_from_faces():
     from src.services.instant_detection_flush import (
         attach_movement_tracking_to_person_groups,

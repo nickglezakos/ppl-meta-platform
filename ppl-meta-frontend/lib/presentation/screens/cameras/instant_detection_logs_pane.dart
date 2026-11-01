@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/camera_providers.dart';
 import '../../../core/theme/theme_kit.dart';
 import '../../../models/cross_video_analysis_models.dart';
+import '../../../providers/instant_analytics_view_mode_provider.dart';
 import '../../../providers/settings_providers.dart';
 import '../../../screens/person_objects_detail_screen.dart';
 import '../../../utils/offline_fonts.dart';
@@ -13,6 +14,7 @@ import '../../../widgets/collections_search_dialog.dart';
 
 /// Camera content-pane view of Instant Detection flush logs
 /// (Media `instant_detection_logs` — separate from Automation action logs).
+/// Analytics intents live on AnalyticsScreen, not here.
 class InstantDetectionLogsPane extends ConsumerStatefulWidget {
   const InstantDetectionLogsPane({
     super.key,
@@ -33,6 +35,7 @@ class _InstantDetectionLogsPaneState
   String? _error;
   List<Map<String, dynamic>> _logs = const [];
   int? _expandedId;
+  InstantAnalyticsViewMode? _loadedMode;
 
   @override
   void initState() {
@@ -48,18 +51,28 @@ class _InstantDetectionLogsPaneState
     }
   }
 
+  bool get _isNormalised =>
+      ref.read(instantAnalyticsViewModeProvider).isNormalised;
+
   Future<void> _load() async {
+    final mode = ref.read(instantAnalyticsViewModeProvider);
     setState(() {
       _loading = true;
       _error = null;
       _expandedId = null;
+      _loadedMode = mode;
     });
     try {
       final client = ref.read(mediaApiClientProvider);
-      final rows = await client.listInstantDetectionLogs(
-        cameraDeviceId: widget.cameraDeviceId,
-        limit: 50,
-      );
+      final rows = mode.isNormalised
+          ? await client.listInstantDetectionNormalisedSpans(
+              cameraDeviceId: widget.cameraDeviceId,
+              limit: 50,
+            )
+          : await client.listInstantDetectionLogs(
+              cameraDeviceId: widget.cameraDeviceId,
+              limit: 50,
+            );
       if (!mounted) return;
       setState(() {
         _logs = rows;
@@ -74,6 +87,41 @@ class _InstantDetectionLogsPaneState
     }
   }
 
+  List<Map<String, dynamic>> _collectNormalisedIndividuals(
+    List<Map<String, dynamic>> spans,
+  ) {
+    final collected = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    for (final span in spans) {
+      final payload = span['payload_json'];
+      if (payload is! Map) continue;
+      final individuals = payload['individuals'];
+      if (individuals is! List) continue;
+      for (final raw in individuals) {
+        if (raw is! Map) continue;
+        final person = Map<String, dynamic>.from(raw);
+        final uid = person['instant_mvr_uuid']?.toString() ??
+            person['mvr_people_uuid']?.toString() ??
+            person['super_individual_uuid']?.toString();
+        if (uid == null || uid.isEmpty || !seen.add(uid)) continue;
+        person['instant_mvr_uuid'] = uid;
+        person['mvr_people_uuid'] = person['mvr_people_uuid'] ?? uid;
+        person['camera_id'] =
+            person['camera_id'] ?? span['camera_device_id'] ?? widget.cameraDeviceId;
+        person['camera_device_id'] =
+            span['camera_device_id'] ?? widget.cameraDeviceId;
+        person['source'] = 'normalised_individual';
+        person['normalised_span_id'] = span['id'];
+        person['flush_started_at'] =
+            person['flush_started_at'] ?? span['span_start'];
+        person['flush_ended_at'] =
+            person['flush_ended_at'] ?? span['span_end'];
+        collected.add(person);
+      }
+    }
+    return collected;
+  }
+
   String _fmt(dynamic value) {
     if (value == null) return '—';
     final s = value.toString();
@@ -81,6 +129,215 @@ class _InstantDetectionLogsPaneState
       return s.substring(0, 19).replaceFirst('T', ' ');
     }
     return s;
+  }
+
+  String _formatGaitBandLabel(String band) {
+    switch (band.trim().toLowerCase()) {
+      case 'walking':
+        return 'Walking';
+      case 'light_running':
+        return 'Light running';
+      case 'running':
+        return 'Running';
+      case 'fast_running':
+        return 'Fast running';
+      default:
+        return band.replaceAll('_', ' ');
+    }
+  }
+
+  String _formatMotionClassLabel(String motionClass) {
+    switch (motionClass.trim().toLowerCase()) {
+      case 'stationary':
+        return 'Stationary';
+      case 'directed_transit':
+        return 'Directed transit';
+      case 'loitering':
+        return 'Loitering';
+      case 'pacing':
+        return 'Pacing';
+      case 'erratic':
+        return 'Erratic';
+      default:
+        return motionClass.replaceAll('_', ' ');
+    }
+  }
+
+  List<Map<String, dynamic>> _flushMotionEntities(Map<String, dynamic> payload) {
+    final merge = payload['hierarchical_merge'];
+    if (merge is Map) {
+      final groups = merge['merge_groups'];
+      if (groups is List && groups.isNotEmpty) {
+        return groups.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      }
+    }
+    final mvrs = payload['instant_mvrs'];
+    if (mvrs is List && mvrs.isNotEmpty) {
+      return mvrs.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    final groups = payload['person_groups'];
+    if (groups is List && groups.isNotEmpty) {
+      return groups.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    return const [];
+  }
+
+  double? _entitySpeedMps(Map<String, dynamic> entity) {
+    final direct = entity['speed_mps'] ?? entity['average_speed_mps'];
+    if (direct is num && direct > 0) return direct.toDouble();
+    final tracking = entity['movement_tracking'];
+    if (tracking is Map) {
+      final stats = tracking['movement_statistics'];
+      if (stats is Map) {
+        final nested = stats['average_speed_mps'] ?? stats['speed_mps'];
+        if (nested is num && nested > 0) return nested.toDouble();
+      }
+    }
+    return null;
+  }
+
+  String? _entityGait(Map<String, dynamic> entity) {
+    final gait = entity['gait_band'];
+    if (gait is String && gait.isNotEmpty) return gait;
+    final tracking = entity['movement_tracking'];
+    if (tracking is Map) {
+      final stats = tracking['movement_statistics'];
+      if (stats is Map) {
+        final nested = stats['gait_band'];
+        if (nested is String && nested.isNotEmpty) return nested;
+      }
+    }
+    return null;
+  }
+
+  String? _entityMotionClass(Map<String, dynamic> entity) {
+    final cls = entity['motion_class'];
+    if (cls is String && cls.isNotEmpty && cls.toLowerCase() != 'unknown') {
+      return cls;
+    }
+    final tracking = entity['movement_tracking'];
+    if (tracking is Map) {
+      final stats = tracking['movement_statistics'];
+      if (stats is Map) {
+        final nested = stats['motion_class'];
+        if (nested is String &&
+            nested.isNotEmpty &&
+            nested.toLowerCase() != 'unknown') {
+          return nested;
+        }
+      }
+    }
+    return null;
+  }
+
+  Widget _motionChip(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.info.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(AppRadius.chipBadge),
+        border: Border.all(color: AppColors.info.withOpacity(0.25)),
+      ),
+      child: Text(
+        '$label $value',
+        style: OfflineFonts.inter(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: AppColors.textPrimary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFlushMotionSummary(Map<String, dynamic> payload) {
+    final entities = _flushMotionEntities(payload);
+    final speeds = <double>[];
+    final gaitCounts = <String, int>{};
+    final motionCounts = <String, int>{};
+    for (final entity in entities) {
+      final speed = _entitySpeedMps(entity);
+      if (speed != null) speeds.add(speed);
+      final gait = _entityGait(entity);
+      if (gait != null) {
+        gaitCounts[gait] = (gaitCounts[gait] ?? 0) + 1;
+      }
+      final motion = _entityMotionClass(entity);
+      if (motion != null) {
+        motionCounts[motion] = (motionCounts[motion] ?? 0) + 1;
+      }
+    }
+    if (speeds.isEmpty && gaitCounts.isEmpty && motionCounts.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    String? dominant(Map<String, int> counts) {
+      if (counts.isEmpty) return null;
+      return counts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+    }
+    final avg = speeds.isEmpty
+        ? null
+        : speeds.reduce((a, b) => a + b) / speeds.length;
+    final gait = dominant(gaitCounts);
+    final motion = dominant(motionCounts);
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        if (avg != null) _motionChip('Avg', '${avg.toStringAsFixed(2)} m/s'),
+        if (gait != null) _motionChip('Gait', _formatGaitBandLabel(gait)),
+        if (motion != null)
+          _motionChip('Motion', _formatMotionClassLabel(motion)),
+      ],
+    );
+  }
+
+  Widget _buildFlushMotionDetail(Map<String, dynamic> payload) {
+    final entities = _flushMotionEntities(payload);
+    if (entities.isEmpty) return const SizedBox.shrink();
+    final rows = <Widget>[];
+    for (var i = 0; i < entities.length && i < 8; i++) {
+      final entity = entities[i];
+      final speed = _entitySpeedMps(entity);
+      final gait = _entityGait(entity);
+      final motion = _entityMotionClass(entity);
+      if (speed == null && gait == null && motion == null) continue;
+      final id = entity['person_object_uuid'] ??
+          entity['instant_mvr_uuid'] ??
+          entity['group_id'] ??
+          entity['super_individual_uuid'] ??
+          '#${i + 1}';
+      final parts = <String>[];
+      if (speed != null) parts.add('${speed.toStringAsFixed(2)} m/s');
+      if (gait != null) parts.add(_formatGaitBandLabel(gait));
+      if (motion != null) parts.add(_formatMotionClassLabel(motion));
+      rows.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Text(
+            '${id.toString().length > 12 ? '${id.toString().substring(0, 12)}…' : id}: ${parts.join(' · ')}',
+            style: OfflineFonts.inter(
+              fontSize: 11,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+      );
+    }
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Motion per person',
+          style: OfflineFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        ...rows,
+      ],
+    );
   }
 
   /// Prefer Vision person_groups; fall back to hierarchical merge / InstantMvrs.
@@ -240,23 +497,117 @@ class _InstantDetectionLogsPaneState
     Map<String, dynamic> record,
     Map<String, dynamic>? tracking,
   ) {
-    if (tracking == null) return;
+    if (tracking == null) {
+      _preserveSpeedFields(record);
+      _preserveMotionFields(record);
+      return;
+    }
+    final stats = Map<String, dynamic>.from(
+      tracking['movement_statistics'] as Map? ?? const {},
+    );
+    // Keep ground-speed fields from record or tracking stats (do not invent m/s).
+    final speed = record['speed_mps'] ??
+        tracking['speed_mps'] ??
+        stats['average_speed_mps'];
+    final gait = record['gait_band'] ??
+        tracking['gait_band'] ??
+        stats['gait_band'];
+    if (speed != null) {
+      stats['average_speed_mps'] = speed;
+    }
+    if (gait != null) {
+      stats['gait_band'] = gait;
+    }
     record['movement_tracking'] = {
       'route_points':
           List<dynamic>.from(tracking['route_points'] as List? ?? const []),
-      'movement_statistics': Map<String, dynamic>.from(
-        tracking['movement_statistics'] as Map? ?? const {},
-      ),
+      'movement_statistics': stats,
     };
     record['route_points'] =
         List<dynamic>.from(tracking['route_points'] as List? ?? const []);
     if (tracking['average_route_velocity'] != null) {
       record['average_route_velocity'] = tracking['average_route_velocity'];
     } else {
-      final stats = tracking['movement_statistics'];
-      if (stats is Map && stats['average_velocity'] != null) {
+      if (stats['average_velocity'] != null) {
         record['average_route_velocity'] = stats['average_velocity'];
       }
+    }
+    _preserveSpeedFields(record, preferredSpeed: speed, preferredGait: gait);
+    _preserveMotionFields(record);
+  }
+
+  /// Preserve motion_class fields on a flush search record.
+  void _preserveMotionFields(
+    Map<String, dynamic> record, {
+    dynamic preferredClass,
+    dynamic preferredConfidence,
+  }) {
+    final tracking = record['movement_tracking'];
+    final stats = (tracking is Map)
+        ? Map<String, dynamic>.from(
+            (tracking['movement_statistics'] as Map?) ?? const {},
+          )
+        : <String, dynamic>{};
+    final motionClass = preferredClass ??
+        record['motion_class'] ??
+        stats['motion_class'];
+    final confidence = preferredConfidence ??
+        record['motion_confidence'] ??
+        stats['motion_confidence'];
+    if (motionClass != null &&
+        motionClass.toString().isNotEmpty &&
+        motionClass.toString().toLowerCase() != 'unknown') {
+      record['motion_class'] = motionClass.toString();
+      stats['motion_class'] = motionClass.toString();
+    }
+    if (confidence is num) {
+      record['motion_confidence'] = confidence.toDouble();
+      stats['motion_confidence'] = confidence.toDouble();
+    }
+    if (record['motion_features'] == null && stats['motion_features'] != null) {
+      record['motion_features'] = stats['motion_features'];
+    }
+    if (tracking is Map || stats.isNotEmpty) {
+      record['movement_tracking'] = {
+        ...(tracking is Map ? Map<String, dynamic>.from(tracking) : {}),
+        'movement_statistics': stats,
+      };
+    }
+  }
+
+  /// Preserve / normalize speed_mps + gait_band on a flush search record.
+  void _preserveSpeedFields(
+    Map<String, dynamic> record, {
+    Object? preferredSpeed,
+    Object? preferredGait,
+  }) {
+    final stats = (record['movement_tracking'] is Map)
+        ? Map<String, dynamic>.from(
+            (record['movement_tracking'] as Map)['movement_statistics']
+                    as Map? ??
+                const {},
+          )
+        : <String, dynamic>{};
+    final speed = preferredSpeed ??
+        record['speed_mps'] ??
+        stats['average_speed_mps'];
+    final gait = preferredGait ?? record['gait_band'] ?? stats['gait_band'];
+    if (speed != null) {
+      record['speed_mps'] = speed;
+      stats['average_speed_mps'] = speed;
+    }
+    if (gait != null) {
+      record['gait_band'] = gait;
+      stats['gait_band'] = gait;
+    }
+    if (stats.isNotEmpty) {
+      final tracking = record['movement_tracking'] is Map
+          ? Map<String, dynamic>.from(record['movement_tracking'] as Map)
+          : <String, dynamic>{
+              'route_points': record['route_points'] ?? const [],
+            };
+      tracking['movement_statistics'] = stats;
+      record['movement_tracking'] = tracking;
     }
   }
 
@@ -452,6 +803,73 @@ class _InstantDetectionLogsPaneState
             winnerRecord['average_route_velocity'] =
                 group['average_route_velocity'];
           }
+          _preserveSpeedFields(
+            winnerRecord,
+            preferredSpeed: winnerRecord['speed_mps'] ?? group['speed_mps'],
+            preferredGait: winnerRecord['gait_band'] ?? group['gait_band'],
+          );
+          // Merge cycle speed history from group + every member InstantMvr.
+          final mergedSamples = <Map<String, dynamic>>[];
+          final seenSampleKeys = <String>{};
+          void addSamples(dynamic raw) {
+            if (raw is! List) return;
+            for (final sample in raw.whereType<Map>()) {
+              final map = Map<String, dynamic>.from(sample);
+              final key =
+                  '${map['cycle_id']}|${map['timestamp']}|${map['speed_mps']}';
+              if (!seenSampleKeys.add(key)) continue;
+              mergedSamples.add(map);
+            }
+          }
+
+          addSamples(group['speed_samples']);
+          addSamples(winnerRecord['speed_samples']);
+          for (final memberUid in memberUuids) {
+            final member = mvrById[memberUid];
+            if (member == null) continue;
+            addSamples(member['speed_samples']);
+            final memberSpeed = (member['speed_mps'] as num?)?.toDouble();
+            if (memberSpeed != null && memberSpeed > 0) {
+              addSamples([
+                {
+                  'timestamp': member['timestamp'] ??
+                      log['flush_started_at'] ??
+                      winnerRecord['flush_started_at'],
+                  'speed_mps': memberSpeed,
+                  'gait_band': member['gait_band'],
+                  'instant_mvr_uuid': memberUid,
+                },
+              ]);
+            }
+          }
+          if (mergedSamples.isNotEmpty) {
+            winnerRecord['speed_samples'] = mergedSamples;
+            final positive = mergedSamples
+                .map((s) => (s['speed_mps'] as num?)?.toDouble())
+                .whereType<double>()
+                .where((s) => s > 0)
+                .toList();
+            if (positive.isNotEmpty) {
+              final current =
+                  (winnerRecord['speed_mps'] as num?)?.toDouble() ?? 0;
+              if (current <= 0) {
+                final mean =
+                    positive.reduce((a, b) => a + b) / positive.length;
+                _preserveSpeedFields(
+                  winnerRecord,
+                  preferredSpeed: mean,
+                  preferredGait: winnerRecord['gait_band'] ?? group['gait_band'],
+                );
+              }
+            }
+          }
+          _preserveMotionFields(
+            winnerRecord,
+            preferredClass:
+                winnerRecord['motion_class'] ?? group['motion_class'],
+            preferredConfidence: winnerRecord['motion_confidence'] ??
+                group['motion_confidence'],
+          );
 
           seen.add(superUid);
           collected.add(
@@ -526,6 +944,24 @@ class _InstantDetectionLogsPaneState
               record['average_route_velocity'] == null) {
             record['average_route_velocity'] = group['average_route_velocity'];
           }
+          _preserveSpeedFields(
+            record,
+            preferredSpeed: record['speed_mps'] ?? group['speed_mps'],
+            preferredGait: record['gait_band'] ?? group['gait_band'],
+          );
+          final groupSamples = group['speed_samples'] ?? record['speed_samples'];
+          if (groupSamples is List && groupSamples.isNotEmpty) {
+            record['speed_samples'] = groupSamples
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
+          }
+          _preserveMotionFields(
+            record,
+            preferredClass: record['motion_class'] ?? group['motion_class'],
+            preferredConfidence:
+                record['motion_confidence'] ?? group['motion_confidence'],
+          );
 
           seen.add(uid);
           collected.add(
@@ -545,6 +981,8 @@ class _InstantDetectionLogsPaneState
         final uid = _mvrUid(mvr);
         if (uid == null || seen.contains(uid)) continue;
         seen.add(uid);
+        _preserveSpeedFields(mvr);
+        _preserveMotionFields(mvr);
         collected.add(_annotateFlushRecord(mvr, log, uid: uid));
       }
     }
@@ -578,31 +1016,48 @@ class _InstantDetectionLogsPaneState
     setState(() => _searching = true);
     try {
       final client = ref.read(mediaApiClientProvider);
-      final logs = await client.listInstantDetectionLogs(
-        cameraDeviceId: widget.cameraDeviceId,
-        startTime: startTime,
-        endTime: endTime,
-        limit: 500,
-      );
+      final useNormalised = _isNormalised;
+      final logs = useNormalised
+          ? await client.listInstantDetectionNormalisedSpans(
+              cameraDeviceId: widget.cameraDeviceId,
+              startTime: startTime,
+              endTime: endTime,
+              limit: 500,
+            )
+          : await client.listInstantDetectionLogs(
+              cameraDeviceId: widget.cameraDeviceId,
+              startTime: startTime,
+              endTime: endTime,
+              limit: 500,
+            );
 
       if (logs.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No Instant Detection logs in that date range'),
+          SnackBar(
+            content: Text(
+              useNormalised
+                  ? 'No normalised spans in that date range'
+                  : 'No Instant Detection logs in that date range',
+            ),
           ),
         );
         return;
       }
 
-      // People-level individuals from each flush (hierarchical winners),
-      // not raw per-cycle InstantMvrs.
-      final flushIndividuals = _collectFlushIndividuals(logs);
+      // Raw: people-level flush winners. Normalised: worker-merged individuals.
+      final flushIndividuals = useNormalised
+          ? _collectNormalisedIndividuals(logs)
+          : _collectFlushIndividuals(logs);
       if (flushIndividuals.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No individuals found in matching logs'),
+          SnackBar(
+            content: Text(
+              useNormalised
+                  ? 'No individuals found in normalised spans'
+                  : 'No individuals found in matching logs',
+            ),
           ),
         );
         return;
@@ -613,8 +1068,8 @@ class _InstantDetectionLogsPaneState
       final mergeThreshold =
           generalSettings?.mergeIndividualsThreshold ?? 0.70;
       // Match Collections recording search: only `auto` merges at search time.
-      // `semi` is treated like `none` (no semi-auto interactive merge here).
-      final autoMerge = mergeRule == 'auto';
+      // Normalised spans are already worker-merged — skip a second cross-flush merge.
+      final autoMerge = !useNormalised && mergeRule == 'auto';
 
       final searchResponse = await client.searchMVRPeopleByInstantLogs(
         cameraDeviceId: widget.cameraDeviceId,
@@ -679,9 +1134,11 @@ class _InstantDetectionLogsPaneState
           'auto_merge': autoMerge,
           'similarity_threshold': autoMerge ? mergeThreshold : null,
           'flush_individual_count': flushIndividuals.length,
+          'normalised': useNormalised,
         },
         'hierarchical_merge_applied': autoMerge,
-        'merge_rule_applied': mergeRule,
+        'normalised_view': useNormalised,
+        'merge_rule_applied': useNormalised ? 'normalised_worker' : mergeRule,
         'pre_merge_count': flushIndividuals.length,
         'post_merge_count': mvrUuids.length,
         'merge_statistics': {
@@ -721,6 +1178,15 @@ class _InstantDetectionLogsPaneState
 
   @override
   Widget build(BuildContext context) {
+    final viewMode = ref.watch(instantAnalyticsViewModeProvider);
+    ref.listen<InstantAnalyticsViewMode>(instantAnalyticsViewModeProvider,
+        (previous, next) {
+      if (previous != next && _loadedMode != next) {
+        _load();
+      }
+    });
+    final normalised = viewMode.isNormalised;
+
     if (_searching) {
       return const Center(
         child: Column(
@@ -744,7 +1210,9 @@ class _InstantDetectionLogsPaneState
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Could not load Instant Detection logs',
+                normalised
+                    ? 'Could not load normalised spans'
+                    : 'Could not load Instant Detection logs',
                 style: OfflineFonts.inter(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
@@ -771,91 +1239,113 @@ class _InstantDetectionLogsPaneState
         ),
       );
     }
-    if (_logs.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.receipt_long_outlined,
-                size: 48,
-                color: AppColors.textSecondary.withOpacity(0.5),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'No Instant Detection flush logs yet',
+    Widget headerRow() {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                normalised
+                    ? 'Instant Detection normalised'
+                    : 'Instant Detection logs',
                 style: OfflineFonts.inter(
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary,
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Logs appear after Y-cycle flush (re-group + merge). '
-                'They are separate from Automation action logs.',
-                textAlign: TextAlign.center,
-                style: OfflineFonts.inter(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
+            ),
+            const InstantAnalyticsViewModeToggle(),
+            IconButton(
+              tooltip: 'Search logs → MVR analysis',
+              onPressed: _showSearchDialog,
+              icon: const Icon(Icons.search, size: 20),
+            ),
+            IconButton(
+              tooltip: 'Refresh',
+              onPressed: _load,
+              icon: const Icon(Icons.refresh, size: 20),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_logs.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          headerRow(),
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      normalised
+                          ? Icons.merge_type
+                          : Icons.receipt_long_outlined,
+                      size: 48,
+                      color: AppColors.textSecondary.withOpacity(0.5),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      normalised
+                          ? 'No normalised spans yet'
+                          : 'No Instant Detection flush logs yet',
+                      style: OfflineFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      normalised
+                          ? 'Normalised spans appear after the worker merges people '
+                              'across fixed 5-minute windows. Raw flush logs stay untouched.'
+                          : 'Logs appear after Y-cycle flush (re-group + merge). '
+                              'They are separate from Automation action logs.',
+                      textAlign: TextAlign.center,
+                      style: OfflineFonts.inter(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        TextButton.icon(
+                          onPressed: _showSearchDialog,
+                          icon: const Icon(Icons.search),
+                          label: const Text('Search'),
+                        ),
+                        TextButton.icon(
+                          onPressed: _load,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Refresh'),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.center,
-                children: [
-                  TextButton.icon(
-                    onPressed: _showSearchDialog,
-                    icon: const Icon(Icons.search),
-                    label: const Text('Search'),
-                  ),
-                  TextButton.icon(
-                    onPressed: _load,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Refresh'),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       );
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Instant Detection logs',
-                  style: OfflineFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-              IconButton(
-                tooltip: 'Search logs → MVR analysis',
-                onPressed: _showSearchDialog,
-                icon: const Icon(Icons.search, size: 20),
-              ),
-              IconButton(
-                tooltip: 'Refresh',
-                onPressed: _load,
-                icon: const Icon(Icons.refresh, size: 20),
-              ),
-            ],
-          ),
-        ),
+        headerRow(),
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
@@ -872,7 +1362,32 @@ class _InstantDetectionLogsPaneState
               Map<String, dynamic>? payloadMap;
               if (payload is Map<String, dynamic>) {
                 payloadMap = payload;
+              } else if (payload is Map) {
+                payloadMap = Map<String, dynamic>.from(payload);
               }
+              final titleTs = normalised
+                  ? log['span_start']
+                  : log['flush_started_at'];
+              final endTs =
+                  normalised ? log['span_end'] : log['flush_ended_at'];
+              final sourceLogCount = normalised
+                  ? ((payloadMap?['source_log_count'] as num?)?.toInt() ??
+                      (log['source_log_ids'] is List
+                          ? (log['source_log_ids'] as List).length
+                          : 0))
+                  : cycles;
+              final subtitleRight = normalised
+                  ? '$people people · $sourceLogCount logs'
+                  : '$people people · $cycles cycles';
+
+              // For normalised spans, reuse flush motion helpers by adapting payload.
+              final motionPayload = normalised && payloadMap != null
+                  ? <String, dynamic>{
+                      'hierarchical_merge': payloadMap['hierarchical_merge'],
+                      'instant_mvrs': payloadMap['individuals'] ?? const [],
+                      'person_groups': const [],
+                    }
+                  : payloadMap;
 
               return Material(
                 color: AppColors.surface,
@@ -908,7 +1423,7 @@ class _InstantDetectionLogsPaneState
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
-                                _fmt(log['flush_started_at']),
+                                _fmt(titleTs),
                                 style: OfflineFonts.inter(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
@@ -917,7 +1432,7 @@ class _InstantDetectionLogsPaneState
                               ),
                             ),
                             Text(
-                              '$people people · $cycles cycles',
+                              subtitleRight,
                               style: OfflineFonts.inter(
                                 fontSize: 12,
                                 color: AppColors.textSecondary,
@@ -925,12 +1440,20 @@ class _InstantDetectionLogsPaneState
                             ),
                           ],
                         ),
+                        if (motionPayload != null) ...[
+                          const SizedBox(height: 6),
+                          _buildFlushMotionSummary(motionPayload),
+                        ],
                         if (expanded) ...[
                           const SizedBox(height: 10),
                           Text(
-                            'Ended ${_fmt(log['flush_ended_at'])}'
-                            '${threshold != null ? ' · merge ≥ $threshold' : ''}'
-                            ' · frames/cycle ${log['frames_per_cycle'] ?? '—'}',
+                            normalised
+                                ? 'Span ends ${_fmt(endTs)}'
+                                    '${threshold != null ? ' · merge ≥ $threshold' : ''}'
+                                    ' · ${log['span_seconds'] ?? 300}s bucket'
+                                : 'Ended ${_fmt(endTs)}'
+                                    '${threshold != null ? ' · merge ≥ $threshold' : ''}'
+                                    ' · frames/cycle ${log['frames_per_cycle'] ?? '—'}',
                             style: OfflineFonts.inter(
                               fontSize: 12,
                               color: AppColors.textSecondary,
@@ -939,15 +1462,23 @@ class _InstantDetectionLogsPaneState
                           if (payloadMap != null) ...[
                             const SizedBox(height: 8),
                             Text(
-                              'People groups: ${_personGroupCount(payloadMap)}'
-                              ' · InstantMvrs: '
-                              '${(payloadMap['instant_mvrs'] is List ? (payloadMap['instant_mvrs'] as List).length : '—')}'
-                              ' · people_count: ${log['people_count'] ?? '—'}',
+                              normalised
+                                  ? 'Individuals: '
+                                      '${(payloadMap['individuals'] is List ? (payloadMap['individuals'] as List).length : '—')}'
+                                      ' · source logs: $sourceLogCount'
+                                      ' · people_count: ${log['people_count'] ?? '—'}'
+                                  : 'People groups: ${_personGroupCount(payloadMap)}'
+                                      ' · InstantMvrs: '
+                                      '${(payloadMap['instant_mvrs'] is List ? (payloadMap['instant_mvrs'] as List).length : '—')}'
+                                      ' · people_count: ${log['people_count'] ?? '—'}',
                               style: OfflineFonts.inter(
                                 fontSize: 12,
                                 color: AppColors.textPrimary,
                               ),
                             ),
+                            const SizedBox(height: 8),
+                            if (motionPayload != null)
+                              _buildFlushMotionDetail(motionPayload),
                           ],
                         ],
                       ],

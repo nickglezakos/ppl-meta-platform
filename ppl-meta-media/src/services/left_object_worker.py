@@ -220,7 +220,7 @@ class LeftObjectWorker:
         if cameras:
             return cameras
         legacy = getattr(trigger, "camera_device_id", None)
-        if legacy and legacy not in ("left_object", "body_posture", "vprofile_match", "velocity"):
+        if legacy and legacy not in ("left_object", "body_posture", "vprofile_match", "velocity", "motion"):
             return [str(legacy)]
         return []
 

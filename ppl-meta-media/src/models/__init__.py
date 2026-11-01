@@ -41,6 +41,7 @@ from .trigger import (
 )
 from .trigger_execution_log import TriggerExecutionLog
 from .instant_detection_log import InstantDetectionLog
+from .instant_detection_normalised_span import InstantDetectionNormalisedSpan
 from .user_trigger_action import UserTriggerAction
 from .workflow import MediaWorkflow
 
@@ -48,6 +49,7 @@ __all__ = [
     "Base",
     "BaseModel",
     "InstantDetectionLog",
+    "InstantDetectionNormalisedSpan",
     "MediaType",
     "ProcessingStatus",
     "StorageProvider",

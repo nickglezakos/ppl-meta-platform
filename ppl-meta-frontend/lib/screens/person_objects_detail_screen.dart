@@ -11,6 +11,8 @@ import 'dart:math' as math;
 import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:excel/excel.dart' as excel;
+import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../core/config.dart';
@@ -150,7 +152,11 @@ class _PersonObjectsDetailScreenState
     final generalSettings = ref.read(generalSettingsProvider).valueOrNull;
     _similarityThreshold = generalSettings?.mergeIndividualsThreshold ?? 0.70;
     
-    _tabController = TabController(length: 4, vsync: this);
+    // Cross-video adds a Motion distribution tab.
+    _tabController = TabController(
+      length: _isCrossVideoMode ? 5 : 4,
+      vsync: this,
+    );
     // _visionTabController = TabController(length: 3, vsync: this); // Vision tab has 3 sub-tabs - COMMENTED OUT
     
     // Load cross-video data if in that mode
@@ -211,6 +217,9 @@ class _PersonObjectsDetailScreenState
       children: [
         TabBar(
           controller: _tabController,
+          isScrollable: false,
+          tabAlignment: TabAlignment.fill,
+          labelPadding: const EdgeInsets.symmetric(horizontal: 4),
           tabs: const [
             Tab(
               icon: Icon(Icons.groups),
@@ -296,22 +305,56 @@ class _PersonObjectsDetailScreenState
         _buildCrossVideoInfoBar(),
         TabBar(
           controller: _tabController,
+          isScrollable: false,
+          tabAlignment: TabAlignment.fill,
+          labelPadding: EdgeInsets.zero,
+          labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          unselectedLabelStyle: const TextStyle(fontSize: 11),
           tabs: const [
             Tab(
-              icon: Icon(Icons.analytics),
-              text: 'Statistics',
+              height: 56,
+              icon: Icon(Icons.analytics, size: 18),
+              iconMargin: EdgeInsets.only(bottom: 2),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('Statistics'),
+              ),
             ),
             Tab(
-              icon: Icon(Icons.route),
-              text: 'Routes',
+              height: 56,
+              icon: Icon(Icons.speed, size: 18),
+              iconMargin: EdgeInsets.only(bottom: 2),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('Motion'),
+              ),
             ),
             Tab(
-              icon: Icon(Icons.groups),
-              text: 'Individuals',
+              height: 56,
+              icon: Icon(Icons.route, size: 18),
+              iconMargin: EdgeInsets.only(bottom: 2),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('Routes'),
+              ),
             ),
             Tab(
-              icon: Icon(Icons.event_available),
-              text: 'Attendance',
+              height: 56,
+              icon: Icon(Icons.groups, size: 18),
+              iconMargin: EdgeInsets.only(bottom: 2),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('Individuals'),
+              ),
+            ),
+            Tab(
+              height: 56,
+              icon: Icon(Icons.event_available, size: 18),
+              iconMargin: EdgeInsets.only(bottom: 2),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('Attendance'),
+              ),
             ),
           ],
         ),
@@ -320,6 +363,7 @@ class _PersonObjectsDetailScreenState
             controller: _tabController,
             children: [
               _buildStatisticsTabCrossVideo(),
+              _buildMotionTabCrossVideo(),
               _buildRoutesTabCrossVideo(),
               _buildIndividualsTabCrossVideo(),
               _buildAttendanceTab(), // Direct attendance tab instead of nested Vision tab
@@ -2395,32 +2439,138 @@ class _PersonObjectsDetailScreenState
 
     final analysisItems =
         analysisResponse.data!['analyses'] as List<dynamic>? ?? const [];
+    // Index Instant flush records for speed/gait fallback when API omits them.
+    final speedByUuid = <String, Map<String, dynamic>>{};
+    for (final raw in instantMvrs) {
+      if (raw is! Map) continue;
+      final record = Map<String, dynamic>.from(raw);
+      final uid = record['instant_mvr_uuid']?.toString() ??
+          record['mvr_people_uuid']?.toString() ??
+          record['individual_uuid']?.toString();
+      if (uid == null || uid.isEmpty) continue;
+      speedByUuid[uid] = record;
+    }
     _instantRoutePayloadByIndividual.clear();
     for (final raw in analysisItems.whereType<Map>()) {
       final item = Map<String, dynamic>.from(raw);
       final uuid = item['individual_uuid']?.toString();
       if (uuid == null || uuid.isEmpty) continue;
+      final fallback = speedByUuid[uuid];
+      if (fallback != null) {
+        final stats = (fallback['movement_tracking'] is Map)
+            ? (fallback['movement_tracking'] as Map)['movement_statistics']
+            : null;
+        if (item['average_speed_mps'] == null || item['gait_band'] == null) {
+          item['average_speed_mps'] ??= fallback['speed_mps'] ??
+              fallback['average_speed_mps'] ??
+              (stats is Map ? stats['average_speed_mps'] : null);
+          item['gait_band'] ??= fallback['gait_band'] ??
+              (stats is Map ? stats['gait_band'] : null);
+        }
+        if (item['motion_class'] == null ||
+            item['motion_class'] == 'unknown') {
+          final fallbackClass = fallback['motion_class'] ??
+              (stats is Map ? stats['motion_class'] : null);
+          if (fallbackClass != null &&
+              fallbackClass.toString().isNotEmpty &&
+              fallbackClass.toString().toLowerCase() != 'unknown') {
+            item['motion_class'] = fallbackClass;
+          }
+          item['motion_confidence'] ??= fallback['motion_confidence'] ??
+              (stats is Map ? stats['motion_confidence'] : null);
+          item['motion_features'] ??= fallback['motion_features'] ??
+              (stats is Map ? stats['motion_features'] : null);
+          item['route_caricature'] ??= fallback['route_caricature'];
+        }
+      }
+      // Merge cycle speed history from API + flush InstantMvrs + appearances.
+      // API alone often returns only the winner average sample; flush records
+      // carry the full per-cycle series needed by the Motion tab.
+      final speedSamples = <Map<String, dynamic>>[];
+      final seenSpeedKeys = <String>{};
+      void addSpeedSample(Map<String, dynamic> sample) {
+        final speed = (sample['speed_mps'] as num?)?.toDouble();
+        if (speed == null || speed <= 0) return;
+        final key =
+            '${sample['cycle_id'] ?? ''}|${sample['timestamp']}|$speed';
+        if (!seenSpeedKeys.add(key)) return;
+        speedSamples.add(Map<String, dynamic>.from(sample));
+      }
+
+      void addSpeedSampleList(dynamic raw) {
+        if (raw is! List) return;
+        for (final sample in raw.whereType<Map>()) {
+          addSpeedSample(Map<String, dynamic>.from(sample));
+        }
+      }
+
+      addSpeedSampleList(item['speed_samples']);
+
+      final memberIds = <String>{uuid};
+      final merged = item['merged_mvr_people'];
+      if (merged is List) {
+        for (final child in merged.whereType<Map>()) {
+          final childId = child['mvr_people_uuid']?.toString();
+          if (childId != null && childId.isNotEmpty) memberIds.add(childId);
+        }
+      }
+      final appearances = item['appearances'];
+      if (appearances is List) {
+        for (final app in appearances.whereType<Map>()) {
+          final appId = app['mvr_people_uuid']?.toString() ??
+              app['individual_uuid']?.toString();
+          if (appId != null && appId.isNotEmpty) memberIds.add(appId);
+          addSpeedSampleList(app['speed_samples']);
+          final appSpeed = (app['speed_mps'] as num?)?.toDouble();
+          if (appSpeed != null && appSpeed > 0) {
+            addSpeedSample({
+              'timestamp': app['start_timestamp'],
+              'speed_mps': appSpeed,
+              'gait_band': app['gait_band'],
+              'instant_mvr_uuid': appId,
+            });
+          }
+        }
+      }
+      // Always pull flush InstantMvr cycle history (authoritative for Motion).
+      for (final memberId in List<String>.from(memberIds)) {
+        final record = speedByUuid[memberId];
+        if (record == null) continue;
+        addSpeedSampleList(record['speed_samples']);
+        final memberUuids = record['flush_member_uuids'];
+        if (memberUuids is List) {
+          for (final linked in memberUuids) {
+            final linkedId = linked?.toString();
+            if (linkedId == null || linkedId.isEmpty) continue;
+            memberIds.add(linkedId);
+            final linkedRecord = speedByUuid[linkedId];
+            if (linkedRecord == null) continue;
+            addSpeedSampleList(linkedRecord['speed_samples']);
+          }
+        }
+      }
+
       _instantRoutePayloadByIndividual[uuid] = {
         'route_points': item['route_points'] ??
-            (item['movement_tracking'] is Map
-                ? (item['movement_tracking'] as Map)['route_points']
-                : const []),
+            (item['movement_tracking'] as Map?)?['route_points'] ??
+            const [],
         'movement_tracking': item['movement_tracking'],
         'average_route_velocity': item['average_route_velocity'],
+        'average_speed_mps': item['average_speed_mps'],
+        'speed_samples': speedSamples,
+        'gait_band': item['gait_band'],
+        'motion_class': item['motion_class'],
+        'motion_confidence': item['motion_confidence'],
         'camera_id': searchParams?['camera_device_id'] ??
             (searchParams?['camera_uuids'] is List &&
                     (searchParams!['camera_uuids'] as List).isNotEmpty
                 ? (searchParams['camera_uuids'] as List).first
                 : null),
       };
+      aggregatedAnalyses.add(
+        AggregatedIndividualAnalysis.fromJson(item),
+      );
     }
-    aggregatedAnalyses.addAll(
-      analysisItems
-          .whereType<Map>()
-          .map((e) => AggregatedIndividualAnalysis.fromJson(
-                Map<String, dynamic>.from(e),
-              )),
-    );
 
     for (final analysis in aggregatedAnalyses) {
       _pagedMergedChildren[analysis.individualUuid] =
@@ -4544,7 +4694,7 @@ class RoutesPainter extends CustomPainter {
           text: 'No movement routes to display',
           style: TextStyle(color: Colors.grey, fontSize: 16),
         ),
-        textDirection: TextDirection.ltr,
+        textDirection: ui.TextDirection.ltr,
       );
       textPainter.layout();
       textPainter.paint(
@@ -4637,7 +4787,7 @@ class RoutesPainter extends CustomPainter {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              textDirection: TextDirection.ltr,
+              textDirection: ui.TextDirection.ltr,
             );
             textPainter.layout();
             textPainter.paint(
@@ -4741,7 +4891,7 @@ class RoutesPainter extends CustomPainter {
               fontSize: 12,
             ),
           ),
-          textDirection: TextDirection.ltr,
+          textDirection: ui.TextDirection.ltr,
         );
         textPainter.layout();
         
@@ -4764,7 +4914,7 @@ class RoutesPainter extends CustomPainter {
           fontWeight: FontWeight.bold,
         ),
       ),
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
     );
     infoTextPainter.layout();
     infoTextPainter.paint(
@@ -4912,7 +5062,7 @@ class RoutesPainter extends CustomPainter {
               fontSize: 12,
             ),
           ),
-          textDirection: TextDirection.ltr,
+          textDirection: ui.TextDirection.ltr,
         );
         textPainter.layout();
         
@@ -4957,7 +5107,7 @@ class RoutesPainter extends CustomPainter {
             fontWeight: i == 0 ? FontWeight.bold : FontWeight.normal,
           ),
         ),
-        textDirection: TextDirection.ltr,
+        textDirection: ui.TextDirection.ltr,
       );
       textPainter.layout();
       textPainter.paint(
@@ -4990,7 +5140,7 @@ class TopViewRoutesPainter extends CustomPainter {
           text: 'No movement routes to display',
           style: TextStyle(color: Colors.grey, fontSize: 16),
         ),
-        textDirection: TextDirection.ltr,
+        textDirection: ui.TextDirection.ltr,
       );
       textPainter.layout();
       textPainter.paint(
@@ -5101,7 +5251,7 @@ class TopViewRoutesPainter extends CustomPainter {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              textDirection: TextDirection.ltr,
+              textDirection: ui.TextDirection.ltr,
             );
             textPainter.layout();
             textPainter.paint(
@@ -5235,7 +5385,7 @@ class TopViewRoutesPainter extends CustomPainter {
               ],
             ),
           ),
-          textDirection: TextDirection.ltr,
+          textDirection: ui.TextDirection.ltr,
         );
         textPainter.layout();
         
@@ -5313,7 +5463,7 @@ class TopViewRoutesPainter extends CustomPainter {
           fontWeight: FontWeight.bold,
         ),
       ),
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
     );
     compassTextPainter.layout();
     compassTextPainter.paint(
@@ -5332,7 +5482,7 @@ class TopViewRoutesPainter extends CustomPainter {
           fontWeight: FontWeight.bold,
         ),
       ),
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
     );
     scaleTextPainter.layout();
     scaleTextPainter.paint(
@@ -5738,11 +5888,36 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                                   'Confidence',
                                   '${(analysis.averageConfidence * 100).toStringAsFixed(0)}%',
                                 ),
-                                if (analysis.averageRouteVelocity != null &&
+                                if (analysis.averageSpeedMps != null &&
+                                    analysis.averageSpeedMps! > 0) ...[
+                                  _buildStatChip(
+                                    'Avg speed',
+                                    '${analysis.averageSpeedMps!.toStringAsFixed(2)} m/s',
+                                  ),
+                                  if (analysis.gaitBand != null &&
+                                      analysis.gaitBand!.isNotEmpty)
+                                    _buildStatChip(
+                                      'Gait',
+                                      _formatGaitBandLabel(analysis.gaitBand!),
+                                    ),
+                                ] else if (analysis.averageRouteVelocity !=
+                                        null &&
                                     analysis.averageRouteVelocity! > 0)
                                   _buildStatChip(
                                     'Avg velocity',
                                     '${analysis.averageRouteVelocity!.toStringAsFixed(2)} px/s',
+                                  ),
+                                if (analysis.motionClass != null &&
+                                    analysis.motionClass!.isNotEmpty &&
+                                    analysis.motionClass != 'unknown')
+                                  _buildStatChip(
+                                    'Motion',
+                                    analysis.motionConfidence != null &&
+                                            analysis.motionConfidence! > 0
+                                        ? '${_formatMotionClassLabel(analysis.motionClass!)} (${(analysis.motionConfidence! * 100).toStringAsFixed(0)}%)'
+                                        : _formatMotionClassLabel(
+                                            analysis.motionClass!,
+                                          ),
                                   ),
                               ],
                             ),
@@ -6351,6 +6526,40 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         ),
       ],
     );
+  }
+
+  String _formatGaitBandLabel(String band) {
+    switch (band.trim().toLowerCase()) {
+      case 'walking':
+        return 'Walking';
+      case 'light_running':
+        return 'Light running';
+      case 'running':
+        return 'Running';
+      case 'fast_running':
+        return 'Fast running';
+      default:
+        return band.replaceAll('_', ' ');
+    }
+  }
+
+  String _formatMotionClassLabel(String motionClass) {
+    switch (motionClass.trim().toLowerCase()) {
+      case 'stationary':
+        return 'Stationary';
+      case 'directed_transit':
+        return 'Directed transit';
+      case 'loitering':
+        return 'Loitering';
+      case 'pacing':
+        return 'Pacing';
+      case 'erratic':
+        return 'Erratic';
+      case 'unknown':
+        return 'Unknown';
+      default:
+        return motionClass.replaceAll('_', ' ');
+    }
   }
 
   Widget _buildQualityMetric(String label, String value, IconData icon) {
@@ -7341,11 +7550,13 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     final personGroups = <Map<String, dynamic>>[];
 
     for (final analysis in _aggregatedAnalyses!) {
-      final rawPoints = cameraPoints[analysis.individualUuid] ?? [];
-      if (rawPoints.isEmpty) {
+      final stored = cameraPoints[analysis.individualUuid];
+      if (stored == null || stored.isEmpty) {
         continue;
       }
 
+      // Copy before sort — stored lists may be unmodifiable.
+      final rawPoints = List<Map<String, dynamic>>.from(stored);
       rawPoints.sort((a, b) {
         final timestampA = a['timestamp'] as num? ?? 0;
         final timestampB = b['timestamp'] as num? ?? 0;
@@ -7584,6 +7795,598 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     }
   }
 
+  /// Resolve search / data span used by the Motion distribution chart.
+  (DateTime start, DateTime end) _motionChartTimeSpan() {
+    DateTime? start;
+    DateTime? end;
+    final searchParams =
+        widget.crossVideoContext?.sessionData['search_parameters'];
+    if (searchParams is Map) {
+      start = DateTime.tryParse(searchParams['start_time']?.toString() ?? '');
+      end = DateTime.tryParse(searchParams['end_time']?.toString() ?? '');
+    }
+    // Prefer the configured search window when present; otherwise use people span.
+    if (start == null || end == null) {
+      if (_aggregatedAnalyses != null && _aggregatedAnalyses!.isNotEmpty) {
+        for (final analysis in _aggregatedAnalyses!) {
+          if (start == null || analysis.firstSeen.isBefore(start)) {
+            start = analysis.firstSeen;
+          }
+          if (end == null || analysis.lastSeen.isAfter(end)) {
+            end = analysis.lastSeen;
+          }
+        }
+      }
+    }
+    start ??= DateTime.now().subtract(const Duration(hours: 1));
+    end ??= DateTime.now();
+    if (!end.isAfter(start)) {
+      end = start.add(const Duration(minutes: 1));
+    }
+    return (start.toUtc(), end.toUtc());
+  }
+
+  DateTime? _parseMotionPointTimestamp(
+    dynamic raw, {
+    DateTime? anchor,
+  }) {
+    if (raw == null) return null;
+    if (raw is DateTime) return raw.toUtc();
+    if (raw is num) {
+      final value = raw.toDouble();
+      // Epoch milliseconds.
+      if (value > 1e12) {
+        return DateTime.fromMillisecondsSinceEpoch(value.round(), isUtc: true);
+      }
+      // Epoch seconds.
+      if (value > 1e9) {
+        return DateTime.fromMillisecondsSinceEpoch(
+          (value * 1000).round(),
+          isUtc: true,
+        );
+      }
+      // Relative seconds/ms offset from person first_seen (Instant routes).
+      if (anchor != null && value >= 0) {
+        final offsetMs = value < 1e5 ? (value * 1000).round() : value.round();
+        return anchor.toUtc().add(Duration(milliseconds: offsetMs));
+      }
+      return null;
+    }
+    return DateTime.tryParse(raw.toString())?.toUtc();
+  }
+
+  List<Map<String, dynamic>> _motionRoutePointsForAnalysis(
+    AggregatedIndividualAnalysis analysis,
+  ) {
+    final payload = _instantRoutePayloadByIndividual[analysis.individualUuid];
+    final fromPayload = (payload?['route_points'] as List?) ?? const [];
+    if (fromPayload.isNotEmpty) {
+      return fromPayload
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    // Fall back to already-loaded Routes-tab points for this person.
+    for (final byPerson in _routePointsByCamera.values) {
+      final points = byPerson[analysis.individualUuid];
+      if (points != null && points.isNotEmpty) {
+        return points;
+      }
+    }
+    return const [];
+  }
+
+  /// True when samples have meaningful speed variation (not a flat average).
+  bool _motionSamplesHaveVariation(List<({DateTime t, double speed})> samples) {
+    if (samples.length < 2) return false;
+    final minSpeed = samples.map((s) => s.speed).reduce(math.min);
+    final maxSpeed = samples.map((s) => s.speed).reduce(math.max);
+    return (maxSpeed - minSpeed) > 1e-4;
+  }
+
+  List<({DateTime t, double speed})> _motionSamplesForAnalysis(
+    AggregatedIndividualAnalysis analysis,
+  ) {
+    final cycleSamples = <({DateTime t, double speed})>[];
+    final routeSamples = <({DateTime t, double speed})>[];
+    final routePoints = _motionRoutePointsForAnalysis(analysis);
+    final payload = _instantRoutePayloadByIndividual[analysis.individualUuid];
+    final anchor = analysis.firstSeen.toUtc();
+
+    // 1) Instant Detection cycle speeds only — no person-average fallback.
+    // Dedupe fan-out duplicates (same cycle_id stamped onto every merge member).
+    final rawCycleSamples = (payload?['speed_samples'] as List?) ?? const [];
+    final seenCycleKeys = <String>{};
+    for (final raw in rawCycleSamples.whereType<Map>()) {
+      final speed = (raw['speed_mps'] as num?)?.toDouble();
+      if (speed == null || speed <= 0) continue;
+      final ts = _parseMotionPointTimestamp(
+        raw['timestamp'] ?? raw['flush_started_at'] ?? raw['created_at'],
+        anchor: anchor,
+      );
+      if (ts == null) continue;
+      final key = '${raw['cycle_id'] ?? ''}|${ts.toUtc().millisecondsSinceEpoch}|$speed';
+      if (!seenCycleKeys.add(key)) continue;
+      cycleSamples.add((t: ts.toUtc(), speed: speed));
+    }
+
+    // 2) Route-point series from per-point speed_mps or px magnitudes.
+    // Do NOT scale magnitudes to the person average (that recreates flat lines).
+    final enrichedRoute = <Map<String, dynamic>>[];
+    for (final raw in routePoints) {
+      enrichedRoute.add(Map<String, dynamic>.from(raw));
+    }
+    for (var i = 1; i < enrichedRoute.length; i++) {
+      final curr = enrichedRoute[i];
+      final prev = enrichedRoute[i - 1];
+      final existing = (curr['velocity_magnitude'] as num?)?.toDouble() ?? 0.0;
+      if (existing > 0) continue;
+      final cx = (curr['center_x'] as num?)?.toDouble();
+      final cy = (curr['center_y'] as num?)?.toDouble();
+      final px = (prev['center_x'] as num?)?.toDouble();
+      final py = (prev['center_y'] as num?)?.toDouble();
+      if (cx == null || cy == null || px == null || py == null) continue;
+      final tCurr = _parseMotionPointTimestamp(
+        curr['timestamp'] ?? curr['timestamp_ms'] ?? curr['created_at'],
+        anchor: anchor,
+      );
+      final tPrev = _parseMotionPointTimestamp(
+        prev['timestamp'] ?? prev['timestamp_ms'] ?? prev['created_at'],
+        anchor: anchor,
+      );
+      var dt = (tCurr != null && tPrev != null)
+          ? tCurr.difference(tPrev).inMilliseconds / 1000.0
+          : 0.0;
+      if (dt <= 0) dt = 0.05;
+      final mag =
+          math.sqrt((cx - px) * (cx - px) + (cy - py) * (cy - py)) / dt;
+      if (mag > 0) curr['velocity_magnitude'] = mag;
+    }
+
+    // Prefer native velocity_magnitude shape. Point speed_mps is often the
+    // person average stamped onto every route point (flat) — only use it when
+    // those values themselves vary across the route.
+    final pointSpeeds = <double>[];
+    for (final raw in enrichedRoute) {
+      final pointMps = (raw['speed_mps'] as num?)?.toDouble();
+      if (pointMps != null && pointMps > 0) pointSpeeds.add(pointMps);
+    }
+    final pointSpeedsVary = pointSpeeds.length >= 2 &&
+        (pointSpeeds.reduce(math.max) - pointSpeeds.reduce(math.min)) > 1e-4;
+
+    for (var i = 0; i < enrichedRoute.length; i++) {
+      final raw = enrichedRoute[i];
+      var ts = _parseMotionPointTimestamp(
+        raw['timestamp'] ?? raw['timestamp_ms'] ?? raw['created_at'],
+        anchor: anchor,
+      );
+      if (ts == null) continue;
+      // Colliding Instant timestamps: spread by sequence so variation is visible.
+      ts = ts.toUtc().add(Duration(milliseconds: i * 50));
+
+      double? speed;
+      final pointMps = (raw['speed_mps'] as num?)?.toDouble();
+      final mag = (raw['velocity_magnitude'] as num?)?.toDouble() ?? 0.0;
+      if (pointSpeedsVary && pointMps != null && pointMps > 0) {
+        speed = pointMps;
+      } else if (mag > 0) {
+        speed = mag;
+      } else {
+        continue;
+      }
+      routeSamples.add((t: ts, speed: speed));
+    }
+
+    // Prefer cycle series whenever we have ≥2 cycle points (even if speeds are
+    // close). Route series only when it actually varies. Never invent averages.
+    // Always use a growable copy — sorting `const []` throws UnsupportedError.
+    final List<({DateTime t, double speed})> samples;
+    if (cycleSamples.length >= 2) {
+      samples = List.of(cycleSamples);
+    } else if (_motionSamplesHaveVariation(routeSamples)) {
+      samples = List.of(routeSamples);
+    } else if (routeSamples.length >= 2) {
+      samples = List.of(routeSamples);
+    } else {
+      return <({DateTime t, double speed})>[];
+    }
+
+    samples.sort((a, b) => a.t.compareTo(b.t));
+    return samples;
+  }
+
+  static const List<Color> _motionPersonColors = [
+    Color(0xFF1976D2),
+    Color(0xFF388E3C),
+    Color(0xFFF57C00),
+    Color(0xFF7B1FA2),
+    Color(0xFF0097A7),
+    Color(0xFFC2185B),
+    Color(0xFF5D4037),
+    Color(0xFF455A64),
+    Color(0xFF00796B),
+    Color(0xFFE64A19),
+    Color(0xFF303F9F),
+    Color(0xFFAFB42B),
+  ];
+
+  /// Motion distribution over the search / data span for cross-video analysis.
+  Widget _buildMotionTabCrossVideo() {
+    if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
+      return const Center(child: Text('No individual data available'));
+    }
+
+    final span = _motionChartTimeSpan();
+    final start = span.$1.toUtc();
+    final end = span.$2.toUtc();
+    // Prefer selected individuals when the user has checked some; otherwise all.
+    final analyses = (_selectedIndividuals.isNotEmpty
+            ? _aggregatedAnalyses!
+                .where((a) => _selectedIndividuals.contains(a.individualUuid))
+                .toList()
+            : List<AggregatedIndividualAnalysis>.from(_aggregatedAnalyses!))
+        .take(12)
+        .toList();
+
+    var anyCycleVariation = false;
+    for (final analysis in analyses) {
+      final payload = _instantRoutePayloadByIndividual[analysis.individualUuid];
+      final cycleSpeeds = ((payload?['speed_samples'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((s) => (s['speed_mps'] as num?)?.toDouble())
+          .whereType<double>()
+          .where((s) => s > 0)
+          .toList();
+      if (cycleSpeeds.length < 2) continue;
+      final minS = cycleSpeeds.reduce(math.min);
+      final maxS = cycleSpeeds.reduce(math.max);
+      if ((maxS - minS) > 1e-4) {
+        anyCycleVariation = true;
+        break;
+      }
+    }
+
+    final prepared = <({
+      AggregatedIndividualAnalysis analysis,
+      List<({DateTime t, double speed})> samples,
+      Color color,
+    })>[];
+    for (var personIndex = 0; personIndex < analyses.length; personIndex++) {
+      final analysis = analyses[personIndex];
+      final samples = _motionSamplesForAnalysis(analysis);
+      // Keep any series with ≥2 real samples (cycle points), even if close in m/s.
+      if (samples.length < 2) continue;
+      prepared.add((
+        analysis: analysis,
+        samples: samples,
+        color: _motionPersonColors[personIndex % _motionPersonColors.length],
+      ));
+    }
+
+    final preferMps = anyCycleVariation ||
+        prepared.any((p) => p.samples.every((s) => s.speed < 5));
+    final unitLabel = preferMps ? 'm/s' : 'px/s';
+
+    // X axis = sample index (one column per Instant cycle). Using wall-clock
+    // over a day-long search collapsed every cycle into one timepoint.
+    var maxSampleCount = 0;
+    for (final entry in prepared) {
+      if (entry.samples.length > maxSampleCount) {
+        maxSampleCount = entry.samples.length;
+      }
+    }
+
+    final personSeries =
+        <({AggregatedIndividualAnalysis analysis, List<FlSpot> spots, Color color})>[];
+    final overallByIndex = List<List<double>>.generate(maxSampleCount, (_) => []);
+
+    for (final entry in prepared) {
+      final samples = entry.samples;
+      final spots = <FlSpot>[];
+      for (var i = 0; i < samples.length; i++) {
+        spots.add(FlSpot(i.toDouble(), samples[i].speed));
+        overallByIndex[i].add(samples[i].speed);
+      }
+      if (spots.length >= 2) {
+        personSeries.add((
+          analysis: entry.analysis,
+          spots: spots,
+          color: entry.color,
+        ));
+      }
+    }
+
+    final overallSpots = <FlSpot>[];
+    for (var i = 0; i < overallByIndex.length; i++) {
+      final values = overallByIndex[i];
+      if (values.isEmpty) continue;
+      overallSpots.add(
+        FlSpot(i.toDouble(), values.reduce((a, b) => a + b) / values.length),
+      );
+    }
+
+    // Labels: use the densest series' timestamps when available.
+    List<({DateTime t, double speed})> labelSamples = const [];
+    for (final entry in prepared) {
+      if (entry.samples.length >= labelSamples.length) {
+        labelSamples = entry.samples;
+      }
+    }
+    final chartStart =
+        labelSamples.isNotEmpty ? labelSamples.first.t : start;
+    final chartEnd = labelSamples.isNotEmpty ? labelSamples.last.t : end;
+
+    if (personSeries.isEmpty && overallSpots.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'No varying Instant cycle / route speeds in this span.\n'
+            'Averages are not plotted — take a new Instant Detection with people moving '
+            'across multiple cycles, then search those logs again.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade700),
+          ),
+        ),
+      );
+    }
+
+    double maxY = 0;
+    for (final series in personSeries) {
+      for (final spot in series.spots) {
+        if (spot.y > maxY) maxY = spot.y;
+      }
+    }
+    for (final spot in overallSpots) {
+      if (spot.y > maxY) maxY = spot.y;
+    }
+    if (maxY <= 0) maxY = preferMps ? 0.1 : 10.0;
+    // Tiny Instant speeds (~0.01–0.05 m/s) need a tight Y scale + more decimals.
+    final yDecimals = maxY < 0.2 ? 3 : (maxY < 2 ? 2 : (maxY < 10 ? 1 : 0));
+    final yInterval = math.max(maxY / 4, preferMps ? 0.005 : 0.1);
+
+    final chartSpan = chartEnd.difference(chartStart);
+    final dateFmt = chartSpan.inMinutes <= 5
+        ? DateFormat('HH:mm:ss')
+        : (chartSpan.inHours <= 36
+            ? DateFormat('HH:mm')
+            : DateFormat('MM/dd HH:mm'));
+    final maxX = math.max(1, maxSampleCount - 1).toDouble();
+    final hasOverall = overallSpots.length >= 2;
+    final lineBars = <LineChartBarData>[
+      if (hasOverall)
+        LineChartBarData(
+          spots: overallSpots,
+          isCurved: true,
+          curveSmoothness: 0.25,
+          color: Colors.black87,
+          barWidth: 3.5,
+          isStrokeCapRound: true,
+          dotData: const FlDotData(show: true),
+          belowBarData: BarAreaData(show: false),
+        ),
+      ...personSeries.map(
+        (series) => LineChartBarData(
+          spots: series.spots,
+          isCurved: true,
+          curveSmoothness: 0.25,
+          color: series.color.withOpacity(0.85),
+          barWidth: 2,
+          isStrokeCapRound: true,
+          dotData: const FlDotData(show: true),
+          belowBarData: BarAreaData(show: false),
+        ),
+      ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Motion over Instant cycles',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${DateFormat('yyyy-MM-dd HH:mm:ss').format(chartStart.toLocal())}'
+            '  →  '
+            '${DateFormat('yyyy-MM-dd HH:mm:ss').format(chartEnd.toLocal())}'
+            '  ·  $unitLabel'
+            '  ·  $maxSampleCount cycles',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+          if (_selectedIndividuals.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Showing ${_selectedIndividuals.length} selected individual(s)',
+                style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+              ),
+            ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: LineChart(
+              LineChartData(
+                minX: 0,
+                maxX: maxX,
+                minY: 0,
+                maxY: maxY * 1.25,
+                clipData: const FlClipData.all(),
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: true,
+                  horizontalInterval: yInterval,
+                  verticalInterval: 1,
+                  getDrawingHorizontalLine: (value) => FlLine(
+                    color: Colors.grey.shade300,
+                    strokeWidth: 1,
+                  ),
+                  getDrawingVerticalLine: (value) => FlLine(
+                    color: Colors.grey.shade200,
+                    strokeWidth: 1,
+                  ),
+                ),
+                borderData: FlBorderData(
+                  show: true,
+                  border: Border(
+                    bottom: BorderSide(color: Colors.grey.shade400),
+                    left: BorderSide(color: Colors.grey.shade400),
+                  ),
+                ),
+                titlesData: FlTitlesData(
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  leftTitles: AxisTitles(
+                    axisNameWidget: Text(
+                      unitLabel,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    axisNameSize: 22,
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 44,
+                      interval: yInterval,
+                      getTitlesWidget: (value, meta) {
+                        if (value < 0) return const SizedBox.shrink();
+                        return Text(
+                          value.toStringAsFixed(yDecimals),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey.shade700,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 28,
+                      interval: 1,
+                      getTitlesWidget: (value, meta) {
+                        final index = value.round();
+                        if (index < 0 || index >= labelSamples.length) {
+                          return const SizedBox.shrink();
+                        }
+                        // Show every label for short series; otherwise every other.
+                        if (labelSamples.length > 8 && index % 2 != 0) {
+                          return const SizedBox.shrink();
+                        }
+                        final t = labelSamples[index].t;
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            dateFmt.format(t.toLocal()),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                lineTouchData: LineTouchData(
+                  handleBuiltInTouches: true,
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipItems: (touchedSpots) {
+                      return touchedSpots.map((spot) {
+                        final barIndex = spot.barIndex;
+                        String label;
+                        if (hasOverall && barIndex == 0) {
+                          label = 'Overall';
+                        } else {
+                          final personIndex =
+                              hasOverall ? barIndex - 1 : barIndex;
+                          if (personIndex < 0 ||
+                              personIndex >= personSeries.length) {
+                            label = 'Series';
+                          } else {
+                            final person =
+                                personSeries[personIndex].analysis;
+                            label = person.name?.isNotEmpty == true
+                                ? person.name!
+                                : (person.individualId.isNotEmpty
+                                    ? person.individualId
+                                    : person.individualUuid.substring(0, 8));
+                          }
+                        }
+                        return LineTooltipItem(
+                          '$label\n${spot.y.toStringAsFixed(yDecimals)} $unitLabel',
+                          TextStyle(
+                            color: spot.bar.color ?? Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        );
+                      }).toList();
+                    },
+                  ),
+                ),
+                lineBarsData: lineBars,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              if (hasOverall)
+                _buildMotionLegendItem('Overall', Colors.black87, bold: true),
+              ...personSeries.map((series) {
+                final person = series.analysis;
+                final label = person.name?.isNotEmpty == true
+                    ? person.name!
+                    : (person.individualId.isNotEmpty
+                        ? person.individualId
+                        : '${person.individualUuid.substring(0, 8)}…');
+                return _buildMotionLegendItem(label, series.color);
+              }),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMotionLegendItem(String label, Color color, {bool bold = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 14,
+          height: 3,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+            color: Colors.grey.shade800,
+          ),
+        ),
+      ],
+    );
+  }
+
   /// Build Statistics tab for cross-video mode
   Widget _buildStatisticsTabCrossVideo() {
     if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
@@ -7626,6 +8429,9 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     }
 
     final routeVelocities = <double>[];
+    final speedMpsValues = <double>[];
+    final gaitBandCounts = <String, int>{};
+    final motionClassCounts = <String, int>{};
 
     for (final analysis in _aggregatedAnalyses!) {
       totalAppearances += analysis.totalAppearances;
@@ -7661,6 +8467,19 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       if (analysis.averageRouteVelocity != null) {
         routeVelocities.add(analysis.averageRouteVelocity!);
       }
+      if (analysis.averageSpeedMps != null && analysis.averageSpeedMps! > 0) {
+        speedMpsValues.add(analysis.averageSpeedMps!);
+      }
+      if (analysis.gaitBand != null && analysis.gaitBand!.isNotEmpty) {
+        gaitBandCounts[analysis.gaitBand!] =
+            (gaitBandCounts[analysis.gaitBand!] ?? 0) + 1;
+      }
+      if (analysis.motionClass != null &&
+          analysis.motionClass!.isNotEmpty &&
+          analysis.motionClass != 'unknown') {
+        motionClassCounts[analysis.motionClass!] =
+            (motionClassCounts[analysis.motionClass!] ?? 0) + 1;
+      }
 
       if (earliestSeen == null || analysis.firstSeen.isBefore(earliestSeen)) {
         earliestSeen = analysis.firstSeen;
@@ -7681,6 +8500,25 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     final avgRouteVelocity = routeVelocities.isNotEmpty
         ? routeVelocities.reduce((a, b) => a + b) / routeVelocities.length
         : 0.0;
+    final avgSpeedMps = speedMpsValues.isNotEmpty
+        ? speedMpsValues.reduce((a, b) => a + b) / speedMpsValues.length
+        : 0.0;
+    String? dominantGaitBand;
+    var dominantGaitCount = 0;
+    gaitBandCounts.forEach((band, count) {
+      if (count > dominantGaitCount) {
+        dominantGaitCount = count;
+        dominantGaitBand = band;
+      }
+    });
+    String? dominantMotionClass;
+    var dominantMotionCount = 0;
+    motionClassCounts.forEach((motionClass, count) {
+      if (count > dominantMotionCount) {
+        dominantMotionCount = count;
+        dominantMotionClass = motionClass;
+      }
+    });
 
     final totalUniqueVideos = uniqueVideoUuids.isNotEmpty
         ? uniqueVideoUuids.length
@@ -7770,13 +8608,38 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             Icons.high_quality,
             Colors.deepOrange,
           ),
-        if (avgRouteVelocity > 0)
+        if (avgSpeedMps > 0) ...[
+          _buildStatCard(
+            'Average Speed',
+            '${avgSpeedMps.toStringAsFixed(2)} m/s',
+            Icons.speed,
+            Colors.deepPurple,
+            subtitle: 'Instant Detection ground speed',
+          ),
+          if (dominantGaitBand != null)
+            _buildStatCard(
+              'Dominant Gait',
+              _formatGaitBandLabel(dominantGaitBand!),
+              Icons.directions_walk,
+              Colors.indigo,
+              subtitle: '$dominantGaitCount of ${_aggregatedAnalyses!.length} people',
+            ),
+        ] else if (avgRouteVelocity > 0)
           _buildStatCard(
             'Average Movement Velocity',
             '${avgRouteVelocity.toStringAsFixed(6)} px/s',
             Icons.trending_up,
             Colors.deepPurple,
             subtitle: 'Normalized movement speed',
+          ),
+        if (dominantMotionClass != null)
+          _buildStatCard(
+            'Dominant Motion',
+            _formatMotionClassLabel(dominantMotionClass!),
+            Icons.route,
+            Colors.teal,
+            subtitle:
+                '$dominantMotionCount of ${_aggregatedAnalyses!.length} people',
           ),
         if (totalDurationSeconds > 0)
           _buildStatCard(
@@ -8097,6 +8960,17 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                   textAlign: TextAlign.center,
                 ),
               ),
+              Expanded(
+                flex: 3,
+                child: Text(
+                  'Motion',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: textColor,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -8239,7 +9113,62 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                 ),
               ),
             ),
+
+            // Motion metrics
+            Expanded(
+              flex: 3,
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 2,
+                children: [
+                  if (analysis.averageSpeedMps != null &&
+                      analysis.averageSpeedMps! > 0)
+                    _buildCompactMotionChip(
+                      '${analysis.averageSpeedMps!.toStringAsFixed(2)} m/s',
+                    ),
+                  if (analysis.gaitBand != null && analysis.gaitBand!.isNotEmpty)
+                    _buildCompactMotionChip(
+                      _formatGaitBandLabel(analysis.gaitBand!),
+                    ),
+                  if (analysis.motionClass != null &&
+                      analysis.motionClass!.isNotEmpty &&
+                      analysis.motionClass != 'unknown')
+                    _buildCompactMotionChip(
+                      _formatMotionClassLabel(analysis.motionClass!),
+                    )
+                  else if ((analysis.averageSpeedMps == null ||
+                          analysis.averageSpeedMps! <= 0) &&
+                      analysis.averageRouteVelocity != null &&
+                      analysis.averageRouteVelocity! > 0)
+                    _buildCompactMotionChip(
+                      '${analysis.averageRouteVelocity!.toStringAsFixed(2)} px/s',
+                    ),
+                ],
+              ),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactMotionChip(String label) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: theme.colorScheme.primary.withOpacity(0.2),
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: theme.colorScheme.onSurface,
         ),
       ),
     );
@@ -8343,6 +9272,9 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         excel.TextCellValue('First Seen'),
         excel.TextCellValue('Last Seen'),
         excel.TextCellValue('Total Appearances'),
+        excel.TextCellValue('Avg Speed (m/s)'),
+        excel.TextCellValue('Gait'),
+        excel.TextCellValue('Motion Class'),
       ]);
       
       // Data rows - use filtered analyses for this camera
@@ -8365,17 +9297,33 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         final lastSeen = analysis.lastSeen != null
             ? _formatTimestamp(analysis.lastSeen!)
             : 'N/A';
+        final speedText = (analysis.averageSpeedMps != null &&
+                analysis.averageSpeedMps! > 0)
+            ? analysis.averageSpeedMps!.toStringAsFixed(2)
+            : '';
+        final gaitText = (analysis.gaitBand != null &&
+                analysis.gaitBand!.isNotEmpty)
+            ? _formatGaitBandLabel(analysis.gaitBand!)
+            : '';
+        final motionText = (analysis.motionClass != null &&
+                analysis.motionClass!.isNotEmpty &&
+                analysis.motionClass != 'unknown')
+            ? _formatMotionClassLabel(analysis.motionClass!)
+            : '';
         
         sheet.appendRow([
           excel.TextCellValue(displayName),
           excel.TextCellValue(firstSeen),
           excel.TextCellValue(lastSeen),
           excel.IntCellValue(analysis.totalAppearances),
+          excel.TextCellValue(speedText),
+          excel.TextCellValue(gaitText),
+          excel.TextCellValue(motionText),
         ]);
       }
       
       // Style the header row (row index 5)
-      for (int col = 0; col < 4; col++) {
+      for (int col = 0; col < 7; col++) {
         final cell = sheet.cell(excel.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 5));
         cell.cellStyle = excel.CellStyle(
           bold: true,
@@ -8389,6 +9337,9 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       sheet.setColumnWidth(1, 25); // First Seen
       sheet.setColumnWidth(2, 25); // Last Seen
       sheet.setColumnWidth(3, 20); // Total Appearances
+      sheet.setColumnWidth(4, 16); // Avg Speed
+      sheet.setColumnWidth(5, 16); // Gait
+      sheet.setColumnWidth(6, 18); // Motion Class
       
       // Generate file bytes
       final fileBytes = excelFile.encode();
@@ -8813,7 +9764,7 @@ class AttendanceGraphPainter extends CustomPainter {
             fontWeight: FontWeight.w500,
           ),
         ),
-        textDirection: TextDirection.ltr,
+        textDirection: ui.TextDirection.ltr,
       );
       timePainter.layout();
       
@@ -8846,7 +9797,7 @@ class AttendanceGraphPainter extends CustomPainter {
             fontWeight: FontWeight.w500,
           ),
         ),
-        textDirection: TextDirection.ltr,
+        textDirection: ui.TextDirection.ltr,
       );
       timePainter.layout();
       
@@ -8867,7 +9818,7 @@ class AttendanceGraphPainter extends CustomPainter {
           fontWeight: FontWeight.bold,
         ),
       ),
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
     );
     titlePainter.layout();
     titlePainter.paint(
@@ -8887,7 +9838,7 @@ class AttendanceGraphPainter extends CustomPainter {
           fontWeight: FontWeight.bold,
         ),
       ),
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
     );
     yLabelPainter.layout();
     
@@ -8941,7 +9892,7 @@ class AttendanceGraphPainter extends CustomPainter {
             fontFamily: 'monospace',
           ),
         ),
-        textDirection: TextDirection.ltr,
+        textDirection: ui.TextDirection.ltr,
       );
       labelPainter.layout();
       labelPainter.paint(
@@ -8960,7 +9911,7 @@ class AttendanceGraphPainter extends CustomPainter {
             fontFamily: 'monospace',
           ),
         ),
-        textDirection: TextDirection.ltr,
+        textDirection: ui.TextDirection.ltr,
       );
       timePainter.layout();
       timePainter.paint(
@@ -9120,7 +10071,7 @@ class AttendanceGraphPainter extends CustomPainter {
             fontWeight: i == 0 ? FontWeight.bold : FontWeight.normal,
           ),
         ),
-        textDirection: TextDirection.ltr,
+        textDirection: ui.TextDirection.ltr,
       );
       textPainter.layout();
       textPainter.paint(

@@ -128,6 +128,11 @@ class AnalyticsSummary {
   final Demographics? demographics;
   final List<CameraAnalytics> cameraBreakdown;
   final double? averageRouteVelocity;
+  final double? averageSpeedMps;
+  final String? dominantGaitBand;
+  final String? dominantMotionClass;
+  final Map<String, int> gaitBandBreakdown;
+  final Map<String, int> motionClassBreakdown;
   final DateTime generatedAt;
   final bool cached;
 
@@ -140,11 +145,25 @@ class AnalyticsSummary {
     this.demographics,
     this.cameraBreakdown = const [],
     this.averageRouteVelocity,
+    this.averageSpeedMps,
+    this.dominantGaitBand,
+    this.dominantMotionClass,
+    this.gaitBandBreakdown = const {},
+    this.motionClassBreakdown = const {},
     required this.generatedAt,
     required this.cached,
   });
 
   factory AnalyticsSummary.fromJson(Map<String, dynamic> json) {
+    Map<String, int> parseBreakdown(dynamic raw) {
+      if (raw is! Map) return const {};
+      final out = <String, int>{};
+      raw.forEach((key, value) {
+        if (value is num) out[key.toString()] = value.toInt();
+      });
+      return out;
+    }
+
     return AnalyticsSummary(
       totalPeople: json['total_people'] as int? ?? 0,
       activeCameras: json['active_cameras'] as int? ?? 0,
@@ -163,6 +182,11 @@ class AnalyticsSummary {
           : [],
       averageRouteVelocity:
           (json['average_route_velocity'] as num?)?.toDouble(),
+      averageSpeedMps: (json['average_speed_mps'] as num?)?.toDouble(),
+      dominantGaitBand: json['dominant_gait_band'] as String?,
+      dominantMotionClass: json['dominant_motion_class'] as String?,
+      gaitBandBreakdown: parseBreakdown(json['gait_band_breakdown']),
+      motionClassBreakdown: parseBreakdown(json['motion_class_breakdown']),
       generatedAt: json['generated_at'] != null
           ? DateTime.parse(json['generated_at'] as String)
           : DateTime.now(),
@@ -181,6 +205,14 @@ class AnalyticsSummary {
       'camera_breakdown': cameraBreakdown.map((c) => c.toJson()).toList(),
       if (averageRouteVelocity != null)
         'average_route_velocity': averageRouteVelocity,
+      if (averageSpeedMps != null) 'average_speed_mps': averageSpeedMps,
+      if (dominantGaitBand != null) 'dominant_gait_band': dominantGaitBand,
+      if (dominantMotionClass != null)
+        'dominant_motion_class': dominantMotionClass,
+      if (gaitBandBreakdown.isNotEmpty)
+        'gait_band_breakdown': gaitBandBreakdown,
+      if (motionClassBreakdown.isNotEmpty)
+        'motion_class_breakdown': motionClassBreakdown,
       'generated_at': generatedAt.toIso8601String(),
       'cached': cached,
     };

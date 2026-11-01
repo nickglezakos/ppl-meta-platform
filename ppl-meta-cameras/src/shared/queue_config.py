@@ -48,6 +48,8 @@ celery_app.conf.update(
         "instant_detection.persist_results": {"queue": "instant_detection_queue"},
         "instant_detection.flush_persist_batch": {"queue": "instant_detection_queue"},
         "instant_detection.flush_y_window": {"queue": "instant_detection_queue"},
+        "instant_detection.normalize_span": {"queue": "instant_detection_queue"},
+        "instant_detection.normalize_catchup": {"queue": "instant_detection_queue"},
         "stream_operations.reconcile_all": {"queue": "instant_detection_queue"},
         "stream_operations.reconcile_camera": {"queue": "instant_detection_queue"},
     },
@@ -60,14 +62,28 @@ celery_app.conf.update(
     task_time_limit=600,  # 10 minutes
 )
 
+INSTANT_NORMALISE_CATCHUP_SECONDS = int(
+    os.getenv("INSTANT_NORMALISE_CATCHUP_SECONDS", "300")
+)
+INSTANT_NORMALISE_CATCHUP_ENABLED = (
+    os.getenv("INSTANT_NORMALISE_CATCHUP_ENABLED", "true").lower() == "true"
+)
+
+_beat_schedule = {}
 if STREAM_OPS_RECONCILE_ENABLED and STREAM_OPS_RECONCILE_INTERVAL_SECONDS > 0:
-    celery_app.conf.beat_schedule = {
-        "stream-operations-reconcile-all": {
-            "task": "stream_operations.reconcile_all",
-            "schedule": STREAM_OPS_RECONCILE_INTERVAL_SECONDS,
-            "args": (),
-        }
+    _beat_schedule["stream-operations-reconcile-all"] = {
+        "task": "stream_operations.reconcile_all",
+        "schedule": STREAM_OPS_RECONCILE_INTERVAL_SECONDS,
+        "args": (),
     }
+if INSTANT_NORMALISE_CATCHUP_ENABLED and INSTANT_NORMALISE_CATCHUP_SECONDS > 0:
+    _beat_schedule["instant-detection-normalize-catchup"] = {
+        "task": "instant_detection.normalize_catchup",
+        "schedule": INSTANT_NORMALISE_CATCHUP_SECONDS,
+        "args": (),
+    }
+if _beat_schedule:
+    celery_app.conf.beat_schedule = _beat_schedule
 
 
 def test_redis_connection():

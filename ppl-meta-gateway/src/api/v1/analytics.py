@@ -43,6 +43,11 @@ MEDIA_SERVICE_URL = _local_or_compose(
 VMETA_SERVICE_URL = _local_or_compose(
     "VMETA_SERVICE_URL", "http://ppl-meta-vmeta:8008", "http://127.0.0.1:8008"
 )
+ORCHESTRATOR_SERVICE_URL = _local_or_compose(
+    "ORCHESTRATOR_SERVICE_URL",
+    "http://ppl-meta-orchestrator:8002",
+    "http://127.0.0.1:8002",
+)
 
 
 def _normalize_source_type(source_type: Optional[str]) -> str:
@@ -348,6 +353,56 @@ def _extract_route_velocity(entity: Optional[Dict[str, Any]]) -> Optional[float]
     return None
 
 
+def _extract_speed_mps(entity: Optional[Dict[str, Any]]) -> Optional[float]:
+    """Pull ground speed (m/s) from Instant flush / MVR-shaped entities."""
+    if not isinstance(entity, dict):
+        return None
+    for key in ("speed_mps", "average_speed_mps"):
+        raw = entity.get(key)
+        if isinstance(raw, (int, float)) and float(raw) > 0:
+            return float(raw)
+    tracking = entity.get("movement_tracking")
+    if isinstance(tracking, dict):
+        stats = tracking.get("movement_statistics")
+        if isinstance(stats, dict):
+            raw = stats.get("average_speed_mps") or stats.get("speed_mps")
+            if isinstance(raw, (int, float)) and float(raw) > 0:
+                return float(raw)
+    return None
+
+
+def _extract_gait_band(entity: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not isinstance(entity, dict):
+        return None
+    gait = entity.get("gait_band")
+    if isinstance(gait, str) and gait.strip():
+        return gait.strip().lower()
+    tracking = entity.get("movement_tracking")
+    if isinstance(tracking, dict):
+        stats = tracking.get("movement_statistics")
+        if isinstance(stats, dict):
+            gait = stats.get("gait_band")
+            if isinstance(gait, str) and gait.strip():
+                return gait.strip().lower()
+    return None
+
+
+def _extract_motion_class(entity: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not isinstance(entity, dict):
+        return None
+    cls = entity.get("motion_class")
+    if isinstance(cls, str) and cls.strip() and cls.strip().lower() != "unknown":
+        return cls.strip().lower()
+    tracking = entity.get("movement_tracking")
+    if isinstance(tracking, dict):
+        stats = tracking.get("movement_statistics")
+        if isinstance(stats, dict):
+            cls = stats.get("motion_class")
+            if isinstance(cls, str) and cls.strip() and cls.strip().lower() != "unknown":
+                return cls.strip().lower()
+    return None
+
+
 def _mean_route_velocity(people: List[Dict[str, Any]]) -> Optional[float]:
     values: List[float] = []
     for person in people or []:
@@ -361,6 +416,63 @@ def _mean_route_velocity(people: List[Dict[str, Any]]) -> Optional[float]:
     if not values:
         return None
     return round(sum(values) / len(values), 3)
+
+
+def _mean_speed_mps(people: List[Dict[str, Any]]) -> Optional[float]:
+    values: List[float] = []
+    for person in people or []:
+        if not isinstance(person, dict):
+            continue
+        raw = person.get("speed_mps")
+        if raw is None:
+            raw = _extract_speed_mps(person)
+        if isinstance(raw, (int, float)) and float(raw) > 0:
+            values.append(float(raw))
+    if not values:
+        return None
+    return round(sum(values) / len(values), 4)
+
+
+def _dominant_label(people: List[Dict[str, Any]], key: str) -> Optional[str]:
+    counts: Dict[str, int] = {}
+    for person in people or []:
+        if not isinstance(person, dict):
+            continue
+        label = person.get(key)
+        if not isinstance(label, str) or not label.strip():
+            continue
+        normalized = label.strip().lower()
+        if normalized == "unknown":
+            continue
+        counts[normalized] = counts.get(normalized, 0) + 1
+    if not counts:
+        return None
+    return max(counts.items(), key=lambda item: item[1])[0]
+
+
+def _label_breakdown(people: List[Dict[str, Any]], key: str) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for person in people or []:
+        if not isinstance(person, dict):
+            continue
+        label = person.get(key)
+        if not isinstance(label, str) or not label.strip():
+            continue
+        normalized = label.strip().lower()
+        if normalized == "unknown":
+            continue
+        counts[normalized] = counts.get(normalized, 0) + 1
+    return counts
+
+
+def _motion_metrics_payload(people: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "average_speed_mps": _mean_speed_mps(people),
+        "dominant_gait_band": _dominant_label(people, "gait_band"),
+        "dominant_motion_class": _dominant_label(people, "motion_class"),
+        "gait_band_breakdown": _label_breakdown(people, "gait_band"),
+        "motion_class_breakdown": _label_breakdown(people, "motion_class"),
+    }
 
 
 def _people_from_flush_log(log: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -409,6 +521,18 @@ def _people_from_flush_log(log: Dict[str, Any]) -> List[Dict[str, Any]]:
             _extract_route_velocity(velocity_source)
             or _extract_route_velocity(mvr)
         )
+        speed_mps = (
+            _extract_speed_mps(velocity_source)
+            or _extract_speed_mps(mvr)
+        )
+        gait_band = (
+            _extract_gait_band(velocity_source)
+            or _extract_gait_band(mvr)
+        )
+        motion_class = (
+            _extract_motion_class(velocity_source)
+            or _extract_motion_class(mvr)
+        )
         people.append(
             {
                 "person_id": str(person_id),
@@ -417,6 +541,9 @@ def _people_from_flush_log(log: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "age": age,
                 "quality_score": quality,
                 "average_route_velocity": velocity,
+                "speed_mps": speed_mps,
+                "gait_band": gait_band,
+                "motion_class": motion_class,
                 "first_seen": flush_iso,
                 "last_seen": flush_iso,
                 "flush_log_id": log.get("id"),
@@ -525,16 +652,129 @@ async def _fetch_instant_detection_flush_logs(
         return []
 
 
+async def _fetch_instant_detection_normalised_spans(
+    auth_token: str,
+    *,
+    camera_device_id: Optional[str] = None,
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
+    limit: int = 500,
+) -> List[Dict[str, Any]]:
+    params: Dict[str, Any] = {"limit": limit, "offset": 0}
+    if camera_device_id:
+        params["camera_device_id"] = camera_device_id
+    if start_time is not None:
+        params["start_time"] = start_time.isoformat()
+    if end_time is not None:
+        params["end_time"] = end_time.isoformat()
+    headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{MEDIA_SERVICE_URL}/api/v1/instant-detection-logs/normalised/spans",
+                headers=headers,
+                params=params,
+            )
+            if resp.status_code != 200:
+                logger.warning(
+                    "Media normalised spans returned %s: %s",
+                    resp.status_code,
+                    resp.text[:200],
+                )
+                return []
+            data = resp.json()
+            return data if isinstance(data, list) else []
+    except Exception as exc:
+        logger.warning(
+            "Media normalised spans fetch failed (%s): %s",
+            MEDIA_SERVICE_URL,
+            exc,
+        )
+        return []
+
+
+def _people_from_normalised_span(span: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Build analytics people rows from one Media normalised span payload."""
+    camera_id = str(span.get("camera_device_id") or "").strip()
+    payload = span.get("payload_json") or {}
+    if not isinstance(payload, dict):
+        payload = {}
+    span_ts = (
+        _parse_optional_dt(span.get("span_end"))
+        or _parse_optional_dt(span.get("span_start"))
+        or datetime.now(timezone.utc)
+    )
+    span_iso = span_ts.isoformat()
+    individuals = [
+        item for item in (payload.get("individuals") or []) if isinstance(item, dict)
+    ]
+    people: List[Dict[str, Any]] = []
+    for idx, person in enumerate(individuals):
+        age_gender = (
+            person.get("age_gender")
+            if isinstance(person.get("age_gender"), dict)
+            else {}
+        )
+        gender = age_gender.get("gender") or person.get("gender") or "unknown"
+        age = _age_from_age_gender(age_gender)
+        quality = person.get("quality_score") or person.get("face_quality")
+        pid = (
+            person.get("instant_mvr_uuid")
+            or person.get("mvr_people_uuid")
+            or person.get("super_individual_uuid")
+            or f"norm-{span.get('id')}-{idx}"
+        )
+        people.append(
+            {
+                "person_id": str(pid),
+                "camera_id": camera_id or str(person.get("camera_id") or "").strip(),
+                "gender": gender,
+                "age": age,
+                "quality_score": quality,
+                "average_route_velocity": _extract_route_velocity(person),
+                "speed_mps": _extract_speed_mps(person),
+                "gait_band": _extract_gait_band(person),
+                "motion_class": _extract_motion_class(person),
+                "first_seen": span_iso,
+                "last_seen": span_iso,
+                "normalised_span_id": span.get("id"),
+                "source": "instant_detection_normalised_spans",
+            }
+        )
+    if not people:
+        for i in range(int(span.get("people_count") or 0)):
+            people.append(
+                {
+                    "person_id": f"norm-{span.get('id')}-person-{i}",
+                    "camera_id": camera_id,
+                    "gender": "unknown",
+                    "age": None,
+                    "quality_score": None,
+                    "average_route_velocity": None,
+                    "speed_mps": None,
+                    "gait_band": None,
+                    "motion_class": None,
+                    "first_seen": span_iso,
+                    "last_seen": span_iso,
+                    "normalised_span_id": span.get("id"),
+                    "source": "instant_detection_normalised_spans",
+                }
+            )
+    return people
+
+
 async def _get_instant_detection_approx_dataset(
     auth_token: str,
     time_filter: str,
     collection_ids: Optional[str],
     start_date: Optional[str],
     end_date: Optional[str],
+    normalised: bool = False,
 ) -> Dict[str, Any]:
     """
-    Instant Detection analytics SoT: Media `instant_detection_logs` (Y-flush),
-    not VMeta tracking-session approx-people.
+    Instant Detection analytics SoT:
+    - Raw: Media `instant_detection_logs` (Y-flush)
+    - Normalised: Media `instant_detection_normalised_spans`
     """
     cache_key = "|".join(
         [
@@ -543,6 +783,7 @@ async def _get_instant_detection_approx_dataset(
             collection_ids or "",
             start_date or "",
             end_date or "",
+            "norm" if normalised else "raw",
         ]
     )
     now_mono = datetime.now(timezone.utc).timestamp()
@@ -575,43 +816,82 @@ async def _get_instant_detection_approx_dataset(
                 cid.strip() for cid in collection_ids.split(",") if cid.strip()
             )
 
-    logs = await _fetch_instant_detection_flush_logs(auth_token, limit=500)
-
-    filtered_logs: List[Dict[str, Any]] = []
-    for log in logs:
-        cam = str(log.get("camera_device_id") or "").strip()
-        if selected is not None and cam and cam not in selected:
-            continue
-        ts = (
-            _parse_optional_dt(log.get("flush_ended_at"))
-            or _parse_optional_dt(log.get("flush_started_at"))
-        )
-        if ts is None:
-            continue
-        if ts < start_time or ts > end_time:
-            continue
-        filtered_logs.append(log)
-
     all_people: List[Dict[str, Any]] = []
     camera_results: List[Dict[str, Any]] = []
     cameras_seen: List[str] = []
-    for log in filtered_logs:
-        cam = str(log.get("camera_device_id") or "").strip()
-        if cam and cam not in cameras_seen:
-            cameras_seen.append(cam)
-        people = _people_from_flush_log(log)
-        all_people.extend(people)
-        camera_results.append(
-            {
-                "success": True,
-                "camera_id": cam,
-                "flush_log_id": log.get("id"),
-                "approx_unique_people": len(people),
-                "people": people,
-                "cycle_count": log.get("cycle_count"),
-                "people_count": log.get("people_count"),
-            }
+    filtered_logs: List[Dict[str, Any]] = []
+    flush_count = 0
+
+    if normalised:
+        spans = await _fetch_instant_detection_normalised_spans(
+            auth_token,
+            start_time=start_time,
+            end_time=end_time,
+            limit=500,
         )
+        for span in spans:
+            cam = str(span.get("camera_device_id") or "").strip()
+            if selected is not None and cam and cam not in selected:
+                continue
+            ts = (
+                _parse_optional_dt(span.get("span_end"))
+                or _parse_optional_dt(span.get("span_start"))
+            )
+            if ts is None:
+                continue
+            if ts < start_time or ts > end_time:
+                continue
+            filtered_logs.append(span)
+            if cam and cam not in cameras_seen:
+                cameras_seen.append(cam)
+            people = _people_from_normalised_span(span)
+            all_people.extend(people)
+            camera_results.append(
+                {
+                    "success": True,
+                    "camera_id": cam,
+                    "normalised_span_id": span.get("id"),
+                    "approx_unique_people": len(people),
+                    "people": people,
+                    "people_count": span.get("people_count"),
+                    "span_start": span.get("span_start"),
+                    "span_end": span.get("span_end"),
+                }
+            )
+        flush_count = len(filtered_logs)
+        source = "instant_detection_normalised_spans"
+    else:
+        logs = await _fetch_instant_detection_flush_logs(auth_token, limit=500)
+        for log in logs:
+            cam = str(log.get("camera_device_id") or "").strip()
+            if selected is not None and cam and cam not in selected:
+                continue
+            ts = (
+                _parse_optional_dt(log.get("flush_ended_at"))
+                or _parse_optional_dt(log.get("flush_started_at"))
+            )
+            if ts is None:
+                continue
+            if ts < start_time or ts > end_time:
+                continue
+            filtered_logs.append(log)
+            if cam and cam not in cameras_seen:
+                cameras_seen.append(cam)
+            people = _people_from_flush_log(log)
+            all_people.extend(people)
+            camera_results.append(
+                {
+                    "success": True,
+                    "camera_id": cam,
+                    "flush_log_id": log.get("id"),
+                    "approx_unique_people": len(people),
+                    "people": people,
+                    "cycle_count": log.get("cycle_count"),
+                    "people_count": log.get("people_count"),
+                }
+            )
+        flush_count = len(filtered_logs)
+        source = "instant_detection_logs"
 
     if not cameras_seen and camera_ids:
         cameras_seen = list(camera_ids)
@@ -624,8 +904,9 @@ async def _get_instant_detection_approx_dataset(
         "camera_results": camera_results,
         "people": all_people,
         "flush_logs": filtered_logs,
-        "flush_count": len(filtered_logs),
-        "source": "instant_detection_logs",
+        "flush_count": flush_count,
+        "source": source,
+        "normalised": bool(normalised),
     }
     _instant_dataset_cache[cache_key] = (now_mono, dataset)
     # Bound cache size for long-lived gateway processes.
@@ -853,6 +1134,7 @@ def _build_quality_metrics_from_dataset(dataset: Dict[str, Any], time_filter: st
         "max_quality": max(quality_scores) if quality_scores else None,
         "quality_std_dev": quality_std_dev,
         "average_route_velocity": _mean_route_velocity(mvr_people),
+        **_motion_metrics_payload(mvr_people),
         "data_completeness": {
             "total": completeness_total,
             "with_data": mvr_with_quality,
@@ -1463,6 +1745,7 @@ def _build_summary_from_search(
         },
         "camera_breakdown": list(camera_breakdown.values()),
         "average_route_velocity": _mean_route_velocity(filtered_people),
+        **_motion_metrics_payload(filtered_people),
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "cached": False,
         "search_session_uuid": dataset.get("search_session_uuid"),
@@ -1726,6 +2009,7 @@ async def _get_instant_detection_summary(
     end_date: Optional[str],
     genders: Optional[str],
     age_groups: Optional[str],
+    normalised: bool = False,
 ) -> Dict:
     """Fetch analytics summary from the instant-detection approximation endpoint."""
     try:
@@ -1735,6 +2019,7 @@ async def _get_instant_detection_summary(
             collection_ids=collection_ids,
             start_date=start_date,
             end_date=end_date,
+            normalised=normalised,
         )
     except ValueError as e:
         logger.error("Invalid time filter for instant detection summary: %s", e)
@@ -1776,11 +2061,13 @@ async def _get_instant_detection_summary(
         "demographics": demographics,
         "camera_breakdown": camera_breakdown,
         "average_route_velocity": _mean_route_velocity(people),
+        **_motion_metrics_payload(people),
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "cached": False,
         "source_type": "instant_detection",
         "source": dataset.get("source") or "instant_detection_logs",
         "flush_count": flush_count,
+        "normalised": bool(dataset.get("normalised")),
     }
 
 
@@ -1798,6 +2085,11 @@ def _empty_summary(time_filter: str, error: Optional[str] = None) -> Dict:
         },
         "camera_breakdown": [],
         "average_route_velocity": None,
+        "average_speed_mps": None,
+        "dominant_gait_band": None,
+        "dominant_motion_class": None,
+        "gait_band_breakdown": {},
+        "motion_class_breakdown": {},
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "cached": False,
     }
@@ -1822,6 +2114,10 @@ async def get_analytics_summary(
     genders: Optional[str] = Query(None, description="Comma-separated gender filter: male,female"),
     age_groups: Optional[str] = Query(None, description="Comma-separated age group filter: young,adult,elderly"),
     source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'. Default: recording_pipeline"),
+    normalised: bool = Query(
+        False,
+        description="Instant Detection only: use derived normalised spans instead of raw flush logs",
+    ),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -1844,6 +2140,7 @@ async def get_analytics_summary(
                 end_date=end_date,
                 genders=genders,
                 age_groups=age_groups,
+                normalised=bool(normalised),
             )
 
         selected_genders = [g.strip().lower() for g in genders.split(",") if g.strip()] if genders else None
@@ -1865,6 +2162,200 @@ async def get_analytics_summary(
         return _empty_summary(time_filter, error=str(e))
 
 
+def _empty_route_fov(grid_size: int = 8, error: Optional[str] = None) -> Dict[str, Any]:
+    result: Dict[str, Any] = {
+        "heatmap": [[0 for _ in range(grid_size)] for _ in range(grid_size)],
+        "sample_paths": [],
+        "path_count": 0,
+        "avg_velocity": 0.0,
+        "avg_time_in_frame": 0.0,
+        "videos_sampled": 0,
+        "grid_size": grid_size,
+    }
+    if error:
+        result["error"] = error
+    return result
+
+
+def _accumulate_route_points_into_fov(
+    route_points: List[Any],
+    *,
+    grid: List[List[int]],
+    grid_size: int,
+    sample_paths: List[List[Dict[str, float]]],
+    max_paths: int = 12,
+) -> bool:
+    """Add one person's route_points into heatmap + optional sample path. Returns True if used."""
+    if not isinstance(route_points, list) or not route_points:
+        return False
+    path: List[Dict[str, float]] = []
+    for raw in route_points:
+        if not isinstance(raw, dict):
+            continue
+        x = raw.get("center_x")
+        y = raw.get("center_y")
+        if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+            continue
+        fx, fy = float(x), float(y)
+        path.append({"x": fx, "y": fy, "center_x": fx, "center_y": fy})
+        nx = (fx / 1920.0) if fx > 1.5 else fx
+        ny = (fy / 1080.0) if fy > 1.5 else fy
+        nx = max(0.0, min(0.999, nx))
+        ny = max(0.0, min(0.999, ny))
+        cx = min(grid_size - 1, int(nx * grid_size))
+        cy = min(grid_size - 1, int(ny * grid_size))
+        grid[cy][cx] += 1
+    if len(path) >= 2 and len(sample_paths) < max_paths:
+        sample_paths.append(path)
+    return bool(path)
+
+
+async def _build_recording_route_fov(
+    auth_token: str,
+    time_filter: str,
+    collection_ids: Optional[str],
+    start_date: Optional[str],
+    end_date: Optional[str],
+    video_uuids: Optional[str],
+    grid_size: int = 8,
+    max_videos: int = 50,
+) -> Dict[str, Any]:
+    """Sample orchestrator person_groups.route_points into a coarse FOV heatmap."""
+    dataset = await _build_recording_pipeline_search_dataset(
+        auth_token,
+        time_filter,
+        collection_ids,
+        start_date,
+        end_date,
+        explicit_video_uuids=_parse_csv_query_values(video_uuids),
+    )
+    uuids = list(dataset.get("video_uuids") or [])
+    # Prefer newest first when video_details carry timestamps.
+    details = dataset.get("video_details_by_uuid") or {}
+    def _ts_key(uid: str) -> str:
+        d = details.get(uid) or {}
+        return str(d.get("media_timestamp") or "")
+
+    uuids = sorted(uuids, key=_ts_key, reverse=True)[:max_videos]
+    grid = [[0 for _ in range(grid_size)] for _ in range(grid_size)]
+    sample_paths: List[List[Dict[str, float]]] = []
+    path_count = 0
+    vel_sum = 0.0
+    vel_n = 0
+    tif_sum = 0.0
+    tif_n = 0
+    videos_ok = 0
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for media_id in uuids:
+            try:
+                resp = await client.get(
+                    f"{ORCHESTRATOR_SERVICE_URL}/person-objects/{media_id}",
+                    headers={"Authorization": f"Bearer {auth_token}"},
+                )
+            except Exception as exc:
+                logger.warning("route-fov orchestrator fetch failed for %s: %s", media_id, exc)
+                continue
+            if resp.status_code != 200:
+                continue
+            body = resp.json() if resp.content else {}
+            if not isinstance(body, dict):
+                continue
+            groups = body.get("person_groups") or body.get("routes_data") or []
+            if not isinstance(groups, list):
+                continue
+            videos_ok += 1
+            for group in groups:
+                if not isinstance(group, dict):
+                    continue
+                tracking = group.get("movement_tracking")
+                if not isinstance(tracking, dict):
+                    tracking = {}
+                route_points = (
+                    tracking.get("route_points")
+                    or group.get("route_points")
+                    or []
+                )
+                used = _accumulate_route_points_into_fov(
+                    route_points if isinstance(route_points, list) else [],
+                    grid=grid,
+                    grid_size=grid_size,
+                    sample_paths=sample_paths,
+                )
+                if not used:
+                    continue
+                path_count += 1
+                vel = _extract_route_velocity(group)
+                if vel is not None:
+                    vel_sum += vel
+                    vel_n += 1
+                stats = tracking.get("movement_statistics")
+                if isinstance(stats, dict):
+                    tif = stats.get("time_in_frame_seconds")
+                    if isinstance(tif, (int, float)) and float(tif) > 0:
+                        tif_sum += float(tif)
+                        tif_n += 1
+
+    return {
+        "heatmap": grid,
+        "sample_paths": sample_paths,
+        "path_count": path_count,
+        "avg_velocity": round(vel_sum / vel_n, 3) if vel_n else 0.0,
+        "avg_time_in_frame": round(tif_sum / tif_n, 3) if tif_n else 0.0,
+        "videos_sampled": videos_ok,
+        "grid_size": grid_size,
+        "source_type": "recording_pipeline",
+    }
+
+
+@router.get(
+    "/analytics/route-fov",
+    summary="FOV heatmap + path samples from recording routes",
+    description=(
+        "Samples movement_tracking.route_points from orchestrator person-objects "
+        "for videos in the analytics filter range. Used by Analytics intents Heatmap/Path."
+    ),
+)
+async def get_analytics_route_fov(
+    request: Request,
+    time_filter: str = Query("today"),
+    collection_ids: Optional[str] = Query(None, alias="camera_ids"),
+    video_uuids: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    source_type: Optional[str] = Query(None),
+    grid_size: int = Query(8, ge=4, le=32),
+    max_videos: int = Query(50, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+) -> Dict:
+    _ = current_user
+    try:
+        auth_header = request.headers.get("authorization", "")
+        auth_token = auth_header.replace("Bearer ", "") if auth_header else ""
+        effective = _normalize_source_type(source_type)
+        # Instant FOV is computed client-side from flush/span payloads today.
+        if effective == "instant_detection":
+            return _empty_route_fov(
+                grid_size,
+                error="Use Instant Detection log/span payloads for FOV; route-fov is recording-only",
+            )
+        return await _build_recording_route_fov(
+            auth_token=auth_token,
+            time_filter=time_filter,
+            collection_ids=collection_ids,
+            start_date=start_date,
+            end_date=end_date,
+            video_uuids=video_uuids,
+            grid_size=grid_size,
+            max_videos=max_videos,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to compute route-fov: %s", e, exc_info=True)
+        return _empty_route_fov(grid_size, error=str(e))
+
+
 # ────────────────────────────────────────────────────────────────────
 # Instant detection helper functions
 # ────────────────────────────────────────────────────────────────────
@@ -1876,6 +2367,7 @@ async def _get_instant_detection_time_series(
     interval: str,
     start_date: Optional[str],
     end_date: Optional[str],
+    normalised: bool = False,
 ) -> Dict:
     """Fetch time-series data from the instant-detection approximation endpoint."""
     try:
@@ -1885,6 +2377,7 @@ async def _get_instant_detection_time_series(
             collection_ids=collection_ids,
             start_date=start_date,
             end_date=end_date,
+            normalised=normalised,
         )
     except ValueError as e:
         return {
@@ -1932,6 +2425,7 @@ async def _get_instant_detection_time_series(
         "average_count": round(average_count, 2),
         "total_count": len(dataset["people"]),
         "source_type": "instant_detection",
+        "normalised": bool(dataset.get("normalised")),
     }
 
 
@@ -1943,6 +2437,7 @@ async def _get_instant_detection_demographics(
     end_date: Optional[str],
     genders: Optional[str],
     age_groups: Optional[str],
+    normalised: bool = False,
 ) -> Dict:
     """Fetch demographics from the instant-detection approximation endpoint."""
     try:
@@ -1952,6 +2447,7 @@ async def _get_instant_detection_demographics(
             collection_ids=collection_ids,
             start_date=start_date,
             end_date=end_date,
+            normalised=normalised,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -1998,6 +2494,7 @@ async def _get_instant_detection_behavioral(
     end_date: Optional[str],
     genders: Optional[str],
     age_groups: Optional[str],
+    normalised: bool = False,
 ) -> Dict:
     """Fetch behavioral analytics from the instant-detection approximation endpoint."""
     try:
@@ -2007,6 +2504,7 @@ async def _get_instant_detection_behavioral(
             collection_ids=collection_ids,
             start_date=start_date,
             end_date=end_date,
+            normalised=normalised,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -2074,6 +2572,7 @@ async def _get_instant_detection_behavioral(
         "visit_frequency": visit_frequency,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source_type": "instant_detection",
+        "normalised": bool(dataset.get("normalised")),
     }
 
 
@@ -2166,6 +2665,10 @@ async def get_time_series_analytics(
     start_date: Optional[str] = Query(None, description="ISO 8601 start datetime (required when time_filter=custom)"),
     end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
     source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'"),
+    normalised: bool = Query(
+        False,
+        description="Instant Detection only: use derived normalised spans instead of raw flush logs",
+    ),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -2198,6 +2701,7 @@ async def get_time_series_analytics(
                 interval=interval,
                 start_date=start_date,
                 end_date=end_date,
+                normalised=bool(normalised),
             )
 
         dataset = await _build_recording_pipeline_search_dataset(
@@ -2242,6 +2746,10 @@ async def get_demographics_breakdown(
     genders: Optional[str] = Query(None, description="Comma-separated gender filter: male,female"),
     age_groups: Optional[str] = Query(None, description="Comma-separated age group filter: young,adult,elderly"),
     source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'"),
+    normalised: bool = Query(
+        False,
+        description="Instant Detection only: use derived normalised spans instead of raw flush logs",
+    ),
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -2268,6 +2776,7 @@ async def get_demographics_breakdown(
                 end_date=end_date,
                 genders=genders,
                 age_groups=age_groups,
+                normalised=bool(normalised),
             )
 
         selected_genders = [g.strip().lower() for g in genders.split(",") if g.strip()] if genders else None
@@ -2304,6 +2813,10 @@ async def get_behavioral_analytics(
     genders: Optional[str] = Query(None, description="Comma-separated gender filter (male,female)"),
     age_groups: Optional[str] = Query(None, description="Comma-separated age groups (young,adult,middle_aged,elderly)"),
     source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'"),
+    normalised: bool = Query(
+        False,
+        description="Instant Detection only: use derived normalised spans instead of raw flush logs",
+    ),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -2337,6 +2850,7 @@ async def get_behavioral_analytics(
                 end_date=end_date,
                 genders=genders,
                 age_groups=age_groups,
+                normalised=bool(normalised),
             )
 
         selected_genders = [g.strip().lower() for g in genders.split(",") if g.strip()] if genders else None
@@ -2573,6 +3087,10 @@ async def get_mvr_quality_metrics(
     start_date: Optional[str] = Query(None, description="ISO 8601 start datetime (required when time_filter=custom)"),
     end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
     source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'"),
+    normalised: bool = Query(
+        False,
+        description="Instant Detection only: use derived normalised spans instead of raw flush logs",
+    ),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -2640,6 +3158,7 @@ async def get_mvr_quality_metrics(
                 collection_ids=collection_ids,
                 start_date=start_date,
                 end_date=end_date,
+                normalised=bool(normalised),
             )
             quality_scores: List[float] = []
             for person in dataset.get("people") or []:

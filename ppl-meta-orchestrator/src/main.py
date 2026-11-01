@@ -389,7 +389,7 @@ async def lifespan(_app: FastAPI):
             # Fallback to hostname resolution
             detected_ip = socket.gethostbyname(socket.gethostname())
 
-        await register_service(
+        registered = await register_service(
             name="ppl-meta-orchestrator",
             service_type="backend",
             version="1.0.0-phase1",
@@ -411,9 +411,14 @@ async def lifespan(_app: FastAPI):
                 "phase": "1",
             },
         )
-        logger.info(
-            "Successfully registered ppl-meta-orchestrator with enhanced capabilities"
-        )
+        if registered:
+            logger.info(
+                "Successfully registered ppl-meta-orchestrator with enhanced capabilities"
+            )
+        else:
+            logger.error(
+                "Discovery registration returned failure for ppl-meta-orchestrator"
+            )
 
     except Exception as e:
         logger.error(f"Failed to register with discovery service: {e}")

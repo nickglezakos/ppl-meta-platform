@@ -146,6 +146,15 @@ class AggregatedIndividualAnalysis {
   final double averageConfidence;
   final double averageQualityScore;
   final double? averageRouteVelocity;
+  /// Instant Detection ground speed (m/s); null when unavailable.
+  final double? averageSpeedMps;
+  /// Instant Detection gait band derived from averageSpeedMps.
+  final String? gaitBand;
+  /// Instant Detection motion class (velocity + route caricature).
+  final String? motionClass;
+  final double? motionConfidence;
+  final Map<String, dynamic>? motionFeatures;
+  final Map<String, dynamic>? routeCaricature;
   final Demographics? demographics;
   final AggregateDemographics? aggregateDemographics;
   final List<IndividualAppearance> appearances;
@@ -181,6 +190,12 @@ class AggregatedIndividualAnalysis {
     required this.averageConfidence,
     this.averageQualityScore = 0.0,
     this.averageRouteVelocity,
+    this.averageSpeedMps,
+    this.gaitBand,
+    this.motionClass,
+    this.motionConfidence,
+    this.motionFeatures,
+    this.routeCaricature,
     this.demographics,
     this.aggregateDemographics,
     required this.appearances,
@@ -220,6 +235,16 @@ class AggregatedIndividualAnalysis {
       averageConfidence: (json['average_confidence'] as num).toDouble(),
       averageQualityScore: (json['average_quality_score'] as num?)?.toDouble() ?? 0.0,
       averageRouteVelocity: (json['average_route_velocity'] as num?)?.toDouble(),
+      averageSpeedMps: (json['average_speed_mps'] as num?)?.toDouble(),
+      gaitBand: json['gait_band'] as String?,
+      motionClass: json['motion_class'] as String?,
+      motionConfidence: (json['motion_confidence'] as num?)?.toDouble(),
+      motionFeatures: json['motion_features'] is Map
+          ? Map<String, dynamic>.from(json['motion_features'] as Map)
+          : null,
+      routeCaricature: json['route_caricature'] is Map
+          ? Map<String, dynamic>.from(json['route_caricature'] as Map)
+          : null,
       demographics: json['demographics'] != null 
           ? Demographics.fromJson(json['demographics'] as Map<String, dynamic>)
           : null,

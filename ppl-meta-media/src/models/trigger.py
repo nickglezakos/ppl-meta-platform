@@ -111,7 +111,7 @@ class Trigger(BaseModel):
         nullable=False,
         default="demographic",
         index=True,
-        comment="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match | body_posture | velocity | left_object | vehicle_plate"
+        comment="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match | body_posture | motion | left_object | vehicle_plate (velocity alias→motion)"
     )
     ppl_match_group_id = Column(
         String(255),
@@ -182,18 +182,42 @@ class Trigger(BaseModel):
         comment="Minimum bbox IoU to continue a body track across cycles",
     )
 
-    # Velocity trigger configuration (instant face/body speed bands)
+    # Legacy velocity columns (kept for one-release read alias; prefer motion_*)
     velocity_scope = Column(
         String(16),
         nullable=True,
         default="crowd",
-        comment="Velocity trigger scope: crowd | single",
+        comment="Legacy: velocity trigger scope (use motion_scope)",
     )
     velocity_band = Column(
         String(32),
         nullable=True,
         default="walking",
-        comment="Gait band floor: walking | light_running | running | fast_running",
+        comment="Legacy: gait band floor (migrated into motion_conditions speed_band)",
+    )
+
+    # Motion trigger configuration (speed band + motion class + ROI transit)
+    motion_scope = Column(
+        String(16),
+        nullable=True,
+        default="crowd",
+        comment="Motion trigger speed scope: crowd | single",
+    )
+    motion_conditions = Column(
+        Text,
+        nullable=True,
+        comment='JSON array: [{"field":"speed_band|motion_class|roi_transit","operator":"...","value":...}]',
+    )
+    motion_condition_logic = Column(
+        String(8),
+        nullable=True,
+        default="and",
+        comment="Combine motion_conditions with and | or",
+    )
+    motion_roi = Column(
+        Text,
+        nullable=True,
+        comment="JSON polygon of normalized viewport coords [[x,y],...] in 0-1",
     )
 
     # Left / stationary object trigger (COCO objects stable in ROI)

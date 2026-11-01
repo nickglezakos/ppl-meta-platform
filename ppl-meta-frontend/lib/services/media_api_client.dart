@@ -797,9 +797,10 @@ class MediaApiClient {
     List<String>? genders,
     List<String>? ageGroups,
     String? dataSource,
+    bool normalised = false,
   }) async {
     try {
-      debugPrint('📊 Fetching analytics summary (timeFilter: $timeFilter, collections: ${cameraIds?.length ?? "all"}, source: ${dataSource ?? "recording"})');
+      debugPrint('📊 Fetching analytics summary (timeFilter: $timeFilter, collections: ${cameraIds?.length ?? "all"}, source: ${dataSource ?? "recording"}, normalised: $normalised)');
       
       final queryParams = <String, dynamic>{
         'time_filter': timeFilter,
@@ -825,6 +826,9 @@ class MediaApiClient {
       if (dataSource != null && dataSource != 'recording') {
         queryParams['source_type'] = dataSource;
       }
+      if (normalised && dataSource == 'instant_detection') {
+        queryParams['normalised'] = true;
+      }
       
       final response = await _apiClient.get(
         '/api/v1/analytics/summary',
@@ -839,6 +843,50 @@ class MediaApiClient {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
       debugPrint('❌ Get analytics summary unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// FOV heatmap + path samples for Recording analytics intents.
+  Future<ApiResponse<Map<String, dynamic>>> getAnalyticsRouteFov({
+    String timeFilter = 'today',
+    List<String>? cameraIds,
+    List<String>? videoUuids,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? dataSource,
+    int gridSize = 8,
+    int maxVideos = 50,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        'time_filter': timeFilter,
+        'grid_size': gridSize,
+        'max_videos': maxVideos,
+      };
+      if (cameraIds != null && cameraIds.isNotEmpty) {
+        queryParams['camera_ids'] = cameraIds.join(',');
+      }
+      if (videoUuids != null && videoUuids.isNotEmpty) {
+        queryParams['video_uuids'] = videoUuids.join(',');
+      }
+      if (timeFilter == 'custom' && startDate != null && endDate != null) {
+        queryParams['start_date'] = startDate.toUtc().toIso8601String();
+        queryParams['end_date'] = endDate.toUtc().toIso8601String();
+      }
+      if (dataSource != null && dataSource != 'recording') {
+        queryParams['source_type'] = dataSource;
+      }
+      final response = await _apiClient.get(
+        '/api/v1/analytics/route-fov',
+        queryParameters: queryParams,
+      );
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Get analytics route-fov failed: ${e.message}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Get analytics route-fov unexpected error: $e');
       return ApiResponse.error('Unexpected error: $e');
     }
   }
@@ -867,6 +915,7 @@ class MediaApiClient {
     DateTime? startDate,
     DateTime? endDate,
     String? dataSource,
+    bool normalised = false,
   }) async {
     try {
       debugPrint('📈 Fetching time-based analytics (timeFilter: $timeFilter, interval: $interval)');
@@ -888,6 +937,9 @@ class MediaApiClient {
       }
       if (dataSource != null && dataSource != 'recording') {
         queryParams['source_type'] = dataSource;
+      }
+      if (normalised && dataSource == 'instant_detection') {
+        queryParams['normalised'] = true;
       }
       
       final response = await _apiClient.get(
@@ -932,6 +984,7 @@ class MediaApiClient {
     List<String>? genders,
     List<String>? ageGroups,
     String? dataSource,
+    bool normalised = false,
   }) async {
     try {
       final cameraCount = cameraIds?.length ?? 0;
@@ -964,6 +1017,9 @@ class MediaApiClient {
       }
       if (dataSource != null && dataSource != 'recording') {
         queryParams['source_type'] = dataSource;
+      }
+      if (normalised && dataSource == 'instant_detection') {
+        queryParams['normalised'] = true;
       }
       
       final response = await _apiClient.get(
@@ -1012,6 +1068,7 @@ class MediaApiClient {
     List<String>? genders,
     List<String>? ageGroups,
     String? dataSource,
+    bool normalised = false,
   }) async {
     try {
       final cameraCount = cameraIds?.length ?? 0;
@@ -1044,6 +1101,9 @@ class MediaApiClient {
       }
       if (dataSource != null && dataSource != 'recording') {
         queryParams['source_type'] = dataSource;
+      }
+      if (normalised && dataSource == 'instant_detection') {
+        queryParams['normalised'] = true;
       }
       
       final response = await _apiClient.get(
@@ -2228,6 +2288,39 @@ class MediaApiClient {
     };
     final response = await _apiClient.get(
       '/api/v1/instant-detection-logs',
+      queryParameters: queryParams,
+    );
+    final data = response.data;
+    if (data is List) {
+      return data
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return const [];
+  }
+
+  /// List derived Instant Detection normalised spans (worker merge results).
+  Future<List<Map<String, dynamic>>> listInstantDetectionNormalisedSpans({
+    String? cameraDeviceId,
+    DateTime? startTime,
+    DateTime? endTime,
+    double? mergeThreshold,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final queryParams = <String, dynamic>{
+      'limit': limit,
+      'offset': offset,
+      if (cameraDeviceId != null && cameraDeviceId.isNotEmpty)
+        'camera_device_id': cameraDeviceId,
+      if (startTime != null)
+        'start_time': startTime.toUtc().toIso8601String(),
+      if (endTime != null) 'end_time': endTime.toUtc().toIso8601String(),
+      if (mergeThreshold != null) 'merge_threshold': mergeThreshold,
+    };
+    final response = await _apiClient.get(
+      '/api/v1/instant-detection-logs/normalised/spans',
       queryParameters: queryParams,
     );
     final data = response.data;

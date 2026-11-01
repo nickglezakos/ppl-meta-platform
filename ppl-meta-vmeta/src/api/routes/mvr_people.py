@@ -6809,6 +6809,19 @@ def _build_analysis_from_instant_records(
         person_object_uuids.append(person_object_uuid)
         mvr_uuid = _instant_mvr_record_uuid(record) or mvr_person_uuid
         record_tracking = _instant_record_movement_tracking(record)
+        record_speed = record.get("speed_mps")
+        if record_speed is None:
+            nested_stats = (record_tracking.get("movement_statistics") or {})
+            record_speed = nested_stats.get("average_speed_mps")
+        try:
+            record_speed_mps = (
+                round(float(record_speed), 4) if record_speed is not None else None
+            )
+        except (TypeError, ValueError):
+            record_speed_mps = None
+        record_speed_samples = record.get("speed_samples")
+        if not isinstance(record_speed_samples, list):
+            record_speed_samples = []
         appearances.append(
             {
                 "individual_uuid": mvr_uuid,
@@ -6823,6 +6836,9 @@ def _build_analysis_from_instant_records(
                 "camera_id": record.get("camera_id") or record.get("camera_device_id"),
                 "movement_pattern": record_tracking,
                 "route_points": record_tracking.get("route_points") or [],
+                "speed_mps": record_speed_mps,
+                "gait_band": record.get("gait_band"),
+                "speed_samples": record_speed_samples,
             }
         )
         duration = (end_ts - start_ts).total_seconds()
@@ -6890,6 +6906,67 @@ def _build_analysis_from_instant_records(
         member_records,
         combined_tracking,
     )
+    from services.instant_speed_aggregation import aggregate_speed_and_gait
+    from services.instant_motion_classification import classify_instant_motion
+
+    average_speed_mps, gait_band = aggregate_speed_and_gait(member_records)
+    combined_stats = dict(combined_tracking.get("movement_statistics") or {})
+    if average_speed_mps is not None:
+        combined_stats["average_speed_mps"] = average_speed_mps
+    if gait_band:
+        combined_stats["gait_band"] = gait_band
+
+    # Preserve per-cycle Instant speeds across member InstantMvrs for Motion charts.
+    speed_samples: List[Dict[str, Any]] = []
+    for record in member_records:
+        samples = record.get("speed_samples")
+        if isinstance(samples, list) and samples:
+            for sample in samples:
+                if isinstance(sample, dict):
+                    speed_samples.append(dict(sample))
+            continue
+        appearance_model = _instant_mvr_appearance(record)
+        speed = record.get("speed_mps")
+        if speed is None:
+            nested = (
+                (record.get("movement_tracking") or {}).get("movement_statistics")
+                if isinstance(record.get("movement_tracking"), dict)
+                else {}
+            )
+            speed = nested.get("average_speed_mps") if isinstance(nested, dict) else None
+        try:
+            speed_val = float(speed) if speed is not None else None
+        except (TypeError, ValueError):
+            speed_val = None
+        if speed_val is None or speed_val <= 0:
+            continue
+        speed_samples.append(
+            {
+                "timestamp": appearance_model.start_timestamp.isoformat(),
+                "speed_mps": round(speed_val, 4),
+                "gait_band": record.get("gait_band"),
+                "instant_mvr_uuid": _instant_mvr_record_uuid(record),
+            }
+        )
+
+    motion = classify_instant_motion(
+        route_points=combined_tracking.get("route_points") or [],
+        average_speed_mps=average_speed_mps,
+        movement_statistics=combined_stats,
+    )
+    motion_class = motion.get("motion_class")
+    motion_confidence = motion.get("motion_confidence")
+    motion_features = motion.get("motion_features")
+    route_caricature = motion.get("route_caricature")
+    if motion_class:
+        combined_stats["motion_class"] = motion_class
+    if motion_confidence is not None:
+        combined_stats["motion_confidence"] = motion_confidence
+
+    combined_tracking = {
+        **combined_tracking,
+        "movement_statistics": combined_stats,
+    }
     now_iso = datetime.now(timezone.utc).isoformat()
     return {
         "individual_uuid": mvr_person_uuid,
@@ -6911,6 +6988,13 @@ def _build_analysis_from_instant_records(
         ),
         "average_quality_score": average_quality,
         "average_route_velocity": average_route_velocity,
+        "average_speed_mps": average_speed_mps,
+        "gait_band": gait_band,
+        "motion_class": motion_class,
+        "motion_confidence": motion_confidence,
+        "motion_features": motion_features,
+        "route_caricature": route_caricature,
+        "speed_samples": speed_samples,
         "movement_tracking": combined_tracking,
         "route_points": combined_tracking.get("route_points") or [],
         "demographics": demographics,

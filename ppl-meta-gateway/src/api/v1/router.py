@@ -1379,6 +1379,24 @@ async def instant_detection_logs_analytics_summary(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.put("/instant-detection-logs/normalised/spans")
+async def upsert_instant_detection_normalised_span(request: Request):
+    """Proxy Instant Detection normalised span upsert to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/instant-detection-logs/normalised/spans")
+async def list_instant_detection_normalised_spans(request: Request):
+    """Proxy Instant Detection normalised spans list to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.post("/instant-detection-logs/normalised/recompute")
+async def recompute_instant_detection_normalised_spans(request: Request):
+    """Proxy Instant Detection normalised recompute to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.get("/instant-detection-logs/{log_id}")
 async def get_instant_detection_log(request: Request):
     """Proxy single Instant Detection flush log to Media service."""

@@ -887,6 +887,124 @@ def flush_instant_detection_y_window(
 
 
 @celery_app.task(
+    name="instant_detection.normalize_span",
+    queue="instant_detection_queue",
+    time_limit=180,
+    soft_time_limit=150,
+    max_retries=1,
+    retry_backoff=True,
+    acks_late=True,
+)
+def normalize_instant_detection_span_task(
+    camera_id: str,
+    span_start_iso: str,
+    merge_threshold: float = 0.70,
+    span_seconds: int = 300,
+    auth_token: str = "",
+) -> Dict:
+    """Merge Instant flush people for one fixed calendar span → Media normalised path."""
+    from datetime import datetime
+
+    from src.services.instant_detection_normalise import normalize_instant_detection_span
+
+    span_start = datetime.fromisoformat(str(span_start_iso).replace("Z", "+00:00"))
+    logger.info(
+        "📦 [CELERY] Normalise span starting for %s @ %s (threshold=%.2f)",
+        camera_id,
+        span_start_iso,
+        merge_threshold,
+    )
+    result = normalize_instant_detection_span(
+        camera_id,
+        span_start,
+        merge_threshold=float(merge_threshold),
+        span_seconds=int(span_seconds),
+        auth_token=auth_token or None,
+    )
+    logger.info("📦 [CELERY] Normalise span done for %s: %s", camera_id, result)
+    return result
+
+
+@celery_app.task(
+    name="instant_detection.normalize_catchup",
+    queue="instant_detection_queue",
+    time_limit=300,
+    soft_time_limit=270,
+    max_retries=0,
+    acks_late=True,
+)
+def normalize_instant_detection_catchup(
+    lookback_seconds: int = 900,
+) -> Dict:
+    """
+    Periodic catch-up: recompute recent calendar spans for cameras that have
+    recent Instant flush logs. Per-camera normalise_* settings drive span/threshold.
+    """
+    import os
+    from datetime import datetime, timedelta, timezone
+
+    import requests
+
+    from src.services.instant_detection_normalise import (
+        enqueue_normalise_spans_for_flush_window,
+        resolve_camera_normalise_settings,
+    )
+
+    media_base = os.getenv("MEDIA_SERVICE_URL", "http://localhost:8000").rstrip("/")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(seconds=max(60, int(lookback_seconds)))
+    try:
+        resp = requests.get(
+            f"{media_base}/api/v1/instant-detection-logs",
+            params={
+                "start_time": start.isoformat(),
+                "end_time": end.isoformat(),
+                "limit": 200,
+                "offset": 0,
+            },
+            timeout=30,
+        )
+        logs = resp.json() if resp.status_code == 200 else []
+        if not isinstance(logs, list):
+            logs = []
+    except Exception as exc:
+        logger.warning("Normalise catch-up log fetch failed: %s", exc)
+        return {"success": False, "error": str(exc)}
+
+    cameras = sorted(
+        {
+            str(log.get("camera_device_id") or "").strip()
+            for log in logs
+            if str(log.get("camera_device_id") or "").strip()
+        }
+    )
+    enqueued = []
+    skipped = []
+    for camera_id in cameras:
+        settings = resolve_camera_normalise_settings(camera_id)
+        if not settings.get("enabled", True):
+            skipped.append(camera_id)
+            continue
+        result = enqueue_normalise_spans_for_flush_window(
+            camera_id,
+            flush_started_at=start,
+            flush_ended_at=end,
+            auth_token=None,
+            merge_threshold=float(settings["merge_threshold"]),
+            span_seconds=int(settings["span_seconds"]),
+        )
+        enqueued.append({"camera_id": camera_id, **result, **settings})
+    return {
+        "success": True,
+        "camera_count": len(cameras),
+        "enqueued_count": len(enqueued),
+        "skipped_disabled": skipped,
+        "lookback_seconds": lookback_seconds,
+        "results": enqueued,
+    }
+
+
+@celery_app.task(
     name="instant_detection.persist_results",
     queue="instant_detection_queue",
     time_limit=15,

@@ -160,6 +160,16 @@ def enrich_person_with_velocity(person: Dict[str, Any]) -> Dict[str, Any]:
 
     if velocity is None or samples < MIN_SAMPLES_FOR_VELOCITY:
         velocity, samples = _fallback_velocity_px_ms(faces)
+    else:
+        # Vision sometimes reports a zero velocity dict with samples>=2; recompute
+        # from face bboxes so Instant flushes don't publish speed_mps=0 falsely.
+        mag = math.hypot(
+            float(velocity.get("x", 0.0) or 0.0),
+            float(velocity.get("y", 0.0) or 0.0),
+        )
+        if mag < 1e-9 and len(faces) >= MIN_SAMPLES_FOR_VELOCITY:
+            fallback_v, fallback_n = _fallback_velocity_px_ms(faces)
+            velocity, samples = fallback_v, max(samples, fallback_n)
 
     person["velocity_px_ms"] = {
         "x": float(velocity.get("x", 0.0)),
@@ -226,19 +236,90 @@ def attach_cycle_velocity(
 
     valid_speeds: List[float] = []
     people_compact: List[Dict[str, Any]] = []
+    # Infer a frame size from bboxes so centers can be published normalized.
+    max_x = 1.0
+    max_y = 1.0
+    for person in person_objects:
+        bbox = person.get("best_bbox") or (person.get("best_face") or {}).get("bbox")
+        if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+            try:
+                max_x = max(max_x, float(bbox[0]), float(bbox[2]))
+                max_y = max(max_y, float(bbox[1]), float(bbox[3]))
+            except (TypeError, ValueError):
+                pass
+        for face in person.get("faces") or []:
+            fb = face.get("bbox")
+            if isinstance(fb, (list, tuple)) and len(fb) >= 4:
+                try:
+                    max_x = max(max_x, float(fb[0]), float(fb[2]))
+                    max_y = max(max_y, float(fb[1]), float(fb[3]))
+                except (TypeError, ValueError):
+                    pass
+    # Avoid tiny denominators when all coords already look normalized.
+    if max_x <= 1.5 and max_y <= 1.5:
+        max_x, max_y = 1.0, 1.0
+
+    def _person_center_norm(person: Dict[str, Any]) -> Optional[List[float]]:
+        bbox = person.get("best_bbox") or (person.get("best_face") or {}).get("bbox")
+        if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+            return None
+        try:
+            cx, cy, _ = _bbox_center_and_height(bbox)
+        except (TypeError, ValueError):
+            return None
+        return [round(cx / max_x, 4), round(cy / max_y, 4)]
+
+    def _route_tail(person: Dict[str, Any]) -> List[Dict[str, Any]]:
+        faces = person.get("faces") or []
+        if not faces:
+            return []
+        ordered = faces[-8:]
+        tail: List[Dict[str, Any]] = []
+        for i, face in enumerate(ordered):
+            bbox = face.get("bbox")
+            if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+                continue
+            try:
+                cx, cy, _ = _bbox_center_and_height(bbox)
+            except (TypeError, ValueError):
+                continue
+            ts = face.get("created_at") or face.get("timestamp") or i
+            if hasattr(ts, "timestamp"):
+                try:
+                    ts = ts.timestamp()
+                except Exception:
+                    ts = i
+            elif isinstance(ts, str):
+                parsed = _parse_created_at(ts)
+                ts = parsed.timestamp() if parsed is not None else i
+            tail.append(
+                {
+                    "center_norm": [round(cx / max_x, 4), round(cy / max_y, 4)],
+                    "timestamp": ts,
+                }
+            )
+        return tail
+
     for person in person_objects:
         speed = person.get("speed_mps")
         if speed is None:
             continue
         valid_speeds.append(float(speed))
-        people_compact.append(
-            {
-                "person_object_uuid": person.get("person_object_uuid")
-                or person.get("person_id"),
-                "speed_mps": person.get("speed_mps"),
-                "gait_band": person.get("gait_band"),
+        v_px = person.get("velocity_px_ms") or person.get("velocity") or {}
+        entry: Dict[str, Any] = {
+            "person_object_uuid": person.get("person_object_uuid")
+            or person.get("person_id"),
+            "speed_mps": person.get("speed_mps"),
+            "gait_band": person.get("gait_band"),
+            "center_norm": _person_center_norm(person),
+            "route_tail": _route_tail(person),
+        }
+        if isinstance(v_px, dict):
+            entry["velocity_px_ms"] = {
+                "x": float(v_px.get("x", 0.0)),
+                "y": float(v_px.get("y", 0.0)),
             }
-        )
+        people_compact.append(entry)
 
     # Optional body fallback when face path produced no valid speeds.
     if not valid_speeds and body_persons:
@@ -251,14 +332,23 @@ def attach_cycle_velocity(
             body["speed_mps"] = speed
             body["gait_band"] = band
             valid_speeds.append(speed)
-            people_compact.append(
-                {
-                    "person_object_uuid": body.get("body_person_id")
-                    or body.get("person_object_uuid"),
-                    "speed_mps": speed,
-                    "gait_band": band,
-                }
-            )
+            body_entry: Dict[str, Any] = {
+                "person_object_uuid": body.get("body_person_id")
+                or body.get("person_object_uuid"),
+                "speed_mps": speed,
+                "gait_band": band,
+            }
+            bbox = body.get("average_bbox") or body.get("bbox")
+            if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+                try:
+                    cx, cy, _ = _bbox_center_and_height(bbox)
+                    # Body coords often already pixel-space; normalize loosely.
+                    nx = cx / max(max_x, cx, 1.0)
+                    ny = cy / max(max_y, cy, 1.0)
+                    body_entry["center_norm"] = [round(nx, 4), round(ny, 4)]
+                except (TypeError, ValueError):
+                    pass
+            people_compact.append(body_entry)
 
     crowd_mps = (
         round(sum(valid_speeds) / len(valid_speeds), 4) if valid_speeds else None

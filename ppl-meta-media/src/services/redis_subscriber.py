@@ -24,7 +24,7 @@ from src.schemas.signage import PlaybackControlRequest, PlaybackCommand, Playbac
 from src.services.communications_client import CommunicationsClient
 from src.services.vprofile_match_worker import get_vprofile_worker
 from src.services.body_posture_worker import get_body_posture_worker
-from src.services.velocity_trigger_worker import get_velocity_trigger_worker
+from src.services.motion_trigger_worker import get_motion_trigger_worker
 from src.services.left_object_worker import get_left_object_worker
 from src.services.vehicle_plate_worker import get_vehicle_plate_worker
 from src.services.people_profile_enrichment import (
@@ -334,7 +334,13 @@ class InstantDetectionSubscriber:
         """
         camera_id = data.get("camera_id")
         people_count = data.get("people_count", 0)
-        demographics = data.get("demographics", {})
+        from ..services.trigger_evaluation import enrich_intent_metrics_demographics
+
+        demographics = enrich_intent_metrics_demographics(
+            data.get("demographics", {}) or {},
+            int(people_count or 0),
+            data,
+        )
         timestamp = data.get("timestamp")
         is_search_trigger = data.get("source") == "search_trigger"
         
@@ -412,7 +418,7 @@ class InstantDetectionSubscriber:
                 # Also include multicam triggers (they use camera_device_ids array, not camera_device_id)
                 multicam_triggers = db.query(Trigger).filter(
                     Trigger.is_active == True,
-                    Trigger.trigger_mode.in_(['vprofile_match', 'body_posture', 'velocity', 'left_object', 'vehicle_plate'])
+                    Trigger.trigger_mode.in_(['vprofile_match', 'body_posture', 'motion', 'velocity', 'left_object', 'vehicle_plate'])
                 ).all()
                 triggers = triggers + [t for t in multicam_triggers if t not in triggers]
             
@@ -598,14 +604,14 @@ class InstantDetectionSubscriber:
                         )
                         continue
                     logger.info(f"  ✅ body_posture MET: {reason}")
-                elif trigger_mode == "velocity":
-                    logger.info("  🔎 Evaluating velocity mode (crowd / single person)")
-                    worker = get_velocity_trigger_worker()
+                elif trigger_mode in ("motion", "velocity"):
+                    logger.info("  🔎 Evaluating motion mode (speed / class / ROI)")
+                    worker = get_motion_trigger_worker()
                     event_camera_id = data.get("camera_id")
                     allowed_cameras = worker.get_camera_device_ids(trigger)
                     if allowed_cameras and event_camera_id not in allowed_cameras:
                         logger.debug(
-                            "  ⏭️ Camera %s not in velocity camera list, skipping",
+                            "  ⏭️ Camera %s not in motion camera list, skipping",
                             event_camera_id,
                         )
                         continue
@@ -613,7 +619,7 @@ class InstantDetectionSubscriber:
                         ready = await worker.ensure_trigger_loaded(trigger)
                     except Exception as e:
                         logger.warning(
-                            "  ⚠️ Error ensuring velocity trigger loaded %s: %s",
+                            "  ⚠️ Error ensuring motion trigger loaded %s: %s",
                             trigger.uuid,
                             e,
                         )
@@ -623,7 +629,7 @@ class InstantDetectionSubscriber:
                             db=db,
                             trigger=trigger,
                             passed=False,
-                            reason="velocity trigger not loaded (missing cameras)",
+                            reason="motion trigger not loaded (missing cameras)",
                             match_info=None,
                             detection_data=self._current_detection_data,
                             action_executed=False,
@@ -642,7 +648,7 @@ class InstantDetectionSubscriber:
                             action_executed=False,
                         )
                         continue
-                    logger.info(f"  ✅ velocity MET: {reason}")
+                    logger.info(f"  ✅ motion MET: {reason}")
                 elif trigger_mode == "left_object":
                     logger.info("  🔎 Evaluating left_object mode (stationary / abandoned)")
                     worker = get_left_object_worker()
@@ -793,7 +799,7 @@ class InstantDetectionSubscriber:
                     trigger.last_match_info = json.dumps(match_info)
                     trigger.last_matched_at = datetime.now(timezone.utc)
 
-                if trigger_mode in ("ppl_match", "vprofile_match", "body_posture", "velocity", "left_object", "vehicle_plate") and reason:
+                if trigger_mode in ("ppl_match", "vprofile_match", "body_posture", "motion", "velocity", "left_object", "vehicle_plate") and reason:
                     success_reason = reason
                 else:
                     success_reason = "Demographic conditions met"
@@ -1059,6 +1065,14 @@ class InstantDetectionSubscriber:
             if field == 'people_count':
                 actual_value = people_count
                 logger.info(f"       Actual people_count: {actual_value}")
+            elif field == 'occupancy_span_count':
+                actual_value = demographics.get(
+                    'occupancy_span_count', people_count
+                )
+                logger.info(f"       Actual occupancy_span_count: {actual_value}")
+            elif field in ('dwell_seconds', 'path_velocity_avg'):
+                actual_value = demographics.get(field)
+                logger.info(f"       Actual {field}: {actual_value}")
             elif field == 'age_threshold':
                 # Prefer direct average_age (published by instant-detection pipeline)
                 if demographics.get('average_age') is not None:

@@ -8,6 +8,12 @@ class CameraPipelineSettings {
   final int segmentDurationSeconds;
   final int storageMultiple;
   final int trackingSessionDurationMinutes;
+  final int framesPerCycle;
+  final int flushIntervalCycles;
+  final double flushMergeSimilarityThreshold;
+  final bool normaliseEnabled;
+  final int normaliseSpanSeconds;
+  final double normaliseMergeThreshold;
 
   const CameraPipelineSettings({
     required this.deviceId,
@@ -18,6 +24,12 @@ class CameraPipelineSettings {
     required this.segmentDurationSeconds,
     this.storageMultiple = 1,
     this.trackingSessionDurationMinutes = 0,
+    this.framesPerCycle = 3,
+    this.flushIntervalCycles = 12,
+    this.flushMergeSimilarityThreshold = 0.60,
+    this.normaliseEnabled = true,
+    this.normaliseSpanSeconds = 300,
+    this.normaliseMergeThreshold = 0.70,
   });
 
   factory CameraPipelineSettings.fromJson(Map<String, dynamic> json) {
@@ -26,10 +38,20 @@ class CameraPipelineSettings {
       cameraName: json['camera_name']?.toString() ?? '',
       instantDetectionEnabled: json['instant_detection_enabled'] as bool? ?? true,
       recordingPipelineEnabled: json['recording_pipeline_enabled'] as bool? ?? true,
-      instantDetectionIntervalSeconds: json['instant_detection_interval_seconds'] as int? ?? 5,
+      instantDetectionIntervalSeconds:
+          json['instant_detection_interval_seconds'] as int? ?? 5,
       segmentDurationSeconds: json['segment_duration_seconds'] as int? ?? 30,
       storageMultiple: json['storage_multiple'] as int? ?? 1,
-      trackingSessionDurationMinutes: json['tracking_session_duration_minutes'] as int? ?? 0,
+      trackingSessionDurationMinutes:
+          json['tracking_session_duration_minutes'] as int? ?? 0,
+      framesPerCycle: json['frames_per_cycle'] as int? ?? 3,
+      flushIntervalCycles: json['flush_interval_cycles'] as int? ?? 12,
+      flushMergeSimilarityThreshold:
+          (json['flush_merge_similarity_threshold'] as num?)?.toDouble() ?? 0.60,
+      normaliseEnabled: json['normalise_enabled'] as bool? ?? true,
+      normaliseSpanSeconds: json['normalise_span_seconds'] as int? ?? 300,
+      normaliseMergeThreshold:
+          (json['normalise_merge_threshold'] as num?)?.toDouble() ?? 0.70,
     );
   }
 
@@ -43,6 +65,12 @@ class CameraPipelineSettings {
       'segment_duration_seconds': segmentDurationSeconds,
       'storage_multiple': storageMultiple,
       'tracking_session_duration_minutes': trackingSessionDurationMinutes,
+      'frames_per_cycle': framesPerCycle,
+      'flush_interval_cycles': flushIntervalCycles,
+      'flush_merge_similarity_threshold': flushMergeSimilarityThreshold,
+      'normalise_enabled': normaliseEnabled,
+      'normalise_span_seconds': normaliseSpanSeconds,
+      'normalise_merge_threshold': normaliseMergeThreshold,
     };
   }
 
@@ -55,6 +83,12 @@ class CameraPipelineSettings {
       'segment_duration_seconds': segmentDurationSeconds,
       'storage_multiple': storageMultiple,
       'tracking_session_duration_minutes': trackingSessionDurationMinutes,
+      'frames_per_cycle': framesPerCycle,
+      'flush_interval_cycles': flushIntervalCycles,
+      'flush_merge_similarity_threshold': flushMergeSimilarityThreshold,
+      'normalise_enabled': normaliseEnabled,
+      'normalise_span_seconds': normaliseSpanSeconds,
+      'normalise_merge_threshold': normaliseMergeThreshold,
     };
   }
 
@@ -67,16 +101,35 @@ class CameraPipelineSettings {
     int? segmentDurationSeconds,
     int? storageMultiple,
     int? trackingSessionDurationMinutes,
+    int? framesPerCycle,
+    int? flushIntervalCycles,
+    double? flushMergeSimilarityThreshold,
+    bool? normaliseEnabled,
+    int? normaliseSpanSeconds,
+    double? normaliseMergeThreshold,
   }) {
     return CameraPipelineSettings(
       deviceId: deviceId ?? this.deviceId,
       cameraName: cameraName ?? this.cameraName,
-      instantDetectionEnabled: instantDetectionEnabled ?? this.instantDetectionEnabled,
-      recordingPipelineEnabled: recordingPipelineEnabled ?? this.recordingPipelineEnabled,
-      instantDetectionIntervalSeconds: instantDetectionIntervalSeconds ?? this.instantDetectionIntervalSeconds,
-      segmentDurationSeconds: segmentDurationSeconds ?? this.segmentDurationSeconds,
+      instantDetectionEnabled:
+          instantDetectionEnabled ?? this.instantDetectionEnabled,
+      recordingPipelineEnabled:
+          recordingPipelineEnabled ?? this.recordingPipelineEnabled,
+      instantDetectionIntervalSeconds: instantDetectionIntervalSeconds ??
+          this.instantDetectionIntervalSeconds,
+      segmentDurationSeconds:
+          segmentDurationSeconds ?? this.segmentDurationSeconds,
       storageMultiple: storageMultiple ?? this.storageMultiple,
-      trackingSessionDurationMinutes: trackingSessionDurationMinutes ?? this.trackingSessionDurationMinutes,
+      trackingSessionDurationMinutes: trackingSessionDurationMinutes ??
+          this.trackingSessionDurationMinutes,
+      framesPerCycle: framesPerCycle ?? this.framesPerCycle,
+      flushIntervalCycles: flushIntervalCycles ?? this.flushIntervalCycles,
+      flushMergeSimilarityThreshold: flushMergeSimilarityThreshold ??
+          this.flushMergeSimilarityThreshold,
+      normaliseEnabled: normaliseEnabled ?? this.normaliseEnabled,
+      normaliseSpanSeconds: normaliseSpanSeconds ?? this.normaliseSpanSeconds,
+      normaliseMergeThreshold:
+          normaliseMergeThreshold ?? this.normaliseMergeThreshold,
     );
   }
 
@@ -100,7 +153,8 @@ class CameraPipelineSettings {
 
   /// Validate instant detection interval
   bool get hasValidInterval {
-    return instantDetectionIntervalSeconds >= 1 && instantDetectionIntervalSeconds <= 60;
+    return instantDetectionIntervalSeconds >= 1 &&
+        instantDetectionIntervalSeconds <= 60;
   }
 
   /// Validate segment duration
@@ -115,10 +169,17 @@ class CameraPipelineSettings {
         other.deviceId == deviceId &&
         other.instantDetectionEnabled == instantDetectionEnabled &&
         other.recordingPipelineEnabled == recordingPipelineEnabled &&
-        other.instantDetectionIntervalSeconds == instantDetectionIntervalSeconds &&
+        other.instantDetectionIntervalSeconds ==
+            instantDetectionIntervalSeconds &&
         other.segmentDurationSeconds == segmentDurationSeconds &&
         other.storageMultiple == storageMultiple &&
-        other.trackingSessionDurationMinutes == trackingSessionDurationMinutes;
+        other.trackingSessionDurationMinutes == trackingSessionDurationMinutes &&
+        other.framesPerCycle == framesPerCycle &&
+        other.flushIntervalCycles == flushIntervalCycles &&
+        other.flushMergeSimilarityThreshold == flushMergeSimilarityThreshold &&
+        other.normaliseEnabled == normaliseEnabled &&
+        other.normaliseSpanSeconds == normaliseSpanSeconds &&
+        other.normaliseMergeThreshold == normaliseMergeThreshold;
   }
 
   @override
@@ -131,6 +192,12 @@ class CameraPipelineSettings {
       segmentDurationSeconds,
       storageMultiple,
       trackingSessionDurationMinutes,
+      framesPerCycle,
+      flushIntervalCycles,
+      flushMergeSimilarityThreshold,
+      normaliseEnabled,
+      normaliseSpanSeconds,
+      normaliseMergeThreshold,
     );
   }
 }

@@ -21,6 +21,26 @@ class DemographicCondition {
   Map<String, dynamic> toJson() => _$DemographicConditionToJson(this);
 }
 
+/// Motion condition for motion trigger evaluation (speed / class / ROI).
+@JsonSerializable()
+class MotionCondition {
+  final String field;
+  final String operator;
+  /// String for speed_band / single value; List for multi-select (in).
+  final dynamic value;
+
+  MotionCondition({
+    required this.field,
+    required this.operator,
+    required this.value,
+  });
+
+  factory MotionCondition.fromJson(Map<String, dynamic> json) =>
+      _$MotionConditionFromJson(json);
+
+  Map<String, dynamic> toJson() => _$MotionConditionToJson(this);
+}
+
 @JsonSerializable()
 class TriggerModel {
   final int id;
@@ -103,6 +123,18 @@ class TriggerModel {
 
   @JsonKey(name: 'velocity_band')
   final String? velocityBand;
+
+  @JsonKey(name: 'motion_scope')
+  final String? motionScope;
+
+  @JsonKey(name: 'motion_conditions')
+  final List<MotionCondition>? motionConditions;
+
+  @JsonKey(name: 'motion_condition_logic')
+  final String? motionConditionLogic;
+
+  @JsonKey(name: 'motion_roi')
+  final List<List<double>>? motionRoi;
 
   @JsonKey(name: 'left_object_class_allowlist')
   final List<String>? leftObjectClassAllowlist;
@@ -199,6 +231,10 @@ class TriggerModel {
     this.bodyPostureIouThreshold,
     this.velocityScope,
     this.velocityBand,
+    this.motionScope,
+    this.motionConditions,
+    this.motionConditionLogic,
+    this.motionRoi,
     this.leftObjectClassAllowlist,
     this.leftObjectRoi,
     this.leftObjectTStableSeconds,
@@ -248,18 +284,17 @@ class TriggerModel {
           ? 'Left object (person left): $classes, ${stable}s, $cameraCount camera(s)'
           : 'Left object (stable): $classes, ${stable}s, $cameraCount camera(s)';
     }
-    if (triggerMode == 'velocity') {
+    if (triggerMode == 'motion' || triggerMode == 'velocity') {
       final cameraCount = cameraDeviceIds?.length ?? 0;
-      final scope = velocityScope ?? 'crowd';
+      final scope = motionScope ?? velocityScope ?? 'crowd';
+      final logic = (motionConditionLogic ?? 'and').toUpperCase();
+      final conds = motionConditions;
+      if (conds != null && conds.isNotEmpty) {
+        final parts = conds.map((c) => '${c.field}:${c.value}').join(', ');
+        return 'Motion ($logic): $parts, $scope, $cameraCount camera(s)';
+      }
       final band = velocityBand ?? 'walking';
-      const floors = {
-        'walking': '1.25',
-        'light_running': '2.2',
-        'running': '3.3',
-        'fast_running': '5.0',
-      };
-      final floor = floors[band] ?? '?';
-      return 'Velocity: $scope ≥ $band ($floor m/s), $cameraCount camera(s)';
+      return 'Motion: $scope ≥ $band, $cameraCount camera(s)';
     }
     if (triggerMode == 'body_posture') {
       final cameraCount = cameraDeviceIds?.length ?? 0;
@@ -361,6 +396,18 @@ class TriggerCreateRequest {
   @JsonKey(name: 'velocity_band')
   final String? velocityBand;
 
+  @JsonKey(name: 'motion_scope')
+  final String? motionScope;
+
+  @JsonKey(name: 'motion_conditions')
+  final List<MotionCondition>? motionConditions;
+
+  @JsonKey(name: 'motion_condition_logic')
+  final String? motionConditionLogic;
+
+  @JsonKey(name: 'motion_roi')
+  final List<List<double>>? motionRoi;
+
   @JsonKey(name: 'left_object_class_allowlist')
   final List<String>? leftObjectClassAllowlist;
 
@@ -439,6 +486,10 @@ class TriggerCreateRequest {
     this.bodyPostureIouThreshold,
     this.velocityScope,
     this.velocityBand,
+    this.motionScope,
+    this.motionConditions,
+    this.motionConditionLogic,
+    this.motionRoi,
     this.leftObjectClassAllowlist,
     this.leftObjectRoi,
     this.leftObjectTStableSeconds,

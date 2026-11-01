@@ -1148,7 +1148,19 @@ class InstantDetectionSampler:
 
         # Step 5: Per-person + crowd velocity (Vision px/ms → m/s via face height)
         velocity_summary = attach_cycle_velocity(person_objects, body_persons)
-        
+
+        # Mirror speed onto nested InstantMvr so flush / log-search records carry m/s.
+        for person in person_objects:
+            if not isinstance(person, dict):
+                continue
+            nested = person.get("instant_mvr")
+            if not isinstance(nested, dict):
+                continue
+            if person.get("speed_mps") is not None:
+                nested["speed_mps"] = person.get("speed_mps")
+            if person.get("gait_band"):
+                nested["gait_band"] = person.get("gait_band")
+
         instant_mvrs = [
             p["instant_mvr"]
             for p in person_objects

@@ -12,9 +12,11 @@ import '../core/theme/app_theme.dart';
 import '../widgets/custom_app_bar.dart';
 import '../models/analytics_models.dart';
 import '../models/api_response.dart';
+import '../providers/instant_analytics_view_mode_provider.dart';
 import '../services/media_api_client.dart';
 import '../core/providers/camera_providers.dart';
 import '../utils/platform_file_download.dart';
+import '../widgets/analytics_intents_panel.dart';
 import '../widgets/people_counters_tile.dart';
 
 /// MVR Analytics Dashboard - showing people detection insights from camera collections
@@ -67,6 +69,11 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   Map<String, dynamic>? _demographicsData;
   Map<String, dynamic>? _behavioralData;
   List<Map<String, dynamic>> _cameras = [];
+  /// Instant flush/span rows for intents FOV compute-on-read.
+  List<Map<String, dynamic>> _instantIntentLogs = [];
+  /// Recording FOV aggregate from Gateway `/analytics/route-fov`.
+  Map<String, dynamic>? _routeFovData;
+  static const int _occupancyThreshold = 3;
   Future<(DateTime, DateTime)> _getEffectiveAnalyticsRange() async {
     final now = DateTime.now().toUtc();
 
@@ -196,6 +203,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       _isLoading = true;
       _error = null;
       _mvrQualityMetrics = null;
+      _instantIntentLogs = [];
+      _routeFovData = null;
     });
 
     try {
@@ -222,6 +231,12 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               _timeFilter == 'last_3_hours')
           ? 'hour'
           : 'day';
+      final useNormalised = _dataSource == 'instant_detection' &&
+          ref.read(instantAnalyticsViewModeProvider).isNormalised;
+      final range = await _getEffectiveAnalyticsRange();
+      if (!mounted) return;
+      final rangeStart = range.$1;
+      final rangeEnd = range.$2;
 
       // One quality call is enough when there are no explicit video UUIDs
       // (Instant Detection always; Recording when no videos resolved).
@@ -239,6 +254,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         genders: genders,
         ageGroups: ageGroups,
         dataSource: _dataSource,
+        normalised: useNormalised,
       );
       final qualityFuture = analyticsApiClient.getMvrQualityMetrics(
         timeFilter: _timeFilter,
@@ -250,6 +266,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         genders: genders,
         ageGroups: ageGroups,
         dataSource: _dataSource,
+        normalised: useNormalised,
       );
       final overviewQualityFuture = needsSplitQuality
           ? analyticsApiClient.getMvrQualityMetrics(
@@ -261,6 +278,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               genders: genders,
               ageGroups: ageGroups,
               dataSource: _dataSource,
+              normalised: useNormalised,
             )
           : null;
       final timeSeriesFuture = apiClient.getTimeBasedAnalytics(
@@ -271,6 +289,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         startDate: _startDate,
         endDate: _endDate,
         dataSource: _dataSource,
+        normalised: useNormalised,
       );
       final demographicsFuture = apiClient.getDemographicsBreakdown(
         timeFilter: _timeFilter,
@@ -281,6 +300,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         genders: genders,
         ageGroups: ageGroups,
         dataSource: _dataSource,
+        normalised: useNormalised,
       );
       final behavioralFuture = apiClient.getBehavioralAnalytics(
         timeFilter: _timeFilter,
@@ -291,7 +311,31 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         genders: genders,
         ageGroups: ageGroups,
         dataSource: _dataSource,
+        normalised: useNormalised,
       );
+
+      // Intents FOV feed: Instant logs/spans, or Recording route-fov.
+      final Future<List<Map<String, dynamic>>>? instantLogsFuture =
+          _dataSource == 'instant_detection'
+              ? _loadInstantIntentLogs(
+                  apiClient,
+                  cameraIds: cameraIds,
+                  start: rangeStart,
+                  end: rangeEnd,
+                  normalised: useNormalised,
+                )
+              : null;
+      final Future<ApiResponse<Map<String, dynamic>>>? routeFovFuture =
+          _dataSource == 'recording'
+              ? apiClient.getAnalyticsRouteFov(
+                  timeFilter: _timeFilter,
+                  cameraIds: cameraIds,
+                  videoUuids: explicitVideoUuids,
+                  startDate: _startDate,
+                  endDate: _endDate,
+                  dataSource: _dataSource,
+                )
+              : null;
 
       final settled = await Future.wait([
         summaryFuture,
@@ -300,6 +344,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         timeSeriesFuture,
         demographicsFuture,
         behavioralFuture,
+        if (instantLogsFuture != null) instantLogsFuture,
+        if (routeFovFuture != null) routeFovFuture,
       ]);
       if (!mounted) return;
 
@@ -315,6 +361,18 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           settled[i++] as ApiResponse<Map<String, dynamic>>;
       final behavioralResponse =
           settled[i++] as ApiResponse<Map<String, dynamic>>;
+      List<Map<String, dynamic>> instantLogs = const [];
+      Map<String, dynamic>? routeFov;
+      if (instantLogsFuture != null) {
+        instantLogs =
+            settled[i++] as List<Map<String, dynamic>>;
+      }
+      if (routeFovFuture != null) {
+        final fovResp = settled[i++] as ApiResponse<Map<String, dynamic>>;
+        if (fovResp.success && fovResp.data != null) {
+          routeFov = fovResp.data;
+        }
+      }
 
       if (!response.success || response.data == null) {
         throw Exception(response.error ?? 'Failed to load analytics');
@@ -361,6 +419,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         if (behavioralResponse.success && behavioralResponse.data != null) {
           _behavioralData = behavioralResponse.data!;
         }
+        _instantIntentLogs = instantLogs;
+        _routeFovData = routeFov;
         _isLoading = false;
       });
     } catch (e) {
@@ -373,8 +433,86 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     }
   }
 
+  /// Fetch Instant Detection flush/span rows for intents panel FOV compute.
+  Future<List<Map<String, dynamic>>> _loadInstantIntentLogs(
+    MediaApiClient apiClient, {
+    required List<String>? cameraIds,
+    required DateTime start,
+    required DateTime end,
+    required bool normalised,
+  }) async {
+    final ids = (cameraIds != null && cameraIds.isNotEmpty)
+        ? cameraIds
+        : <String?>[null];
+    final out = <Map<String, dynamic>>[];
+    for (final id in ids) {
+      try {
+        final rows = normalised
+            ? await apiClient.listInstantDetectionNormalisedSpans(
+                cameraDeviceId: id,
+                startTime: start,
+                endTime: end,
+                limit: 500,
+              )
+            : await apiClient.listInstantDetectionLogs(
+                cameraDeviceId: id,
+                startTime: start,
+                endTime: end,
+                limit: 500,
+              );
+        out.addAll(rows);
+      } catch (e) {
+        debugPrint('⚠️ Instant intents log fetch failed for $id: $e');
+      }
+      if (out.length >= 500) break;
+    }
+    if (out.length > 500) {
+      return out.sublist(0, 500);
+    }
+    return out;
+  }
+
+  List<int> _occupancySeriesFromTimeSeries() {
+    final points = _timeSeriesData?['data_points'];
+    if (points is! List) return const [];
+    return points
+        .map((p) {
+          if (p is Map) {
+            return (p['count'] as num?)?.toInt() ?? 0;
+          }
+          return 0;
+        })
+        .toList();
+  }
+
+  AnalyticsIntentMetrics _buildIntentMetrics() {
+    if (_dataSource == 'instant_detection') {
+      return AnalyticsIntentMetrics.fromLogs(
+        _instantIntentLogs,
+        occupancyThreshold: _occupancyThreshold,
+      );
+    }
+    var metrics = AnalyticsIntentMetrics.fromRecording(
+      totalPeople: _analyticsSummary?.totalPeople ?? 0,
+      occupancySeries: _occupancySeriesFromTimeSeries(),
+      occupancyThreshold: _occupancyThreshold,
+    );
+    if (_routeFovData != null) {
+      metrics = metrics.withRouteFov(_routeFovData!);
+    }
+    return metrics;
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Keep Instant Raw/Normalised toggle in sync across Cameras panes.
+    ref.listen<InstantAnalyticsViewMode>(instantAnalyticsViewModeProvider,
+        (previous, next) {
+      if (previous != next && _dataSource == 'instant_detection') {
+        _loadAnalytics();
+      }
+    });
+
     final body = Column(
       children: [
         // Filter summary bar
@@ -420,7 +558,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   /// Build filter bar showing current filters
   Widget _buildFilterBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(
@@ -429,40 +567,53 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       ),
       child: Row(
         children: [
-          Icon(Icons.filter_list, size: 16, color: Colors.grey.shade600),
-          const SizedBox(width: 8),
-          Text(
-            'Time: ${_getTimeFilterLabel()}',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade700,
-              fontWeight: FontWeight.w500,
+          if (_dataSource == 'instant_detection') ...[
+            const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: InstantAnalyticsViewModeToggle(),
+            ),
+            const SizedBox(width: 4),
+          ],
+          // Tappable summary — AppBar filters are hidden when embedded in
+          // the Cameras content pane (showAppBar: false).
+          Expanded(
+            child: InkWell(
+              onTap: _showFilterDialog,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.filter_list, size: 16, color: Colors.grey.shade600),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        [
+                          'Time: ${_getTimeFilterLabel()}',
+                          if (_selectedCollectionIds.isNotEmpty)
+                            'Collections: ${_selectedCollectionIds.length} selected',
+                          if (_selectedGenders.isNotEmpty ||
+                              _selectedAgeGroups.isNotEmpty)
+                            'Demographics: ${[
+                              ..._selectedGenders,
+                              ..._selectedAgeGroups
+                            ].join(", ")}',
+                        ].join(' · '),
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-          if (_selectedCollectionIds.isNotEmpty) ...[
-            const SizedBox(width: 16),
-            Text(
-              'Collections: ${_selectedCollectionIds.length} selected',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-          if (_selectedGenders.isNotEmpty || _selectedAgeGroups.isNotEmpty) ...[
-            const SizedBox(width: 16),
-            Text(
-              'Demographics: ${[..._selectedGenders, ..._selectedAgeGroups].join(", ")}',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
           if (_dataSource == 'instant_detection') ...[
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             Chip(
               label: const Text('Instant Detection'),
               avatar: const Icon(Icons.visibility, size: 16),
@@ -476,8 +627,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               visualDensity: VisualDensity.compact,
             ),
           ],
-          const Spacer(),
-          if (_autoRefresh)
+          if (_autoRefresh) ...[
+            const SizedBox(width: 4),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
@@ -500,6 +651,21 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                 ],
               ),
             ),
+          ],
+          if (!widget.showAppBar) ...[
+            IconButton(
+              onPressed: _isLoading ? null : _loadAnalytics,
+              icon: const Icon(Icons.refresh, size: 20),
+              tooltip: 'Refresh',
+              visualDensity: VisualDensity.compact,
+            ),
+            IconButton(
+              onPressed: _showFilterDialog,
+              icon: const Icon(Icons.filter_list, size: 20),
+              tooltip: 'Filters',
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
         ],
       ),
     );
@@ -675,7 +841,16 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
             
             // Level 1: Basic Metrics
             _buildBasicMetricsSection(),
-            
+
+            const SizedBox(height: 24),
+            AnalyticsIntentsPanel(
+              metrics: _buildIntentMetrics(),
+              dataSource: _dataSource,
+              isNormalised: _dataSource == 'instant_detection' &&
+                  ref.watch(instantAnalyticsViewModeProvider).isNormalised,
+              occupancyThreshold: _occupancyThreshold,
+            ),
+
             const SizedBox(height: 24),
             
             // NEW: MVR Quality Metrics Section
@@ -707,7 +882,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     );
   }
 
-  /// Build Level 1: Basic metrics section
   Widget _buildBasicMetricsSection() {
     debugPrint('🎨 Analytics: Building basic metrics section');
     debugPrint('   - _mvrQualityMetrics: ${_mvrQualityMetrics != null ? "LOADED" : "NULL"}');
@@ -821,24 +995,81 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     color: Colors.purple,
                     subtitle: 'Most recent',
                   ),
-                _buildMetricCard(
-                  title: 'Avg Movement Velocity',
-                  value: (_analyticsSummary?.averageRouteVelocity != null &&
-                          _analyticsSummary!.averageRouteVelocity! > 0)
-                      ? '${_analyticsSummary!.averageRouteVelocity!.toStringAsFixed(2)} px/s'
-                      : '--',
-                  icon: Icons.speed,
-                  color: Colors.deepPurple,
-                  subtitle: _dataSource == 'instant_detection'
-                      ? 'Across flush individuals'
-                      : 'Across people in range',
-                ),
+                if (_dataSource == 'instant_detection' &&
+                    (_analyticsSummary?.averageSpeedMps != null &&
+                        _analyticsSummary!.averageSpeedMps! > 0))
+                  _buildMetricCard(
+                    title: 'Avg Speed',
+                    value:
+                        '${_analyticsSummary!.averageSpeedMps!.toStringAsFixed(2)} m/s',
+                    icon: Icons.speed,
+                    color: Colors.deepPurple,
+                    subtitle: _analyticsSummary?.dominantGaitBand != null
+                        ? 'Gait: ${_formatGaitBandLabel(_analyticsSummary!.dominantGaitBand!)}'
+                        : 'Across flush individuals',
+                  )
+                else
+                  _buildMetricCard(
+                    title: 'Avg Movement Velocity',
+                    value: (_analyticsSummary?.averageRouteVelocity != null &&
+                            _analyticsSummary!.averageRouteVelocity! > 0)
+                        ? '${_analyticsSummary!.averageRouteVelocity!.toStringAsFixed(2)} px/s'
+                        : '--',
+                    icon: Icons.speed,
+                    color: Colors.deepPurple,
+                    subtitle: _dataSource == 'instant_detection'
+                        ? 'Across flush individuals'
+                        : 'Across people in range',
+                  ),
+                if (_dataSource == 'instant_detection' &&
+                    _analyticsSummary?.dominantMotionClass != null)
+                  _buildMetricCard(
+                    title: 'Dominant Motion',
+                    value: _formatMotionClassLabel(
+                      _analyticsSummary!.dominantMotionClass!,
+                    ),
+                    icon: Icons.route,
+                    color: Colors.teal,
+                    subtitle: 'Across flush individuals',
+                  ),
               ],
             );
           },
         ),
       ],
     );
+  }
+
+  String _formatGaitBandLabel(String band) {
+    switch (band.trim().toLowerCase()) {
+      case 'walking':
+        return 'Walking';
+      case 'light_running':
+        return 'Light running';
+      case 'running':
+        return 'Running';
+      case 'fast_running':
+        return 'Fast running';
+      default:
+        return band.replaceAll('_', ' ');
+    }
+  }
+
+  String _formatMotionClassLabel(String motionClass) {
+    switch (motionClass.trim().toLowerCase()) {
+      case 'stationary':
+        return 'Stationary';
+      case 'directed_transit':
+        return 'Directed transit';
+      case 'loitering':
+        return 'Loitering';
+      case 'pacing':
+        return 'Pacing';
+      case 'erratic':
+        return 'Erratic';
+      default:
+        return motionClass.replaceAll('_', ' ');
+    }
   }
 
   /// Build metric card widget

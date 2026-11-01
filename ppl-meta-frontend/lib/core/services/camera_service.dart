@@ -866,6 +866,12 @@ class CameraService {
     required int segmentDurationSeconds,
     required int storageMultiple,
     required int trackingSessionDurationMinutes,
+    int framesPerCycle = 3,
+    int flushIntervalCycles = 12,
+    double flushMergeSimilarityThreshold = 0.60,
+    bool normaliseEnabled = true,
+    int normaliseSpanSeconds = 300,
+    double normaliseMergeThreshold = 0.70,
   }) async {
     try {
       final response = await _cameraApiClient.patch(
@@ -877,6 +883,12 @@ class CameraService {
           'segment_duration_seconds': segmentDurationSeconds,
           'storage_multiple': storageMultiple,
           'tracking_session_duration_minutes': trackingSessionDurationMinutes,
+          'frames_per_cycle': framesPerCycle,
+          'flush_interval_cycles': flushIntervalCycles,
+          'flush_merge_similarity_threshold': flushMergeSimilarityThreshold,
+          'normalise_enabled': normaliseEnabled,
+          'normalise_span_seconds': normaliseSpanSeconds,
+          'normalise_merge_threshold': normaliseMergeThreshold,
         },
       );
 

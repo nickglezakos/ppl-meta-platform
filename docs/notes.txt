@@ -18,6 +18,11 @@ wsl -d eyenet -u root -- bash -lc "cd /mnt/c/ppl-meta-platform && docker compose
 
 +++++++++++
 
+spatial/behavioral label.
+
++++++++++++
+
+
 ssh eyenet@192.168.1.90 'hostname; systemctl is-active ssh; hostname -I'
 
 to change IP:

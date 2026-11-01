@@ -1,7 +1,7 @@
 ---
 software_ref:
   platform_version: "2.25.101"
-  policy_revision: "2026-10-16"
+  policy_revision: "2026-11-01"
   channels_documented:
     - sandbox
     - pilot
@@ -320,6 +320,41 @@ On stream / camera detail views you may also see pipeline switches:
 ![Full Cameras Settings screen. Pipelines shows Instant Detection on; the cyan ring marks that switch.](./images/instant-detection.png)
 
 Turn **Instant Detection** on for real-time person detection with triggers. **Recording Pipeline** is a separate product path and can stay off while you only run instant detection.
+
+### Instant Detection pipeline settings
+
+On desktop, select a camera → mode pill **Settings** (gear), or open the camera’s pipeline settings screen. Beyond the Instant Detection on/off switch you can tune how live detections become stored analytics.
+
+#### Flush (Y-window)
+
+While Instant Detection runs, each cycle samples frames into a short buffer. After enough cycles the service **flushes** that window into an immutable Instant Detection log (used by Analytics and Vradar).
+
+| Setting | What it does |
+|---|---|
+| **Frames per cycle** | How many frames each detection cycle samples |
+| **Flush interval (cycles)** | How many cycles accumulate before a flush log is written (the Y-window) |
+| **Flush merge similarity** | How strictly people inside one flush are treated as the same person (higher = stricter) |
+
+Flush logs are **not** rewritten later. They are the raw Instant Detection record for that window.
+
+#### Normalisation (cross-flush spans)
+
+With normalisation enabled, a background worker merges people **across** flush logs inside fixed calendar spans (default **5 minutes** / 300 seconds). Results are stored as **normalised spans**. Raw flush logs stay untouched.
+
+| Setting | What it does |
+|---|---|
+| **Enable normalisation** | Turns the worker on for this camera |
+| **Span length (seconds)** | Calendar bucket size for each normalised span (typically 60–3600; default 300) |
+| **Normalise merge threshold** | Similarity used when merging the same person across flushes inside a span (higher = stricter) |
+
+Use Cameras → **Analytics** (not Instant Detection logs) with **Raw** / **Normalised** and **Analytics intents** (Counting, Occupancy, Heatmap, Path) — see [Analytics and reports](./analytics-and-reports.md#c2-per-camera-analytics-cameras-content-pane) and [C.4 Camera analytics intents](./analytics-and-reports.md#c4-camera-analytics-intents). Instant Detection logs are flush/span history and search only. For Vradar conditions per intent, see [Trigger metrics by analytics intent](./alerts-and-automation.md#trigger-metrics-by-analytics-intent).
+
+#### What good looks like (pipeline)
+
+- Instant Detection is on and live counts update.
+- After a few flush intervals, **Raw** Instant Detection logs appear for that camera.
+- With normalisation on, **Normalised** spans appear after each span window closes (not instantly mid-span).
+- Recording Pipeline can stay off if you only need live detection and Instant Detection analytics.
 
 ## Record video (standalone)
 

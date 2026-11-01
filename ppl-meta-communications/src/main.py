@@ -159,6 +159,17 @@ async def lifespan(_app: FastAPI):
     
     # Cleanup on shutdown
     logger.info("Shutting down Communications Service...")
+    if service_discovery_available:
+        try:
+            try:
+                from src.shared.service_discovery import deregister_service
+            except ImportError:
+                from shared.service_discovery import deregister_service
+
+            await deregister_service(service_name="ppl-meta-communications")
+            logger.info("Communications deregistered from discovery")
+        except Exception as e:
+            logger.error("Failed to deregister Communications from discovery: %s", e)
 
 
 # Create FastAPI application

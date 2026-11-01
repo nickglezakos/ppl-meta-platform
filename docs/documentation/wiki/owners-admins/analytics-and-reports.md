@@ -1,7 +1,7 @@
 ---
 software_ref:
   platform_version: "2.25.82"
-  policy_revision: "2026-09-10"
+  policy_revision: "2026-11-01"
   channels_documented:
     - sandbox
     - pilot
@@ -18,11 +18,18 @@ nav_order: 80
 
 Review who was detected, when, and where — summary metrics, quality, time trends, demographics, and behavioural patterns — then export an Excel summary.
 
-**Where:** Home → **Analytics** (`/analytics`) — app bar title **MVR Analytics**
+**Where (Analytics surfaces):**
 
-Also reachable from Profile → **Analytics**, or from **Cameras** by opening the analytics view for a selected camera (pre-filtered).
+| Surface | Path | Scope |
+|---|---|---|
+| **Site-wide MVR Analytics** | Home → **Analytics** (`/analytics`) — app bar **MVR Analytics** | Multiple cameras / collections via Filters; Recording or Instant Detection |
+| **Per-camera Analytics** | **Cameras** → select a camera → mode pill **Analytics** | One camera; same intents + Levels; Instant Detection default with Raw / Normalised |
 
-This page is the **people / MVR** dashboard. Separate “Analytics” tabs exist under Presence and Automation (section E); system health is under **Monitoring**, not here.
+**Instant Detection logs** (Cameras → receipt icon) are flush/span history and search only — **Analytics intents** live on the Analytics views above, not on the logs pane.
+
+Also reachable from Profile → **Analytics**. Opening Analytics from Cameras for a selected camera is the per-camera path (section C.2); the site-wide dashboard is sections A–D.
+
+This page documents the **people / MVR** dashboards. Separate “Analytics” tabs exist under Presence and Automation (section E); system health is under **Monitoring**, not here.
 
 A cyan ring in a figure is a marker for that control, not a highlight in the app. `--` stands in for a live count.
 
@@ -94,9 +101,11 @@ The bar shows `Time: …` and, when collections are checked, `Collections: N sel
 | Option | Meaning |
 |---|---|
 | **Video Recording** | Default. Analytics from the recording / media pipeline (processed videos) |
-| **Instant Detection** | Analytics from live instant-detection sessions |
+| **Instant Detection** | Analytics from live instant-detection sessions across the selected collections (multi-camera when more than one is checked) |
 
 Pick **one** source. There is no combined “both” toggle on this screen. The last choice can persist for later visits.
+
+Site-wide Instant Detection uses session / flush-derived people metrics for the collections you select. For **calendar-span merged people** on a single camera (and the coming behavioural layer built on those spans), use Cameras → **Analytics** → **Normalised** (section C.2) and [pipeline normalisation settings](./cameras-and-detection.md#normalisation-cross-flush-spans).
 
 ### Time Range
 
@@ -228,6 +237,81 @@ Charts on this screen do **not** open a person or media preview. To review indiv
 
 ---
 
+## C.2 Per-camera analytics (Cameras content pane)
+
+Use this when you need people analytics for **one** camera (not the multi-collection site dashboard).
+
+1. Home → **Cameras** → select the camera.
+2. Mode pill **Analytics** (chart icon) — same dashboard chrome as `/analytics`, scoped to that camera.
+3. Open **Filters** (filter bar) for time range and Data Source (**Instant Detection** or **Video Recording**).
+4. For Instant Detection, switch **Raw** ↔ **Normalised** on the filter bar as needed.
+
+| Data source | Intents feed |
+|---|---|
+| **Instant Detection · Raw** | Flush logs in the selected time range → Counting / Occupancy from `people_count`; Heatmap / Path from payload `route_points`. |
+| **Instant Detection · Normalised** | Normalised spans (preferred for Occupancy). |
+| **Video Recording** | Counting / Occupancy from summary + time-series (unique people per bucket); Heatmap / Path from sampled recording `route_points`. |
+
+**Instant Detection logs** pane (receipt icon) lists Raw flush logs or Normalised spans and supports search → MVR analysis. It does **not** show Analytics intents — those are a separate **INTENTS** section on this Analytics pane (same layout style as LEVEL 1 / LEVEL 2; see [C.4](#c4-camera-analytics-intents)).
+
+Configure flush and normalisation on the camera pipeline settings — see [Cameras and detection — Instant Detection pipeline settings](./cameras-and-detection.md#instant-detection-pipeline-settings).
+
+### What good looks like (per-camera)
+
+- Analytics intents cards populate for Instant when flushes/spans (and routes) exist in the filter range; for Recording when processed videos have movement routes.
+- Switching Raw ↔ Normalised reloads Instant metrics; it does not delete flush logs.
+- Empty Instant cards point at Instant Detection + normalisation; empty Recording FOV cards point at processed videos with movement tracking.
+
+---
+
+## C.3 Imminent behavioural layer (normalised Instant Detection)
+
+**Coming soon** — not shipped as named dwell / meeting widgets yet. This section describes the planned layer so operators know what normalised Instant Detection is for.
+
+The behavioural layer builds on:
+
+- **Per-camera normalised spans** (section C.2), and
+- **Site-wide Instant Detection** on MVR Analytics when you select one or more collections (sections A–C) for multi-camera compare over a time range.
+
+### Intended derivations
+
+| Theme | Operator meaning |
+|---|---|
+| **Dwell-like presence** | Same person keeps appearing across adjacent normalised spans (or stays long enough in one FOV) |
+| **Co-presence / hangout** | Two or more distinct people in the same camera × time span; stronger when that repeats over neighbouring spans |
+| **Motion behaviour** | Still vs moving bands from motion metrics (speed, gait, motion class) when those fields are populated |
+| **Common spaces** | Busy camera FOVs over the selected range — compare multiple cameras on the site Instant Detection view to see where people concentrate |
+
+### Boundaries (today)
+
+- No separate “dwell time” or “meeting space” cards on MVR Analytics yet — Level 4 behavioural blocks above remain the current shipped behavioural UI.
+- Normalisation is **per camera**; treating the same person across different rooms may need further cross-camera identity work beyond span merge.
+- Co-presence in one FOV is a **proxy** for hanging out or meeting, not proof of interaction.
+
+When this layer ships, expect it to sit on **Normalised** Instant Detection data (and multi-camera Instant Detection selections), not on rewriting Raw flush logs.
+
+---
+
+## C.4 Camera analytics intents
+
+Intents are **view presets + metric catalogs** shown only under **Analytics** (Cameras content pane Analytics tab and site `/analytics`) as a dedicated **INTENTS · Analytics Intents** section (same section chrome as LEVEL 1 / LEVEL 2 — not a collapsible drawer). They are not on Instant Detection logs. They are not a separate storage model.
+
+| Intent | Instant Detection | Recording | Per-camera Analytics | Site `/analytics` | Readiness |
+|---|---|---|---|---|---|
+| **People Counting** | Flush/span `people_count` (Normalised preferred) | Summary `total_people` + time-series buckets | Yes | Yes | **Now** |
+| **Occupancy Monitoring** | Span/flush people series, peak, % above threshold | Time-series people counts per bucket (not concurrent frame occupancy) | Yes | Yes | **Now** |
+| **Heatmaps (FOV)** | Aggregate Instant `route_points` | Sampled recording `route_points` via route-FOV aggregate | Yes | Yes | **Now** |
+| **Path Analysis (FOV)** | Instant `movement_tracking.route_points` | Same recording route sample (overlays, avg velocity, time in frame) | Yes | Yes | **Now** |
+| **Queue Analytics** | Normalised + ROI + dwell | Later | Later | Later | **Later** (needs ROI) |
+| **SOP Monitoring** | Instant + Vradar templates | — | Later | Later | **Later** |
+| **Loss Prevention Support** | Left object + match + motion | — | Later | Later | **Later** |
+
+Enable Instant Detection and (for Instant Occupancy / Heatmap / Path) [normalisation](./cameras-and-detection.md#normalisation-cross-flush-spans) when using Instant source. Recording FOV needs processed videos with movement tracking.
+
+Recommended Vradar conditions per intent: [Trigger metrics by analytics intent](./alerts-and-automation.md#trigger-metrics-by-analytics-intent).
+
+---
+
 ## D. Export a report (Excel)
 
 1. On the Analytics header, tap **Export**.
@@ -271,6 +355,8 @@ For entrance / corridor ops, compose Cameras + this Analytics page + Automation 
 - **Empty LEVEL 1 / Failed to load** — Discovery / services unhealthy, or no data for the filter; **Retry**, then check cameras and processing
 - **Demographics / Level 4 missing** — zero people in range, or not enough samples; widen time or switch Data Source
 - **Counts look “wrong”** — confirm **Video Recording** vs **Instant Detection**, collection selection, and time chips
+- **Site Instant Detection empty while camera Raw has data** — wrong collections, time range, or Data Source on `/analytics`; open Cameras → Analytics for that device to confirm flushes exist
+- **Empty Normalised on a camera** — normalisation disabled in pipeline settings, span not closed yet, worker not running, or no flushes in the selected dates
 - **Export fails** — no data under current filters; clear demographics / widen range
 - **Expected person click-through** — not on this dashboard; use Collections search or media **Details** instead
 
@@ -278,10 +364,11 @@ For entrance / corridor ops, compose Cameras + this Analytics page + Automation 
 
 ## Recommended order
 
-1. Run instant detection and/or record + process videos.  
-2. Open **Analytics** → **Filters** → Data Source + Today/Last Week → **Apply**.  
+1. Run instant detection and/or record + process videos; enable normalisation on cameras you care about for span analytics.  
+2. Open **Analytics** → **Filters** → Data Source + Today/Last Week → select collections → **Apply**.  
 3. Read LEVEL 1–4; adjust collections or demographics if needed.  
-4. **Export** → Excel when you need a shareable summary.
+4. For one camera’s flush vs span detail and intent cards: Cameras → Analytics → **Raw** / **Normalised**.  
+5. **Export** → Excel when you need a shareable site summary.
 
 ## Related
 

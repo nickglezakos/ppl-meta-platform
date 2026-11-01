@@ -31,10 +31,14 @@ from ..schemas.trigger import (
     TriggerResponse,
     TriggerUpdate,
 )
-from ..services.trigger_evaluation import DemographicData, TriggerEvaluationService
+from ..services.trigger_evaluation import (
+    DemographicData,
+    TriggerEvaluationService,
+    enrich_intent_metrics_demographics,
+)
 from ..services.vprofile_match_worker import get_vprofile_worker
 from ..services.body_posture_worker import get_body_posture_worker
-from ..services.velocity_trigger_worker import get_velocity_trigger_worker
+from ..services.motion_trigger_worker import get_motion_trigger_worker, get_velocity_trigger_worker
 from ..services.left_object_worker import get_left_object_worker
 from ..services.vehicle_plate_worker import get_vehicle_plate_worker
 from ..services.communications_client import CommunicationsClient
@@ -301,6 +305,22 @@ async def create_trigger(
             )
         if 'vehicle_roi' in trigger_data and trigger_data['vehicle_roi'] is not None:
             trigger_data['vehicle_roi'] = json.dumps(trigger_data['vehicle_roi'])
+        if 'motion_conditions' in trigger_data and trigger_data['motion_conditions'] is not None:
+            conds = trigger_data['motion_conditions']
+            if isinstance(conds, list):
+                serializable = []
+                for c in conds:
+                    if hasattr(c, 'model_dump'):
+                        serializable.append(c.model_dump())
+                    elif isinstance(c, dict):
+                        serializable.append(c)
+                    else:
+                        serializable.append(dict(c))
+                trigger_data['motion_conditions'] = json.dumps(serializable)
+            elif not isinstance(conds, str):
+                trigger_data['motion_conditions'] = json.dumps(conds)
+        if 'motion_roi' in trigger_data and trigger_data['motion_roi'] is not None:
+            trigger_data['motion_roi'] = json.dumps(trigger_data['motion_roi'])
         
         # Convert action_uuids list to JSON string for storage
         action_uuids_list = trigger_data.get('action_uuids')
@@ -328,9 +348,9 @@ async def create_trigger(
         if trigger_data.get('trigger_mode') == 'body_posture' and not trigger_data.get('camera_device_id'):
             trigger_data['camera_device_id'] = 'body_posture'
 
-        # For velocity triggers, set a synthetic camera_device_id since the column is NOT NULL
-        if trigger_data.get('trigger_mode') == 'velocity' and not trigger_data.get('camera_device_id'):
-            trigger_data['camera_device_id'] = 'velocity'
+        # For motion triggers (legacy velocity alias), set a synthetic camera_device_id
+        if trigger_data.get('trigger_mode') in ('motion', 'velocity') and not trigger_data.get('camera_device_id'):
+            trigger_data['camera_device_id'] = 'motion'
 
         # For left_object triggers, set a synthetic camera_device_id since the column is NOT NULL
         if trigger_data.get('trigger_mode') == 'left_object' and not trigger_data.get('camera_device_id'):
@@ -364,13 +384,13 @@ async def create_trigger(
                     activate_err,
                 )
 
-        if db_trigger.trigger_mode == 'velocity' and db_trigger.is_active:
+        if db_trigger.trigger_mode in ('motion', 'velocity') and db_trigger.is_active:
             try:
-                worker = get_velocity_trigger_worker()
+                worker = get_motion_trigger_worker()
                 await worker.activate_trigger(db_trigger)
             except Exception as activate_err:
                 logger.error(
-                    "Failed to activate velocity trigger %s on create: %s",
+                    "Failed to activate motion trigger %s on create: %s",
                     db_trigger.uuid,
                     activate_err,
                 )
@@ -542,6 +562,22 @@ async def update_trigger(
         )
     if 'vehicle_roi' in update_data and update_data['vehicle_roi'] is not None:
         update_data['vehicle_roi'] = json.dumps(update_data['vehicle_roi'])
+    if 'motion_conditions' in update_data and update_data['motion_conditions'] is not None:
+        conds = update_data['motion_conditions']
+        if isinstance(conds, list):
+            serializable = []
+            for c in conds:
+                if hasattr(c, 'model_dump'):
+                    serializable.append(c.model_dump())
+                elif isinstance(c, dict):
+                    serializable.append(c)
+                else:
+                    serializable.append(dict(c))
+            update_data['motion_conditions'] = json.dumps(serializable)
+        elif not isinstance(conds, str):
+            update_data['motion_conditions'] = json.dumps(conds)
+    if 'motion_roi' in update_data and update_data['motion_roi'] is not None:
+        update_data['motion_roi'] = json.dumps(update_data['motion_roi'])
     
     # Convert action_uuids list to JSON string for storage and sync legacy field
     if 'action_uuids' in update_data:
@@ -575,13 +611,13 @@ async def update_trigger(
                 activate_err,
             )
 
-    if db_trigger.trigger_mode == 'velocity' and db_trigger.is_active:
+    if db_trigger.trigger_mode in ('motion', 'velocity') and db_trigger.is_active:
         try:
-            worker = get_velocity_trigger_worker()
+            worker = get_motion_trigger_worker()
             await worker.activate_trigger(db_trigger)
         except Exception as activate_err:
             logger.error(
-                "Failed to refresh velocity trigger %s on update: %s",
+                "Failed to refresh motion trigger %s on update: %s",
                 db_trigger.uuid,
                 activate_err,
             )
@@ -660,9 +696,9 @@ async def toggle_trigger(
                 lifecycle_err,
             )
 
-    if db_trigger.trigger_mode == 'velocity':
+    if db_trigger.trigger_mode in ('motion', 'velocity'):
         try:
-            worker = get_velocity_trigger_worker()
+            worker = get_motion_trigger_worker()
             if db_trigger.is_active and not was_active:
                 await worker.activate_trigger(db_trigger)
             elif not db_trigger.is_active and was_active:
@@ -765,13 +801,13 @@ async def delete_trigger(
                 lifecycle_err,
             )
 
-    if db_trigger.trigger_mode == 'velocity':
+    if db_trigger.trigger_mode in ('motion', 'velocity'):
         try:
-            worker = get_velocity_trigger_worker()
+            worker = get_motion_trigger_worker()
             await worker.deactivate_trigger(str(db_trigger.uuid))
         except Exception as lifecycle_err:
             logger.error(
-                "Failed to deactivate velocity trigger %s on delete: %s",
+                "Failed to deactivate motion trigger %s on delete: %s",
                 db_trigger.uuid,
                 lifecycle_err,
             )
@@ -1083,10 +1119,15 @@ async def process_instant_detection_webhook(
                         continue
 
                     conditions = json.loads(trigger.demographic_conditions)
+                    enriched_demo = enrich_intent_metrics_demographics(
+                        payload.demographics if isinstance(payload.demographics, dict) else {},
+                        int(payload.people_count or 0),
+                        payload.model_dump() if hasattr(payload, "model_dump") else None,
+                    )
                     passed = await _evaluate_demographic_conditions(
                         conditions=conditions,
                         people_count=payload.people_count,
-                        demographics=payload.demographics
+                        demographics=enriched_demo,
                     )
                 
                 if passed:
@@ -1380,6 +1421,14 @@ async def _evaluate_demographic_conditions(
         # Get actual value from demographics or people_count
         if field == "people_count":
             actual_value = people_count
+        elif field == "occupancy_span_count":
+            # Span-aligned occupancy; live path uses current people_count until
+            # span worker publishes explicit occupancy_span_count.
+            actual_value = demographics.get("occupancy_span_count", people_count)
+        elif field == "dwell_seconds":
+            actual_value = demographics.get("dwell_seconds")
+        elif field == "path_velocity_avg":
+            actual_value = demographics.get("path_velocity_avg")
         elif field == "age_threshold":
             # Compute weighted-average age from bracket percentages
             actual_value = sum(

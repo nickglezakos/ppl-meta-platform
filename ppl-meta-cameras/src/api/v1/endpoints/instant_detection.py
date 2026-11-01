@@ -5,13 +5,13 @@ Provides REST API endpoints for instant temporal face detection.
 """
 
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 from typing import Dict, Optional
 import logging
 import time
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import jwt
 import requests as http_requests
@@ -24,6 +24,19 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["instant-detection"])
+
+
+class NormaliseRecomputeBody(BaseModel):
+    camera_device_id: str
+    start_time: datetime
+    end_time: datetime
+    # When omitted, camera normalise_* settings are used.
+    merge_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
+    span_seconds: Optional[int] = Field(None, ge=60, le=86400)
+    # Force enqueue even when camera.normalise_enabled is false.
+    force: bool = False
+    auth_token: Optional[str] = None
+
 
 # Global instant detection manager (singleton)
 _instant_detection_manager: Optional[InstantDetectionSampler] = None
@@ -781,3 +794,69 @@ async def enable_webhook(
         "webhook_url": manager.webhook_url,
         "enabled": True
     }
+
+
+@router.post("/normalise/recompute")
+async def recompute_instant_detection_normalisation(
+    body: NormaliseRecomputeBody,
+) -> Dict:
+    """
+    Enqueue Celery normalisation for every fixed calendar span in [start, end].
+    Idempotent: Media upserts replace derived rows; raw flush logs stay untouched.
+    Uses per-camera settings when merge_threshold / span_seconds are omitted.
+    """
+    try:
+        from src.services.instant_detection_normalise import (
+            recompute_normalised_range,
+            resolve_camera_normalise_settings,
+        )
+
+        settings = resolve_camera_normalise_settings(body.camera_device_id)
+        if not settings.get("enabled", True) and not body.force:
+            return {
+                "success": True,
+                "enqueued": False,
+                "skipped": True,
+                "reason": "normalise_enabled=false",
+                "camera_device_id": body.camera_device_id,
+                "settings": settings,
+                "requested_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+        merge_threshold = (
+            float(body.merge_threshold)
+            if body.merge_threshold is not None
+            else float(settings["merge_threshold"])
+        )
+        span_seconds = (
+            int(body.span_seconds)
+            if body.span_seconds is not None
+            else int(settings["span_seconds"])
+        )
+
+        result = recompute_normalised_range(
+            body.camera_device_id,
+            start_time=body.start_time,
+            end_time=body.end_time,
+            merge_threshold=merge_threshold,
+            span_seconds=span_seconds,
+            auth_token=body.auth_token,
+        )
+        return {
+            "success": True,
+            "camera_device_id": body.camera_device_id,
+            "settings": {
+                "enabled": settings.get("enabled", True),
+                "merge_threshold": merge_threshold,
+                "span_seconds": span_seconds,
+            },
+            **result,
+            "requested_at": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as exc:
+        logger.error("Normalise recompute failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to enqueue normalisation: {exc}",
+        ) from exc
+

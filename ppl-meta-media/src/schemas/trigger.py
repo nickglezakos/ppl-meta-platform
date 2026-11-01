@@ -24,7 +24,11 @@ class DemographicCondition(BaseModel):
 
     field: str = Field(
         ...,
-        description="Demographic field: people_count, percent_male, percent_female, age_count_0_12, age_count_13_17, age_count_18_24, age_count_25_34, age_count_35_44, age_count_45_54, age_count_55_64, age_count_65_plus"
+        description=(
+            "Demographic / behavioural field: people_count, percent_male, "
+            "percent_female, age_*, occupancy_span_count, dwell_seconds, "
+            "path_velocity_avg"
+        )
     )
     operator: str = Field(
         ...,
@@ -46,12 +50,15 @@ class DemographicCondition(BaseModel):
             'age_threshold',
             'age_count_0_12', 'age_count_13_17', 'age_count_18_24',
             'age_count_25_34', 'age_count_35_44', 'age_count_45_54',
-            'age_count_55_64', 'age_count_65_plus'
+            'age_count_55_64', 'age_count_65_plus',
+            # Analytics-intent Soon metrics (span / route derived)
+            'occupancy_span_count',
+            'dwell_seconds',
+            'path_velocity_avg',
         ]
         if v not in valid:
             raise ValueError(f'field must be one of {valid}')
         return v
-
     @field_validator('operator')
     @classmethod
     def validate_operator(cls, v: str) -> str:
@@ -59,6 +66,70 @@ class DemographicCondition(BaseModel):
         if v not in valid:
             raise ValueError(f'operator must be one of {valid}')
         return v
+
+
+class MotionCondition(BaseModel):
+    """Single motion condition (speed band / motion class / ROI transit)."""
+
+    field: str = Field(
+        ...,
+        description="Motion field: speed_band | motion_class | roi_transit",
+    )
+    operator: str = Field(
+        ...,
+        description="Comparison operator: gte (speed_band) | eq | in",
+    )
+    value: Any = Field(
+        ...,
+        description="Threshold or value (string, or list for in)",
+    )
+
+    @field_validator('field')
+    @classmethod
+    def validate_motion_field(cls, v: str) -> str:
+        valid = ['speed_band', 'motion_class', 'roi_transit']
+        if v not in valid:
+            raise ValueError(f'field must be one of {valid}')
+        return v
+
+    @field_validator('operator')
+    @classmethod
+    def validate_motion_operator(cls, v: str) -> str:
+        valid = ['gte', 'eq', 'in']
+        if v not in valid:
+            raise ValueError(f'operator must be one of {valid}')
+        return v
+
+    @model_validator(mode='after')
+    def validate_value(self):
+        if self.field == 'speed_band':
+            valid = ['walking', 'light_running', 'running', 'fast_running']
+            band = str(self.value).lower() if self.value is not None else ''
+            if band not in valid:
+                raise ValueError(f'speed_band value must be one of {valid}')
+            self.value = band
+        elif self.field == 'motion_class':
+            valid = [
+                'stationary',
+                'directed_transit',
+                'loitering',
+                'pacing',
+                'erratic',
+                'unknown',
+            ]
+            values = self.value if isinstance(self.value, list) else [self.value]
+            normalized = [str(v).lower() for v in values if v is not None]
+            if not normalized or any(v not in valid for v in normalized):
+                raise ValueError(f'motion_class value must be in {valid}')
+            self.value = normalized if self.operator == 'in' or len(normalized) > 1 else normalized[0]
+        elif self.field == 'roi_transit':
+            valid = ['approach', 'retreat', 'inside']
+            values = self.value if isinstance(self.value, list) else [self.value]
+            normalized = [str(v).lower() for v in values if v is not None]
+            if not normalized or any(v not in valid for v in normalized):
+                raise ValueError(f'roi_transit value must be in {valid}')
+            self.value = normalized if self.operator == 'in' or len(normalized) > 1 else normalized[0]
+        return self
 
 
 class TriggerBase(BaseModel):
@@ -118,7 +189,7 @@ class TriggerBase(BaseModel):
     )
     trigger_mode: str = Field(
         default="demographic",
-        description="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match | body_posture | velocity | left_object | vehicle_plate"
+        description="Trigger mode: demographic | ppl_match | search | search_demographic | vprofile_match | body_posture | motion | left_object | vehicle_plate (velocity accepted as alias)"
     )
     ppl_match_group_id: Optional[str] = Field(
         None,
@@ -131,7 +202,7 @@ class TriggerBase(BaseModel):
     )
     camera_device_ids: Optional[List[str]] = Field(
         None,
-        description="JSON array of camera device IDs for vprofile_match / body_posture / velocity / left_object / vehicle_plate multi-camera mode"
+        description="JSON array of camera device IDs for vprofile_match / body_posture / motion / left_object / vehicle_plate multi-camera mode"
     )
     ppl_match_similarity_threshold: float = Field(
         default=0.75,
@@ -177,12 +248,28 @@ class TriggerBase(BaseModel):
         description="Minimum bbox IoU to continue a body track across cycles",
     )
     velocity_scope: Optional[str] = Field(
-        default="crowd",
-        description="Velocity trigger scope: crowd | single",
+        default=None,
+        description="Legacy alias for motion_scope",
     )
     velocity_band: Optional[str] = Field(
-        default="walking",
-        description="Gait band floor: walking | light_running | running | fast_running",
+        default=None,
+        description="Legacy gait band; prefer motion_conditions speed_band",
+    )
+    motion_scope: Optional[str] = Field(
+        default="crowd",
+        description="Motion trigger speed scope: crowd | single",
+    )
+    motion_conditions: Optional[List[MotionCondition]] = Field(
+        default=None,
+        description="Motion conditions (speed_band / motion_class / roi_transit); combined via motion_condition_logic",
+    )
+    motion_condition_logic: Optional[str] = Field(
+        default="and",
+        description="Combine motion_conditions with and | or",
+    )
+    motion_roi: Optional[List[List[float]]] = Field(
+        default=None,
+        description="Normalized ROI polygon [[x,y],...] in 0-1 for roi_transit conditions",
     )
     left_object_class_allowlist: Optional[List[str]] = Field(
         default=None,
@@ -272,6 +359,9 @@ class TriggerBase(BaseModel):
     @field_validator('trigger_mode')
     @classmethod
     def validate_trigger_mode(cls, v: str) -> str:
+        # Accept legacy 'velocity' and normalize to 'motion'
+        if v == 'velocity':
+            return 'motion'
         valid = [
             'demographic',
             'ppl_match',
@@ -279,6 +369,7 @@ class TriggerBase(BaseModel):
             'search_demographic',
             'vprofile_match',
             'body_posture',
+            'motion',
             'velocity',
             'left_object',
             'vehicle_plate',
@@ -297,14 +388,14 @@ class TriggerBase(BaseModel):
             raise ValueError(f'body_posture_target must be one of {valid}')
         return v
 
-    @field_validator('velocity_scope')
+    @field_validator('velocity_scope', 'motion_scope')
     @classmethod
-    def validate_velocity_scope(cls, v: Optional[str]) -> Optional[str]:
+    def validate_motion_scope(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
         valid = ['crowd', 'single']
         if v not in valid:
-            raise ValueError(f'velocity_scope must be one of {valid}')
+            raise ValueError(f'motion_scope must be one of {valid}')
         return v
 
     @field_validator('velocity_band')
@@ -317,8 +408,26 @@ class TriggerBase(BaseModel):
             raise ValueError(f'velocity_band must be one of {valid}')
         return v
 
+    @field_validator('motion_condition_logic')
+    @classmethod
+    def validate_motion_condition_logic(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        valid = ['and', 'or']
+        if v not in valid:
+            raise ValueError(f'motion_condition_logic must be one of {valid}')
+        return v
+
     @model_validator(mode='after')
     def validate_mode_config(self):
+        # Normalize velocity_* aliases onto motion_*
+        if self.motion_scope is None and self.velocity_scope:
+            self.motion_scope = self.velocity_scope
+        if (not self.motion_conditions) and self.velocity_band:
+            self.motion_conditions = [
+                MotionCondition(field='speed_band', operator='gte', value=self.velocity_band)
+            ]
+
         if self.trigger_mode == 'vprofile_match':
             if not self.ppl_match_group_ids:
                 raise ValueError('ppl_match_group_ids is required for vprofile_match mode')
@@ -333,13 +442,16 @@ class TriggerBase(BaseModel):
             if min_matches > window:
                 raise ValueError('body_posture_min_matches cannot exceed body_posture_window_size')
             return self
-        if self.trigger_mode == 'velocity':
+        if self.trigger_mode == 'motion':
             if not self.camera_device_ids:
-                raise ValueError('camera_device_ids is required for velocity mode')
-            if not self.velocity_scope:
-                raise ValueError('velocity_scope is required for velocity mode')
-            if not self.velocity_band:
-                raise ValueError('velocity_band is required for velocity mode')
+                raise ValueError('camera_device_ids is required for motion mode')
+            if not self.motion_scope:
+                raise ValueError('motion_scope is required for motion mode')
+            if not self.motion_conditions:
+                raise ValueError('motion_conditions must contain at least one condition in motion mode')
+            needs_roi = any(c.field == 'roi_transit' for c in self.motion_conditions)
+            if needs_roi and not self.motion_roi:
+                raise ValueError('motion_roi is required when a roi_transit condition is set')
             return self
         if self.trigger_mode == 'left_object':
             if not self.camera_device_ids:
@@ -407,6 +519,10 @@ class TriggerUpdate(BaseModel):
     body_posture_iou_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     velocity_scope: Optional[str] = None
     velocity_band: Optional[str] = None
+    motion_scope: Optional[str] = None
+    motion_conditions: Optional[List[MotionCondition]] = None
+    motion_condition_logic: Optional[str] = None
+    motion_roi: Optional[List[List[float]]] = None
     left_object_class_allowlist: Optional[List[str]] = None
     left_object_roi: Optional[List[List[float]]] = None
     left_object_t_stable_seconds: Optional[int] = Field(default=None, ge=5, le=3600)
@@ -430,6 +546,8 @@ class TriggerUpdate(BaseModel):
     def validate_trigger_mode(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
+        if v == 'velocity':
+            return 'motion'
         valid = [
             'demographic',
             'ppl_match',
@@ -437,6 +555,7 @@ class TriggerUpdate(BaseModel):
             'search_demographic',
             'vprofile_match',
             'body_posture',
+            'motion',
             'velocity',
             'left_object',
             'vehicle_plate',
@@ -455,14 +574,14 @@ class TriggerUpdate(BaseModel):
             raise ValueError(f'body_posture_target must be one of {valid}')
         return v
 
-    @field_validator('velocity_scope')
+    @field_validator('velocity_scope', 'motion_scope')
     @classmethod
-    def validate_velocity_scope(cls, v: Optional[str]) -> Optional[str]:
+    def validate_motion_scope(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
         valid = ['crowd', 'single']
         if v not in valid:
-            raise ValueError(f'velocity_scope must be one of {valid}')
+            raise ValueError(f'motion_scope must be one of {valid}')
         return v
 
     @field_validator('velocity_band')
@@ -475,12 +594,34 @@ class TriggerUpdate(BaseModel):
             raise ValueError(f'velocity_band must be one of {valid}')
         return v
 
+    @field_validator('motion_condition_logic')
+    @classmethod
+    def validate_motion_condition_logic(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        valid = ['and', 'or']
+        if v not in valid:
+            raise ValueError(f'motion_condition_logic must be one of {valid}')
+        return v
+
     @model_validator(mode='after')
     def validate_mode_config(self):
+        if self.motion_scope is None and self.velocity_scope:
+            self.motion_scope = self.velocity_scope
+        if (self.motion_conditions is None) and self.velocity_band:
+            self.motion_conditions = [
+                MotionCondition(field='speed_band', operator='gte', value=self.velocity_band)
+            ]
         if self.trigger_mode == 'body_posture' and self.camera_device_ids is not None and not self.camera_device_ids:
             raise ValueError('camera_device_ids is required for body_posture mode')
-        if self.trigger_mode == 'velocity' and self.camera_device_ids is not None and not self.camera_device_ids:
-            raise ValueError('camera_device_ids is required for velocity mode')
+        if self.trigger_mode == 'motion' and self.camera_device_ids is not None and not self.camera_device_ids:
+            raise ValueError('camera_device_ids is required for motion mode')
+        if self.trigger_mode == 'motion' and self.motion_conditions is not None and not self.motion_conditions:
+            raise ValueError('motion_conditions must contain at least one condition in motion mode')
+        if self.trigger_mode == 'motion' and self.motion_conditions:
+            needs_roi = any(c.field == 'roi_transit' for c in self.motion_conditions)
+            if needs_roi and self.motion_roi is not None and not self.motion_roi:
+                raise ValueError('motion_roi is required when a roi_transit condition is set')
         if self.trigger_mode == 'left_object' and self.camera_device_ids is not None and not self.camera_device_ids:
             raise ValueError('camera_device_ids is required for left_object mode')
         if self.trigger_mode == 'left_object' and self.left_object_class_allowlist is not None and not self.left_object_class_allowlist:
@@ -535,6 +676,10 @@ class TriggerResponse(BaseModel):
     body_posture_iou_threshold: Optional[float] = None
     velocity_scope: Optional[str] = None
     velocity_band: Optional[str] = None
+    motion_scope: Optional[str] = None
+    motion_conditions: Optional[List[MotionCondition]] = None
+    motion_condition_logic: Optional[str] = None
+    motion_roi: Optional[List[List[float]]] = None
     left_object_class_allowlist: Optional[List[str]] = None
     left_object_roi: Optional[List[List[float]]] = None
     left_object_t_stable_seconds: Optional[int] = None
@@ -565,6 +710,30 @@ class TriggerResponse(BaseModel):
             import json
             parsed = json.loads(v)
             return [DemographicCondition(**item) for item in parsed]
+        return v
+
+    @field_validator('motion_conditions', mode='before')
+    @classmethod
+    def parse_motion_conditions(cls, v):
+        if isinstance(v, str):
+            import json
+            try:
+                parsed = json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                return None
+            if isinstance(parsed, list):
+                return [MotionCondition(**item) for item in parsed]
+        return v
+
+    @field_validator('motion_roi', mode='before')
+    @classmethod
+    def parse_motion_roi(cls, v):
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                return None
         return v
 
     @field_validator('last_match_info', mode='before')

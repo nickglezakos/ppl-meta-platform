@@ -68,6 +68,9 @@ from src.models.signage import (
 from src.models.trigger import Trigger
 from src.models.trigger_execution_log import TriggerExecutionLog
 from src.models.instant_detection_log import InstantDetectionLog  # noqa: F401
+from src.models.instant_detection_normalised_span import (  # noqa: F401
+    InstantDetectionNormalisedSpan,
+)
 from src.models.user_trigger_action import UserTriggerAction
 
 from src.services.signage_etl_worker import start_etl_worker, stop_etl_worker
@@ -245,14 +248,14 @@ async def lifespan(_app: FastAPI):
         logger.error(f"Failed to restore body posture triggers: {e}")
         logger.info("Body posture triggers will load lazily on first activation")
 
-    # Restore velocity triggers (camera allow-list cache)
+    # Restore motion triggers (camera allow-list cache; includes legacy velocity)
     try:
-        from src.services.velocity_trigger_worker import get_velocity_trigger_worker
-        velocity_worker = get_velocity_trigger_worker()
-        await velocity_worker.load_all_active_triggers()
+        from src.services.motion_trigger_worker import get_motion_trigger_worker
+        motion_worker = get_motion_trigger_worker()
+        await motion_worker.load_all_active_triggers()
         logger.info("Velocity triggers restored")
     except Exception as e:
-        logger.error(f"Failed to restore velocity triggers: {e}")
+        logger.error(f"Failed to restore motion triggers: {e}")
         logger.info("Velocity triggers will load lazily on first activation")
 
     # Restore left_object triggers (in-memory object tracks)
