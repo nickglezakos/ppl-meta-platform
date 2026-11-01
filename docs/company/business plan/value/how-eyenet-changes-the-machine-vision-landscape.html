@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How EyeNet Changes the Machine Vision Landscape — PDF</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #475569;
+      --soft: #64748b;
+      --line: #dbe3ee;
+      --band: #f3f7fb;
+      --band-alt: #eaf1f8;
+      --brand: #1976d2;
+      --brand-dark: #0f2f57;
+      --cyan: #0891b2;
+      --warn: #b45309;
+      --ok: #166534;
+      --danger: #b91c1c;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      color: var(--ink);
+      background: #fff;
+      font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.55;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    @page {
+      size: A4;
+      margin: 16mm 14mm 18mm 14mm;
+    }
+
+    .sheet { max-width: 190mm; margin: 0 auto; padding: 14mm 0 96px; }
+    @media print {
+      .sheet { max-width: none; padding: 0; margin: 0; }
+      .no-print { display: none !important; }
+    }
+
+    .no-print.toolbar {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 12px 16px; margin-bottom: 18px;
+      background: #fff; border-bottom: 1px solid var(--line);
+    }
+    .no-print.toolbar p { margin: 0; color: var(--soft); font-size: 12px; max-width: 48ch; }
+    .no-print.toolbar button {
+      flex: 0 0 auto;
+      border: 0; border-radius: 8px; padding: 10px 16px;
+      background: var(--brand); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .doc-nav {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+      background: rgba(255,255,255,0.96);
+      border-top: 1px solid var(--line);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.06);
+    }
+    .doc-nav button {
+      border: 1px solid var(--line); border-radius: 8px;
+      padding: 10px 12px; background: #fff; color: var(--ink);
+      font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .doc-nav button:disabled {
+      opacity: 0.35; cursor: default;
+    }
+    .doc-nav-prev { justify-self: start; }
+    .doc-nav-next { justify-self: end; }
+    .doc-nav-mid {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      min-width: 0; text-align: center;
+    }
+    .doc-nav-label {
+      max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: var(--soft); font-size: 11px; font-weight: 600;
+    }
+    .doc-nav-pdf {
+      border: 0 !important; border-radius: 8px !important;
+      padding: 8px 14px !important;
+      background: var(--brand) !important; color: #fff !important;
+      font-size: 12px !important; font-weight: 700 !important;
+    }
+
+    @media (max-width: 720px) {
+      .no-print.toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .no-print.toolbar p { display: none; }
+      .no-print.toolbar button {
+        width: 100%;
+        white-space: normal;
+        text-align: center;
+      }
+      .doc-nav { gap: 6px; padding-left: 8px; padding-right: 8px; }
+      .doc-nav button { padding: 10px 8px; font-size: 12px; }
+      .doc-nav-label { max-width: 34vw; font-size: 10px; }
+    }
+
+    /* Cover */
+    .cover {
+      min-height: 250mm;
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: 18mm 14mm;
+      background: linear-gradient(165deg, #0b1220 0%, #10284a 55%, #163a66 100%);
+      color: #fff;
+      break-after: page;
+      page-break-after: always;
+    }
+    .cover-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .cover-brand { display: flex; align-items: center; gap: 12px; }
+    .cover-brand img { height: 34px; width: auto; filter: brightness(0) invert(1); }
+    .cover-chip {
+      padding: 6px 10px; border: 1px solid rgba(255,255,255,0.22);
+      font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+      color: #cfefff;
+    }
+    .cover-eyebrow {
+      margin: 56px 0 18px;
+      color: #67e8f9; font-size: 12px; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .cover h1 {
+      margin: 0 0 20px; font-size: 36px; line-height: 1.08;
+      letter-spacing: -0.03em; font-weight: 700; max-width: 16ch;
+    }
+    .cover-lead {
+      margin: 0; max-width: 48ch; color: #d7e3f2; font-size: 14px; line-height: 1.65;
+    }
+    .cover-meta {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+      margin-top: 52px; padding-top: 26px;
+      border-top: 1px solid rgba(255,255,255,0.14);
+    }
+    .cover-meta div { min-width: 0; }
+    .cover-meta span {
+      display: block; margin-bottom: 4px;
+      color: #9fb0c3; font-size: 10px; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .cover-meta strong { font-size: 12px; font-weight: 600; color: #fff; }
+    .cover-foot {
+      display: flex; justify-content: space-between; gap: 16px;
+      color: #9fb0c3; font-size: 11px;
+    }
+
+    /* Body */
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h2 {
+      margin: 0 0 12px; font-size: 16pt; letter-spacing: -0.02em;
+      color: var(--brand-dark); break-after: avoid; page-break-after: avoid;
+    }
+    h3 {
+      margin: 18px 0 8px; font-size: 11.5pt; color: var(--ink);
+      break-after: avoid; page-break-after: avoid;
+    }
+    h4 {
+      margin: 0 0 8px; font-size: 10.5pt; color: var(--ink);
+    }
+    p { margin: 0 0 10px; color: var(--muted); }
+    ul { margin: 0 0 12px; padding-left: 16px; color: var(--muted); }
+    li + li { margin-top: 6px; }
+    strong { color: var(--ink); }
+
+    .sheet > section {
+      scroll-margin-top: 72px;
+      scroll-margin-bottom: 96px;
+    }
+    .section {
+      padding: 18px 0 22px;
+      border-bottom: 1px solid var(--line);
+      break-inside: avoid-page;
+    }
+    .section.flow { break-inside: auto; }
+    .section.page-start {
+      break-before: page;
+      page-break-before: always;
+      border-top: 0;
+      padding-top: 4px;
+    }
+    .section-head {
+      display: flex; align-items: baseline; gap: 10px;
+      margin-bottom: 14px; break-after: avoid; page-break-after: avoid;
+    }
+    .section-num {
+      flex: 0 0 auto;
+      min-width: 22px;
+      color: var(--brand); font-size: 11px; font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .kicker {
+      margin: 0 0 16px; padding: 14px 16px;
+      background: var(--brand-dark); color: #f5fbff;
+      font-size: 10pt; font-weight: 600; line-height: 1.5;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .kicker.warn { background: #1f2937; border-left: 3px solid #f59e0b; margin-bottom: 18px; }
+
+    .cols-3, .cols-2 { display: grid; gap: 14px; margin: 14px 0; }
+    .cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .cols-2 { grid-template-columns: 1.2fr 0.8fr; }
+    .panel {
+      background: var(--band); padding: 14px 14px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .panel.alt { background: var(--band-alt); }
+    .panel p, .panel li { font-size: 9.5pt; }
+    .stat {
+      display: block; margin-bottom: 4px;
+      font-size: 18pt; font-weight: 800; letter-spacing: -0.03em; line-height: 1;
+    }
+    .stat-label {
+      display: block; margin-bottom: 8px;
+      color: var(--soft); font-size: 8.5pt; font-weight: 700;
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .stat.cyan { color: var(--cyan); }
+    .stat.danger { color: var(--danger); }
+    .stat.brand { color: var(--brand); }
+    .stat.ok { color: var(--ok); }
+
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .tag {
+      display: inline-block; padding: 3px 8px;
+      background: #fff; border: 1px solid var(--line);
+      color: var(--brand); font-size: 8.5pt; font-weight: 600;
+    }
+    .tag.mode { color: var(--cyan); }
+    .tag.user { color: var(--warn); }
+    .tag.safety { color: var(--danger); }
+    .tag.ok { color: var(--ok); }
+
+    .side-note {
+      margin-top: 12px; font-size: 9pt; color: var(--soft);
+    }
+
+    .card-visual {
+      display: block; width: 100%; height: 148px;
+      object-fit: cover; object-position: center;
+      border-radius: 8px; margin: 0 0 14px;
+      background: #0f172a;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .card-visual-credit {
+      margin: 0 0 14px; font-size: 7.5pt; color: var(--soft);
+      letter-spacing: 0.02em;
+    }
+
+    .persona-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0;
+    }
+    .persona {
+      background: var(--band); padding: 14px 16px;
+      margin: 0 0 18px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .persona:last-child { margin-bottom: 0; }
+    .persona.alt { background: var(--band-alt); }
+    .persona h4 {
+      margin: 0 0 6px; font-size: 10.5pt;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .persona .n {
+      display: inline-grid; place-items: center;
+      width: 18px; height: 18px; flex: none;
+      background: var(--brand); color: #fff;
+      font-size: 9px; font-weight: 700;
+    }
+    .persona .who {
+      margin: 0 0 10px; font-size: 8.5pt; color: var(--soft);
+    }
+    .persona ul {
+      margin: 0; padding-left: 14px; font-size: 9pt;
+    }
+    .persona li + li { margin-top: 5px; }
+    .persona .cols-2 { margin: 10px 0 0; }
+    .persona .panel { margin: 0; }
+
+    .notify {
+      margin-top: 12px; padding: 10px 12px;
+      background: #fff; border: 1px solid var(--line);
+      border-left: 3px solid var(--brand);
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .persona.alt .notify { background: rgba(255,255,255,0.72); }
+    .notify h5 {
+      margin: 0 0 6px; font-size: 8.5pt; font-weight: 800;
+      letter-spacing: 0.04em; text-transform: uppercase; color: var(--brand-dark);
+    }
+    .notify ul {
+      margin: 0; padding-left: 14px; font-size: 8.5pt; color: var(--muted);
+    }
+    .notify li + li { margin-top: 3px; }
+
+    .how-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0;
+    }
+    .how {
+      background: var(--band); padding: 14px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .how.alt { background: var(--band-alt); }
+    .how h4 {
+      margin: 0 0 8px; font-size: 10pt;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .how .n {
+      display: inline-grid; place-items: center;
+      width: 18px; height: 18px; background: var(--brand); color: #fff;
+      font-size: 9px; font-weight: 700;
+    }
+    .how p { font-size: 8.5pt; margin-bottom: 10px; }
+    .how ul { font-size: 8.5pt; padding-left: 14px; margin: 0; }
+    .how li + li { margin-top: 5px; }
+
+    .summary-panel {
+      margin-top: 18px;
+      padding: 14px 16px;
+    }
+    .summary-panel .tags { margin-top: 10px; }
+
+    .footer-note {
+      margin-top: 18px; color: var(--soft); font-size: 9pt;
+    }
+
+    .how-closing {
+      margin-top: 16px;
+    }
+
+    .intro-kickers {
+      display: grid; gap: 12px; margin: 14px 0 18px;
+    }
+    .intro-kickers .notify {
+      margin-top: 0; padding: 12px 14px;
+      background: var(--band);
+    }
+    .intro-kickers .notify.alt {
+      background: var(--band-alt);
+    }
+    .intro-kickers .notify p {
+      margin: 0; font-size: 9.5pt; font-weight: 400;
+      color: var(--muted); line-height: 1.5;
+    }
+    .intro-heroes {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+      margin-top: 6px;
+    }
+    .intro-heroes .notify {
+      margin-top: 0; padding: 12px 14px;
+      background: var(--band);
+    }
+    .intro-heroes .notify.alt { background: var(--band-alt); }
+    .intro-heroes .notify p {
+      margin: 0; font-size: 9pt; font-weight: 400;
+      color: var(--muted); line-height: 1.4;
+    }
+
+    .breaker-grid {
+      display: grid; gap: 12px; margin: 14px 0 18px;
+    }
+    .breaker-grid .notify {
+      margin-top: 0; padding: 14px 16px;
+      background: var(--band);
+    }
+    .breaker-grid .notify.alt { background: var(--band-alt); }
+    .breaker-grid .notify p {
+      margin: 0; font-size: 10pt; font-weight: 400;
+      color: var(--muted); line-height: 1.45;
+    }
+    .breaker-vs {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px;
+    }
+    .breaker-vs .panel h4 { margin-bottom: 8px; }
+    .breaker-vs ul { margin: 0; font-size: 9pt; }
+  </style>
+</head>
+<body>
+  <div class="no-print toolbar">
+    <p>PDF document layout for Chromium/Playwright export. Screen preview approximates A4 pages.</p>
+    <button type="button" onclick="window.print()">Print / Save as PDF</button>
+  </div>
+
+  <div class="sheet">
+    <section class="cover" id="page-0" data-nav-label="Cover">
+      <div>
+        <div class="cover-top">
+          <div class="cover-brand">
+            <img src="../../../product/logos/svg/eyenet-dark.svg" alt="EyeNet" />
+            <span class="cover-chip">Value Thesis</span>
+          </div>
+        </div>
+        <p class="cover-eyebrow">Machine Vision · Edge Intelligence · Operational Action</p>
+        <h1>How EyeNet changes the machine vision landscape</h1>
+        <p class="cover-lead">From passive cameras to on-premises vision that detects, decides, and acts — across home care, SME, enterprise, industry, and fleets.</p>
+        <div class="cover-meta">
+          <div><span>Type</span><strong>Value Brochure</strong></div>
+          <div><span>Date</span><strong>18 October 2026</strong></div>
+          <div><span>Structure</span><strong>Breaker · Freedom · Intro · What · Why · Packages</strong></div>
+          <div><span>Deployment</span><strong>On-Premises / VPN</strong></div>
+        </div>
+      </div>
+      <div class="cover-foot">
+        <span>eyenet-vision.com</span>
+        <span>nick@eyenet-vision.com</span>
+      </div>
+    </section>
+
+    <!-- 01 COMPETITION BREAKER -->
+    <section class="section flow" id="page-1" data-nav-label="01 · Competition">
+      <div class="section-head"><span class="section-num">01</span><h2>Why EyeNet is a competition breaker</h2></div>
+      <div class="kicker">EyeNet decides, acts, and stays on your premises — in homes, offices, malls, and fleets where competitors cannot follow.</div>
+
+      <div class="breaker-grid">
+        <div class="notify">
+          <h5>Not another camera cloud</h5>
+          <p>Video never has to leave the site. Full offline operation. Competitors sell bandwidth; EyeNet sells sovereignty.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Action, not archives</h5>
+          <p>Presence, zones, fall, voice, POI, and signage fire real workflows — mobile, email, webhooks, HubSpot, clinical apps. VMS stores yesterday; EyeNet runs today.</p>
+        </div>
+        <div class="notify">
+          <h5>Products, not projects</h5>
+          <p>Six vertical apps. Five deployment modes. One platform. Integrators stop reinventing vision for every RFP.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Hardware humility, software ambition</h5>
+          <p>Any camera. ~16&nbsp;GB PC. Minutes to first detection. No GPU farm. No proprietary lock-in box.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-2" data-nav-label="01 · Differentiation">
+      <div class="section-head"><span class="section-num">01</span><h2>Why EyeNet is a competition breaker</h2></div>
+
+      <div class="breaker-grid">
+        <div class="notify">
+          <h5>Where cloud dies, EyeNet lives</h5>
+          <p>Ships, clinics, cottages, night posts, Virtual Wards — connectivity-hostile, privacy-hostile environments. That is the market others abandon.</p>
+        </div>
+        <div class="notify alt">
+          <h5>One fabric: on-site and remote</h5>
+          <p>Stations, Vprofile, mobile, PC, Matrix over VPN. Staff at the desk or at home. Fleet at sea or in port. One truth.</p>
+        </div>
+        <div class="notify">
+          <h5>Safety layer cloud RPM cannot fake</h5>
+          <p>Vitals-only remote care is half a product. EyeNet adds presence, secure zones, fall, and help-calls — tokenized into health stacks, not dumped as video.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Marketing that proves itself</h5>
+          <p>Demographic-adaptive signage with measurable impressions and A/B in the wild. Screens stop being hope; they become a studio.</p>
+        </div>
+        <div class="notify">
+          <h5>Night shift, automated</h5>
+          <p>First real automation of guard vigilance, perimeter Presence, Vradar motion, and forensics. Security headcount stops scaling 1:1 with sites.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Defensible by architecture</h5>
+          <p>Privacy-first edge CV + vertical depth + partner channels (Talos / TMAIX, maritime, HubSpot-first CRM). Hard to copy as a feature checkbox.</p>
+        </div>
+      </div>
+
+      <div class="breaker-vs">
+        <div class="panel">
+          <h4>They sell</h4>
+          <ul>
+            <li>Cloud storage &amp; monthly bandwidth</li>
+            <li>Passive recordings &amp; dashboards</li>
+            <li>Generic “AI boxes”</li>
+            <li>Projects that take quarters</li>
+          </ul>
+        </div>
+        <div class="panel alt">
+          <h4>EyeNet ships</h4>
+          <ul>
+            <li>On-prem decisions &amp; zero video cloud</li>
+            <li>Targeted notifications that run the operation</li>
+            <li>Purpose-built apps for real jobs</li>
+            <li>Detection in minutes — scale by hardware</li>
+          </ul>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- 02 FREEDOM FROM THE FEED -->
+    <section class="section flow page-start" id="page-3" data-nav-label="02 · Freedom">
+      <div class="section-head"><span class="section-num">02</span><h2>You don’t watch cameras — they watch for you</h2></div>
+      <div class="kicker">EyeNet users are not locked to a camera wall. They move freely and receive automated notifications only for the events that matter.</div>
+      <div class="breaker-grid">
+        <div class="notify">
+          <h5>Live your day</h5>
+          <p>With EyeNet, you don’t live in a camera wall — you live your day. Events that matter find you as targeted alerts on phone, email, and apps, wherever you are. The platform watches; you only act when it counts.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Stop staring at feeds</h5>
+          <p>Stop staring at feeds. EyeNet watches 24/7 and pings you only for what matters — anywhere you go.</p>
+        </div>
+        <div class="notify">
+          <h5>Alerts, not anxiety</h5>
+          <p>Camera walls create anxiety. EyeNet creates notifications: the right alert, to the right person, at the right time.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Cameras work for you</h5>
+          <p>You don’t monitor cameras. Cameras monitor for you — and message you when something actually needs you.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 INTRO -->
+    <section class="section flow page-start" id="page-4" data-nav-label="03 · With EyeNet">
+      <div class="section-head"><span class="section-num">03</span><h2>With EyeNet…</h2></div>
+      <div class="kicker">Strong outcomes for real operators — clear outlook, few targeted notifications, no cloud lock-in.</div>
+      <div class="intro-kickers">
+        <div class="notify">
+          <h5>Fleet manager</h5>
+          <p>With EyeNet, a fleet manager gets a clear operational outlook of every ship — who is onboard, where they should be — with a few targeted mobile notifications even on thin connectivity.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Care coordinator · Virtual Ward</h5>
+          <p>With EyeNet, a care coordinator gets hospital-grade safety in every unstaffed home — falls, help-calls, and zone breaches as a few targeted alerts in the clinical app.</p>
+        </div>
+        <div class="notify">
+          <h5>HR · People ops</h5>
+          <p>With EyeNet, an HR lead gets live staff presence across office and remote — without chasing anyone — via a few targeted exception notifications and HubSpot updates.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Security supervisor</h5>
+          <p>With EyeNet, a security supervisor gets night-shift certainty that posts stay awake and perimeters stay clean — with a few targeted mobile alerts instead of constant screen-watching.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-5" data-nav-label="03 · Roles">
+      <div class="section-head"><span class="section-num">03</span><h2>With EyeNet…</h2></div>
+      <div class="intro-kickers">
+        <div class="notify">
+          <h5>Family · cottage &amp; remote living</h5>
+          <p>With EyeNet, a parent gets peace of mind for a cottage or a student living away — intrusion and presence events as a few targeted phone notifications, video never forced to the cloud.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Mall marketer</h5>
+          <p>With EyeNet, a mall marketer gets foot traffic turned into measurable studio ROI — who saw what, what converted — with a few targeted campaign digests instead of guesswork.</p>
+        </div>
+        <div class="notify">
+          <h5>Shop manager</h5>
+          <p>With EyeNet, a shop manager gets customer movement as floor intelligence — counts, paths, dwell, and occupancy — with a few targeted digests and behavioural alerts instead of walking the floor blind.</p>
+        </div>
+      </div>
+      <div class="intro-heroes">
+        <div class="notify"><p>With EyeNet, vision stops being footage and starts being decisions.</p></div>
+        <div class="notify alt"><p>With EyeNet, one subscription turns cameras into operators that never sleep.</p></div>
+        <div class="notify alt"><p>With EyeNet, presence, safety, and marketing stop needing extra headcount.</p></div>
+        <div class="notify"><p>With EyeNet, every site — home, office, ship, mall, shop — reports only what matters.</p></div>
+      </div>
+    </section>
+
+    <!-- 04 WHAT -->
+    <section class="section flow page-start" id="page-6" data-nav-label="04 · What">
+      <div class="section-head"><span class="section-num">04</span><h2>What</h2></div>
+      <div class="kicker">EyeNet turns ordinary cameras into real-time operational intelligence — presence, counts, demographics, zones, and POI — then automates alerts, signage, and integrations on-premises, offline, and over VPN. Six apps, five modes, one platform: from a single home-care dwelling to multi-site fleets, on modest hardware, with video that never needs the cloud.</div>
+      <div class="cols-3">
+        <div class="panel">
+          <span class="stat cyan">Edge</span>
+          <span class="stat-label">Not Cloud-Bound</span>
+          <p>On-device AI. Full offline. Data sovereignty by default.</p>
+        </div>
+        <div class="panel alt">
+          <span class="stat brand">Action</span>
+          <span class="stat-label">Not Passive VMS</span>
+          <p>Triggers → mobile, email, webhooks, signage, gates.</p>
+        </div>
+        <div class="panel">
+          <span class="stat ok">Scale</span>
+          <span class="stat-label">Hardware-Bound</span>
+          <p>Any camera. ~16&nbsp;GB PC. 1 room → enterprise mesh.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 05 WHY -->
+    <section class="section flow page-start" id="page-7" data-nav-label="05 · Home care">
+      <div class="section-head"><span class="section-num">05</span><h2>Why</h2></div>
+      <div class="kicker">Featured use cases — where EyeNet replaces manual presence, blind nights, and disconnected sites with automatic vision.</div>
+
+      <div class="persona">
+        <h4><span class="n">1</span> Home care · Virtual Ward</h4>
+        <p class="who">Care provider · MDT clinician · patient / family · Talos / TMAIX eHealth partner</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>Caregiver presence</strong> — right staff, right home, right time (visit assurance)</li>
+              <li><strong>Secure zones</strong> — alarm on unspecified persons in/around the dwelling</li>
+              <li><strong>Fall detection</strong> — already-developed automation trigger → care team</li>
+              <li><strong>Voice / help-call</strong> — spoken request for help → immediate actionable alert</li>
+              <li><strong>Clinical fuse</strong> — tokenized events into ePokratis / IoMT / telemedicine (not cloud video)</li>
+              <li><strong>Virtual Ward</strong> — hospital-level care at home: admission avoidance &amp; early discharge</li>
+            </ul>
+            <div class="notify">
+              <h5>Automated notifications</h5>
+              <ul>
+                <li>MDT / care coordinator · on-call clinician</li>
+                <li>Assigned caregiver (mobile)</li>
+                <li>Patient family / sponsor (selected events)</li>
+                <li>Telemedicine / ePokratis case queue</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel alt">
+            <img class="card-visual" src="assets/homecare-caregiver-presence.jpg" alt="Talos Homecare — caregiver presence" />
+            <p class="card-visual-credit">Visual: talosgroup.eu/solutions/integration/homecare</p>
+            <h4>Why it matters</h4>
+            <p>Differentiator vs vitals-only RPM: the home becomes a monitored care environment. Privacy by architecture — vision stays on-prem; only fall / help / presence / zone events reach the health stack.</p>
+            <div class="tags">
+              <span class="tag">Presence</span>
+              <span class="tag">Automation</span>
+              <span class="tag safety">Fall</span>
+              <span class="tag safety">Voice</span>
+              <span class="tag mode">Area · Spot</span>
+              <span class="tag user">Talos · TMAIX</span>
+            </div>
+            <p class="side-note"><strong>Partner:</strong> Talos eHealth / IoMT · TMAIX ePpocrates eCloud</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-8" data-nav-label="05 · HR Presence">
+      <div class="section-head"><span class="section-num">05</span><h2>Why</h2></div>
+
+      <div class="persona alt">
+        <h4><span class="n">2</span> HR Presence — SME &amp; enterprise</h4>
+        <p class="who">HR · facilities · office ops — automatic staff presence, zero HR effort</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>Entrance / exit stations</strong> — Presence stations at doors for check-in / check-out</li>
+              <li><strong>Vprofile cameras</strong> — entrances, meeting rooms, mess / break areas</li>
+              <li><strong>Presence apps</strong> — staff mobile phones and desk PCs</li>
+              <li><strong>Remote employees</strong> — same Presence stack works when staff work from home</li>
+              <li><strong>Hands-off HR</strong> — purely automatic; no manual roll-call or HR staff effort</li>
+              <li><strong>HubSpot CRM</strong> — first CRM connector: sync contacts, post grants to HubSpot in real time</li>
+            </ul>
+            <div class="notify">
+              <h5>Automated notifications</h5>
+              <ul>
+                <li>Employee (Presence app confirmations)</li>
+                <li>Line manager (exceptions / late / no-show)</li>
+                <li>HR / People ops (daily digests, not manual chase)</li>
+                <li>Facilities · HubSpot contact timeline (grants)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel">
+            <img class="card-visual" src="assets/hr-presence.png" alt="EyeNet staff presence" />
+            <p class="card-visual-credit">Visual: eyenet-vision.com</p>
+            <h4>Why it matters</h4>
+            <p>One Presence fabric for on-site and remote. Who is in, where, and when — without badges-only friction or spreadsheet attendance.</p>
+            <div class="tags">
+              <span class="tag">Presence</span>
+              <span class="tag mode">Stations</span>
+              <span class="tag mode">Vprofile</span>
+              <span class="tag">Mobile · PC apps</span>
+              <span class="tag user">HubSpot CRM</span>
+            </div>
+            <p class="side-note"><strong>CRM path:</strong> HubSpot first; further CRM connectors follow the same pattern.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-9" data-nav-label="05 · Security">
+      <div class="section-head"><span class="section-num">05</span><h2>Why</h2></div>
+
+      <div class="persona">
+        <h4><span class="n">3</span> Security personnel — night &amp; perimeter</h4>
+        <p class="who">Security firms · corporate / industrial / government guard ops</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>Night-shift automation</strong> — first-time automated monitoring that guards stay awake and alert</li>
+              <li><strong>Presence at posts</strong> — Presence services on watch stations across the shift</li>
+              <li><strong>Perimeter nodes</strong> — Presence nodes at fences, gates, and outer rings</li>
+              <li><strong>Vradar</strong> — motion detection, POI / people-match alerts on patrol feeds</li>
+              <li><strong>Forensics</strong> — continuous recording with timestamped evidence for incidents</li>
+            </ul>
+            <div class="notify">
+              <h5>Automated notifications</h5>
+              <ul>
+                <li>On-duty guard (mobile / post alarm)</li>
+                <li>Shift supervisor · SOC</li>
+                <li>Site security manager</li>
+                <li>Response team · client facilities (critical)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel alt">
+            <img class="card-visual" src="assets/security.jpg" alt="EyeNet security monitoring" />
+            <p class="card-visual-credit">Visual: eyenet-vision.com</p>
+            <h4>Why it matters</h4>
+            <p>Night coverage stops depending on hope. Auto-escalate when a post goes quiet; perimeter + Vradar catch motion before it becomes a breach.</p>
+            <div class="tags">
+              <span class="tag">Presence</span>
+              <span class="tag">Sentinel</span>
+              <span class="tag safety">Vradar</span>
+              <span class="tag mode">Perimeter</span>
+              <span class="tag ok">Recording · forensics</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-10" data-nav-label="05 · Cottage">
+      <div class="section-head"><span class="section-num">05</span><h2>Why</h2></div>
+
+      <div class="persona alt">
+        <h4><span class="n">4</span> Cottage &amp; remote living</h4>
+        <p class="who">Families · cottage owners · undergraduates away from home</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>Cottage / second-home protection</strong> — intrusion and unknown-person alerts when empty</li>
+              <li><strong>Remote students</strong> — undergraduates living away; family peace of mind without cloud video</li>
+              <li><strong>Presence check</strong> — confirm someone is (or should be) in the dwelling</li>
+              <li><strong>Secure zones</strong> — alarm if an unspecified person enters living areas</li>
+              <li><strong>On-prem privacy</strong> — footage stays local; phone alerts only when needed</li>
+            </ul>
+            <div class="notify">
+              <h5>Automated notifications</h5>
+              <ul>
+                <li>Owner / family (mobile push · email)</li>
+                <li>Resident (student / occupant)</li>
+                <li>Caretaker / neighbour (optional)</li>
+                <li>Local response contact (critical only)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel">
+            <img class="card-visual" src="assets/remote-cottage.jpg" alt="EyeNet remote operations" />
+            <p class="card-visual-credit">Visual: eyenet-vision.com</p>
+            <h4>Why it matters</h4>
+            <p>Protect people and places that sit far from family — lightly, privately, without a full security team.</p>
+            <div class="tags">
+              <span class="tag">Gate</span>
+              <span class="tag">Presence</span>
+              <span class="tag">Automation</span>
+              <span class="tag mode">Spot · Area</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <section class="section flow page-start" id="page-11" data-nav-label="05 · Shipping">
+      <div class="section-head"><span class="section-num">05</span><h2>Why</h2></div>
+
+      <div class="persona">
+        <h4><span class="n">5</span> Shipping — crew where they should be</h4>
+        <p class="who">Captain · fleet manager · shore HQ</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>Everyone in place</strong> — Presence / Gate / Sentinel ensure crew are where they should be</li>
+              <li><strong>Exact onboard count</strong> — know precisely how many people are onboard at any moment</li>
+              <li><strong>Shore reports anytime</strong> — automated attendance &amp; headcount packs to HQ</li>
+              <li><strong>Minimal connectivity</strong> — full local ops at sea; sync over thin / intermittent links</li>
+              <li><strong>Fleet Matrix</strong> — VPN mesh; degraded queue — no data loss when offline</li>
+            </ul>
+            <div class="notify">
+              <h5>Automated notifications</h5>
+              <ul>
+                <li>Captain · bridge / duty officer</li>
+                <li>Chief mate · security officer (onboard)</li>
+                <li>Shore fleet ops · CSO</li>
+                <li>Fleet HR (attendance / compliance packs)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel alt">
+            <img class="card-visual" src="assets/shipping.jpg" alt="EyeNet maritime shipping operations" />
+            <p class="card-visual-credit">Visual: eyenet-vision.com</p>
+            <h4>Why it matters</h4>
+            <p>Ships cannot depend on cloud VMS. EyeNet gives captain and shore the same truth: who is onboard, where they are, with reports that travel on minimal bandwidth.</p>
+            <div class="tags">
+              <span class="tag">Presence</span>
+              <span class="tag">Gate</span>
+              <span class="tag">Sentinel</span>
+              <span class="tag">Matrix</span>
+              <span class="tag mode">Offline · VPN</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-12" data-nav-label="05 · Mall">
+      <div class="section-head"><span class="section-num">05</span><h2>Why</h2></div>
+
+      <div class="persona alt">
+        <h4><span class="n">6</span> Mall marketing studio — foot traffic → intelligence</h4>
+        <p class="who">Mall operators · retail marketing · agencies · brand studios</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>Read the room</strong> — age, gender, group size drive playlist switches in milliseconds</li>
+              <li><strong>Zero surveys</strong> — know who sees each display: views, dwell, engagement</li>
+              <li><strong>A/B in the wild</strong> — swap content on live audience data; measure what converts</li>
+              <li><strong>Mall as studio</strong> — digital signage network becomes a measurable marketing studio across concourses, shops, and spots</li>
+              <li><strong>Prove ROI</strong> — impression reports, engagement rates, footfall-to-sales funnels</li>
+            </ul>
+            <div class="notify">
+              <h5>Automated notifications</h5>
+              <ul>
+                <li>Marketing manager (campaign / ROI digests)</li>
+                <li>Content / media ops (playlist &amp; A/B triggers)</li>
+                <li>Mall / store operations</li>
+                <li>Agency · brand partner (scheduled reports)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel">
+            <img class="card-visual" src="assets/mall-signage.png" alt="EyeNet digital signage marketing" />
+            <p class="card-visual-credit">Visual: eyenet-vision.com</p>
+            <h4>Why it matters</h4>
+            <p>Static screens burn budget. Vision-adaptive Signage turns mall foot traffic into measurable marketing intelligence — content that reacts, and numbers that justify spend.</p>
+            <div class="tags">
+              <span class="tag">Signage</span>
+              <span class="tag">Automation</span>
+              <span class="tag mode">Spot · Gate · Area</span>
+              <span class="tag user">Demographics</span>
+              <span class="tag ok">ROI · A/B</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-13" data-nav-label="05 · Shop floor">
+      <div class="section-head"><span class="section-num">05</span><h2>Why</h2></div>
+
+      <div class="persona">
+        <h4><span class="n">7</span> Shop floor — customer movement</h4>
+        <p class="who">Shop managers · store ops · multi-site retail</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>People counting</strong> — Face / Body / Both across entrances and floor cameras</li>
+              <li><strong>Paths &amp; heatmaps</strong> — how customers move through aisles and zones</li>
+              <li><strong>Occupancy &amp; peaks</strong> — busy hours by area, not guesswork</li>
+              <li><strong>Dwell &amp; visit patterns</strong> — where shoppers linger vs pass through</li>
+              <li><strong>Behavioural alerts</strong> — occupancy / dwell / path / co-presence → mobile, email, webhook</li>
+              <li><strong>On-prem privacy</strong> — video stays local; managers get digests and alerts, not cloud footage</li>
+            </ul>
+            <div class="notify">
+              <h5>Automated notifications</h5>
+              <ul>
+                <li>Shop manager (movement / occupancy digests)</li>
+                <li>Store ops · shift lead (busy-zone / dwell alerts)</li>
+                <li>Regional retail ops (multi-site packs)</li>
+                <li>Loss prevention · facilities (selected behavioural events)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel alt">
+            <img class="card-visual" src="assets/shop-floor-analytics.png" alt="EyeNet shop floor customer movement analytics" />
+            <p class="card-visual-credit">Visual: EyeNet Analytics</p>
+            <h4>Why it matters</h4>
+            <p>Turn existing CCTV into floor intelligence — count, path, and act — without a separate analytics stack. Signage proves marketing ROI; shop floor proves how customers move.</p>
+            <div class="tags">
+              <span class="tag">Analytics</span>
+              <span class="tag">Behavioural</span>
+              <span class="tag mode">Counting · Path</span>
+              <span class="tag mode">Occupancy</span>
+              <span class="tag ok">Spot · Area</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel summary-panel">
+        <h4>Use case → primary why</h4>
+        <div class="tags">
+          <span class="tag safety">Home care → safety in unstaffed home</span>
+          <span class="tag user">HR Presence → automatic staff presence + HubSpot</span>
+          <span class="tag safety">Security → night vigilance + perimeter / Vradar</span>
+          <span class="tag ok">Cottage / remote → family peace of mind</span>
+          <span class="tag mode">Shipping → onboard truth → shore reports</span>
+          <span class="tag user">Mall studio → foot traffic → marketing ROI</span>
+          <span class="tag mode">Shop floor → customer movement → ops alerts</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 06 PACKAGES -->
+    <section class="section flow page-start" id="page-14" data-nav-label="06 · B2C Light">
+      <div class="section-head"><span class="section-num">06</span><h2>Packages — B2C · B2B · Enterprise</h2></div>
+      <div class="kicker">Dual go-to-market from the business plan: self-serve consumer volume, mid-market B2B contracts, and enterprise-scale deployments — each with a clear TAM and audience.</div>
+
+      <div class="persona">
+        <h4><span class="n">1</span> B2C Light</h4>
+        <p class="who">Freemium + self-serve · $20–$300/month · event options $200–$1,200</p>
+        <div class="cols-2">
+          <div>
+            <h4>Package</h4>
+            <ul>
+              <li><strong>Signage Lite</strong> — $30–$100/mo · marketing consultants, small agencies</li>
+              <li><strong>Home Security Lite</strong> — $20–$50/mo · homeowners, small property managers</li>
+              <li><strong>Event Security Lite</strong> — $200–$1,200/event · contractors, venue managers</li>
+              <li><strong>Retail Compliance Lite</strong> — $50–$100/mo · small retail, bars, restaurants</li>
+              <li>Free funnel (60–90 days) → Lite / Pro · web signup, app-first</li>
+            </ul>
+            <div class="notify">
+              <h5>Audience characteristics</h5>
+              <ul>
+                <li>Independent professionals &amp; micro-SMEs</li>
+                <li>Low friction, credit-card self-serve</li>
+                <li>Wants alerts &amp; ROI without an IT project</li>
+                <li>High volume, shorter LTV, fast payback (1–2 mo)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel alt">
+            <span class="stat cyan">$0.5–1.5B</span>
+            <span class="stat-label">B2C TAM (U.S., conservative)</span>
+            <p>Target share 1–3% → ~$5–45M opportunity.</p>
+            <h4 style="margin-top:12px;">Addressable pockets</h4>
+            <ul>
+              <li>100,000+ marketing consultants</li>
+              <li>140M homeowners · 2M+ Airbnb hosts</li>
+              <li>50,000+ independent security contractors</li>
+              <li>1.5M+ small retailers / F&amp;B</li>
+            </ul>
+            <div class="tags">
+              <span class="tag mode">Avg MRR ~$50</span>
+              <span class="tag">CAC $20–30</span>
+              <span class="tag ok">LTV:CAC ~30:1</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-15" data-nav-label="06 · B2B">
+      <div class="section-head"><span class="section-num">06</span><h2>Packages — B2C · B2B · Enterprise</h2></div>
+
+      <div class="persona alt">
+        <h4><span class="n">2</span> B2B — Starter &amp; Professional</h4>
+        <p class="who">Sales-assisted SaaS · $500–$3,000/month · multi-site ready</p>
+        <div class="cols-2">
+          <div>
+            <h4>Package</h4>
+            <ul>
+              <li><strong>Starter</strong> — $500–$1,000/mo · 1–5 locations · 5 cameras · single app · basic support</li>
+              <li><strong>Professional</strong> — $1,500–$3,000/mo · 5–20 locations · 25 cameras · multi-app · priority support</li>
+              <li>Typical ACV path toward ~$12K–$36K/year per account</li>
+              <li>Mobile / wearable variants: +40–60% premium where needed</li>
+            </ul>
+            <div class="notify">
+              <h5>Audience characteristics</h5>
+              <ul>
+                <li>Growing SMEs &amp; mid-market facilities</li>
+                <li>Needs Presence, Gate, Signage — not a full custom build</li>
+                <li>Buys on ROI + compliance, not DIY freemium</li>
+                <li>Retention 85–90% · CAC payback ~3–4 months</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel">
+            <span class="stat brand">Part of $2–4B</span>
+            <span class="stat-label">B2B / Enterprise TAM (U.S.)</span>
+            <p>Primary commercial wedge before full Enterprise.</p>
+            <h4 style="margin-top:12px;">Who buys</h4>
+            <ul>
+              <li>Multi-location retail &amp; offices</li>
+              <li>Regional security firms</li>
+              <li>Schools / campuses (pilot to roll-out)</li>
+              <li>Warehouses &amp; light industrial sites</li>
+            </ul>
+            <div class="tags">
+              <span class="tag mode">Starter → Pro land-and-expand</span>
+              <span class="tag user">Sales + partner led</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-16" data-nav-label="06 · Enterprise">
+      <div class="section-head"><span class="section-num">06</span><h2>Packages — B2C · B2B · Enterprise</h2></div>
+
+      <div class="persona">
+        <h4><span class="n">3</span> Enterprise</h4>
+        <p class="who">Strategic accounts · $5,000+/month · unlimited scale · custom integrations</p>
+        <div class="cols-2">
+          <div>
+            <h4>Package</h4>
+            <ul>
+              <li>Unlimited locations / cameras · Matrix multi-site · VPN fleets</li>
+              <li>Custom integrations (ERP, CRM, eHealth, SIEM) · dedicated support</li>
+              <li>Contract band $6K–$150K+/year · planned avg ACV often $12K–$20K+</li>
+              <li>Home care / Virtual Ward, maritime, municipal, multi-brand retail</li>
+            </ul>
+            <div class="notify">
+              <h5>Audience characteristics</h5>
+              <ul>
+                <li>Large orgs: security, compliance, operations boards</li>
+                <li>Needs data residency, SSO/RBAC, audit, SLAs</li>
+                <li>Multi-vertical roll-out after pilot proof</li>
+                <li>High LTV (~$144K modeled) · CAC $3K–5K · LTV:CAC ~40:1</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel alt">
+            <span class="stat ok">$2–4B</span>
+            <span class="stat-label">Enterprise TAM (U.S.)</span>
+            <p>Target 1–2% share → ~$20–80M revenue opportunity.</p>
+            <h4 style="margin-top:12px;">Segment map</h4>
+            <ul>
+              <li>Large retail: 5,000+ locs · target 1,000–2,000 · $12–24M</li>
+              <li>Security agencies: 20,000+ · target 500–1,000 · $6–12M</li>
+              <li>Education: 130,000+ schools · target 500–1,000 · $6–12M</li>
+              <li>CRE: 50,000+ buildings · target 1,000–2,000 · $12–24M</li>
+              <li>Gov / LE: 15,000+ agencies · target 200–500</li>
+            </ul>
+            <div class="tags">
+              <span class="tag safety">On-prem · Matrix · partners</span>
+              <span class="tag ok">Dedicated success</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel summary-panel">
+        <h4>Package → market motion</h4>
+        <div class="tags">
+          <span class="tag user">B2C → volume · self-serve · $0.5–1.5B TAM</span>
+          <span class="tag mode">B2B Starter/Pro → land &amp; expand</span>
+          <span class="tag ok">Enterprise → $2–4B TAM · strategic ACV</span>
+        </div>
+      </div>
+
+      <p class="footer-note">EyeNet Vision · Value brochure · Confidential for commercial &amp; investor discussion. Specs and availability subject to change. Figures from EyeNet Vision business plan / financial model (U.S. market).</p>
+    </section>
+
+  </div>
+
+  <nav class="doc-nav no-print" aria-label="Page navigation">
+    <button type="button" class="doc-nav-prev">← Previous</button>
+    <div class="doc-nav-mid">
+      <span class="doc-nav-label"></span>
+      <button type="button" class="doc-nav-pdf" onclick="window.print()">PDF</button>
+    </div>
+    <button type="button" class="doc-nav-next">Next →</button>
+  </nav>
+<script>
+(function () {
+  var pages = Array.prototype.slice.call(document.querySelectorAll(".sheet > section[data-nav-label]"));
+  if (!pages.length) return;
+  var prevBtn = document.querySelector(".doc-nav-prev");
+  var nextBtn = document.querySelector(".doc-nav-next");
+  var labelEl = document.querySelector(".doc-nav-label");
+  var index = 0;
+
+  function currentIndex() {
+    var mid = window.scrollY + window.innerHeight * 0.28;
+    var best = 0;
+    for (var i = 0; i < pages.length; i++) {
+      if (pages[i].offsetTop <= mid) best = i;
+    }
+    return best;
+  }
+
+  function sync() {
+    index = currentIndex();
+    var page = pages[index];
+    labelEl.textContent = (index + 1) + " / " + pages.length + " · " + page.getAttribute("data-nav-label");
+    prevBtn.disabled = index <= 0;
+    nextBtn.disabled = index >= pages.length - 1;
+  }
+
+  function go(delta) {
+    var next = Math.max(0, Math.min(pages.length - 1, currentIndex() + delta));
+    pages[next].scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  prevBtn.addEventListener("click", function () { go(-1); });
+  nextBtn.addEventListener("click", function () { go(1); });
+  window.addEventListener("scroll", sync, { passive: true });
+  window.addEventListener("resize", sync);
+  sync();
+})();
+</script>
+</body>
+</html>

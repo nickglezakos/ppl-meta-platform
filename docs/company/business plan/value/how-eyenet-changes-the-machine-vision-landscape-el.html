@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Πώς το EyeNet αλλάζει το τοπίο του machine vision — PDF</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #475569;
+      --soft: #64748b;
+      --line: #dbe3ee;
+      --band: #f3f7fb;
+      --band-alt: #eaf1f8;
+      --brand: #1976d2;
+      --brand-dark: #0f2f57;
+      --cyan: #0891b2;
+      --warn: #b45309;
+      --ok: #166534;
+      --danger: #b91c1c;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      color: var(--ink);
+      background: #fff;
+      font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.55;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    @page {
+      size: A4;
+      margin: 16mm 14mm 18mm 14mm;
+    }
+
+    .sheet { max-width: 190mm; margin: 0 auto; padding: 14mm 0 96px; }
+    @media print {
+      .sheet { max-width: none; padding: 0; margin: 0; }
+      .no-print { display: none !important; }
+    }
+
+    .no-print.toolbar {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 12px 16px; margin-bottom: 18px;
+      background: #fff; border-bottom: 1px solid var(--line);
+    }
+    .no-print.toolbar p { margin: 0; color: var(--soft); font-size: 12px; max-width: 48ch; }
+    .no-print.toolbar button {
+      flex: 0 0 auto;
+      border: 0; border-radius: 8px; padding: 10px 16px;
+      background: var(--brand); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .doc-nav {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+      background: rgba(255,255,255,0.96);
+      border-top: 1px solid var(--line);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.06);
+    }
+    .doc-nav button {
+      border: 1px solid var(--line); border-radius: 8px;
+      padding: 10px 12px; background: #fff; color: var(--ink);
+      font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .doc-nav button:disabled {
+      opacity: 0.35; cursor: default;
+    }
+    .doc-nav-prev { justify-self: start; }
+    .doc-nav-next { justify-self: end; }
+    .doc-nav-mid {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      min-width: 0; text-align: center;
+    }
+    .doc-nav-label {
+      max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: var(--soft); font-size: 11px; font-weight: 600;
+    }
+    .doc-nav-pdf {
+      border: 0 !important; border-radius: 8px !important;
+      padding: 8px 14px !important;
+      background: var(--brand) !important; color: #fff !important;
+      font-size: 12px !important; font-weight: 700 !important;
+    }
+
+    @media (max-width: 720px) {
+      .no-print.toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .no-print.toolbar p { display: none; }
+      .no-print.toolbar button {
+        width: 100%;
+        white-space: normal;
+        text-align: center;
+      }
+      .doc-nav { gap: 6px; padding-left: 8px; padding-right: 8px; }
+      .doc-nav button { padding: 10px 8px; font-size: 12px; }
+      .doc-nav-label { max-width: 34vw; font-size: 10px; }
+    }
+
+    /* Cover */
+    .cover {
+      min-height: 250mm;
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: 18mm 14mm;
+      background: linear-gradient(165deg, #0b1220 0%, #10284a 55%, #163a66 100%);
+      color: #fff;
+      break-after: page;
+      page-break-after: always;
+    }
+    .cover-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .cover-brand { display: flex; align-items: center; gap: 12px; }
+    .cover-brand img { height: 34px; width: auto; filter: brightness(0) invert(1); }
+    .cover-chip {
+      padding: 6px 10px; border: 1px solid rgba(255,255,255,0.22);
+      font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+      color: #cfefff;
+    }
+    .cover-eyebrow {
+      margin: 56px 0 18px;
+      color: #67e8f9; font-size: 12px; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .cover h1 {
+      margin: 0 0 20px; font-size: 36px; line-height: 1.08;
+      letter-spacing: -0.03em; font-weight: 700; max-width: 16ch;
+    }
+    .cover-lead {
+      margin: 0; max-width: 48ch; color: #d7e3f2; font-size: 14px; line-height: 1.65;
+    }
+    .cover-meta {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+      margin-top: 52px; padding-top: 26px;
+      border-top: 1px solid rgba(255,255,255,0.14);
+    }
+    .cover-meta div { min-width: 0; }
+    .cover-meta span {
+      display: block; margin-bottom: 4px;
+      color: #9fb0c3; font-size: 10px; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .cover-meta strong { font-size: 12px; font-weight: 600; color: #fff; }
+    .cover-foot {
+      display: flex; justify-content: space-between; gap: 16px;
+      color: #9fb0c3; font-size: 11px;
+    }
+
+    /* Body */
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h2 {
+      margin: 0 0 12px; font-size: 16pt; letter-spacing: -0.02em;
+      color: var(--brand-dark); break-after: avoid; page-break-after: avoid;
+    }
+    h3 {
+      margin: 18px 0 8px; font-size: 11.5pt; color: var(--ink);
+      break-after: avoid; page-break-after: avoid;
+    }
+    h4 {
+      margin: 0 0 8px; font-size: 10.5pt; color: var(--ink);
+    }
+    p { margin: 0 0 10px; color: var(--muted); }
+    ul { margin: 0 0 12px; padding-left: 16px; color: var(--muted); }
+    li + li { margin-top: 6px; }
+    strong { color: var(--ink); }
+
+    .sheet > section {
+      scroll-margin-top: 72px;
+      scroll-margin-bottom: 96px;
+    }
+    .section {
+      padding: 18px 0 22px;
+      border-bottom: 1px solid var(--line);
+      break-inside: avoid-page;
+    }
+    .section.flow { break-inside: auto; }
+    .section.page-start {
+      break-before: page;
+      page-break-before: always;
+      border-top: 0;
+      padding-top: 4px;
+    }
+    .section-head {
+      display: flex; align-items: baseline; gap: 10px;
+      margin-bottom: 14px; break-after: avoid; page-break-after: avoid;
+    }
+    .section-num {
+      flex: 0 0 auto;
+      min-width: 22px;
+      color: var(--brand); font-size: 11px; font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .kicker {
+      margin: 0 0 16px; padding: 14px 16px;
+      background: var(--brand-dark); color: #f5fbff;
+      font-size: 10pt; font-weight: 600; line-height: 1.5;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .kicker.warn { background: #1f2937; border-left: 3px solid #f59e0b; margin-bottom: 18px; }
+
+    .cols-3, .cols-2 { display: grid; gap: 14px; margin: 14px 0; }
+    .cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .cols-2 { grid-template-columns: 1.2fr 0.8fr; }
+    .panel {
+      background: var(--band); padding: 14px 14px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .panel.alt { background: var(--band-alt); }
+    .panel p, .panel li { font-size: 9.5pt; }
+    .stat {
+      display: block; margin-bottom: 4px;
+      font-size: 18pt; font-weight: 800; letter-spacing: -0.03em; line-height: 1;
+    }
+    .stat-label {
+      display: block; margin-bottom: 8px;
+      color: var(--soft); font-size: 8.5pt; font-weight: 700;
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .stat.cyan { color: var(--cyan); }
+    .stat.danger { color: var(--danger); }
+    .stat.brand { color: var(--brand); }
+    .stat.ok { color: var(--ok); }
+
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .tag {
+      display: inline-block; padding: 3px 8px;
+      background: #fff; border: 1px solid var(--line);
+      color: var(--brand); font-size: 8.5pt; font-weight: 600;
+    }
+    .tag.mode { color: var(--cyan); }
+    .tag.user { color: var(--warn); }
+    .tag.safety { color: var(--danger); }
+    .tag.ok { color: var(--ok); }
+
+    .side-note {
+      margin-top: 12px; font-size: 9pt; color: var(--soft);
+    }
+
+    .card-visual {
+      display: block; width: 100%; height: 148px;
+      object-fit: cover; object-position: center;
+      border-radius: 8px; margin: 0 0 14px;
+      background: #0f172a;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .card-visual-credit {
+      margin: 0 0 14px; font-size: 7.5pt; color: var(--soft);
+      letter-spacing: 0.02em;
+    }
+
+    .persona-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0;
+    }
+    .persona {
+      background: var(--band); padding: 14px 16px;
+      margin: 0 0 18px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .persona:last-child { margin-bottom: 0; }
+    .persona.alt { background: var(--band-alt); }
+    .persona h4 {
+      margin: 0 0 6px; font-size: 10.5pt;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .persona .n {
+      display: inline-grid; place-items: center;
+      width: 18px; height: 18px; flex: none;
+      background: var(--brand); color: #fff;
+      font-size: 9px; font-weight: 700;
+    }
+    .persona .who {
+      margin: 0 0 10px; font-size: 8.5pt; color: var(--soft);
+    }
+    .persona ul {
+      margin: 0; padding-left: 14px; font-size: 9pt;
+    }
+    .persona li + li { margin-top: 5px; }
+    .persona .cols-2 { margin: 10px 0 0; }
+    .persona .panel { margin: 0; }
+
+    .notify {
+      margin-top: 12px; padding: 10px 12px;
+      background: #fff; border: 1px solid var(--line);
+      border-left: 3px solid var(--brand);
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .persona.alt .notify { background: rgba(255,255,255,0.72); }
+    .notify h5 {
+      margin: 0 0 6px; font-size: 8.5pt; font-weight: 800;
+      letter-spacing: 0.04em; text-transform: uppercase; color: var(--brand-dark);
+    }
+    .notify ul {
+      margin: 0; padding-left: 14px; font-size: 8.5pt; color: var(--muted);
+    }
+    .notify li + li { margin-top: 3px; }
+
+    .how-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0;
+    }
+    .how {
+      background: var(--band); padding: 14px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .how.alt { background: var(--band-alt); }
+    .how h4 {
+      margin: 0 0 8px; font-size: 10pt;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .how .n {
+      display: inline-grid; place-items: center;
+      width: 18px; height: 18px; background: var(--brand); color: #fff;
+      font-size: 9px; font-weight: 700;
+    }
+    .how p { font-size: 8.5pt; margin-bottom: 10px; }
+    .how ul { font-size: 8.5pt; padding-left: 14px; margin: 0; }
+    .how li + li { margin-top: 5px; }
+
+    .summary-panel {
+      margin-top: 18px;
+      padding: 14px 16px;
+    }
+    .summary-panel .tags { margin-top: 10px; }
+
+    .footer-note {
+      margin-top: 18px; color: var(--soft); font-size: 9pt;
+    }
+
+    .how-closing {
+      margin-top: 16px;
+    }
+
+    .intro-kickers {
+      display: grid; gap: 12px; margin: 14px 0 18px;
+    }
+    .intro-kickers .notify {
+      margin-top: 0; padding: 12px 14px;
+      background: var(--band);
+    }
+    .intro-kickers .notify.alt {
+      background: var(--band-alt);
+    }
+    .intro-kickers .notify p {
+      margin: 0; font-size: 9.5pt; font-weight: 400;
+      color: var(--muted); line-height: 1.5;
+    }
+    .intro-heroes {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+      margin-top: 6px;
+    }
+    .intro-heroes .notify {
+      margin-top: 0; padding: 12px 14px;
+      background: var(--band);
+    }
+    .intro-heroes .notify.alt { background: var(--band-alt); }
+    .intro-heroes .notify p {
+      margin: 0; font-size: 9pt; font-weight: 400;
+      color: var(--muted); line-height: 1.4;
+    }
+
+    .breaker-grid {
+      display: grid; gap: 12px; margin: 14px 0 18px;
+    }
+    .breaker-grid .notify {
+      margin-top: 0; padding: 14px 16px;
+      background: var(--band);
+    }
+    .breaker-grid .notify.alt { background: var(--band-alt); }
+    .breaker-grid .notify p {
+      margin: 0; font-size: 10pt; font-weight: 400;
+      color: var(--muted); line-height: 1.45;
+    }
+    .breaker-vs {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px;
+    }
+    .breaker-vs .panel h4 { margin-bottom: 8px; }
+    .breaker-vs ul { margin: 0; font-size: 9pt; }
+  </style>
+</head>
+<body>
+  <div class="no-print toolbar">
+    <p>Διάταξη PDF για εξαγωγή Chromium/Playwright. Η προεπισκόπηση προσεγγίζει σελίδες A4.</p>
+    <button type="button" onclick="window.print()">Εκτύπωση / Αποθήκευση ως PDF</button>
+  </div>
+
+  <div class="sheet">
+    <section class="cover" id="page-0" data-nav-label="Εξώφυλλο">
+      <div>
+        <div class="cover-top">
+          <div class="cover-brand">
+            <img src="../../../product/logos/svg/eyenet-dark.svg" alt="EyeNet" />
+            <span class="cover-chip">Θέση αξίας</span>
+          </div>
+        </div>
+        <p class="cover-eyebrow">Machine Vision · Edge Intelligence · Λειτουργική δράση</p>
+        <h1>Πώς το EyeNet αλλάζει το τοπίο του machine vision</h1>
+        <p class="cover-lead">Από παθητικές κάμερες σε on-premises όραση που ανιχνεύει, αποφασίζει και ενεργεί — σε home care, SME, enterprise, βιομηχανία και στόλους.</p>
+        <div class="cover-meta">
+          <div><span>Τύπος</span><strong>Value Brochure</strong></div>
+          <div><span>Ημερομηνία</span><strong>18 Οκτωβρίου 2026</strong></div>
+          <div><span>Δομή</span><strong>Breaker · Ελευθερία · Intro · Τι · Γιατί · Πακέτα</strong></div>
+          <div><span>Ανάπτυξη</span><strong>On-Premises / VPN</strong></div>
+        </div>
+      </div>
+      <div class="cover-foot">
+        <span>eyenet-vision.com</span>
+        <span>nick@eyenet-vision.com</span>
+      </div>
+    </section>
+
+    <!-- 01 COMPETITION BREAKER -->
+    <section class="section flow" id="page-1" data-nav-label="01 · Ανταγωνισμός">
+      <div class="section-head"><span class="section-num">01</span><h2>Γιατί το EyeNet σπάει τον ανταγωνισμό</h2></div>
+      <div class="kicker">Το EyeNet αποφασίζει, ενεργεί και μένει στις εγκαταστάσεις σας — σε σπίτια, γραφεία, εμπορικά κέντρα και στόλους όπου οι ανταγωνιστές δεν μπορούν να ακολουθήσουν.</div>
+
+      <div class="breaker-grid">
+        <div class="notify">
+          <h5>Όχι άλλο camera cloud</h5>
+          <p>Το βίντεο δεν χρειάζεται να φύγει από τον χώρο. Πλήρης offline λειτουργία. Οι ανταγωνιστές πουλάνε bandwidth· το EyeNet πουλάει κυριαρχία δεδομένων.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Δράση, όχι αρχεία</h5>
+          <p>Presence, zones, πτώση, φωνή, POI και signage ενεργοποιούν πραγματικές ροές — mobile, email, webhooks, HubSpot, clinical apps. Το VMS αποθηκεύει το χθες· το EyeNet τρέχει το σήμερα.</p>
+        </div>
+        <div class="notify">
+          <h5>Προϊόντα, όχι projects</h5>
+          <p>Έξι κάθετες εφαρμογές. Πέντε modes ανάπτυξης. Μία πλατφόρμα. Οι integrators σταματούν να ξαναφτιάχνουν vision για κάθε RFP.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Ταπεινό hardware, φιλόδοξο software</h5>
+          <p>Οποιαδήποτε κάμερα. ~16&nbsp;GB PC. Λεπτά μέχρι την πρώτη ανίχνευση. Χωρίς GPU farm. Χωρίς proprietary lock-in.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-2" data-nav-label="01 · Διαφοροποίηση">
+      <div class="section-head"><span class="section-num">01</span><h2>Γιατί το EyeNet σπάει τον ανταγωνισμό</h2></div>
+
+      <div class="breaker-grid">
+        <div class="notify">
+          <h5>Όπου πεθαίνει το cloud, ζει το EyeNet</h5>
+          <p>Πλοία, κλινικές, εξοχικά, νυχτερινές βάρδιες, Virtual Wards — περιβάλλοντα εχθρικά στη συνδεσιμότητα και στην ιδιωτικότητα. Αυτή είναι η αγορά που οι άλλοι εγκαταλείπουν.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Μια εφαρμογή: on-site και remote</h5>
+          <p>Stations, Vprofile, mobile, PC, Matrix μέσω VPN. Προσωπικό στο γραφείο ή στο σπίτι. Στόλος στη θάλασσα ή στο λιμάνι. Μία αλήθεια.</p>
+        </div>
+        <div class="notify">
+          <h5>Στρώμα ασφαλείας που το cloud RPM δεν μπορεί να μιμηθεί</h5>
+          <p>Η απομακρυσμένη φροντίδα μόνο με vitals είναι μισό προϊόν. Το EyeNet προσθέτει presence, secure zones, πτώση και κλήσεις βοήθειας — tokenized στα health stacks, όχι ως ακατέργαστο βίντεο.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Marketing που αποδεικνύει τον εαυτό του</h5>
+          <p>Demographic-adaptive signage με μετρήσιμα impressions και A/B στο πεδίο. Οι οθόνες σταματούν να είναι ελπίδα· γίνονται studio.</p>
+        </div>
+        <div class="notify">
+          <h5>Νυχτερινή βάρδια, αυτοματοποιημένη</h5>
+          <p>Πρώτη πραγματική αυτοματοποίηση επαγρύπνησης φυλάκων, perimeter Presence, Vradar κίνησης και forensics. Το προσωπικό ασφαλείας σταματά να κλιμακώνεται 1:1 με τους χώρους.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Αμυντικό λόγω αρχιτεκτονικής</h5>
+          <p>Privacy-first edge CV + κάθετο βάθος + κανάλια συνεργατών (Talos / TMAIX, ναυτιλία, HubSpot-first CRM). Δύσκολο να αντιγραφεί ως feature checkbox.</p>
+        </div>
+      </div>
+
+      <div class="breaker-vs">
+        <div class="panel">
+          <h4>Αυτοί πουλάνε</h4>
+          <ul>
+            <li>Cloud αποθήκευση &amp; μηνιαίο bandwidth</li>
+            <li>Παθητικές εγγραφές &amp; dashboards</li>
+            <li>Γενικά «AI boxes»</li>
+            <li>Projects που παίρνουν τρίμηνα</li>
+          </ul>
+        </div>
+        <div class="panel alt">
+          <h4>Το EyeNet παραδίδει</h4>
+          <ul>
+            <li>On-prem αποφάσεις &amp; μηδέν video cloud</li>
+            <li>Στοχευμένες ειδοποιήσεις που τρέχουν τη λειτουργία</li>
+            <li>Εφαρμογές φτιαγμένες για πραγματικές δουλειές</li>
+            <li>Ανίχνευση σε λεπτά — κλιμάκωση με hardware</li>
+          </ul>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- 02 FREEDOM FROM THE FEED -->
+    <section class="section flow page-start" id="page-3" data-nav-label="02 · Ελευθερία">
+      <div class="section-head"><span class="section-num">02</span><h2>Δεν κοιτάτε κάμερες — αυτές κοιτάνε για εσάς</h2></div>
+      <div class="kicker">Οι χρήστες του EyeNet δεν είναι κλειδωμένοι σε τοίχο καμερών. Κινούνται ελεύθερα και λαμβάνουν αυτοματοποιημένες ειδοποιήσεις μόνο για τα γεγονότα που μετράνε.</div>
+      <div class="breaker-grid">
+        <div class="notify">
+          <h5>Ζήστε τη μέρα σας</h5>
+          <p>Με το EyeNet δεν ζείτε σε τοίχο καμερών — ζείτε τη μέρα σας. Τα σημαντικά γεγονότα σας βρίσκουν ως στοχευμένα alerts σε τηλέφωνο, email και εφαρμογές, όπου κι αν είστε. Η πλατφόρμα παρακολουθεί· εσείς ενεργείτε μόνο όταν μετράει.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Σταματήστε να κοιτάτε feeds</h5>
+          <p>Σταματήστε να κοιτάτε feeds. Το EyeNet παρακολουθεί 24/7 και σας ειδοποιεί μόνο για ό,τι μετράει — όπου κι αν πάτε.</p>
+        </div>
+        <div class="notify">
+          <h5>Alerts, όχι άγχος</h5>
+          <p>Οι τοίχοι καμερών δημιουργούν άγχος. Το EyeNet δημιουργεί ειδοποιήσεις: το σωστό alert, στο σωστό άτομο, τη σωστή στιγμή.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Οι κάμερες δουλεύουν για εσάς</h5>
+          <p>Δεν παρακολουθείτε κάμερες. Οι κάμερες παρακολουθούν για εσάς — και σας μηνύουν όταν κάτι πραγματικά σας χρειάζεται.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 INTRO -->
+    <section class="section flow page-start" id="page-4" data-nav-label="03 · Με το EyeNet">
+      <div class="section-head"><span class="section-num">03</span><h2>Με το EyeNet…</h2></div>
+      <div class="kicker">Δυνατά αποτελέσματα για πραγματικούς operators — καθαρή εικόνα, λίγες στοχευμένες ειδοποιήσεις, χωρίς cloud lock-in.</div>
+      <div class="intro-kickers">
+        <div class="notify">
+          <h5>Διαχειριστής στόλου</h5>
+          <p>Με το EyeNet, ένας διαχειριστής στόλου αποκτά καθαρή επιχειρησιακή εικόνα κάθε πλοίου — ποιος είναι επί του σκάφους, πού πρέπει να είναι — με λίγες στοχευμένες mobile ειδοποιήσεις ακόμη και με λεπτή συνδεσιμότητα.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Συντονιστής φροντίδας · Virtual Ward</h5>
+          <p>Με το EyeNet, ένας συντονιστής φροντίδας αποκτά ασφάλεια επιπέδου νοσοκομείου σε κάθε χωρίς προσωπικό σπίτι — πτώσεις, κλήσεις βοήθειας και παραβιάσεις ζωνών ως λίγα στοχευμένα alerts στην κλινική εφαρμογή.</p>
+        </div>
+        <div class="notify">
+          <h5>HR · People ops</h5>
+          <p>Με το EyeNet, ένας υπεύθυνος HR αποκτά ζωντανή παρουσία προσωπικού σε γραφείο και remote — χωρίς να κυνηγάει κανέναν — μέσω λίγων στοχευμένων ειδοποιήσεων εξαιρέσεων και ενημερώσεων HubSpot.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Επόπτης ασφαλείας</h5>
+          <p>Με το EyeNet, ένας επόπτης ασφαλείας αποκτά βεβαιότητα νυχτερινής βάρδιας ότι οι θέσεις μένουν ξύπνιες και οι περίμετροι καθαρές — με λίγα στοχευμένα mobile alerts αντί για συνεχές παρακολούθηση οθόνης.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-5" data-nav-label="03 · Ρόλοι">
+      <div class="section-head"><span class="section-num">03</span><h2>Με το EyeNet…</h2></div>
+      <div class="intro-kickers">
+        <div class="notify">
+          <h5>Οικογένεια · εξοχικό &amp; απομακρυσμένη διαβίωση</h5>
+          <p>Με το EyeNet, ένας γονέας αποκτά ηρεμία για εξοχικό ή φοιτητή μακριά από το σπίτι — γεγονότα εισβολής και παρουσίας ως λίγες στοχευμένες ειδοποιήσεις τηλεφώνου, χωρίς υποχρεωτικό cloud video.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Marketer εμπορικού κέντρου</h5>
+          <p>Με το EyeNet, ένας marketer mall μετατρέπει την κίνηση επισκεπτών σε μετρήσιμο studio ROI — ποιος είδε τι, τι μετέτρεψε — με λίγα στοχευμένα digests καμπάνιας αντί για εικασίες.</p>
+        </div>
+        <div class="notify">
+          <h5>Διευθυντής καταστήματος</h5>
+          <p>Με το EyeNet, ένας διευθυντής καταστήματος βλέπει την κίνηση πελατών ως νοημοσύνη ορόφου — μετρήσεις, διαδρομές, dwell και occupancy — με λίγα στοχευμένα digests και behavioural alerts αντί να περπατά τυφλά τον χώρο.</p>
+        </div>
+      </div>
+      <div class="intro-heroes">
+        <div class="notify"><p>Με το EyeNet, η όραση σταματά να είναι υλικό εγγραφής και αρχίζει να είναι αποφάσεις.</p></div>
+        <div class="notify alt"><p>Με το EyeNet, μία συνδρομή μετατρέπει τις κάμερες σε operators που δεν κοιμούνται ποτέ.</p></div>
+        <div class="notify alt"><p>Με το EyeNet, παρουσία, ασφάλεια και marketing σταματούν να χρειάζονται επιπλέον προσωπικό.</p></div>
+        <div class="notify"><p>Με το EyeNet, κάθε χώρος — σπίτι, γραφείο, πλοίο, mall, κατάστημα — αναφέρει μόνο ό,τι μετράει.</p></div>
+      </div>
+    </section>
+
+    <!-- 04 WHAT -->
+    <section class="section flow page-start" id="page-6" data-nav-label="04 · Τι">
+      <div class="section-head"><span class="section-num">04</span><h2>Τι</h2></div>
+      <div class="kicker">Το EyeNet μετατρέπει συνηθισμένες κάμερες σε επιχειρησιακή νοημοσύνη πραγματικού χρόνου — παρουσία, μετρήσεις, demographics, ζώνες και POI — και αυτοματοποιεί alerts, signage και integrations on-premises, offline και μέσω VPN. Έξι εφαρμογές, πέντε modes, μία πλατφόρμα: από ένα σπίτι home care έως στόλους πολλαπλών σημείων, σε μέτριο hardware, με βίντεο που δεν χρειάζεται cloud.</div>
+      <div class="cols-3">
+        <div class="panel">
+          <span class="stat cyan">Edge</span>
+          <span class="stat-label">Όχι cloud-bound</span>
+          <p>AI στη συσκευή. Πλήρες offline. Κυριαρχία δεδομένων by default.</p>
+        </div>
+        <div class="panel alt">
+          <span class="stat brand">Δράση</span>
+          <span class="stat-label">Όχι παθητικό VMS</span>
+          <p>Triggers → mobile, email, webhooks, signage, πύλες.</p>
+        </div>
+        <div class="panel">
+          <span class="stat ok">Κλίμακα</span>
+          <span class="stat-label">Με βάση το hardware</span>
+          <p>Οποιαδήποτε κάμερα. ~16&nbsp;GB PC. 1 δωμάτιο → enterprise mesh.</p>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- 05 WHY -->
+    <section class="section flow page-start" id="page-7" data-nav-label="05 · Home care">
+      <div class="section-head"><span class="section-num">05</span><h2>Γιατί</h2></div>
+      <div class="kicker">Επιλεγμένες περιπτώσεις χρήσης — όπου το EyeNet αντικαθιστά χειροκίνητη παρουσία, τυφλές νύχτες και αποσυνδεδεμένους χώρους με αυτόματη όραση.</div>
+
+      <div class="persona">
+        <h4><span class="n">1</span> Home care · Virtual Ward</h4>
+        <p class="who">Πάροχος φροντίδας · κλινικός MDT · ασθενής / οικογένεια · συνεργάτης Talos / TMAIX eHealth</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>Παρουσία φροντιστή</strong> — σωστό προσωπικό, σωστό σπίτι, σωστή ώρα (διασφάλιση επίσκεψης)</li>
+              <li><strong>Secure zones</strong> — συναγερμός για άγνωστα πρόσωπα μέσα/γύρω από την κατοικία</li>
+              <li><strong>Ανίχνευση πτώσης</strong> — ήδη ανεπτυγμένο automation trigger → ομάδα φροντίδας</li>
+              <li><strong>Φωνή / κλήση βοήθειας</strong> — προφορικό αίτημα βοήθειας → άμεσα ενεργή ειδοποίηση</li>
+              <li><strong>Κλινική σύντηξη</strong> — tokenized γεγονότα σε ePokratis / IoMT / telemedicine (όχι cloud video)</li>
+              <li><strong>Virtual Ward</strong> — φροντίδα επιπέδου νοσοκομείου στο σπίτι: αποφυγή εισαγωγής &amp; πρώιμη έξοδος</li>
+            </ul>
+            <div class="notify">
+              <h5>Αυτοματοποιημένες ειδοποιήσεις</h5>
+              <ul>
+                <li>MDT / συντονιστής φροντίδας · εφημερεύων κλινικός</li>
+                <li>Ορισμένος φροντιστής (mobile)</li>
+                <li>Οικογένεια / χορηγός ασθενούς (επιλεγμένα γεγονότα)</li>
+                <li>Ουρά telemedicine / ePokratis</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel alt">
+            <img class="card-visual" src="assets/homecare-caregiver-presence.jpg" alt="Talos Homecare — παρουσία φροντιστή" />
+            <p class="card-visual-credit">Οπτικό: talosgroup.eu/solutions/integration/homecare</p>
+            <h4>Γιατί μετράει</h4>
+            <p>Διαφοροποίηση έναντι vitals-only RPM: το σπίτι γίνεται περιβάλλον παρακολουθούμενης φροντίδας. Ιδιωτικότητα by architecture — η όραση μένει on-prem· μόνο γεγονότα πτώσης / βοήθειας / παρουσίας / ζώνης φτάνουν στο health stack.</p>
+            <div class="tags">
+              <span class="tag">Presence</span>
+              <span class="tag">Automation</span>
+              <span class="tag safety">Fall</span>
+              <span class="tag safety">Voice</span>
+              <span class="tag mode">Area · Spot</span>
+              <span class="tag user">Talos · TMAIX</span>
+            </div>
+            <p class="side-note"><strong>Συνεργάτης:</strong> Talos eHealth / IoMT · TMAIX ePpocrates eCloud</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-8" data-nav-label="05 · HR Presence">
+      <div class="section-head"><span class="section-num">05</span><h2>Γιατί</h2></div>
+
+      <div class="persona alt">
+        <h4><span class="n">2</span> HR Presence — SME &amp; enterprise</h4>
+        <p class="who">HR · εγκαταστάσεις · office ops — αυτόματη παρουσία προσωπικού, μηδέν προσπάθεια HR</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>Stations εισόδου / εξόδου</strong> — Presence stations στις πόρτες για check-in / check-out</li>
+              <li><strong>Κάμερες Vprofile</strong> — είσοδοι, αίθουσες συσκέψεων, χώροι φαγητού / διαλείμματος</li>
+              <li><strong>Εφαρμογές Presence</strong> — κινητά και PCs προσωπικού</li>
+              <li><strong>Remote εργαζόμενοι</strong> — το ίδιο Presence stack δουλεύει όταν το προσωπικό εργάζεται από το σπίτι</li>
+              <li><strong>Hands-off HR</strong> — καθαρά αυτόματο· χωρίς χειροκίνητο roll-call ή προσπάθεια HR</li>
+              <li><strong>HubSpot CRM</strong> — πρώτος CRM connector: συγχρονισμός επαφών, post grants στο HubSpot σε πραγματικό χρόνο</li>
+            </ul>
+            <div class="notify">
+              <h5>Αυτοματοποιημένες ειδοποιήσεις</h5>
+              <ul>
+                <li>Εργαζόμενος (επιβεβαιώσεις Presence app)</li>
+                <li>Προϊστάμενος (εξαιρέσεις / καθυστέρηση / απουσία)</li>
+                <li>HR / People ops (ημερήσια digests, όχι χειροκίνητο κυνήγι)</li>
+                <li>Εγκαταστάσεις · timeline επαφής HubSpot (grants)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel">
+            <img class="card-visual" src="assets/hr-presence.png" alt="EyeNet παρουσία προσωπικού" />
+            <p class="card-visual-credit">Οπτικό: eyenet-vision.com</p>
+            <h4>Γιατί μετράει</h4>
+            <p>Μια Presence εφαρμογή για on-site και remote. Ποιος είναι μέσα, πού και πότε — χωρίς τριβή μόνο-badge ή παρουσίες σε spreadsheet.</p>
+            <div class="tags">
+              <span class="tag">Presence</span>
+              <span class="tag mode">Stations</span>
+              <span class="tag mode">Vprofile</span>
+              <span class="tag">Mobile · PC apps</span>
+              <span class="tag user">HubSpot CRM</span>
+            </div>
+            <p class="side-note"><strong>CRM διαδρομή:</strong> πρώτα HubSpot· περαιτέρω CRM connectors ακολουθούν το ίδιο μοτίβο.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-9" data-nav-label="05 · Ασφάλεια">
+      <div class="section-head"><span class="section-num">05</span><h2>Γιατί</h2></div>
+
+      <div class="persona">
+        <h4><span class="n">3</span> Προσωπικό ασφαλείας — νύχτα &amp; περίμετρος</h4>
+        <p class="who">Εταιρείες ασφαλείας · εταιρική / βιομηχανική / κυβερνητική φύλαξη</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>Αυτοματοποίηση νυχτερινής βάρδιας</strong> — πρώτη αυτοματοποιημένη παρακολούθηση ότι οι φύλακες μένουν ξύπνιοι και σε εγρήγορση</li>
+              <li><strong>Presence σε θέσεις</strong> — υπηρεσίες Presence σε φυλάκια καθ’ όλη τη βάρδια</li>
+              <li><strong>Κόμβοι περιμέτρου</strong> — Presence nodes σε φράχτες, πύλες και εξωτερικούς δακτυλίους</li>
+              <li><strong>Vradar</strong> — ανίχνευση κίνησης, POI / people-match alerts σε feeds περιπολίας</li>
+              <li><strong>Forensics</strong> — συνεχής εγγραφή με χρονοσημασμένα τεκμήρια για συμβάντα</li>
+            </ul>
+            <div class="notify">
+              <h5>Αυτοματοποιημένες ειδοποιήσεις</h5>
+              <ul>
+                <li>Φύλακας υπηρεσίας (mobile / συναγερμός θέσης)</li>
+                <li>Επόπτης βάρδιας · SOC</li>
+                <li>Διευθυντής ασφαλείας χώρου</li>
+                <li>Ομάδα απόκρισης · εγκαταστάσεις πελάτη (κριτικά)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel alt">
+            <img class="card-visual" src="assets/security.jpg" alt="EyeNet παρακολούθηση ασφαλείας" />
+            <p class="card-visual-credit">Οπτικό: eyenet-vision.com</p>
+            <h4>Γιατί μετράει</h4>
+            <p>Η νυχτερινή κάλυψη σταματά να εξαρτάται από την ελπίδα. Αυτόματη κλιμάκωση όταν μια θέση σωπαίνει· περίμετρος + Vradar πιάνουν κίνηση πριν γίνει παραβίαση.</p>
+            <div class="tags">
+              <span class="tag">Presence</span>
+              <span class="tag">Sentinel</span>
+              <span class="tag safety">Vradar</span>
+              <span class="tag mode">Perimeter</span>
+              <span class="tag ok">Recording · forensics</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-10" data-nav-label="05 · Εξοχικό">
+      <div class="section-head"><span class="section-num">05</span><h2>Γιατί</h2></div>
+
+      <div class="persona alt">
+        <h4><span class="n">4</span> Εξοχικό &amp; απομακρυσμένη διαβίωση</h4>
+        <p class="who">Οικογένειες · ιδιοκτήτες εξοχικών · προπτυχιακοί μακριά από το σπίτι</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>Προστασία εξοχικού / δεύτερης κατοικίας</strong> — alerts εισβολής και αγνώστων όταν είναι κενό</li>
+              <li><strong>Απομακρυσμένοι φοιτητές</strong> — προπτυχιακοί μακριά· ηρεμία οικογένειας χωρίς cloud video</li>
+              <li><strong>Έλεγχος παρουσίας</strong> — επιβεβαίωση ότι κάποιος είναι (ή πρέπει να είναι) στην κατοικία</li>
+              <li><strong>Secure zones</strong> — συναγερμός αν άγνωστο πρόσωπο μπει σε χώρους διαβίωσης</li>
+              <li><strong>On-prem ιδιωτικότητα</strong> — το υλικό μένει τοπικά· ειδοποιήσεις τηλεφώνου μόνο όταν χρειάζεται</li>
+            </ul>
+            <div class="notify">
+              <h5>Αυτοματοποιημένες ειδοποιήσεις</h5>
+              <ul>
+                <li>Ιδιοκτήτης / οικογένεια (mobile push · email)</li>
+                <li>Κάτοικος (φοιτητής / ένοικος)</li>
+                <li>Φροντιστής / γείτονας (προαιρετικά)</li>
+                <li>Τοπική επαφή απόκρισης (μόνο κριτικά)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel">
+            <img class="card-visual" src="assets/remote-cottage.jpg" alt="EyeNet απομακρυσμένες λειτουργίες" />
+            <p class="card-visual-credit">Οπτικό: eyenet-vision.com</p>
+            <h4>Γιατί μετράει</h4>
+            <p>Προστασία ανθρώπων και χώρων μακριά από την οικογένεια — ελαφρά, ιδιωτικά, χωρίς πλήρη ομάδα ασφαλείας.</p>
+            <div class="tags">
+              <span class="tag">Gate</span>
+              <span class="tag">Presence</span>
+              <span class="tag">Automation</span>
+              <span class="tag mode">Spot · Area</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <section class="section flow page-start" id="page-11" data-nav-label="05 · Ναυτιλία">
+      <div class="section-head"><span class="section-num">05</span><h2>Γιατί</h2></div>
+
+      <div class="persona">
+        <h4><span class="n">5</span> Ναυτιλία — πλήρωμα εκεί που πρέπει</h4>
+        <p class="who">Πλοίαρχος · διαχειριστής στόλου · HQ ξηράς</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>Όλοι στη θέση τους</strong> — Presence / Gate / Sentinel διασφαλίζουν ότι το πλήρωμα είναι όπου πρέπει</li>
+              <li><strong>Ακριβής αριθμός επί του σκάφους</strong> — γνωρίζετε ακριβώς πόσοι είναι onboard ανά πάσα στιγμή</li>
+              <li><strong>Αναφορές στην ξηρά anytime</strong> — αυτοματοποιημένα πακέτα παρουσίας &amp; headcount στο HQ</li>
+              <li><strong>Ελάχιστη συνδεσιμότητα</strong> — πλήρης τοπική λειτουργία στη θάλασσα· συγχρονισμός σε λεπτούς / διακοπτόμενους συνδέσμους</li>
+              <li><strong>Fleet Matrix</strong> — VPN mesh· ουρά σε degraded mode — χωρίς απώλεια δεδομένων όταν offline</li>
+            </ul>
+            <div class="notify">
+              <h5>Αυτοματοποιημένες ειδοποιήσεις</h5>
+              <ul>
+                <li>Πλοίαρχος · γέφυρα / αξιωματικός υπηρεσίας</li>
+                <li>Ύπαρχος · αξιωματικός ασφαλείας (επί του σκάφους)</li>
+                <li>Λειτουργίες στόλου ξηράς · CSO</li>
+                <li>Fleet HR (πακέτα παρουσίας / συμμόρφωσης)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel alt">
+            <img class="card-visual" src="assets/shipping.jpg" alt="EyeNet ναυτιλιακές λειτουργίες" />
+            <p class="card-visual-credit">Οπτικό: eyenet-vision.com</p>
+            <h4>Γιατί μετράει</h4>
+            <p>Τα πλοία δεν μπορούν να βασίζονται σε cloud VMS. Το EyeNet δίνει σε πλοίαρχο και ξηρά την ίδια αλήθεια: ποιος είναι onboard, πού βρίσκεται, με αναφορές που ταξιδεύουν σε ελάχιστο bandwidth.</p>
+            <div class="tags">
+              <span class="tag">Presence</span>
+              <span class="tag">Gate</span>
+              <span class="tag">Sentinel</span>
+              <span class="tag">Matrix</span>
+              <span class="tag mode">Offline · VPN</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-12" data-nav-label="05 · Mall">
+      <div class="section-head"><span class="section-num">05</span><h2>Γιατί</h2></div>
+
+      <div class="persona alt">
+        <h4><span class="n">6</span> Mall marketing studio — κίνηση → νοημοσύνη</h4>
+        <p class="who">Operators mall · retail marketing · agencies · brand studios</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>Διάβασμα χώρου</strong> — ηλικία, φύλο, μέγεθος ομάδας οδηγούν αλλαγές playlist σε milliseconds</li>
+              <li><strong>Μηδέν έρευνες</strong> — γνωρίζετε ποιος βλέπει κάθε οθόνη: views, dwell, engagement</li>
+              <li><strong>A/B στο πεδίο</strong> — εναλλαγή περιεχομένου με ζωντανά audience data· μέτρηση τι μετατρέπει</li>
+              <li><strong>Mall ως studio</strong> — το δίκτυο digital signage γίνεται μετρήσιμο marketing studio σε διαδρόμους, καταστήματα και spots</li>
+              <li><strong>Απόδειξη ROI</strong> — αναφορές impressions, engagement rates, funnels footfall-to-sales</li>
+            </ul>
+            <div class="notify">
+              <h5>Αυτοματοποιημένες ειδοποιήσεις</h5>
+              <ul>
+                <li>Marketing manager (digests καμπάνιας / ROI)</li>
+                <li>Content / media ops (playlist &amp; A/B triggers)</li>
+                <li>Λειτουργίες mall / καταστήματος</li>
+                <li>Agency · brand partner (προγραμματισμένες αναφορές)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel">
+            <img class="card-visual" src="assets/mall-signage.png" alt="EyeNet digital signage marketing" />
+            <p class="card-visual-credit">Οπτικό: eyenet-vision.com</p>
+            <h4>Γιατί μετράει</h4>
+            <p>Οι στατικές οθόνες καίνε budget. Το vision-adaptive Signage μετατρέπει την κίνηση στο mall σε μετρήσιμη marketing νοημοσύνη — περιεχόμενο που αντιδρά και αριθμοί που δικαιολογούν τη δαπάνη.</p>
+            <div class="tags">
+              <span class="tag">Signage</span>
+              <span class="tag">Automation</span>
+              <span class="tag mode">Spot · Gate · Area</span>
+              <span class="tag user">Demographics</span>
+              <span class="tag ok">ROI · A/B</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-13" data-nav-label="05 · Κατάστημα">
+      <div class="section-head"><span class="section-num">05</span><h2>Γιατί</h2></div>
+
+      <div class="persona">
+        <h4><span class="n">7</span> Κατάστημα — κίνηση πελατών</h4>
+        <p class="who">Διευθυντές καταστήματος · store ops · πολυτοπικό retail</p>
+        <div class="cols-2">
+          <div>
+            <ul>
+              <li><strong>Μέτρηση ανθρώπων</strong> — Face / Body / Both σε εισόδους και κάμερες ορόφου</li>
+              <li><strong>Διαδρομές &amp; heatmaps</strong> — πώς κινούνται οι πελάτες σε διαδρόμους και ζώνες</li>
+              <li><strong>Occupancy &amp; peaks</strong> — ώρες αιχμής ανά περιοχή, χωρίς εικασίες</li>
+              <li><strong>Dwell &amp; επισκέψεις</strong> — πού μένουν οι αγοραστές vs πού περνούν</li>
+              <li><strong>Behavioural alerts</strong> — occupancy / dwell / path / co-presence → mobile, email, webhook</li>
+              <li><strong>On-prem ιδιωτικότητα</strong> — το video μένει τοπικά· οι managers παίρνουν digests και alerts, όχι cloud footage</li>
+            </ul>
+            <div class="notify">
+              <h5>Αυτοματοποιημένες ειδοποιήσεις</h5>
+              <ul>
+                <li>Διευθυντής καταστήματος (digests κίνησης / occupancy)</li>
+                <li>Store ops · shift lead (alerts ζώνης / dwell)</li>
+                <li>Regional retail ops (πακέτα multi-site)</li>
+                <li>Loss prevention · facilities (επιλεγμένα behavioural events)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel alt">
+            <img class="card-visual" src="assets/shop-floor-analytics.png" alt="EyeNet analytics κίνησης πελατών σε κατάστημα" />
+            <p class="card-visual-credit">Οπτικό: EyeNet Analytics</p>
+            <h4>Γιατί μετράει</h4>
+            <p>Μετατρέψτε το υπάρχον CCTV σε νοημοσύνη ορόφου — μέτρηση, διαδρομή και δράση — χωρίς ξεχωριστό analytics stack. Το Signage αποδεικνύει marketing ROI· το κατάστημα αποδεικνύει πώς κινούνται οι πελάτες.</p>
+            <div class="tags">
+              <span class="tag">Analytics</span>
+              <span class="tag">Behavioural</span>
+              <span class="tag mode">Counting · Path</span>
+              <span class="tag mode">Occupancy</span>
+              <span class="tag ok">Spot · Area</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel summary-panel">
+        <h4>Περίπτωση χρήσης → βασικό γιατί</h4>
+        <div class="tags">
+          <span class="tag safety">Home care → ασφάλεια σε χωρίς προσωπικό σπίτι</span>
+          <span class="tag user">HR Presence → αυτόματη παρουσία + HubSpot</span>
+          <span class="tag safety">Ασφάλεια → νυχτερινή επαγρύπνηση + περίμετρος / Vradar</span>
+          <span class="tag ok">Εξοχικό / remote → ηρεμία οικογένειας</span>
+          <span class="tag mode">Ναυτιλία → αλήθεια onboard → αναφορές ξηράς</span>
+          <span class="tag user">Mall studio → κίνηση → marketing ROI</span>
+          <span class="tag mode">Κατάστημα → κίνηση πελατών → ops alerts</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 06 PACKAGES -->
+    <section class="section flow page-start" id="page-14" data-nav-label="06 · B2C Light">
+      <div class="section-head"><span class="section-num">06</span><h2>Πακέτα — B2C · B2B · Enterprise</h2></div>
+      <div class="kicker">Διπλό go-to-market από το business plan: self-serve καταναλωτικός όγκος, mid-market B2B συμβόλαια και enterprise κλίμακα — το καθένα με ξεκάθαρο TAM και κοινό.</div>
+
+      <div class="persona">
+        <h4><span class="n">1</span> B2C Light</h4>
+        <p class="who">Freemium + self-serve · $20–$300/μήνα · επιλογές event $200–$1,200</p>
+        <div class="cols-2">
+          <div>
+            <h4>Πακέτο</h4>
+            <ul>
+              <li><strong>Signage Lite</strong> — $30–$100/μήνα · marketing consultants, μικρά agencies</li>
+              <li><strong>Home Security Lite</strong> — $20–$50/μήνα · ιδιοκτήτες κατοικιών, μικροί property managers</li>
+              <li><strong>Event Security Lite</strong> — $200–$1,200/event · contractors, διαχειριστές χώρων</li>
+              <li><strong>Retail Compliance Lite</strong> — $50–$100/μήνα · μικρό retail, bars, εστιατόρια</li>
+              <li>Free funnel (60–90 ημέρες) → Lite / Pro · web signup, app-first</li>
+            </ul>
+            <div class="notify">
+              <h5>Χαρακτηριστικά κοινού</h5>
+              <ul>
+                <li>Ανεξάρτητοι επαγγελματίες &amp; micro-SMEs</li>
+                <li>Χαμηλή τριβή, self-serve με κάρτα</li>
+                <li>Θέλουν alerts &amp; ROI χωρίς IT project</li>
+                <li>Υψηλός όγκος, μικρότερο LTV, γρήγορο payback (1–2 μήνες)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel alt">
+            <span class="stat cyan">$0.5–1.5B</span>
+            <span class="stat-label">B2C TAM (ΗΠΑ, συντηρητικά)</span>
+            <p>Στόχος μεριδίου 1–3% → ευκαιρία ~$5–45M.</p>
+            <h4 style="margin-top:12px;">Διευθυνόμενες τσέπες</h4>
+            <ul>
+              <li>100,000+ marketing consultants</li>
+              <li>140M ιδιοκτήτες κατοικιών · 2M+ Airbnb hosts</li>
+              <li>50,000+ ανεξάρτητοι security contractors</li>
+              <li>1.5M+ μικρά retail / F&amp;B</li>
+            </ul>
+            <div class="tags">
+              <span class="tag mode">Μέσο MRR ~$50</span>
+              <span class="tag">CAC $20–30</span>
+              <span class="tag ok">LTV:CAC ~30:1</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-15" data-nav-label="06 · B2B">
+      <div class="section-head"><span class="section-num">06</span><h2>Πακέτα — B2C · B2B · Enterprise</h2></div>
+
+      <div class="persona alt">
+        <h4><span class="n">2</span> B2B — Starter &amp; Professional</h4>
+        <p class="who">Sales-assisted SaaS · $500–$3,000/μήνα · έτοιμο για πολλαπλά σημεία</p>
+        <div class="cols-2">
+          <div>
+            <h4>Πακέτο</h4>
+            <ul>
+              <li><strong>Starter</strong> — $500–$1,000/μήνα · 1–5 τοποθεσίες · 5 κάμερες · μία εφαρμογή · βασική υποστήριξη</li>
+              <li><strong>Professional</strong> — $1,500–$3,000/μήνα · 5–20 τοποθεσίες · 25 κάμερες · πολλαπλές εφαρμογές · προτεραιότητα υποστήριξης</li>
+              <li>Τυπική διαδρομή ACV προς ~$12K–$36K/έτος ανά λογαριασμό</li>
+              <li>Mobile / wearable παραλλαγές: +40–60% premium όπου χρειάζεται</li>
+            </ul>
+            <div class="notify">
+              <h5>Χαρακτηριστικά κοινού</h5>
+              <ul>
+                <li>Αναπτυσσόμενα SMEs &amp; mid-market εγκαταστάσεις</li>
+                <li>Χρειάζονται Presence, Gate, Signage — όχι πλήρες custom build</li>
+                <li>Αγοράζουν με βάση ROI + συμμόρφωση, όχι DIY freemium</li>
+                <li>Διατήρηση 85–90% · CAC payback ~3–4 μήνες</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel">
+            <span class="stat brand">Μέρος $2–4B</span>
+            <span class="stat-label">B2B / Enterprise TAM (ΗΠΑ)</span>
+            <p>Κύρια εμπορική σφήνα πριν το πλήρες Enterprise.</p>
+            <h4 style="margin-top:12px;">Ποιος αγοράζει</h4>
+            <ul>
+              <li>Πολυτοπικό retail &amp; γραφεία</li>
+              <li>Περιφερειακές εταιρείες ασφαλείας</li>
+              <li>Σχολεία / campuses (πιλότος προς roll-out)</li>
+              <li>Αποθήκες &amp; ελαφρά βιομηχανία</li>
+            </ul>
+            <div class="tags">
+              <span class="tag mode">Starter → Pro land-and-expand</span>
+              <span class="tag user">Sales + συνεργάτες</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-16" data-nav-label="06 · Enterprise">
+      <div class="section-head"><span class="section-num">06</span><h2>Πακέτα — B2C · B2B · Enterprise</h2></div>
+
+      <div class="persona">
+        <h4><span class="n">3</span> Enterprise</h4>
+        <p class="who">Στρατηγικοί λογαριασμοί · $5,000+/μήνα · απεριόριστη κλίμακα · custom integrations</p>
+        <div class="cols-2">
+          <div>
+            <h4>Πακέτο</h4>
+            <ul>
+              <li>Απεριόριστες τοποθεσίες / κάμερες · Matrix multi-site · VPN στόλοι</li>
+              <li>Custom integrations (ERP, CRM, eHealth, SIEM) · αποκλειστική υποστήριξη</li>
+              <li>Ζώνη συμβολαίου $6K–$150K+/έτος · προγραμματισμένο μέσο ACV συχνά $12K–$20K+</li>
+              <li>Home care / Virtual Ward, ναυτιλία, δήμοι, multi-brand retail</li>
+            </ul>
+            <div class="notify">
+              <h5>Χαρακτηριστικά κοινού</h5>
+              <ul>
+                <li>Μεγάλοι οργανισμοί: ασφάλεια, συμμόρφωση, operations boards</li>
+                <li>Χρειάζονται data residency, SSO/RBAC, audit, SLAs</li>
+                <li>Πολυκάθετη ανάπτυξη μετά από απόδειξη πιλότου</li>
+                <li>Υψηλό LTV (~$144K μοντελοποιημένο) · CAC $3K–5K · LTV:CAC ~40:1</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel alt">
+            <span class="stat ok">$2–4B</span>
+            <span class="stat-label">Enterprise TAM (ΗΠΑ)</span>
+            <p>Στόχος μεριδίου 1–2% → ευκαιρία εσόδων ~$20–80M.</p>
+            <h4 style="margin-top:12px;">Χάρτης τμημάτων</h4>
+            <ul>
+              <li>Μεγάλο retail: 5,000+ σημεία · στόχος 1,000–2,000 · $12–24M</li>
+              <li>Εταιρείες ασφαλείας: 20,000+ · στόχος 500–1,000 · $6–12M</li>
+              <li>Εκπαίδευση: 130,000+ σχολεία · στόχος 500–1,000 · $6–12M</li>
+              <li>CRE: 50,000+ κτίρια · στόχος 1,000–2,000 · $12–24M</li>
+              <li>Κυβέρνηση / LE: 15,000+ υπηρεσίες · στόχος 200–500</li>
+            </ul>
+            <div class="tags">
+              <span class="tag safety">On-prem · Matrix · συνεργάτες</span>
+              <span class="tag ok">Αποκλειστική επιτυχία πελάτη</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel summary-panel">
+        <h4>Πακέτο → κίνηση αγοράς</h4>
+        <div class="tags">
+          <span class="tag user">B2C → όγκος · self-serve · $0.5–1.5B TAM</span>
+          <span class="tag mode">B2B Starter/Pro → land &amp; expand</span>
+          <span class="tag ok">Enterprise → $2–4B TAM · στρατηγικό ACV</span>
+        </div>
+      </div>
+
+      <p class="footer-note">EyeNet Vision · Value brochure · Εμπιστευτικό για εμπορική &amp; επενδυτική συζήτηση. Προδιαγραφές και διαθεσιμότητα υπόκεινται σε αλλαγή. Στοιχεία από business plan / χρηματοοικονομικό μοντέλο EyeNet Vision (αγορά ΗΠΑ).</p>
+    </section>
+
+  </div>
+
+  <nav class="doc-nav no-print" aria-label="Πλοήγηση σελίδων">
+    <button type="button" class="doc-nav-prev">← Προηγούμενη</button>
+    <div class="doc-nav-mid">
+      <span class="doc-nav-label"></span>
+      <button type="button" class="doc-nav-pdf" onclick="window.print()">PDF</button>
+    </div>
+    <button type="button" class="doc-nav-next">Επόμενη →</button>
+  </nav>
+<script>
+(function () {
+  var pages = Array.prototype.slice.call(document.querySelectorAll(".sheet > section[data-nav-label]"));
+  if (!pages.length) return;
+  var prevBtn = document.querySelector(".doc-nav-prev");
+  var nextBtn = document.querySelector(".doc-nav-next");
+  var labelEl = document.querySelector(".doc-nav-label");
+  var index = 0;
+
+  function currentIndex() {
+    var mid = window.scrollY + window.innerHeight * 0.28;
+    var best = 0;
+    for (var i = 0; i < pages.length; i++) {
+      if (pages[i].offsetTop <= mid) best = i;
+    }
+    return best;
+  }
+
+  function sync() {
+    index = currentIndex();
+    var page = pages[index];
+    labelEl.textContent = (index + 1) + " / " + pages.length + " · " + page.getAttribute("data-nav-label");
+    prevBtn.disabled = index <= 0;
+    nextBtn.disabled = index >= pages.length - 1;
+  }
+
+  function go(delta) {
+    var next = Math.max(0, Math.min(pages.length - 1, currentIndex() + delta));
+    pages[next].scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  prevBtn.addEventListener("click", function () { go(-1); });
+  nextBtn.addEventListener("click", function () { go(1); });
+  window.addEventListener("scroll", sync, { passive: true });
+  window.addEventListener("resize", sync);
+  sync();
+})();
+</script>
+</body>
+</html>
