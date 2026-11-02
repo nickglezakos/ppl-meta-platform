@@ -3,44 +3,44 @@
 # Installers still pull by tag (:platform_version) today; digests are the
 # coherence / audit layer (Mode D). Digest-pinned compose is a later step.
 schema_version: 1
-platform_version: "2.25.104"
-git_sha: "535985ad"
-created_at: "2026-10-28T14:18:26Z"
+platform_version: "2.25.105"
+git_sha: "723ab1de"
+created_at: "2026-11-02T10:44:33Z"
 registry: "ghcr.io/nickglezakos/ppl-meta-platform"
 images:
   ppl-meta-node:
-    tag: "2.25.104"
+    tag: "2.25.105"
     digest: "sha256:874013d9a2b2085b4fc03c5da2e953e98c05167152a13dfcbe9c465a9dd89840"
   ppl-meta-media:
-    tag: "2.25.104"
-    digest: "sha256:9cd191aebeecbd51f11904fa2071911abc745cbd8a61a47b0697a307a7adeed0"
+    tag: "2.25.105"
+    digest: "sha256:f803fe6b77b1d80c039079ca0a9e4ebb9bfd27844e79cd235077f59725696dce"
   ppl-meta-gateway:
-    tag: "2.25.104"
-    digest: "sha256:bd78deff018ba687fcb0dab3a28b7d90c121801db9f90710e6431dc20a9a8684"
+    tag: "2.25.105"
+    digest: "sha256:3ee88a18692681397a489eaad972662f6fbf84785552906d5701d925774b17fe"
   ppl-meta-orchestrator:
-    tag: "2.25.104"
+    tag: "2.25.105"
     digest: "sha256:ef3d8107f81caa2cef2c1eb493cee5cf7ff207768046cf0bddcdca9aa20c0290"
   ppl-meta-discovery:
-    tag: "2.25.104"
+    tag: "2.25.105"
     digest: "sha256:d7618ca1349f07f8ee2c90400e93585f9e308eb000358b6b05d88ee2771753f2"
   ppl-meta-communications:
-    tag: "2.25.104"
+    tag: "2.25.105"
     digest: "sha256:d9df542f831647918ed9af3d80e019a89395e98b96691bafcf715b42b57327da"
   ppl-meta-frontend:
-    tag: "2.25.104"
-    digest: "sha256:885b9752a71a14aedc552981f4045dc50a4e97f38b34859593ad985af579834b"
+    tag: "2.25.105"
+    digest: "sha256:f5c06f6dfbb86a02faa809907414f229a0738148d73c1ddb851a133da4ecc828"
   ppl-meta-vision-protected:
-    tag: "2.25.104"
+    tag: "2.25.105"
     digest: "sha256:fdc1f5f847c0a91a703e58a4f74a15972f2890b594259442e5009232622a7305"
   ppl-meta-vmeta-protected:
-    tag: "2.25.104"
-    digest: "sha256:75e7f374d7cbe482e3d26c1d2ccc03af41ea26622b1f6e8b3005f0b2059eeb08"
+    tag: "2.25.105"
+    digest: "sha256:6d447d8a662bf923485898b044c9b0ee62c883de1c26ebfd07a9384b80b25bd5"
   ppl-meta-cameras:
-    tag: "2.25.104"
-    digest: "sha256:ad18861f371f00b03693c92dd491ebcd9c58aed4f435a8b5483ae330b5aea396"
+    tag: "2.25.105"
+    digest: "sha256:fb5425055ea4f06a95e53bfb26eb4448d44310e64fd954ec2678a64cff950a9f"
   ppl-meta-presence:
-    tag: "2.25.104"
+    tag: "2.25.105"
     digest: "sha256:8249f65345073840d666ecc3ad4d096db1e7c3a83cb430785ba8dd09b562801c"
   ppl-meta-models:
-    tag: "2.25.104"
+    tag: "2.25.105"
     digest: "sha256:3c5bcf5b547dd17fbfbdff279ef555726d3c033b3b45756971c57b4ee938c29e"

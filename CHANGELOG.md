@@ -35,6 +35,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 - Schema pack synced via `bash deployment/mac-lima/sync-schema-pack.sh` (includes behavioural Media columns). Stage 3 must fail if `schema/verify.sh` does not OK `triggers.behavioural_*`.
 - **Analytics Face | Body | Both: no new DB migration.** Uses existing `mvr_people_body` + flush JSON.
 - Mode D Stage 2 rebuild: **media**, **frontend**, **gateway**, **cameras**, **vmeta**; retag-forward the other seven from `2.25.104`. Builder: `lab-work-win-eynetdell`.
+- GHCR images published for **2.25.105** (Mode D on `lab-work-win-eynetdell` / WSL via Tailscale): rebuilt media `f803fe6b77b1…`, frontend `f5c06f6dfbb8…`, gateway `3ee88a186926…`, cameras `fb5425055ea4…`, vmeta-protected `6d447d8a662b…`; retagged the other seven from `2.25.104`. Manifest finalized 2026-11-02.
 
 ## [2.25.104] — 2026-10-27
 
