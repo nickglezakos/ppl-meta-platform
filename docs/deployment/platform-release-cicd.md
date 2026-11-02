@@ -2,7 +2,7 @@
 
 **Status:** Active  
 **Last updated:** 2026-11-01  
-**Current pin:** root [`VERSION`](../../VERSION) (today `2.25.104`)  
+**Current pin:** root [`VERSION`](../../VERSION) (today `2.25.105`)  
 **Registry:** `ghcr.io/nickglezakos/ppl-meta-platform`  
 **Architecture:** `linux/amd64` only for customer/lab installs  
 

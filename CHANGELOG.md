@@ -15,13 +15,16 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+## [2.25.105] — 2026-11-02
+
 ### Added
 
-- Behavioural trigger mode (Media + frontend): intent metrics over Instant Detection flush lookback (`lookback_flushes`). Source on `main`; **DDL not live on labs until next Stage 1–3** packs `add_behavioural_trigger_fields.sql` and Stage 3 apply/verify passes (see `docs/documentation/deployment/platform-release-cicd.md` § Open for next full Stage 1 → 2 → 3).
-- Analytics **Face | Body | Both** (`detection_modality`): counts/routes can use face MVRs, body MVRs, or Both with temporal+spatial overlap merge (no double-count). Instant flush/span payloads carry `body_persons`; recording loads existing `mvr_people_body`. Owner wiki updated.
+- Behavioural trigger mode (Media + frontend): intent metrics over Instant Detection flush lookback (`lookback_flushes`). Schema pack includes `050_add_behavioural_trigger_fields.sql` (`triggers.behavioural_lookback_flushes`, `behavioural_conditions`, `behavioural_condition_logic`). **Do not enable Behavioural on labs until Stage 3 `schema/verify.sh` OK for those columns.**
+- Analytics **Face | Body | Both** (`detection_modality`): counts/routes can use face MVRs, body MVRs, or Both with temporal+spatial overlap merge (no double-count). Instant flush/span payloads carry `body_persons`; recording loads existing `mvr_people_body`. Owner wiki updated. **No new DB migration.**
 
 ### Changed
 
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.104 → 2.25.105**.
 - Instant Detection is Redis-first: live cycles embed faces (`/ml/embed-face`) without gallery `identify-face` / `mvr_people` creates; Vprofile uses Redis `source_embeddings` only (no DB `resolve-embeddings` fallback when the cycle has none).
 - Cameras content pane: three-way toggle Analytics / Instant Detection logs / Pipeline settings; logs load from Media `instant_detection_logs` via gateway.
 - Every `flush_interval_cycles` (default 12): Y-window Vision re-group with contamination + hierarchical merge preview (same core as multi-video search), then flush only to Media `instant_detection_logs` (separate from action / trigger_execution logs). Analytics: Media `/instant-detection-logs/analytics/summary` and VMeta `/instant-detection/flush-analytics`.
@@ -29,8 +32,9 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ### Notes
 
-- Next pin cut must run `bash deployment/mac-lima/sync-schema-pack.sh` (includes behavioural Media columns) and fail Stage 3 if `schema/verify.sh` does not OK `triggers.behavioural_*`. Do not enable Behavioural on lab/prod before that.
-- **Analytics Face | Body | Both: no new DB migration.** Uses existing `mvr_people_body` + flush JSON. Rebuild gateway / cameras / vmeta / frontend on the next pin; Stage 3 needs no extra DDL beyond the Behavioural Media columns above.
+- Schema pack synced via `bash deployment/mac-lima/sync-schema-pack.sh` (includes behavioural Media columns). Stage 3 must fail if `schema/verify.sh` does not OK `triggers.behavioural_*`.
+- **Analytics Face | Body | Both: no new DB migration.** Uses existing `mvr_people_body` + flush JSON.
+- Mode D Stage 2 rebuild: **media**, **frontend**, **gateway**, **cameras**, **vmeta**; retag-forward the other seven from `2.25.104`. Builder: `lab-work-win-eynetdell`.
 
 ## [2.25.104] — 2026-10-27
 

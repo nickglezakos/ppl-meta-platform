@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 ADVERTISE_HOST="${ADVERTISE_HOST:-$(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | head -1)}"
-RELEASE_TAG="${RELEASE_TAG:-2.25.104}"
+RELEASE_TAG="${RELEASE_TAG:-2.25.105}"
 REGISTRY="${REGISTRY:-ghcr.io/nickglezakos/ppl-meta-platform}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/eyenet-platform}"
 REPO_DIR="${REPO_DIR:-$HOME/ppl-meta-platform}"
