@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multimodal Sensing &amp; Sensor Fusion Extension — Proposal</title>
+  <meta name="author" content="PPL Meta Platform Team" />
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --text: #ffffff;
+      --muted: #94a3b8;
+      --line: #0f172a;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+      --ink: #0f172a;
+      --body: #334155;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: var(--ink);
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    body { margin: 0; }
+
+    .page {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 32px 24px 72px;
+    }
+
+    .print-bar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .print-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--brand-primary);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .print-button.secondary {
+      background: #fff;
+      color: var(--brand-primary);
+      border: 1px solid var(--panel-line);
+    }
+
+    .hero {
+      background:
+        radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+        linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14);
+      border-radius: 32px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+      color: var(--text);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -80px auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: rgba(25, 118, 210, 0.26);
+    }
+
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1.35fr 0.9fr;
+      gap: 28px;
+      padding: 34px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14);
+      color: var(--brand-secondary);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1 {
+      margin: 18px 0 16px;
+      font-size: 40px;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+    }
+    h2 {
+      font-size: 24px;
+      letter-spacing: -0.02em;
+      margin-bottom: 14px;
+    }
+    h3 {
+      font-size: 18px;
+      margin: 22px 0 10px;
+      color: #0f172a;
+    }
+    .lead {
+      font-size: 17px;
+      color: #cbd5e1;
+      max-width: 62ch;
+    }
+
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(34, 211, 238, 0.14);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      align-self: start;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 18px;
+    }
+
+    .meta-item {
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .meta-label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-value {
+      font-size: 15px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .section {
+      margin-top: 24px;
+      padding: 28px;
+      background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%);
+      border: 1px solid var(--panel-line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+
+    .section p, .section li {
+      color: var(--body);
+    }
+
+    .section ul, .section ol {
+      padding-left: 1.2rem;
+    }
+
+    .sketch {
+      margin: 18px 0 8px;
+      padding: 18px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(25, 118, 210, 0.14);
+      background: #fff;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    .sketch-caption {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 12px;
+    }
+
+    .sketch-caption strong {
+      font-size: 14px;
+      color: #0f172a;
+    }
+
+    .sketch-caption span {
+      font-size: 12px;
+      color: #64748b;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .mermaid {
+      display: flex;
+      justify-content: center;
+      overflow-x: auto;
+    }
+
+    .chart-wrap {
+      position: relative;
+      height: 280px;
+      max-width: 920px;
+      margin: 0 auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      margin: 12px 0 4px;
+    }
+
+    th, td {
+      border: 1px solid rgba(15, 23, 42, 0.1);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eff6ff;
+      color: #0f172a;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    code, .mono {
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+      font-size: 12.5px;
+    }
+
+    pre {
+      margin: 12px 0 0;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: #0f172a;
+      color: #e2e8f0;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0 4px;
+    }
+
+    .pill {
+      display: inline-flex;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: #125ea7;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid rgba(25, 118, 210, 0.16);
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .callout {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: #ecfeff;
+      border: 1px solid rgba(34, 211, 238, 0.35);
+      color: #0f766e;
+      font-size: 14px;
+    }
+
+    .footer-note {
+      margin-top: 28px;
+      color: #64748b;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    @media (max-width: 860px) {
+      .hero-inner, .two-col, .meta-grid { grid-template-columns: 1fr; }
+      h1 { font-size: 32px; }
+    }
+
+    @media print {
+      html { background: #fff; }
+      .page { max-width: none; padding: 0; }
+      .print-bar { display: none !important; }
+      .hero, .section, .sketch, .meta-card {
+        box-shadow: none !important;
+        break-inside: avoid;
+      }
+      .hero {
+        border-radius: 16px;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .section {
+        border-radius: 12px;
+        margin-top: 16px;
+        padding: 18px;
+      }
+      .sketch {
+        page-break-inside: avoid;
+      }
+      a { color: inherit; text-decoration: none; }
+      .chart-wrap { height: 240px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button secondary" type="button" onclick="window.scrollTo({top:0,behavior:'smooth'})">Top</button>
+      <button class="print-button" type="button" onclick="window.print()">Print / Save PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="eyebrow">Architecture Proposal</div>
+          <h1>Multimodal Sensing &amp; Sensor Fusion Extension</h1>
+          <p class="lead">
+            How to develop and embed non-camera sensor ingest and cross-modality fusion into the current
+            EyeNet stack — without rewriting Cameras → Vision → VMeta — while reusing Media / Vradar actions.
+          </p>
+        </div>
+        <aside class="meta-card">
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Status</span>
+              <span class="meta-value">Proposal</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Date</span>
+              <span class="meta-value">11 Nov 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Author</span>
+              <span class="meta-value">PPL Meta Platform Team</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Companion</span>
+              <span class="meta-value">.md proposal</span>
+            </div>
+            <div class="meta-item" style="grid-column: 1 / -1; border-bottom: 0; padding-bottom: 0;">
+              <span class="meta-label">Sketches</span>
+              <span class="meta-value">Mermaid diagrams · Chart.js roadmap</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <!-- 1 -->
+    <section class="section">
+      <h2>1. Executive Summary</h2>
+      <p>
+        EyeNet is camera- and computer-vision–centric today. It already supports <strong>within-vision multimodality</strong>
+        (face ↔ body, objects/plates, multi-camera CV triggers) and limited Presence correlation (QR/NFC + camera).
+        It does <strong>not</strong> yet ingest arbitrary physical sensors or fuse them with video under shared rules.
+      </p>
+      <ol>
+        <li>Add a first-class <strong>Sensors</strong> domain (registry + ingest adapters + normalized events).</li>
+        <li>Add a <strong>Fusion / Correlation</strong> layer joining sensors with camera / Instant Detection / Presence by time + place + rule.</li>
+        <li>Reuse existing <strong>Media / Vradar</strong> actions (alert, email, webhook, signage, log).</li>
+        <li>Expose via <strong>Gateway + Frontend</strong> as an Automation extension — not a parallel silo.</li>
+      </ol>
+      <div class="callout">
+        Design principle: treat video as one modality among many, while Cameras → Vision → VMeta remain authoritative for visual evidence.
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section class="section">
+      <h2>2. Goals &amp; Non-Goals</h2>
+      <div class="two-col">
+        <div>
+          <h3>Goals</h3>
+          <ul>
+            <li>Pluggable ingest (HTTP first; MQTT / vendor APIs next)</li>
+            <li>Common <code>SensorEvent</code> envelope</li>
+            <li>Correlate with camera FOV / site topology + optional CV</li>
+            <li>Fire fused automations through Vradar actions</li>
+            <li>On-prem / VPN-first; no cloud dependency for core fusion</li>
+            <li>Make commercial fusion claims (thermal×optical, IoMT×vision) platform-capable</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Non-goals (Phase 1–2)</h3>
+          <ul>
+            <li>Replacing <code>cameras</code> with a breaking polymorphic device table</li>
+            <li>Every vendor driver in v1</li>
+            <li>Deep ML late-fusion as the default</li>
+            <li>Raw high-rate waveform media as first-class storage</li>
+            <li>Hard coupling to a single partner stack</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 sketches -->
+    <section class="section">
+      <h2>3. Baseline vs Target Architecture</h2>
+      <p>
+        Today Instant Detection and Vradar assume camera identity + CV-derived fields. The extension
+        widens the event vocabulary; it does not replace Vision.
+      </p>
+
+      <div class="sketch">
+        <div class="sketch-caption">
+          <strong>Figure 1 — As-is vs To-be context</strong>
+          <span>Mermaid</span>
+        </div>
+        <pre class="mermaid">
+flowchart LR
+  subgraph ASIS["As-is"]
+    C1[Cameras] --> V1[Vision]
+    V1 --> VM1[VMeta]
+    C1 --> M1[Media / Vradar]
+    M1 --> A1[Actions]
+  end
+
+  subgraph TOBE["To-be"]
+    C2[Cameras] --> V2[Vision]
+    V2 --> VM2[VMeta]
+    C2 --> M2[Media / Vradar]
+    S2[Sensors service] --> F2[Fusion engine]
+    C2 --> F2
+    M2 --> F2
+    P2[Presence optional] --> F2
+    F2 --> A2[Same Actions]
+    M2 --> A2
+  end
+        </pre>
+      </div>
+
+      <div class="sketch">
+        <div class="sketch-caption">
+          <strong>Figure 2 — Target embedding: Sensors peer + Fusion join</strong>
+          <span>Mermaid</span>
+        </div>
+        <pre class="mermaid">
+flowchart TB
+  GW[Gateway :8001<br/>/sensors /fusion /cameras /triggers]
+
+  subgraph EXISTING["Existing EyeNet stack"]
+    CAM[Cameras :8005]
+    VIS[Vision :8003]
+    VM[VMeta :8008]
+    MED[Media / Vradar :8000]
+    PRE[Presence]
+    COM[Communications]
+    CAM --> VIS --> VM
+    CAM --> MED
+    MED --> COM
+  end
+
+  subgraph NEW["New extension"]
+    SEN[ppl-meta-sensors :8015<br/>registry · adapters · SensorEvent]
+    FUS[Fusion engine<br/>Media module v1 · optional service later]
+  end
+
+  GW --> CAM
+  GW --> SEN
+  GW --> MED
+  SEN -->|Redis sensor.events| FUS
+  CAM -->|Instant Detection snapshot / burst| FUS
+  PRE -.-> FUS
+  FUS -->|FusedDecision| MED
+  MED -->|alert · email · webhook · signage · log| COM
+        </pre>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section class="section">
+      <h2>4. Service Split</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>Placement</th>
+            <th>Rationale</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Sensor registry + ingest</td>
+            <td><code>ppl-meta-sensors</code> (new)</td>
+            <td>Keep Cameras free of non-video protocols</td>
+          </tr>
+          <tr>
+            <td>Fusion engine (v1)</td>
+            <td>Module inside <strong>Media</strong></td>
+            <td>Reuse actions, auth, audit with minimal surface</td>
+          </tr>
+          <tr>
+            <td>Fusion engine (v2+)</td>
+            <td>Optional <code>ppl-meta-fusion</code></td>
+            <td>Extract if load / partner isolation requires it</td>
+          </tr>
+          <tr>
+            <td>Gateway routes</td>
+            <td>Proxy <code>/sensors</code>, <code>/fusion</code></td>
+            <td>Consistent client access</td>
+          </tr>
+          <tr>
+            <td>Frontend</td>
+            <td>Sensors inventory + Fusion under Automation</td>
+            <td>Operators already know Vradar UX</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">Local-first: implement as local Python services first; Docker packaging follows verified E2E behavior.</div>
+    </section>
+
+    <!-- 5 domain + adapters -->
+    <section class="section">
+      <h2>5. Domain Model &amp; Ingest</h2>
+
+      <div class="sketch">
+        <div class="sketch-caption">
+          <strong>Figure 3 — Logical domain model</strong>
+          <span>Mermaid ER</span>
+        </div>
+        <pre class="mermaid">
+erDiagram
+  SITE ||--o{ ZONE : contains
+  ZONE ||--o{ CAMERA : covers
+  ZONE ||--o{ SENSOR : hosts
+  SENSOR ||--o{ SENSOR_CHANNEL : exposes
+  SENSOR_CHANNEL ||--o{ SENSOR_EVENT : emits
+  FUSION_RULE }o--o{ SENSOR_CHANNEL : requires
+  FUSION_RULE }o--o{ CAMERA : optionally_requires
+  FUSION_RULE ||--o{ FUSED_DECISION : produces
+  FUSED_DECISION ||--o{ EVIDENCE_REF : cites
+  FUSED_DECISION }o--|| TRIGGER_ACTION : executes
+
+  SENSOR {
+    string sensor_id
+    string vendor
+    string protocol
+    string zone_id
+  }
+  SENSOR_CHANNEL {
+    string channel_id
+    string modality
+    string unit
+  }
+  SENSOR_EVENT {
+    string event_id
+    datetime ts
+    string modality
+    float value
+  }
+  FUSION_RULE {
+    string rule_id
+    string logic
+    int time_window_ms
+  }
+  FUSED_DECISION {
+    string decision_id
+    string outcome
+    float confidence
+  }
+        </pre>
+      </div>
+
+      <div class="sketch">
+        <div class="sketch-caption">
+          <strong>Figure 4 — Ingest adapter spine</strong>
+          <span>Mermaid</span>
+        </div>
+        <pre class="mermaid">
+flowchart LR
+  MQTT[MQTT broker] --> SEN
+  HTTP[HTTP POST /ingest] --> SEN
+  API[Vendor API poller] --> SEN
+  IND[Modbus / BACnet Phase 3+] --> SEN
+  EDGE[Edge forwarder] --> SEN
+
+  subgraph SEN["ppl-meta-sensors"]
+    VAL[Validate + AuthN/Z]
+    ENR[Enrich site / zone / cameras]
+    STORE[Persist events + TS rollups]
+    PUB[Publish Redis stream]
+    VAL --> ENR --> STORE --> PUB
+  end
+
+  PUB --> EVT[SensorEvent bus]
+  EVT --> FUS[Fusion engine]
+        </pre>
+      </div>
+
+      <h3>Normalized SensorEvent (sketch)</h3>
+      <pre class="mono">{
+  "event_id": "sev_01J...",
+  "sensor_id": "smoke_lobby_01",
+  "channel_id": "smoke_ppm",
+  "modality": "smoke",
+  "ts": "2026-11-11T15:04:22.131Z",
+  "value": { "numeric": 1.8, "unit": "ppm" },
+  "quality": "good",
+  "zone_id": "zone_lobby",
+  "linked_camera_ids": ["rtsp_192.168.1.80_554"],
+  "provenance": { "adapter": "http_ingest", "vendor": "acme" }
+}</pre>
+      <div class="pill-row">
+        <span class="pill">temperature</span>
+        <span class="pill">smoke</span>
+        <span class="pill">gas</span>
+        <span class="pill">contact</span>
+        <span class="pill">imu</span>
+        <span class="pill">radar</span>
+        <span class="pill">iomt_vitals</span>
+        <span class="pill">thermal_alarm</span>
+        <span class="pill">custom</span>
+      </div>
+    </section>
+
+    <!-- 6 fusion sequence -->
+    <section class="section">
+      <h2>6. Fusion Correlation Flow</h2>
+      <p>
+        Do not invent a second automation product. Extend Media with
+        <code>trigger_mode = sensor_fusion</code>, reuse existing <code>action_uuids</code>.
+      </p>
+
+      <div class="sketch">
+        <div class="sketch-caption">
+          <strong>Figure 5 — Fusion / correlation sequence</strong>
+          <span>Mermaid sequence</span>
+        </div>
+        <pre class="mermaid">
+sequenceDiagram
+    participant Edge as Sensor / Edge GW
+    participant Sen as Sensors :8015
+    participant Bus as Redis Stream
+    participant Fus as Fusion Engine
+    participant Cam as Cameras / Instant Det
+    participant Med as Media Actions
+
+    Edge->>Sen: POST /ingest SensorEvent
+    Sen->>Sen: validate + enrich zone/cameras
+    Sen->>Bus: XADD sensor.events
+    Bus->>Fus: consume
+    Fus->>Fus: match FusionRules
+    opt Needs visual confirmation
+        Fus->>Cam: recent Instant Detection or burst
+        Cam-->>Fus: motion / people / empty
+    end
+    Fus->>Fus: combine scores to FusedDecision
+    alt confirm
+        Fus->>Med: execute linked actions
+    else reject / hold
+        Fus->>Med: log only
+    end
+        </pre>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>Extension</th><th>Behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>trigger_mode: sensor_fusion</code></td><td>Multi-source condition evaluation</td></tr>
+          <tr><td><code>fusion_conditions</code></td><td>Sensor predicates + optional CV predicates</td></tr>
+          <tr><td><code>fusion_window_ms</code></td><td>Temporal join (e.g. 5–60s)</td></tr>
+          <tr><td><code>fusion_logic</code></td><td><code>and</code> / <code>or</code> / weighted score</td></tr>
+          <tr><td><code>evidence_policy</code></td><td><code>sensors_only</code> · <code>require_camera</code> · <code>prefer_camera</code></td></tr>
+          <tr><td>Existing <code>action_uuids</code></td><td>Unchanged egress</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 7 deployment -->
+    <section class="section">
+      <h2>7. On-Prem Deployment Topology</h2>
+      <div class="sketch">
+        <div class="sketch-caption">
+          <strong>Figure 6 — Installation host / edge box</strong>
+          <span>Mermaid</span>
+        </div>
+        <pre class="mermaid">
+flowchart TB
+  subgraph HOST["Installation host / edge box"]
+    GW[Gateway]
+    STACK[Cameras · Vision · VMeta · Media · Orchestrator · Node · Presence · Comms]
+    SEN[Sensors service]
+    FUS[Fusion module in Media]
+    REDIS[(Redis)]
+    GW --> STACK
+    SEN --> REDIS --> FUS
+    FUS --> STACK
+  end
+
+  IoT[Local IoT<br/>smoke · temp · door · IMU<br/>MQTT or HTTP push] --> SEN
+  CAMS[Cameras<br/>RTSP / USB / mobile] --> STACK
+        </pre>
+      </div>
+      <p>Sensors stay on LAN/VPN like cameras — no public-internet requirement for core fusion.</p>
+    </section>
+
+    <!-- 8 chart.js roadmap -->
+    <section class="section">
+      <h2>8. Phased Delivery Roadmap</h2>
+      <p>
+        Effort sketch for planning (indicative person-weeks per phase track). Rendered with
+        <strong>Chart.js</strong>; architecture sketches above use <strong>Mermaid</strong>.
+      </p>
+
+      <div class="sketch">
+        <div class="sketch-caption">
+          <strong>Figure 7 — Indicative effort by phase</strong>
+          <span>Chart.js</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="phaseEffortChart" aria-label="Phase effort chart"></canvas>
+        </div>
+      </div>
+
+      <div class="sketch">
+        <div class="sketch-caption">
+          <strong>Figure 8 — Capability coverage over phases</strong>
+          <span>Chart.js</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="capabilityChart" aria-label="Capability coverage chart"></canvas>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>Phase</th><th>Scope</th><th>Horizon</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>0</strong></td>
+            <td>Schemas, threat model, simulator</td>
+            <td>1–2 weeks</td>
+          </tr>
+          <tr>
+            <td><strong>1</strong></td>
+            <td><code>ppl-meta-sensors</code>, HTTP ingest, Gateway, inventory UI</td>
+            <td>3–5 weeks</td>
+          </tr>
+          <tr>
+            <td><strong>2</strong></td>
+            <td>Media <code>sensor_fusion</code>, camera evidence policy, decision log, reference playbook</td>
+            <td>4–6 weeks</td>
+          </tr>
+          <tr>
+            <td><strong>3</strong></td>
+            <td>MQTT / industrial / IoMT / thermal×optical packs; optional fusion extract</td>
+            <td>Ongoing</td>
+          </tr>
+          <tr>
+            <td><strong>4</strong></td>
+            <td>Analytics, rule versioning, hardening, multi-site policies</td>
+            <td>Hardening</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 9 touchpoints -->
+    <section class="section">
+      <h2>9. Implementation Touchpoints</h2>
+      <table>
+        <thead>
+          <tr><th>Area</th><th>Change</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>New <code>ppl-meta-sensors/</code></td><td>Models, adapters, API, workers</td></tr>
+          <tr><td>Media triggers</td><td>Add <code>sensor_fusion</code> mode + evaluator</td></tr>
+          <tr><td>Cameras</td><td>Optional burst-on-fusion-request API</td></tr>
+          <tr><td>Gateway</td><td>Route registration</td></tr>
+          <tr><td>Frontend</td><td>Sensors page + multimodal rule builder</td></tr>
+          <tr><td>Node / auth</td><td>Capabilities <code>sensors:*</code>, <code>fusion:*</code></td></tr>
+          <tr><td>Vision</td><td><strong>Explicit non-touch</strong> — stays frame-in / detection-out</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 10 examples -->
+    <section class="section">
+      <h2>10. Reference Flows</h2>
+      <div class="two-col">
+        <div>
+          <h3>Industrial threshold + camera</h3>
+          <ol>
+            <li>Temp ≥ 70°C in Zone A</li>
+            <li>Fusion requires camera evidence</li>
+            <li>Instant Detection confirms context</li>
+            <li>Webhook to BMS + in-app alert</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Thermal × optical confirm</h3>
+          <ol>
+            <li>Thermal alarm / thermal CV event</li>
+            <li>Optical CV must also match in window</li>
+            <li>AND → confirmed; else reject candidate</li>
+            <li>False-alarm suppression with provenance</li>
+          </ol>
+        </div>
+      </div>
+      <h3>Example fusion rule (conceptual)</h3>
+      <pre class="mono">{
+  "trigger_mode": "sensor_fusion",
+  "name": "Lobby fire confirm",
+  "fusion_window_ms": 15000,
+  "fusion_logic": "and",
+  "evidence_policy": "require_camera",
+  "fusion_conditions": [
+    { "source": "sensor", "modality": "smoke", "operator": "gte", "value": 1.0 },
+    { "source": "sensor", "modality": "temperature", "operator": "gte", "value": 55 },
+    { "source": "vision", "field": "motion_or_anomaly", "operator": "eq", "value": true }
+  ],
+  "zone_id": "zone_lobby",
+  "action_uuids": ["...alert...", "...webhook..."]
+}</pre>
+    </section>
+
+    <!-- 11 recommendation -->
+    <section class="section">
+      <h2>11. Recommendation</h2>
+      <p>
+        Proceed with a <strong>peer Sensors service</strong> and a <strong>Media-embedded Fusion engine</strong> that
+        keeps the vision pipeline intact, reuses Vradar actions, and makes multimodal commercial claims
+        implementable and auditable. Phase 0–2 delivers the platform spine; Phase 3+ monetizes vertical packs
+        (fire confirm, industrial BMS, IoMT cooperation) on the same architecture.
+      </p>
+      <div class="callout">
+        Success bar: operator can create a fused rule in Automation UI; every fused alert carries modality provenance;
+        existing Instant Detection / demographic / behavioural triggers remain regression-free.
+      </div>
+    </section>
+
+    <p class="footer-note">
+      Source: <code>docs/proposals/multimodal-sensor-fusion-extension.md</code> ·
+      Diagrams: Mermaid 10 · Charts: Chart.js 4.4 · Print via browser (Ctrl+P / ⌘P)
+    </p>
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      securityLevel: "loose",
+      themeVariables: {
+        primaryColor: "#dbeafe",
+        primaryTextColor: "#0f172a",
+        primaryBorderColor: "#1976d2",
+        lineColor: "#64748b",
+        secondaryColor: "#ecfeff",
+        tertiaryColor: "#f8fafc",
+        fontFamily: "Avenir Next, Segoe UI, sans-serif",
+        fontSize: "14px"
+      },
+      flowchart: { curve: "basis", htmlLabels: true },
+      sequence: { actorMargin: 28, messageMargin: 36 }
+    });
+
+    const brand = "#1976d2";
+    const brandSoft = "#22d3ee";
+    const slate = "#64748b";
+    const amber = "#f59e0b";
+    const green = "#10b981";
+
+    const phaseLabels = ["Phase 0", "Phase 1", "Phase 2", "Phase 3", "Phase 4"];
+
+    new Chart(document.getElementById("phaseEffortChart"), {
+      type: "bar",
+      data: {
+        labels: phaseLabels,
+        datasets: [
+          {
+            label: "Sensors / ingest",
+            data: [1, 4, 1, 3, 1],
+            backgroundColor: brand,
+            borderRadius: 8,
+            stack: "effort"
+          },
+          {
+            label: "Fusion / Media",
+            data: [0.5, 1, 5, 2, 2],
+            backgroundColor: brandSoft,
+            borderRadius: 8,
+            stack: "effort"
+          },
+          {
+            label: "Gateway / UI / hardening",
+            data: [0.5, 2, 2, 2, 3],
+            backgroundColor: slate,
+            borderRadius: 8,
+            stack: "effort"
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "bottom" },
+          title: { display: false }
+        },
+        scales: {
+          x: { stacked: true, grid: { display: false } },
+          y: {
+            stacked: true,
+            title: { display: true, text: "Indicative person-weeks" },
+            beginAtZero: true,
+            ticks: { stepSize: 2 }
+          }
+        }
+      }
+    });
+
+    new Chart(document.getElementById("capabilityChart"), {
+      type: "radar",
+      data: {
+        labels: [
+          "HTTP ingest",
+          "Sensor registry",
+          "Fusion rules",
+          "Camera evidence",
+          "MQTT / industrial",
+          "Vertical packs",
+          "Fusion analytics"
+        ],
+        datasets: [
+          {
+            label: "After Phase 1",
+            data: [90, 85, 15, 10, 5, 5, 5],
+            borderColor: brand,
+            backgroundColor: "rgba(25, 118, 210, 0.18)",
+            pointBackgroundColor: brand
+          },
+          {
+            label: "After Phase 2",
+            data: [95, 90, 85, 80, 15, 25, 20],
+            borderColor: green,
+            backgroundColor: "rgba(16, 185, 129, 0.12)",
+            pointBackgroundColor: green
+          },
+          {
+            label: "After Phase 3–4",
+            data: [100, 95, 95, 90, 80, 85, 85],
+            borderColor: amber,
+            backgroundColor: "rgba(245, 158, 11, 0.12)",
+            pointBackgroundColor: amber
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "bottom" }
+        },
+        scales: {
+          r: {
+            min: 0,
+            max: 100,
+            ticks: { display: false },
+            pointLabels: { font: { size: 11 } }
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Graphene Sensors — Fact-Finding Report</title>
+  <meta name="description" content="Independent fact-finding report on graphene sensor technology, vendors, commercial use cases, and time-to-revenue ranking. No platform integration content." />
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --brand-primary: #0f766e;
+      --brand-primary-dark: #115e59;
+      --brand-secondary: #2dd4bf;
+      --text: #ffffff;
+      --muted: #94a3b8;
+      --ink: #0f172a;
+      --body: #334155;
+      --panel: #ffffff;
+      --panel-soft: #f0fdfa;
+      --panel-line: rgba(15, 118, 110, 0.16);
+      --shadow: 0 18px 45px rgba(15, 23, 42, 0.1);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --max-width: 1080px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      background: linear-gradient(180deg, #ecfdf5 0%, #f8fafc 28%, #ffffff 100%);
+      color: var(--ink);
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    body { margin: 0; }
+
+    .page {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 32px 24px 72px;
+    }
+
+    .print-bar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .print-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--brand-primary);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .print-button.secondary {
+      background: #fff;
+      color: var(--brand-primary);
+      border: 1px solid var(--panel-line);
+    }
+
+    .hero {
+      background:
+        radial-gradient(circle at top right, rgba(45, 212, 191, 0.22), transparent 30%),
+        linear-gradient(135deg, #042f2e 0%, #0f766e 42%, #134e4a 78%, #115e59 100%);
+      border: 1px solid rgba(45, 212, 191, 0.2);
+      border-radius: 32px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+      color: var(--text);
+    }
+
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1.4fr 0.9fr;
+      gap: 28px;
+      padding: 34px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(45, 212, 191, 0.16);
+      color: #99f6e4;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 {
+      margin: 18px 0 14px;
+      font-size: 40px;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+    }
+    h2 {
+      font-size: 24px;
+      letter-spacing: -0.02em;
+      margin-bottom: 14px;
+    }
+    h3 {
+      font-size: 17px;
+      margin: 20px 0 10px;
+      color: #0f172a;
+    }
+
+    .lead {
+      font-size: 17px;
+      color: #ccfbf1;
+      max-width: 62ch;
+    }
+
+    .meta-card {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(45, 212, 191, 0.18);
+      border-radius: var(--radius-lg);
+      padding: 22px;
+      align-self: start;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 16px;
+    }
+
+    .meta-item {
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .meta-label {
+      display: block;
+      margin-bottom: 5px;
+      color: #99f6e4;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-value {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .banner {
+      margin-top: 18px;
+      padding: 14px 18px;
+      border-radius: 14px;
+      background: #fff7ed;
+      border: 1px solid #fdba74;
+      color: #9a3412;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .section {
+      margin-top: 24px;
+      padding: 28px;
+      background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%);
+      border: 1px solid var(--panel-line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+
+    .section p, .section li { color: var(--body); }
+    .section ul, .section ol { padding-left: 1.2rem; }
+
+    .sketch {
+      margin: 18px 0 8px;
+      padding: 18px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(15, 118, 110, 0.14);
+      background: #fff;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    .sketch-caption {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 12px;
+    }
+
+    .sketch-caption strong { font-size: 14px; color: #0f172a; }
+    .sketch-caption span {
+      font-size: 12px;
+      color: #64748b;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .mermaid { display: flex; justify-content: center; overflow-x: auto; }
+
+    .chart-wrap {
+      position: relative;
+      height: 300px;
+      max-width: 920px;
+      margin: 0 auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+      margin: 12px 0 4px;
+    }
+
+    th, td {
+      border: 1px solid rgba(15, 23, 42, 0.1);
+      padding: 10px 11px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #ccfbf1;
+      color: #0f172a;
+      font-size: 11.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .rank {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--brand-primary);
+      color: #fff;
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 10px 0 4px;
+    }
+
+    .pill {
+      display: inline-flex;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #ecfdf5;
+      color: #0f766e;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid rgba(15, 118, 110, 0.18);
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .callout {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: #ecfdf5;
+      border: 1px solid rgba(45, 212, 191, 0.45);
+      color: #115e59;
+      font-size: 14px;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .mini-card {
+      padding: 14px;
+      border-radius: 14px;
+      background: #fff;
+      border: 1px solid rgba(15, 118, 110, 0.12);
+    }
+
+    .mini-card h4 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: #0f172a;
+    }
+
+    .mini-card p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--body);
+    }
+
+    .sources {
+      font-size: 12.5px;
+      color: #64748b;
+    }
+
+    .sources a { color: #0f766e; }
+
+    .footer-note {
+      margin-top: 28px;
+      color: #64748b;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    @media (max-width: 900px) {
+      .hero-inner, .two-col, .meta-grid, .card-grid { grid-template-columns: 1fr; }
+      h1 { font-size: 32px; }
+    }
+
+    @media print {
+      html { background: #fff; }
+      .page { max-width: none; padding: 0; }
+      .print-bar { display: none !important; }
+      .hero, .section, .sketch, .meta-card {
+        box-shadow: none !important;
+        break-inside: avoid;
+      }
+      .hero, .section {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .chart-wrap { height: 250px; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button secondary" type="button" onclick="window.scrollTo({top:0,behavior:'smooth'})">Top</button>
+      <button class="print-button" type="button" onclick="window.print()">Print / Save PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="eyebrow">Independent fact-finding · Nov 2026</div>
+          <h1>Graphene Sensors</h1>
+          <p class="lead">
+            Technology status, vendor shortlist by modality, commercial use cases, and a ranked
+            time-to-revenue pass for the most credible vendor × use-case pairs.
+          </p>
+        </div>
+        <aside class="meta-card">
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Document type</span>
+              <span class="meta-value">Fact-finding report</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Date</span>
+              <span class="meta-value">11 Nov 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Scope</span>
+              <span class="meta-value">Graphene sensing only</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Integration</span>
+              <span class="meta-value">None — facts only</span>
+            </div>
+            <div class="meta-item" style="grid-column:1/-1;border:0;padding:0;">
+              <span class="meta-label">Tools</span>
+              <span class="meta-value">Mermaid sketches · Chart.js rankings</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <div class="banner">
+      Scope boundary: this report does <u>not</u> discuss EyeNet, PPL Meta, vision fusion, or any platform integration.
+      It is a graphene-sensors market and technology fact pack only.
+    </div>
+
+    <!-- 1 -->
+    <section class="section">
+      <h2>1. Executive snapshot</h2>
+      <div class="card-grid">
+        <div class="mini-card">
+          <h4>Maturity</h4>
+          <p>Early commercialization. Small-scale / specialty products shipping; not yet million-unit commodity MEMS replacement.</p>
+        </div>
+        <div class="mini-card">
+          <h4>Most mature product</h4>
+          <p>Graphene Hall / magnetic-current sensors (Paragraf) — commercially available for years; automotive volume still gated by qualification.</p>
+        </div>
+        <div class="mini-card">
+          <h4>Fastest second wave</h4>
+          <p>Configurable GFET molecular platforms (gas, bio, water) + niche heat-flux and lab bio-QC products.</p>
+        </div>
+      </div>
+      <div class="callout">
+        Market research estimates often cite ~USD 220M graphene-sensors market in 2026 with high double-digit CAGR — treat as directional, not audited revenue.
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section class="section">
+      <h2>2. What graphene sensors are</h2>
+      <p>
+        Graphene is a one-atom-thick carbon lattice with high carrier mobility and extreme surface-to-volume ratio.
+        As a sensing transducer it converts adsorption / field / magnetic effects into electrical signals, commonly via:
+      </p>
+      <ul>
+        <li><strong>GFET</strong> — graphene field-effect transistor; surface functionalized for a target analyte</li>
+        <li><strong>Graphene Hall sensor (GHS)</strong> — magnetic field / current / position sensing</li>
+        <li><strong>Chemiresistive / printed graphene</strong> — inks, heat-flux, flexible strain/temp concepts</li>
+        <li><strong>Nanomechanical resonators</strong> — research-grade pressure / mass sensing</li>
+      </ul>
+      <div class="pill-row">
+        <span class="pill">Magnetic / Hall</span>
+        <span class="pill">Gas / VOC</span>
+        <span class="pill">Chemical / PFAS</span>
+        <span class="pill">Biosensing</span>
+        <span class="pill">Temperature / heat flux</span>
+        <span class="pill">Humidity</span>
+        <span class="pill">Pressure / strain</span>
+        <span class="pill">Wearable / textile</span>
+      </div>
+      <p style="margin-top:14px;">
+        Persistent engineering constraints called out across vendors and papers:
+        humidity cross-sensitivity, functionalization reproducibility, packaging reliability,
+        readout electronics complexity, and scaling from lab chips to volume manufacturing.
+      </p>
+    </section>
+
+    <!-- 3 modality map -->
+    <section class="section">
+      <h2>3. Modality map</h2>
+      <div class="sketch">
+        <div class="sketch-caption">
+          <strong>Figure 1 — Graphene sensing modalities and commercial readiness</strong>
+          <span>Mermaid</span>
+        </div>
+        <pre class="mermaid">
+flowchart TB
+  G[Graphene sensing layer]
+
+  G --> M[Magnetic / Hall]
+  G --> F[GFET molecular platform]
+  G --> T[Thermal / heat flux]
+  G --> P[Pressure / strain]
+  G --> H[Humidity / wearable]
+
+  M --> M1[EV current / position<br/>Cryogenic magnetometry]
+  F --> F1[Gas / VOC]
+  F --> F2[Bio / diagnostics]
+  F --> F3[Water / PFAS / soil]
+  T --> T1[Building U-value<br/>Industrial heat transfer]
+  P --> P1[Mostly R&amp;D / IP]
+  H --> H1[Lab / prototype]
+
+  M1:::hot
+  F1:::warm
+  F2:::warm
+  F3:::warm
+  T1:::hot
+  P1:::cool
+  H1:::cool
+
+  classDef hot fill:#ccfbf1,stroke:#0f766e,color:#042f2e
+  classDef warm fill:#ecfeff,stroke:#0891b2,color:#0e7490
+  classDef cool fill:#f1f5f9,stroke:#94a3b8,color:#475569
+        </pre>
+      </div>
+    </section>
+
+    <!-- 4 vendors -->
+    <section class="section">
+      <h2>4. Vendor shortlist by modality</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Modality</th>
+            <th>Vendors</th>
+            <th>What they sell</th>
+            <th>Maturity</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Magnetic / Hall / current</strong></td>
+            <td>Paragraf</td>
+            <td>Packaged GHS products + readers; online store; cryogenic variants</td>
+            <td>Most mature commercial line</td>
+          </tr>
+          <tr>
+            <td><strong>Configurable GFET</strong></td>
+            <td>Paragraf, Graphenea, AirMembrane, Melexis×Graphenea</td>
+            <td>Multi-channel GFET platforms, chips, cards, CMOS eval kits</td>
+            <td>Dev platforms shipping; analyte SKUs custom</td>
+          </tr>
+          <tr>
+            <td><strong>Biosensors / diagnostics</strong></td>
+            <td>Paragraf×Tachmed, Hememics, AttenBio, IPLEXMED, Grolltex, Grapheal</td>
+            <td>Assay platforms, cartridges, lab QC, pathogen paths</td>
+            <td>Partnerships / trials; regulated products still ramping</td>
+          </tr>
+          <tr>
+            <td><strong>Gas / VOC / chemical</strong></td>
+            <td>Paragraf, Graphenea, Haydale, Grolltex (+ research stacks)</td>
+            <td>GFET platforms, functionalized inks, demos (acetone, H₂, CH₄, NH₃)</td>
+            <td>Strong R&amp;D / early commercial</td>
+          </tr>
+          <tr>
+            <td><strong>Water / PFAS / env</strong></td>
+            <td>Grapheal (PFAST), Graphenea/Melexis (PFAS among targets)</td>
+            <td>Portable GFET water profiling / forever-chemical screening</td>
+            <td>Beta with utilities; launch ~2027</td>
+          </tr>
+          <tr>
+            <td><strong>Temperature / heat flux</strong></td>
+            <td>First Graphene × Vector (Peltyr)</td>
+            <td>Printed graphene-enhanced heat-flux sensors for building fabric</td>
+            <td>Commercial launch Sep 2026</td>
+          </tr>
+          <tr>
+            <td><strong>Humidity / wearable</strong></td>
+            <td>Mostly research / textile demos</td>
+            <td>GO humidity films, self-powered textile VOC/temp concepts</td>
+            <td>Lab / early</td>
+          </tr>
+          <tr>
+            <td><strong>Pressure / strain</strong></td>
+            <td>Research groups; Grolltex materials/IP</td>
+            <td>Nanomechanical pressure, strain concepts</td>
+            <td>Mostly R&amp;D</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="callout">
+        Buying reality: many vendors sell materials, chips, or foundry — not finished certified sensors.
+        Path is often chip → functionalization → reader → calibration → (for health) regulatory.
+      </p>
+    </section>
+
+    <!-- 5 use cases -->
+    <section class="section">
+      <h2>5. Commercial use cases</h2>
+      <div class="two-col">
+        <div>
+          <h3>Magnetic / current / position</h3>
+          <ul>
+            <li>EV battery management current sensing</li>
+            <li>Traction inverter / motor current &amp; position</li>
+            <li>Steer-by-wire / chassis sensing</li>
+            <li>Cryogenic &amp; quantum lab magnetometry</li>
+            <li>Industrial power monitoring (wide dynamic range)</li>
+          </ul>
+          <h3>Gas &amp; VOC</h3>
+          <ul>
+            <li>Workplace safety (NH₃, H₂S, methane, H₂)</li>
+            <li>Agricultural methane emissions</li>
+            <li>Indoor air / HVAC VOC (vs cheap MOS)</li>
+            <li>Breath acetone / wellness screening (early)</li>
+          </ul>
+          <h3>Water / environment</h3>
+          <ul>
+            <li>PFAS field screening for utilities &amp; industry</li>
+            <li>Filter breakthrough monitoring (e.g. GAC)</li>
+            <li>Soil / water multi-analyte profiling</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Biosensing / healthcare</h3>
+          <ul>
+            <li>Rapid home/clinic molecular diagnostics</li>
+            <li>Antibody / reagent QC in biotech labs</li>
+            <li>Point-of-care pathogen detection (e.g. malaria path)</li>
+            <li>Cancer / neurological biomarker research platforms</li>
+          </ul>
+          <h3>Built environment &amp; energy</h3>
+          <ul>
+            <li>In-situ building U-value / retrofit verification</li>
+            <li>HVAC envelope commissioning &amp; energy audits</li>
+            <li>Industrial / aerospace heat-transfer monitoring</li>
+          </ul>
+          <h3>Earlier-stage</h3>
+          <ul>
+            <li>Structural strain / fatigue on composites</li>
+            <li>Ultra-sensitive specialty pressure niches</li>
+            <li>Smart textiles (VOC, humidity, body temp)</li>
+            <li>Graphene neural interfaces (clinical studies)</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6 ranking pass -->
+    <section class="section">
+      <h2>6. Next pass — Top 5 vendor × use-case by time-to-revenue</h2>
+      <p>
+        Ranking criteria (weighted judgment, not audited financials):
+        (1) product availability today,
+        (2) paying buyer / pilot evidence,
+        (3) regulatory drag,
+        (4) competitive alternative strength,
+        (5) path to repeatable SKU revenue in 0–24 months.
+      </p>
+
+      <div class="sketch">
+        <div class="sketch-caption">
+          <strong>Figure 2 — Relative time-to-revenue scores (higher = nearer revenue)</strong>
+          <span>Chart.js</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="ttrChart" aria-label="Time to revenue ranking chart"></canvas>
+        </div>
+      </div>
+
+      <div class="sketch">
+        <div class="sketch-caption">
+          <strong>Figure 3 — Risk vs near-term revenue attractiveness</strong>
+          <span>Chart.js</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="riskChart" aria-label="Risk versus attractiveness scatter"></canvas>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Pair</th>
+            <th>Why it ranks here</th>
+            <th>Horizon</th>
+            <th>Main risk</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="rank">1</span></td>
+            <td><strong>Paragraf × graphene Hall current/position sensing</strong><br/>(industrial / research / EV design wins; auto volume later)</td>
+            <td>
+              Products commercially available for years; online store; revenue channels already include research labs,
+              quantum/cryogenic niches, and automotive design engagement. Clearest finished-device graphene sensor business.
+            </td>
+            <td><strong>Now</strong> (niche/OEM design-in)<br/>Auto volume: multi-year qualification</td>
+            <td>Automotive/medical certification cycles stretch volume production</td>
+          </tr>
+          <tr>
+            <td><span class="rank">2</span></td>
+            <td><strong>First Graphene × Vector Peltyr heat-flux sensors</strong><br/>(building U-value / retrofit / HVAC thermal)</td>
+            <td>
+              Commercial product launch announced Sep 2026 with a 3-year partner agreement.
+              Clear construction/energy buyer problem (measured vs modelled U-value) and printable/scalable form factor.
+            </td>
+            <td><strong>0–12 months</strong> rollout</td>
+            <td>Niche TAM; must win vs incumbent heat-flux instruments on price/ease</td>
+          </tr>
+          <tr>
+            <td><span class="rank">3</span></td>
+            <td><strong>Hememics ESAP™ × biotech antibody/reagent QC</strong></td>
+            <td>
+              Dec 2025 on-site validation + immediate commercial trial order.
+              Non-clinical lab workflow (faster path than regulated diagnostics): &lt;1 hour label-free electronic binding vs multi-day blots.
+            </td>
+            <td><strong>0–12 months</strong> trial → early SKU sales</td>
+            <td>Still early customer count; must convert trials to recurring consumable revenue</td>
+          </tr>
+          <tr>
+            <td><span class="rank">4</span></td>
+            <td><strong>Paragraf GFET platforms (PMF2000/2002) × R&amp;D molecular sensing kits</strong><br/>(gas/bio/water assay development)</td>
+            <td>
+              Aug 2026 commercial launch of 12-channel PMF2002 + Enterprise Reader.
+              Sellable now as developer platforms (customer functionalizes). Recurring path via kits/readers before vertical assays mature.
+            </td>
+            <td><strong>Now–18 months</strong> platform sales</td>
+            <td>Revenue is tools/services until partners lock assays; not end-market sensors yet</td>
+          </tr>
+          <tr>
+            <td><span class="rank">5</span></td>
+            <td><strong>Grapheal PFAST × PFAS / water-utility field screening</strong></td>
+            <td>
+              Strong regulatory pull; beta with large utilities; detects below stringent ppt thresholds;
+              ~30 min results; EIC-funded industrialization. Clear utility/industrial OPEX story (filter monitoring).
+            </td>
+            <td><strong>~2027</strong> commercial launch</td>
+            <td>Still pre-launch; manufacturing scale and field validation must convert interest to orders</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Honorable mentions (intentionally outside top 5)</h3>
+      <ul>
+        <li><strong>Paragraf × Tachmed diagnostics</strong> — large upside, but clinical/regulatory drag pushes durable revenue later than lab QC or Hall sensors.</li>
+        <li><strong>IPLEXMED malaria graphene FET</strong> — TRL ~6, commercialization projected ~2027; geographic/health-system dependent.</li>
+        <li><strong>Melexis × Graphenea GFET-on-CMOS</strong> — important semiconductor path; currently evaluation/development, not end-product revenue.</li>
+        <li><strong>Generic graphene VOC IoT nodes</strong> — crowded vs cheap MOS sensors unless sensitivity/power is decisive.</li>
+      </ul>
+    </section>
+
+    <!-- 7 buying guide -->
+    <section class="section">
+      <h2>7. How buyers purchase today</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Buyer need</th>
+            <th>Typical purchase</th>
+            <th>When it makes sense</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Current / position in EV or harsh environments</td>
+            <td>Packaged Hall sensor</td>
+            <td><strong>Now</strong> — clearest ROI vs silicon/shunt in specialty cases</td>
+          </tr>
+          <tr>
+            <td>Custom analyte (gas / bio / water)</td>
+            <td>GFET platform + reader + chemistry partner</td>
+            <td><strong>Now for R&amp;D / pilots</strong>; volume after assay lock-in</td>
+          </tr>
+          <tr>
+            <td>Regulated diagnostic</td>
+            <td>Co-development with medtech + clinical validation</td>
+            <td>Common product windows <strong>2026–2028</strong></td>
+          </tr>
+          <tr>
+            <td>Drop-in IoT temp / humidity / gas node</td>
+            <td>Often still conventional MEMS</td>
+            <td>Graphene only if sensitivity / power / form-factor wins</td>
+          </tr>
+          <tr>
+            <td>PFAS field kit</td>
+            <td>Specialized graphene environmental sensor</td>
+            <td>Commercial targets around <strong>2027</strong></td>
+          </tr>
+          <tr>
+            <td>Building thermal performance</td>
+            <td>Printed heat-flux sensor (Peltyr-class)</td>
+            <td><strong>Now / near-term</strong> commercial rollout</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 8 sweet spots -->
+    <section class="section">
+      <h2>8. Sweet spots vs not-yet</h2>
+      <div class="two-col">
+        <div>
+          <h3>Sweet spots (now → ~24 months)</h3>
+          <ul>
+            <li>Magnetic / current sensing niches</li>
+            <li>GFET development platforms &amp; readers</li>
+            <li>Lab bio QC consumables</li>
+            <li>Building heat-flux / energy audit tools</li>
+            <li>Utility PFAS pilots → 2027 products</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Not yet mass commodity</h3>
+          <ul>
+            <li>Drop-in smoke / CO replacements</li>
+            <li>Universal cheap multi-gas IoT boards</li>
+            <li>Pharmacy-scale consumer medical graphene tests</li>
+            <li>Million-unit/year 2D sensor fabs (Graphenea: not there yet)</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9 sources -->
+    <section class="section">
+      <h2>9. Primary sources used</h2>
+      <ul class="sources">
+        <li>Paragraf — Hall sensors product pages; PMF2002 / Enterprise Reader press release (18 Aug 2026); Tachmed partnership (28 May 2025); Frost 2025 company write-up on commercial availability &amp; auto qualification lag</li>
+        <li>Graphenea — “Graphene sensors moving closer to the market”; Melexis collaboration (21 Nov 2025)</li>
+        <li>Grapheal — EIC Accelerator / PFAST coverage; Aquatech tech dive (beta with utilities, launch ~2027, ~30 min results)</li>
+        <li>Hememics — ESAP™ KanPro commercial trial order (9 Dec 2025)</li>
+        <li>First Graphene / Vector — Peltyr PureGRAPH® heat-flux launch (29 Sep 2026)</li>
+        <li>INL / UMinho / IPLEXMED — malaria graphene FET license (Nov 2025); commercialization ~2027</li>
+        <li>Market overview aggregators (Knowledge Sourcing and similar) — directional sizing only</li>
+        <li>Selected 2024–2026 papers on graphene temperature, pressure, gas+AI, humidity, textile sensors</li>
+      </ul>
+      <div class="callout">
+        Caveat: press releases and market reports can overstate readiness. Prefer “product shipping / paid pilot / regulatory status”
+        over vision statements when making procurement decisions.
+      </div>
+    </section>
+
+    <p class="footer-note">
+      <code>docs/research/graphene-sensors-fact-finding-report.html</code> ·
+      Independent graphene sensors fact-finding · No EyeNet / platform integration content ·
+      Mermaid 10 · Chart.js 4.4 · Print via browser
+    </p>
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      securityLevel: "loose",
+      themeVariables: {
+        primaryColor: "#ccfbf1",
+        primaryTextColor: "#042f2e",
+        primaryBorderColor: "#0f766e",
+        lineColor: "#64748b",
+        secondaryColor: "#ecfeff",
+        tertiaryColor: "#f8fafc",
+        fontFamily: "Avenir Next, Segoe UI, sans-serif",
+        fontSize: "13px"
+      },
+      flowchart: { curve: "basis", htmlLabels: true }
+    });
+
+    const teal = "#0f766e";
+    const mint = "#2dd4bf";
+    const slate = "#64748b";
+    const amber = "#f59e0b";
+    const rose = "#e11d48";
+
+    new Chart(document.getElementById("ttrChart"), {
+      type: "bar",
+      data: {
+        labels: [
+          "1. Paragraf Hall",
+          "2. Peltyr heat-flux",
+          "3. Hememics ESAP",
+          "4. Paragraf GFET kits",
+          "5. Grapheal PFAST"
+        ],
+        datasets: [
+          {
+            label: "Product readiness",
+            data: [95, 80, 70, 85, 55],
+            backgroundColor: teal,
+            borderRadius: 8
+          },
+          {
+            label: "Paying demand evidence",
+            data: [85, 65, 75, 70, 70],
+            backgroundColor: mint,
+            borderRadius: 8
+          },
+          {
+            label: "Low regulatory drag",
+            data: [70, 90, 85, 90, 60],
+            backgroundColor: slate,
+            borderRadius: 8
+          },
+          {
+            label: "Near-term SKU path",
+            data: [88, 78, 72, 76, 50],
+            backgroundColor: amber,
+            borderRadius: 8
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "bottom" },
+          title: { display: false }
+        },
+        scales: {
+          x: { grid: { display: false } },
+          y: {
+            beginAtZero: true,
+            max: 100,
+            title: { display: true, text: "Score (0–100, judgmental)" }
+          }
+        }
+      }
+    });
+
+    new Chart(document.getElementById("riskChart"), {
+      type: "scatter",
+      data: {
+        datasets: [
+          {
+            label: "Top 5 pairs",
+            data: [
+              { x: 25, y: 92, label: "Paragraf Hall" },
+              { x: 35, y: 78, label: "Peltyr heat-flux" },
+              { x: 40, y: 74, label: "Hememics ESAP" },
+              { x: 38, y: 76, label: "Paragraf GFET kits" },
+              { x: 55, y: 68, label: "Grapheal PFAST" }
+            ],
+            backgroundColor: teal,
+            borderColor: teal,
+            pointRadius: 10,
+            pointHoverRadius: 12
+          },
+          {
+            label: "Honorable mentions",
+            data: [
+              { x: 70, y: 60, label: "Tachmed diagnostics" },
+              { x: 72, y: 55, label: "IPLEXMED malaria" },
+              { x: 65, y: 50, label: "Melexis GFET-CMOS" },
+              { x: 60, y: 42, label: "Generic VOC IoT" }
+            ],
+            backgroundColor: rose,
+            borderColor: rose,
+            pointRadius: 8
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "bottom" },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const p = ctx.raw;
+                return `${p.label}: risk ${p.x}, attractiveness ${p.y}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            min: 0,
+            max: 100,
+            title: { display: true, text: "Execution / market risk →" }
+          },
+          y: {
+            min: 0,
+            max: 100,
+            title: { display: true, text: "Near-term revenue attractiveness →" }
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>
