@@ -17,31 +17,21 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-### 2026-11-01 — Analytics Face | Body | Both (images only; no DDL)
-- **Status:** Pending (source in workspace / next Stage 1 push; **no new migration**)
-- **VERSION / pin:** next cut after `2.25.104` (ship with Behavioural Media DDL in the same pin if cutting together)
-- **DB migration:** **Not required.** Relies on existing `mvr_people_body` (`022_mvr_people_body.sql`) + Instant flush/span JSON `body_persons`. Do **not** invent a new schema pack file or verify checks for this feature.
-- **Stage 1 must include:** CHANGELOG; rebuild list **gateway**, **cameras**, **vmeta**, **frontend** (owner wiki markdown is docs-only)
-- **Stage 2:** Mode D rebuild those four (retag-forward others unless also dirty); if Behavioural ships in same pin, also rebuild **media**
-- **Stage 3:** Standard compose pull + existing `schema/apply.sh` / `schema/verify.sh` (Behavioural columns still the only new verify gate when packing that SQL)
-- **Summary:** Analytics filter `detection_modality=face|body|both` with Both-mode face↔body route overlap merge. No new tables/columns.
-- **Canonical note:** [`platform-release-cicd.md`](./platform-release-cicd.md) § Open for next full Stage 1 → 2 → 3
-
-### 2026-11-01 — Behavioural triggers Media schema (next full Stage 1–3)
-- **Status:** Pending (source on `main`; **not** in GHCR pin / lab schema yet)
-- **VERSION / pin:** next cut after `2.25.104` (do **not** enable Behavioural on labs until Stage 3 verify)
-- **Stage 1 must include:**
-  - Pack `ppl-meta-media/migrations/add_behavioural_trigger_fields.sql` (`bash deployment/mac-lima/sync-schema-pack.sh`)
-  - `schema/verify.sh` checks for `triggers.behavioural_lookback_flushes`, `triggers.behavioural_conditions`, `triggers.behavioural_condition_logic`
-  - CHANGELOG + pin bump; images for **media** + **frontend** (Behavioural UI + worker already committed)
-- **Stage 2:** Mode D rebuild media + frontend (retag-forward others unless also dirty)
-- **Stage 3:** `schema/apply.sh` + `schema/verify.sh` on each lab **before** using Behavioural in lab/prod
-- **Summary:** Adds lookback flush / intent-metric columns on `triggers`. Without Stage 3 DDL, Behavioural create/eval fails even if images are new.
-- **Canonical note:** [`platform-release-cicd.md`](./platform-release-cicd.md) § Open for next full Stage 1 → 2 → 3
+_(none)_
 
 ---
 
 ## Completed
+
+### 2026-11-02 — Behavioural Media DDL + Analytics Face | Body | Both
+- **Status:** Completed
+- **VERSION / pin:** `2.25.105` (Stage 1 `723ab1de`; Stage 2 Mode D manifest `c6fd1dd8` on `lab-work-win-eynetdell`)
+- **Stage 1:** Packed `050_add_behavioural_trigger_fields.sql`; verify gates for `triggers.behavioural_lookback_flushes` / `behavioural_conditions` / `behavioural_condition_logic`; Analytics modality images in same pin (no Analytics DDL)
+- **Stage 2:** Mode D on `lab-work-win-eynetdell` — rebuilt media `f803fe6b77b1…`, frontend `f5c06f6dfbb8…`, gateway `3ee88a186926…`, cameras `fb5425055ea4…`, vmeta `6d447d8a662b…` (+ retag-forward others)
+- **Stage 3:**
+  - `lab-work-dual-64g` (`eyenet-demo` @ `192.168.9.13` / `100.101.128.40`) — compose to `:2.25.105`; schema verify OK; digests match manifest; discovery healthy; UI/gw HTTP 200
+  - `lab-work-win-eynetdell` (WSL `eyenet` / `C:\ppl-meta-platform`) — schema verify OK; digests match; in-container UI/gw/discovery 200; discovery re-register healthy. **Note:** WSL mirrored networking left ghost Windows binds on `:3000/:8080/:8006/…`, so app services were brought up **without host port publishes** for Stage 3; LAN UI needs a host reboot (or clear `iphlpsvc` ghosts) then normal compose recreate to restore publishes
+- **Summary:** Ships Behavioural trigger columns + Analytics face|body|both in one pin; Dual fully LAN-reachable; Dell pin/schema/images verified with temporary no-host-port workaround
 
 ### 2026-10-20 — Gateway audit 429 / OPTIONS + frontend alert poller
 - **Status:** Completed

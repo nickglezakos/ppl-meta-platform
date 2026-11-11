@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Απάντηση σε διευκρινίσεις — EyeNet / Deloitte Business Solutions</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-secondary: #22d3ee;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --max-width: 920px;
+    }
+    * { box-sizing: border-box; }
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+    body { margin: 0; }
+    .page { max-width: var(--max-width); margin: 0 auto; padding: 32px 24px 72px; }
+    .print-bar { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+    .print-button {
+      border: 0; border-radius: 999px; padding: 12px 18px;
+      background: var(--brand-primary); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                  linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14);
+      border-radius: 32px;
+      box-shadow: var(--shadow);
+      color: #fff;
+      padding: 32px 34px;
+    }
+    .brand-stack { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+    .brand-stack img { height: 36px; width: auto; }
+    .brand-chip {
+      padding: 8px 12px; border: 1px solid rgba(34, 211, 238, 0.24); border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9); color: #eef9ff; font-size: 13px; font-weight: 600;
+    }
+    .eyebrow {
+      display: inline-flex; padding: 8px 12px; border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14); color: var(--brand-secondary);
+      font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    h1 { margin: 14px 0 8px; font-size: 32px; line-height: 1.1; letter-spacing: -0.03em; }
+    .hero p { margin: 0; color: #d7e4f2; }
+    .section {
+      margin-top: 22px; padding: 26px 28px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      border: 1px solid var(--panel-line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .section-title { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .section-number {
+      width: 32px; height: 32px; border-radius: 50%; display: inline-grid; place-items: center;
+      background: rgba(25, 118, 210, 0.1); color: var(--brand-primary); font-weight: 700;
+    }
+    h2 { margin: 0; font-size: 20px; letter-spacing: -0.02em; }
+    p { margin: 0 0 12px; }
+    p:last-child { margin-bottom: 0; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0 8px; }
+    th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid rgba(15, 23, 42, 0.08); font-size: 14px; }
+    th { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+    td:last-child, th:last-child { text-align: right; white-space: nowrap; }
+    td:nth-child(2), th:nth-child(2) { text-align: center; white-space: nowrap; }
+    .note { margin-top: 10px; color: #64748b; font-size: 13px; }
+    .signoff { margin-top: 22px; color: #334155; }
+    ol.questions { margin: 0; padding-left: 1.35em; }
+    ol.questions li + li { margin-top: 12px; }
+    @page { size: A4; margin: 10mm; }
+    @media print {
+      html {
+        background: #fff;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        font-size: 13.5px;
+        line-height: 1.4;
+      }
+      .page { max-width: none; padding: 0; }
+      .print-bar { display: none; }
+      .hero, .section { box-shadow: none; }
+      .hero { padding: 18px 18px 16px; border-radius: 14px; }
+      .brand-stack { margin-bottom: 8px; gap: 10px; }
+      .brand-stack img { height: 26px; }
+      .eyebrow, .brand-chip { padding: 4px 8px; font-size: 11px; }
+      h1 { font-size: 22px; margin: 8px 0 4px; }
+      .section { margin-top: 10px; padding: 12px 14px; border-radius: 12px; break-inside: avoid; }
+      .section-title { margin-bottom: 6px; gap: 8px; }
+      .section-number { width: 22px; height: 22px; font-size: 12px; }
+      h2 { font-size: 15px; }
+      p { margin: 0 0 6px; }
+      table { margin: 6px 0; }
+      th, td { padding: 4px 8px; font-size: 12px; }
+      .signoff { margin-top: 8px; }
+      .note { margin-top: 4px; font-size: 11px; }
+      ol.questions li + li { margin-top: 6px; }
+      .appendix { break-before: auto; page-break-before: auto; break-inside: auto; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button" onclick="window.print()">Εκτύπωση / Αποθήκευση PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="brand-stack">
+        <img src="assets/eyenet-dark.svg" alt="EyeNet" />
+        <span class="brand-chip">Deloitte Business Solutions S.A.</span>
+      </div>
+      <span class="eyebrow">Απάντηση σε διευκρινίσεις</span>
+      <h1>Επί της προσφοράς Door Entrance &amp; Staff Monitoring</h1>
+      <p>Πρωτόκολλο 000665201001 · Offer Ref. EYENET-DELOITTE-DOOR-2026-R2 · 24 Σεπτεμβρίου 2026</p>
+    </header>
+
+    <section class="section">
+      <p>Αγαπητοί κύριοι,</p>
+      <p>σε συνέχεια των διευκρινίσεών σας επί της προσφοράς, απαντούμε κατά σημείο.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Προμήθεια εξοπλισμού</h2>
+      </div>
+      <p>Ο Ubuntu server εξαιρείται: θα στηθεί από εσάς στην υποδομή Hyper-V. Για τον υπόλοιπο εξοπλισμό, η προσφορά των ελεγμένων partners θα αποσταλεί σε λίγες ημέρες.</p>
+      <p>Ενδεικτικές τιμές, με ΦΠΑ:</p>
+      <table>
+        <thead>
+          <tr><th>Είδος</th><th>Ποσ.</th><th>Ενδεικτική τιμή</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Mini PC πόρτας, κλάση Intel N100, 8 GB, SSD</td><td>1</td><td>400–430 €</td></tr>
+          <tr><td>Οθόνη αφής 10" HDMI</td><td>1</td><td>90–130 €</td></tr>
+          <tr><td>Εκτύπωση θήκης mini PC, εσωτερικά του τοίχου</td><td>1</td><td>40–80 €</td></tr>
+          <tr><td>Εκτύπωση θήκης οθόνης αφής, εξωτερικά, κοντά στην κάμερα</td><td>1</td><td>30–70 €</td></tr>
+          <tr><td>TP-Link VIGI C340 (εξωτερική, PoE)</td><td>1</td><td>65–75 €</td></tr>
+          <tr><td>TP-Link VIGI C440 (εσωτερική, PoE)</td><td>2</td><td>60–73 € / τεμ.</td></tr>
+          <tr><td>TP-Link TL-SG1005P, 4 θύρες PoE</td><td>1</td><td>περίπου 45 €</td></tr>
+          <tr><td><strong>Σύνολο, χωρίς καλώδια</strong></td><td></td><td><strong>περίπου 790–980 €</strong></td></tr>
+        </tbody>
+      </table>
+      <p>Στην προσφορά έχει ήδη δοθεί χρόνος δύο εβδομάδων πιλοτικής εφαρμογής, ακριβώς για να λυθούν αυτά τα ζητήματα τοποθέτησης.</p>
+      <p class="note">Οι τιμές είναι ενδεικτικές. Καλωδιώσεις και οικοδομικές εργασίες παραμένουν στην πλευρά σας.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>Κόστος πρώτου έτους</h2>
+      </div>
+      <p>Ο υπολογισμός 200 € × 3 + 499 € × 9 = <strong>5.091 €</strong> είναι ορθός ως άθροισμα μηνιαίων χρεώσεων του πρώτου έτους, μόνο εφόσον το πακέτο Professional τιμολογηθεί στο κατώτατο όριο των 499 €. Δεν είναι ετήσια προεξοφλημένη τιμή.</p>
+      <p>Από την έναρξη του Professional — τους εννέα μήνες μετά το εισαγωγικό τρίμηνο — η εγκατάσταση καλύπτει <strong>2 έως 5 σημεία</strong>. Η μηνιαία τιμή κινείται από <strong>499 έως 999 €</strong>, ανάλογα με τις απαιτήσεις κάθε σημείου και την υπολογιστική ισχύ του Hyper-V server. Σε απλά σημεία, όπως είσοδος meeting room ή γενική είσοδος κτιρίου, και εφόσον ο server επαρκεί για τη συχνότητα των συμβάντων, η τιμή τείνει προς τα 499 €. Το πρώτο σημείο, με το parking, είναι σύνθετη περίπτωση και δεν ορίζει την τιμή των υπολοίπων.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Ετήσια συνδρομή</h2>
+      </div>
+      <p>Η έκπτωση ετήσιας συνδρομής είναι <strong>10% επί της ονομαστικής αξίας δωδεκαμήνου</strong>. Πληρώνεται το 90% του ποσού, όχι το 10%.</p>
+      <p>Τα 509,10 € και τα 598,80 € είναι το ύψος αυτής της έκπτωσης, όχι η συνδρομή. Για πακέτο 499 €/μήνα, η ονομαστική ετήσια είναι 499 × 12 = 5.988 € και με την έκπτωση <strong>5.389,20 €</strong>. Στο άνω όριο των 999 €/μήνα, η αντίστοιχη ετήσια είναι <strong>10.789,20 €</strong>.</p>
+      <p>Οι πρώτοι τρεις μήνες παραμένουν στα 200 €/μήνα και δεν αποτελούν ετήσιο πακέτο Professional.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>Παραμονή και καταγγελία</h2>
+      </div>
+      <p>Ο ελάχιστος χρόνος παραμονής στην υπηρεσία είναι <strong>τρεις μήνες</strong>. Ο τερματισμός γίνεται με έγγραφη προειδοποίηση <strong>ενός μήνα</strong>, χωρίς penalties.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>Οθόνη αφής, QR και webhook</h2>
+      </div>
+      <p>Η εγκατάσταση προτάθηκε από την πρώτη μας συνάντηση ως πραγματική παραγωγική εγκατάσταση και, ταυτόχρονα, ως οδηγός για την προοπτική περαιτέρω συνεργασίας. Σε αυτό το πλαίσιο προτιθέμεθα να υλοποιήσουμε και την οθόνη αφής Presence, ώστε να φανεί το σύνολο των δυνατοτήτων του EyeNet στον έλεγχο πρόσβασης, συμπεριλαμβανομένης διασύνδεσης με όποιο σύστημα access.</p>
+      <p>Η διασύνδεση γίνεται με webhook. Το webhook ενεργοποιείται από την οπτική αναγνώριση του Vradar και, χωριστά, από QR στην οθόνη αφής. Το QR καλύπτει τις περιπτώσεις όπου το πρόσωπο δεν είναι αναγνώσιμο: κράνος, μάσκα μεγάλης κάλυψης, ή γωνία προσώπου μόνιμα άνω των 45 μοιρών, για παράδειγμα όταν κάποιος πλησιάζει συζητώντας με άτομο δίπλα του.</p>
+      <p>Εφόσον το EyeNet δεν συνδεθεί με το δικό σας σύστημα access, το QR δεν χειρίζεται την πόρτα σας. Κλείνει το κενό αναγνώρισης στην οθόνη και στο αρχείο Presence, και δείχνει το ίδιο σημείο σύνδεσης που θα χρησιμοποιούνταν προς ένα σύστημα access, εάν ζητηθεί αργότερα.</p>
+    </section>
+
+    <p class="signoff">Με εκτίμηση,<br />EyeNet<br />Πρωτόκολλο 000665201001</p>
+    <p class="note">Οι τιμές λογισμικού δεν περιλαμβάνουν ΦΠΑ. Η παρούσα απάντηση διευκρινίζει την προσφορά EYENET-DELOITTE-DOOR-2026-R2 και δεν την αντικαθιστά.</p>
+
+    <section class="section appendix">
+      <div class="section-title">
+        <h2>Παράρτημα — Ερωτήσεις</h2>
+      </div>
+      <ol class="questions">
+        <li>Είχαμε συζητήσει και για το ενδεχόμενο της προμήθειας του εξοπλισμού από εσάς όπως αναφέρεται και στην προσφορά.  Παρακαλούμε όπως αποστείλετε την προσφορά των ελεγμένων partners σας με εξαίρεση το Ubundu server τον οποίο θα στήσουμε εμείς στην HyperV υποδομή μας.</li>
+        <li>Καταλαβαίνουμε ότι για τον συγκεκριμένο χώρο που έχουμε συζητήσει, το κόστος της υπηρεσίας για τον πρώτο χρόνο είναι 200x3 και 499x9 άρα σύνολο 5091€. Παρακαλούμε επιβεβαιώστε.</li>
+        <li>Τον πρώτο χρόνο η ετήσια συνδρομή θα είναι 509,1€. Την επόμενη χρονία και εφόσον το πακέτο δεν αλλάξει (499x12) θα έχουμε ετήσια συνδρομή στα 598,8€. Παρακαλούμε επιβεβαιώστε το.</li>
+        <li>Σε περίπτωση που επιλέξουμε να προχωρήσουμε με ετήσια συνδρομή, ποιος είναι ο ελάχιστος χρόνος παραμονής στην υπηρεσία και τι prior notice χρειάζεται για τον τερματισμό της χωρίς penalties.</li>
+        <li>Καταλαβαίνουμε ότι η αναγνώριση ή μη των προσώπων που βλέπουν οι κάμερες προκαλούν και το αντίστοιχο display message action στην οθόνη αφής στην πόρτα και ενδεχομένως και στους φύλακες. Καθώς δεν θα συνδέσουμε το Eyenet με το δικό μας σύστημα access δεν μας είναι ξεκάθαρο τι διαδικασία θα γίνει με τα QR στην touch οθόνη και γιατί θα το χρειαστούμε. Μπορείτε να μας το αναλύσετε?</li>
+      </ol>
+    </section>
+  </div>
+</body>
+</html>

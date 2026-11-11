@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EyeNet B2B Demo Scenario — Portable Kit</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #475569;
+      --soft: #64748b;
+      --line: #dbe3ee;
+      --band: #f3f7fb;
+      --band-alt: #eaf1f8;
+      --brand: #1976d2;
+      --brand-dark: #0f2f57;
+      --cyan: #0891b2;
+      --warn: #b45309;
+      --ok: #166534;
+      --danger: #b91c1c;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      color: var(--ink);
+      background: #fff;
+      font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 13.5pt;
+      line-height: 1.6;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    @page {
+      size: A4;
+      margin: 14mm 12mm 16mm 12mm;
+    }
+
+    .sheet { max-width: 190mm; margin: 0 auto; padding: 14mm 0 96px; }
+    @media print {
+      .sheet { max-width: none; padding: 0; margin: 0; }
+      .no-print { display: none !important; }
+    }
+
+    .no-print.toolbar {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 14px 18px; margin-bottom: 18px;
+      background: #fff; border-bottom: 1px solid var(--line);
+    }
+    .no-print.toolbar p { margin: 0; color: var(--soft); font-size: 14px; max-width: 48ch; }
+    .no-print.toolbar button {
+      flex: 0 0 auto;
+      border: 0; border-radius: 8px; padding: 12px 18px;
+      background: var(--brand); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .doc-nav {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px;
+      padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+      background: rgba(255,255,255,0.96);
+      border-top: 1px solid var(--line);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.06);
+    }
+    .doc-nav button {
+      border: 1px solid var(--line); border-radius: 8px;
+      padding: 12px 14px; background: #fff; color: var(--ink);
+      font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+    }
+    .doc-nav button:disabled {
+      opacity: 0.35; cursor: default;
+    }
+    .doc-nav-prev { justify-self: start; }
+    .doc-nav-next { justify-self: end; }
+    .doc-nav-mid {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      min-width: 0; text-align: center;
+    }
+    .doc-nav-label {
+      max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: var(--soft); font-size: 13px; font-weight: 600;
+    }
+    .doc-nav-pdf {
+      border: 0 !important; border-radius: 8px !important;
+      padding: 10px 16px !important;
+      background: var(--brand) !important; color: #fff !important;
+      font-size: 14px !important; font-weight: 700 !important;
+    }
+
+    @media (max-width: 720px) {
+      .no-print.toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .no-print.toolbar p { display: none; }
+      .no-print.toolbar button {
+        width: 100%;
+        white-space: normal;
+        text-align: center;
+      }
+      .doc-nav { gap: 6px; padding-left: 8px; padding-right: 8px; }
+      .doc-nav button { padding: 12px 8px; font-size: 14px; }
+      .doc-nav-label { max-width: 34vw; font-size: 12px; }
+    }
+
+    /* Cover */
+    .cover {
+      min-height: 250mm;
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: 18mm 14mm;
+      background: linear-gradient(165deg, #0b1220 0%, #10284a 55%, #163a66 100%);
+      color: #fff;
+      break-after: page;
+      page-break-after: always;
+    }
+    .cover-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .cover-brand { display: flex; align-items: center; gap: 12px; }
+    .cover-brand img { height: 40px; width: auto; filter: brightness(0) invert(1); }
+    .cover-chip {
+      padding: 8px 12px; border: 1px solid rgba(255,255,255,0.22);
+      font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+      color: #cfefff;
+    }
+    .cover-eyebrow {
+      margin: 56px 0 18px;
+      color: #67e8f9; font-size: 15px; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .cover h1 {
+      margin: 0 0 20px; font-size: 44px; line-height: 1.08;
+      letter-spacing: -0.03em; font-weight: 700; max-width: 18ch;
+    }
+    .cover-lead {
+      margin: 0; max-width: 48ch; color: #d7e3f2; font-size: 17px; line-height: 1.65;
+    }
+    .cover-meta {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+      margin-top: 52px; padding-top: 26px;
+      border-top: 1px solid rgba(255,255,255,0.14);
+    }
+    .cover-meta div { min-width: 0; }
+    .cover-meta span {
+      display: block; margin-bottom: 4px;
+      color: #9fb0c3; font-size: 12px; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .cover-meta strong { font-size: 14px; font-weight: 600; color: #fff; }
+    .cover-foot {
+      display: flex; justify-content: space-between; gap: 16px;
+      color: #9fb0c3; font-size: 13px;
+    }
+
+    /* Body */
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h2 {
+      margin: 0 0 14px; font-size: 20pt; letter-spacing: -0.02em;
+      color: var(--brand-dark); break-after: avoid; page-break-after: avoid;
+    }
+    h3 {
+      margin: 20px 0 10px; font-size: 14.5pt; color: var(--ink);
+      break-after: avoid; page-break-after: avoid;
+    }
+    h4 {
+      margin: 0 0 10px; font-size: 13pt; color: var(--ink);
+    }
+    p { margin: 0 0 12px; color: var(--muted); }
+    ul { margin: 0 0 14px; padding-left: 18px; color: var(--muted); }
+    li + li { margin-top: 8px; }
+    strong { color: var(--ink); }
+
+    .sheet > section {
+      scroll-margin-top: 72px;
+      scroll-margin-bottom: 96px;
+    }
+    .section {
+      padding: 20px 0 26px;
+      border-bottom: 1px solid var(--line);
+      break-inside: avoid-page;
+    }
+    .section.flow { break-inside: auto; }
+    .section.page-start {
+      break-before: page;
+      page-break-before: always;
+      border-top: 0;
+      padding-top: 4px;
+    }
+    .section-head {
+      display: flex; align-items: baseline; gap: 12px;
+      margin-bottom: 16px; break-after: avoid; page-break-after: avoid;
+    }
+    .section-num {
+      flex: 0 0 auto;
+      min-width: 28px;
+      color: var(--brand); font-size: 14px; font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .kicker {
+      margin: 0 0 18px; padding: 16px 18px;
+      background: var(--brand-dark); color: #f5fbff;
+      font-size: 12.5pt; font-weight: 600; line-height: 1.55;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .kicker.warn { background: #1f2937; border-left: 3px solid #f59e0b; margin-bottom: 18px; }
+
+    .cols-3, .cols-2 { display: grid; gap: 14px; margin: 14px 0; }
+    .cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .cols-2 { grid-template-columns: 1.2fr 0.8fr; }
+    .panel {
+      background: var(--band); padding: 16px 16px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .panel.alt { background: var(--band-alt); }
+    .panel p, .panel li { font-size: 12pt; }
+    .stat {
+      display: block; margin-bottom: 4px;
+      font-size: 22pt; font-weight: 800; letter-spacing: -0.03em; line-height: 1;
+    }
+    .stat-label {
+      display: block; margin-bottom: 8px;
+      color: var(--soft); font-size: 11pt; font-weight: 700;
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .stat.cyan { color: var(--cyan); }
+    .stat.danger { color: var(--danger); }
+    .stat.brand { color: var(--brand); }
+    .stat.ok { color: var(--ok); }
+
+    .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .tag {
+      display: inline-block; padding: 5px 10px;
+      background: #fff; border: 1px solid var(--line);
+      color: var(--brand); font-size: 11pt; font-weight: 600;
+    }
+    .tag.mode { color: var(--cyan); }
+    .tag.user { color: var(--warn); }
+    .tag.safety { color: var(--danger); }
+    .tag.ok { color: var(--ok); }
+
+    .side-note {
+      margin-top: 12px; font-size: 11.5pt; color: var(--soft);
+    }
+
+    .persona-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0;
+    }
+    .persona {
+      background: var(--band); padding: 16px 18px;
+      margin: 0 0 18px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .persona:last-child { margin-bottom: 0; }
+    .persona.alt { background: var(--band-alt); }
+    .persona h4 {
+      margin: 0 0 8px; font-size: 13.5pt;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .persona .n {
+      display: inline-grid; place-items: center;
+      width: 22px; height: 22px; flex: none;
+      background: var(--brand); color: #fff;
+      font-size: 11px; font-weight: 700;
+    }
+    .persona .who {
+      margin: 0 0 12px; font-size: 11pt; color: var(--soft);
+    }
+    .persona ul {
+      margin: 0; padding-left: 16px; font-size: 12pt;
+    }
+    .persona li + li { margin-top: 6px; }
+    .persona .cols-2 { margin: 10px 0 0; }
+    .persona .panel { margin: 0; }
+
+    .notify {
+      margin-top: 12px; padding: 14px 16px;
+      background: #fff; border: 1px solid var(--line);
+      border-left: 3px solid var(--brand);
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .persona.alt .notify { background: rgba(255,255,255,0.72); }
+    .notify h5 {
+      margin: 0 0 8px; font-size: 11pt; font-weight: 800;
+      letter-spacing: 0.04em; text-transform: uppercase; color: var(--brand-dark);
+    }
+    .notify ul {
+      margin: 0; padding-left: 16px; font-size: 11.5pt; color: var(--muted);
+    }
+    .notify li + li { margin-top: 4px; }
+    .notify p {
+      margin: 0; font-size: 12pt; font-weight: 400;
+      color: var(--muted); line-height: 1.5;
+    }
+
+    .how-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0;
+    }
+    .how {
+      background: var(--band); padding: 16px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .how.alt { background: var(--band-alt); }
+    .how h4 {
+      margin: 0 0 10px; font-size: 12.5pt;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .how .n {
+      display: inline-grid; place-items: center;
+      width: 22px; height: 22px; background: var(--brand); color: #fff;
+      font-size: 11px; font-weight: 700;
+    }
+    .how p { font-size: 11.5pt; margin-bottom: 10px; }
+    .how ul { font-size: 11.5pt; padding-left: 16px; margin: 0; }
+    .how li + li { margin-top: 6px; }
+
+    .summary-panel {
+      margin-top: 18px;
+      padding: 16px 18px;
+    }
+    .summary-panel .tags { margin-top: 10px; }
+
+    .footer-note {
+      margin-top: 18px; color: var(--soft); font-size: 11.5pt;
+    }
+
+    .breaker-grid {
+      display: grid; gap: 14px; margin: 14px 0 18px;
+    }
+    .breaker-grid .notify {
+      margin-top: 0; padding: 16px 18px;
+      background: var(--band);
+    }
+    .breaker-grid .notify.alt { background: var(--band-alt); }
+
+    .device-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 18px;
+      font-size: 12pt;
+    }
+    .device-table th,
+    .device-table td {
+      text-align: left;
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    .device-table th {
+      color: var(--soft);
+      font-size: 11pt;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: var(--band);
+    }
+    .device-table td { color: var(--muted); }
+    .device-table td strong { color: var(--ink); }
+
+    .scene {
+      background: var(--band);
+      padding: 18px 18px;
+      margin: 0 0 14px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .scene.alt { background: var(--band-alt); }
+    .scene h4 {
+      margin: 0 0 6px;
+      font-size: 14pt;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .scene .n {
+      display: inline-grid; place-items: center;
+      width: 28px; height: 28px; flex: none;
+      background: var(--brand); color: #fff;
+      font-size: 13px; font-weight: 700;
+    }
+    .scene .who {
+      margin: 0 0 10px;
+      font-size: 12pt;
+      color: var(--soft);
+      font-weight: 600;
+    }
+    .scene p { margin-bottom: 8px; font-size: 12.5pt; }
+    .scene .point {
+      margin: 12px 0 0;
+      padding: 12px 14px;
+      background: #fff;
+      border-left: 3px solid var(--cyan);
+      font-size: 12pt;
+      color: var(--muted);
+    }
+    .scene .point strong { color: var(--brand-dark); }
+
+    .script-list {
+      counter-reset: script;
+      list-style: none;
+      padding: 0;
+      margin: 14px 0;
+    }
+    .script-list li {
+      position: relative;
+      padding: 14px 16px 14px 56px;
+      margin: 0 0 10px;
+      background: var(--band);
+      color: var(--muted);
+      font-size: 12.5pt;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .script-list li:nth-child(even) { background: var(--band-alt); }
+    .script-list li::before {
+      counter-increment: script;
+      content: counter(script);
+      position: absolute;
+      left: 14px; top: 14px;
+      display: inline-grid; place-items: center;
+      width: 28px; height: 28px;
+      background: var(--brand); color: #fff;
+      font-size: 13px; font-weight: 700;
+    }
+
+    @media (max-width: 720px) {
+      .cols-3, .cols-2, .how-grid, .persona-grid, .cover-meta {
+        grid-template-columns: 1fr;
+      }
+      .cover h1 { font-size: 34px; max-width: none; }
+      .device-table { font-size: 11pt; display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print toolbar">
+    <p>B2B demo runbook for the portable EyeNet kit. Print-friendly A4 layout.</p>
+    <button type="button" onclick="window.print()">Print / Save as PDF</button>
+  </div>
+
+  <div class="sheet">
+    <section class="cover" id="page-0" data-nav-label="Cover">
+      <div>
+        <div class="cover-top">
+          <div class="cover-brand">
+            <img src="../product/logos/svg/eyenet-dark.svg" alt="EyeNet" />
+            <span class="cover-chip">Demo Runbook</span>
+          </div>
+        </div>
+        <p class="cover-eyebrow">B2B · Portable Kit · Processes &amp; Functionalities</p>
+        <h1>Scalable EyeNet demo scenario</h1>
+        <p class="cover-lead">A door / small-office / retail-counter scenario that builds EyeNet modules one at a time — using devices already declared on eyenet-demo, with groups and triggers already active.</p>
+        <div class="cover-meta">
+          <div><span>Type</span><strong>Live Demo Script</strong></div>
+          <div><span>Duration</span><strong>≈ 20–25 min</strong></div>
+          <div><span>Host</span><strong>eyenet-demo · Tailscale</strong></div>
+          <div><span>Network</span><strong>Mobile router island</strong></div>
+        </div>
+      </div>
+      <div class="cover-foot">
+        <span>eyenet-vision.com</span>
+        <span>docs/demos</span>
+      </div>
+    </section>
+
+    <section class="section flow" id="page-1" data-nav-label="01 · Premise">
+      <div class="section-head"><span class="section-num">01</span><h2>Demo premise</h2></div>
+      <div class="kicker">One narrative. Fixed device roles. Show features and benefits step by step: See → Know → Act → Show → Verify → Move → Close.</div>
+
+      <div class="breaker-grid">
+        <div class="notify">
+          <h5>Scenario</h5>
+          <p>Secured entrance with an adaptive screen and staff check-in. Demographic retail signage is an optional beat — not a second scenario.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Already live</h5>
+          <p>Individual groups and triggers / actions are already active on eyenet-demo, reachable from the mobile router IP. Do not live-edit unless the buyer asks.</p>
+        </div>
+        <div class="notify">
+          <h5>Physical path</h5>
+          <p>Walk path → Entrance Tapo → Signage tablet → Presence phone. Keep this layout fixed for the whole session.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Presentation close</h5>
+          <p>Prove local value first. Use Tailscale remote reach as the close of the presentation — not as the opening.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-2" data-nav-label="02 · Devices">
+      <div class="section-head"><span class="section-num">02</span><h2>Device roles — assign once</h2></div>
+      <div class="kicker">These are the devices already declared on eyenet-demo. Assign roles once and keep them fixed for every run.</div>
+
+      <table class="device-table">
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>Device</th>
+            <th>What it proves</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Entrance / Gate</strong></td>
+            <td>Tapo A</td>
+            <td>Counts, demographics, POI match at the door</td>
+          </tr>
+          <tr>
+            <td><strong>Area / Zone</strong></td>
+            <td>Tapo B</td>
+            <td>Second zone (reception / stock / restricted)</td>
+          </tr>
+          <tr>
+            <td><strong>Portable eye</strong></td>
+            <td>Android mobile camera</td>
+            <td>Same vision rules on a phone camera</td>
+          </tr>
+          <tr>
+            <td><strong>Edge eye</strong></td>
+            <td>Demo embedded camera</td>
+            <td>The box has its own sensor</td>
+          </tr>
+          <tr>
+            <td><strong>Screen</strong></td>
+            <td>Android digital signage app</td>
+            <td>Automation the customer can see</td>
+          </tr>
+          <tr>
+            <td><strong>Check-in</strong></td>
+            <td>EyeNet Presence Android app</td>
+            <td>Verified attendance / two-factor presence</td>
+          </tr>
+          <tr>
+            <td><strong>Brain</strong></td>
+            <td>eyenet-demo via mobile router + Tailscale</td>
+            <td>On-prem ops + remote access</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="tags">
+        <span class="tag">2× Tapo</span>
+        <span class="tag mode">Mobile camera</span>
+        <span class="tag user">Signage Android</span>
+        <span class="tag ok">Presence Android</span>
+        <span class="tag safety">Embedded + Tailscale</span>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-3" data-nav-label="03 · Scenes 0–3">
+      <div class="section-head"><span class="section-num">03</span><h2>Scalable scenes — part A</h2></div>
+      <div class="kicker">≈ 20–25 minutes total. Scenes 0–3 build from the island site through live vision, identity, and automation.</div>
+
+      <div class="scene">
+        <h4><span class="n">0</span> Island site</h4>
+        <p class="who">≈ 2 min</p>
+        <p>Open the UI from the mobile router IP. Show cameras, signage, and presence devices online on the mobile-router LAN.</p>
+        <div class="point"><strong>Point:</strong> Full EyeNet site, offline-capable, remotely reachable. No cloud video.</div>
+      </div>
+
+      <div class="scene alt">
+        <h4><span class="n">1</span> Live vision</h4>
+        <p class="who">≈ 3 min · Gate / Cameras / Instant Detection</p>
+        <p>Walk past <strong>Tapo A</strong> and the <strong>embedded camera</strong>. Show live feed + instant detection (faces / people / demographics). Optionally pan the <strong>mobile camera</strong> so they see “phone = camera too.”</p>
+        <div class="point"><strong>Point:</strong> Any camera type becomes a sensor.</div>
+      </div>
+
+      <div class="scene">
+        <h4><span class="n">2</span> Known people</h4>
+        <p class="who">≈ 3 min · Individual Groups + ppl_match</p>
+        <p>Open <strong>Individual Groups</strong> (Staff / VIP / Visitors — whatever is already enrolled). Ensure 1–2 people in the room are group members. Walk past <strong>Tapo A</strong> as a known person → show match in Automation / last match info.</p>
+        <div class="point"><strong>Point:</strong> Automatic person recognition.</div>
+      </div>
+
+      <div class="scene alt">
+        <h4><span class="n">3</span> Automation that already exists</h4>
+        <p class="who">≈ 4 min · Vradar / Triggers &amp; Actions</p>
+        <p>Fire what is already configured — do not rebuild live. Recommended pair with <strong>multiple actions</strong> on the same trigger:</p>
+        <ul>
+          <li><strong>Known match</strong> → alert and/or signage_rich_message (“Welcome {matched_member_name}”) + <strong>email</strong> + <strong>Slack</strong> (<code>messaging_app</code>)</li>
+          <li><strong>Negated match (unknown)</strong> → alert + visitor playlist / warning on signage + <strong>email</strong> + <strong>Slack</strong> (@channel if needed)</li>
+        </ul>
+        <p>Have a second person (or briefly cover a face) walk as “unknown.” Open the email inbox and Slack channel so they see notifications arrive live.</p>
+        <div class="point"><strong>Point:</strong> Vradar = vision → business action on screen, email, and Slack together. This is usually the “aha.”</div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-4" data-nav-label="04 · Scenes 4–7">
+      <div class="section-head"><span class="section-num">04</span><h2>Scalable scenes — part B</h2></div>
+      <div class="kicker">Scenes 4–6 close with the business view / benefits: signage, presence check-in, movable coverage. Scene 7 is optional.</div>
+
+      <div class="scene">
+        <h4><span class="n">4</span> Signage as business view / benefits</h4>
+        <p class="who">≈ 3 min · Signage + Automation</p>
+        <p>Stay on the Android player. Show default playlist → trigger switches playlist <strong>or</strong> rich overlay (welcome / visitor / promo). Optionally a demographic trigger (e.g. people_count ≥ 2 → promo playlist).</p>
+        <div class="point"><strong>Point:</strong> Signage is not a plain screen system — it changes automatically from EyeNet rules.</div>
+      </div>
+
+      <div class="scene alt">
+        <h4><span class="n">5</span> Presence check-in</h4>
+        <p class="who">≈ 4 min · Presence</p>
+        <p>Use the Presence app + door camera (Tapo A or embedded):</p>
+        <ul>
+          <li>QR-only grant (fast)</li>
+          <li>Then QR + face or camera match (higher assurance)</li>
+        </ul>
+        <p>Show session result + recent presence grants.</p>
+        <div class="point"><strong>Point:</strong> Attendance / door control with an audit trail — not just a face alert.</div>
+      </div>
+
+      <div class="scene">
+        <h4><span class="n">6</span> Same rules, movable camera</h4>
+        <p class="who">≈ 2 min · Mobile camera</p>
+        <p>Move the <strong>mobile camera</strong> to a second spot (“stock room”). Show the same style of trigger can apply there — or that search / multi-camera coverage is the natural next step.</p>
+        <div class="point"><strong>Point:</strong> Coverage follows the site; not locked to fixed IP cams.</div>
+      </div>
+
+      <div class="scene alt">
+        <h4><span class="n">7</span> Close the loop <span class="tag user" style="margin-left:8px;">Optional</span></h4>
+        <p class="who">≈ 2 min · Ops + VPN · only if requested</p>
+        <p><strong>Optional — only if the customer asks.</strong> In UI: trigger execution log, presence sessions, optional analytics glance (traffic / demographics at Entrance). Reminder: you manage the site over Tailscale while it sits on a travel router.</p>
+        <div class="point"><strong>Point:</strong> Ops + privacy + remote support without sending video to the cloud.</div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-5" data-nav-label="05 · Features &amp; benefits">
+      <div class="section-head"><span class="section-num">05</span><h2>Why this order works for B2B</h2></div>
+      <div class="kicker">It shows features and benefits step by step — the way the product is already sold — and maps to the entrance use case.</div>
+
+      <div class="how-grid">
+        <div class="how">
+          <h4><span class="n">1</span> See</h4>
+          <p>Cameras / Gate — live sensors on ordinary hardware.</p>
+        </div>
+        <div class="how alt">
+          <h4><span class="n">2</span> Know</h4>
+          <p>Individual groups — who is staff, VIP, or unknown.</p>
+        </div>
+        <div class="how">
+          <h4><span class="n">3</span> Act</h4>
+          <p>Triggers / actions — vision becomes workflow.</p>
+        </div>
+        <div class="how alt">
+          <h4><span class="n">4</span> Show</h4>
+          <p>Signage — the business view / benefits the customer feels.</p>
+        </div>
+        <div class="how">
+          <h4><span class="n">5</span> Verify</h4>
+          <p>Presence — grants, policies, attendance trail.</p>
+        </div>
+        <div class="how alt">
+          <h4><span class="n">6</span> Scale</h4>
+          <p>Mobile camera + Tailscale — move and manage remotely.</p>
+        </div>
+      </div>
+
+      <div class="panel summary-panel">
+        <h4>Modules in one arc</h4>
+        <div class="tags">
+          <span class="tag">Presence</span>
+          <span class="tag mode">Signage</span>
+          <span class="tag user">Vradar / Automation</span>
+          <span class="tag ok">Gate / Instant Detection</span>
+          <span class="tag safety">Individual Groups</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-6" data-nav-label="06 · Practical tips">
+      <div class="section-head"><span class="section-num">06</span><h2>Practical tips for this kit</h2></div>
+
+      <div class="breaker-grid">
+        <div class="notify">
+          <h5>One scenario only</h5>
+          <p>First demos: secured entrance with adaptive screen + staff check-in. Demographic retail can be Scene 4b — not a second scenario.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Pre-stage playlists &amp; channels</h5>
+          <p>Welcome / Visitor / Crowd-promo ready before the room fills. Open the email inbox and Slack channel before Scene 3 so notifications show live.</p>
+        </div>
+        <div class="notify">
+          <h5>Cooldown</h5>
+          <p>Keep trigger cooldown short (15–30s) during demos so walks re-fire cleanly.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Don’t live-edit</h5>
+          <p>Groups and triggers are already active. Use them. Edit only if the buyer asks to see configuration.</p>
+        </div>
+        <div class="notify">
+          <h5>Tailscale last</h5>
+          <p>Prove local value, then show remote reach as the close of the presentation.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Skip on v1</h5>
+          <p>Sentinel / Matrix / left-object / plates wait for a second meeting unless the buyer is security or multi-site.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-7" data-nav-label="07 · Optional menu">
+      <div class="section-head"><span class="section-num">07</span><h2>Optional menu after the main presentation</h2></div>
+      <div class="kicker">If they lean a certain way, add one beat only — never all four. Sections 08–10 are deep-dives when requested.</div>
+
+      <div class="persona-grid">
+        <div class="persona">
+          <h4><span class="n">R</span> Retail / marketing</h4>
+          <p class="who">Extra beat</p>
+          <p>Demographic → playlist A/B on signage.</p>
+          <div class="tags"><span class="tag mode">Signage</span><span class="tag user">Demographics</span></div>
+        </div>
+        <div class="persona alt">
+          <h4><span class="n">S</span> Security</h4>
+          <p class="who">Extra beat</p>
+          <p>Unknown at Tapo B + alert / email / Slack.</p>
+          <div class="tags"><span class="tag safety">Vradar</span><span class="tag">Restricted zone</span></div>
+        </div>
+        <div class="persona alt">
+          <h4><span class="n">H</span> HR / office</h4>
+          <p class="who">Extra beat</p>
+          <p>Daily Presence report / grants history · section 08.</p>
+          <div class="tags"><span class="tag ok">Presence</span><span class="tag">Attendance</span></div>
+        </div>
+        <div class="persona">
+          <h4><span class="n">I</span> Integrator</h4>
+          <p class="who">Extra beat</p>
+          <p>Webhook / HubSpot · sections 08–09.</p>
+          <div class="tags"><span class="tag mode">Webhook</span><span class="tag user">HubSpot</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-8" data-nav-label="08 · Presence · PPP · HubSpot">
+      <div class="section-head"><span class="section-num">08</span><h2>Presence: stats, filters, PPP &amp; HubSpot</h2></div>
+      <div class="kicker">Show that presence is more than check-in — it has reports, filters, and identity linkage through to the CRM.</div>
+
+      <div class="scene">
+        <h4><span class="n">A</span> Presence Analytics &amp; filters</h4>
+        <p class="who">Presence → Analytics · Sessions</p>
+        <p>Open <strong>Presence → Analytics</strong>:</p>
+        <ul>
+          <li>Date range, summary cards, Outcomes / Client Origin donuts</li>
+          <li><strong>User-Day Presence Awards</strong> — filter by user and date; expand for that day’s grants (QR / Cam / Cam &amp; QR)</li>
+          <li>Bars for Session Modes, Grant Types, Failure Reasons, Policy Sources</li>
+        </ul>
+        <p>Then <strong>Presence → Sessions</strong>: User filter, dates, and Filter sheet (Mode, Decision, Grant, Policy, Failure, Origin, Camera, Group, Member, Profile). Show Apply / Clear and optionally Download Excel.</p>
+        <div class="point"><strong>Point:</strong> One tap on a card/donut/bar → Sessions with the same filters. Audit trail for HR and security.</div>
+      </div>
+
+      <div class="scene alt">
+        <h4><span class="n">B</span> Linking group members · PPP · Users</h4>
+        <p class="who">Individual Groups · Presence → People</p>
+        <p>Show the identity chain:</p>
+        <ul>
+          <li><strong>Group member</strong> (Individual Groups) — the person Vradar / Presence match recognizes</li>
+          <li><strong>PPP</strong> (Presence People Profile) — presence profile (name, email, phone…) linked to the group member</li>
+          <li><strong>User</strong> — platform / Authenticator account that can link to the same PPP</li>
+        </ul>
+        <p>In Individual Groups: link icon on a member → select / link People Profile. In Presence → <strong>People</strong>: open the PPP and show linked fields.</p>
+        <div class="point"><strong>Point:</strong> One person = one identity from recognition through check-in to the user account.</div>
+      </div>
+
+      <div class="scene">
+        <h4><span class="n">C</span> HubSpot CRM link</h4>
+        <p class="who">Presence → Settings → HubSpot CRM</p>
+        <p>Open <strong>Settings → HubSpot CRM</strong> (if already connected on the demo):</p>
+        <ul>
+          <li>Import HubSpot contacts → create / update PPP (External Ref = HubSpot contact id)</li>
+          <li>After a Presence grant → post to HubSpot (Note on the contact + <code>last_presence_*</code> properties)</li>
+          <li>Choose which grant types to post (check_in, presence_match, verified_presence)</li>
+        </ul>
+        <p>If live connection exists: run a grant and open the contact in HubSpot. If not: show the settings screen and explain the flow.</p>
+        <div class="point"><strong>Point:</strong> Presence reaches the CRM without manual logging — HubSpot-first connector.</div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-9" data-nav-label="09 · Analytics">
+      <div class="section-head"><span class="section-num">09</span><h2>General Analytics (MVR)</h2></div>
+      <div class="kicker">Home → Analytics: overall picture of traffic, demographics, and behaviour — not just one door event.</div>
+
+      <div class="breaker-grid">
+        <div class="notify">
+          <h5>Where you go</h5>
+          <p>Open <strong>Analytics</strong> (MVR People Detection Analytics). Tap <strong>Filters</strong>: time (e.g. Today), collection / camera (e.g. Entrance Tapo), data source.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Data sources</h5>
+          <p><strong>Instant Detection</strong> (live), <strong>Video Recording</strong>, or both (combined) with identity de-duplication.</p>
+        </div>
+      </div>
+
+      <div class="how-grid">
+        <div class="how">
+          <h4><span class="n">1</span> Level 1</h4>
+          <p>Basics: Total People, Active Collections, Sessions / Videos Analyzed.</p>
+        </div>
+        <div class="how alt">
+          <h4><span class="n">2</span> Level 2</h4>
+          <p>Time trends: Total, Peak, Average — hourly / daily traffic.</p>
+        </div>
+        <div class="how">
+          <h4><span class="n">3</span> Level 3</h4>
+          <p>Demographics: age, gender, per camera.</p>
+        </div>
+        <div class="how alt">
+          <h4><span class="n">4</span> Level 4</h4>
+          <p>Behavioral: peak hours, visit frequency, weekly heatmap.</p>
+        </div>
+        <div class="how">
+          <h4><span class="n">5</span> Filters</h4>
+          <p>Apply → filter bar appears. Refresh for new data.</p>
+        </div>
+        <div class="how alt">
+          <h4><span class="n">6</span> Export</h4>
+          <p>Optionally Export Analytics (e.g. Excel) for the buyer.</p>
+        </div>
+      </div>
+
+      <div class="point" style="margin-top:14px;padding:14px 16px;background:var(--band);border-left:3px solid var(--cyan);">
+        <strong>Point:</strong> From the same kit (Tapo A/B + instant detection) you get an operational dashboard for entrance, hours, and audience — without a separate BI tool.
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-10" data-nav-label="10 · MVR People Analysis">
+      <div class="section-head"><span class="section-num">10</span><h2>MVR People Analysis: Routes, Attendance &amp; Search Videos</h2></div>
+      <div class="kicker">Show how you reach person analysis from Search / Media and what you see on Routes and Attendance.</div>
+
+      <div class="scene">
+        <h4><span class="n">1</span> How you get there — Search Videos / Media</h4>
+        <p class="who">Entry paths into the analysis screen</p>
+        <ul>
+          <li><strong>My Media / Media Preview</strong> — open a camera clip → <strong>Details</strong> (after processing) → person / MVR analysis screen</li>
+          <li><strong>Search Videos</strong> (or date/time MVR search on the collection) → select results → Analysis</li>
+          <li><strong>Individual Groups</strong> — Camera Search or tap a group member → Person Objects / cross-video analysis</li>
+        </ul>
+        <div class="point"><strong>Point:</strong> From video search or a known group member you reach the same family of analysis screens.</div>
+      </div>
+
+      <div class="scene alt">
+        <h4><span class="n">2</span> MVR People Analysis screen features</h4>
+        <p class="who">Tabs on Details / Person analysis</p>
+        <ul>
+          <li><strong>Persons / Individuals</strong> — who appeared in the video (or across videos)</li>
+          <li><strong>Face Details</strong> — individual face detections when you need depth</li>
+          <li><strong>Routes</strong> — movement path in the frame (Camera View + Top View · Path or Scatter); dwell / door crossing</li>
+          <li><strong>Attendance</strong> (cross-video) — who appeared when + timeline per camera in the analysis window</li>
+        </ul>
+        <p>Note: Attendance here is appearance analysis on the selected videos — related to but different from Presence grants (section 08).</p>
+        <div class="point"><strong>Point:</strong> Not only “who” — also “where they moved” and “when they appeared” in the search window.</div>
+      </div>
+
+      <div class="scene">
+        <h4><span class="n">3</span> Demo beat on this kit</h4>
+        <p class="who">≈ 3–4 min if requested</p>
+        <ol style="margin:0 0 12px;padding-left:18px;color:var(--muted);">
+          <li>Make a short recording or open a recent clip from Tapo A / embedded</li>
+          <li>Search Videos or Media Preview → Details</li>
+          <li>Show Persons → Routes → (if multi-video) Attendance</li>
+          <li>Optional: open the same analysis from an Individual Group member</li>
+        </ol>
+        <div class="point"><strong>Point:</strong> Forensics and operational review without video leaving the site.</div>
+      </div>
+
+      <p class="footer-note">EyeNet Vision · B2B demo runbook · Portable kit on eyenet-demo. Specs and availability subject to change. Device inventory assumes Tapo cameras, Android mobile camera, Android signage player, Presence Android app, embedded camera, and mobile-router LAN with Tailscale remote access.</p>
+    </section>
+
+  </div>
+
+  <nav class="doc-nav no-print" aria-label="Page navigation">
+    <button type="button" class="doc-nav-prev">← Previous</button>
+    <div class="doc-nav-mid">
+      <span class="doc-nav-label"></span>
+      <button type="button" class="doc-nav-pdf" onclick="window.print()">PDF</button>
+    </div>
+    <button type="button" class="doc-nav-next">Next →</button>
+  </nav>
+<script>
+(function () {
+  var pages = Array.prototype.slice.call(document.querySelectorAll(".sheet > section[data-nav-label]"));
+  if (!pages.length) return;
+  var prevBtn = document.querySelector(".doc-nav-prev");
+  var nextBtn = document.querySelector(".doc-nav-next");
+  var labelEl = document.querySelector(".doc-nav-label");
+  var index = 0;
+
+  function currentIndex() {
+    var mid = window.scrollY + window.innerHeight * 0.28;
+    var best = 0;
+    for (var i = 0; i < pages.length; i++) {
+      if (pages[i].offsetTop <= mid) best = i;
+    }
+    return best;
+  }
+
+  function sync() {
+    index = currentIndex();
+    var page = pages[index];
+    labelEl.textContent = (index + 1) + " / " + pages.length + " · " + page.getAttribute("data-nav-label");
+    prevBtn.disabled = index <= 0;
+    nextBtn.disabled = index >= pages.length - 1;
+  }
+
+  function go(delta) {
+    var next = Math.max(0, Math.min(pages.length - 1, currentIndex() + delta));
+    pages[next].scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  prevBtn.addEventListener("click", function () { go(-1); });
+  nextBtn.addEventListener("click", function () { go(1); });
+  window.addEventListener("scroll", sync, { passive: true });
+  window.addEventListener("resize", sync);
+  sync();
+})();
+</script>
+</body>
+</html>

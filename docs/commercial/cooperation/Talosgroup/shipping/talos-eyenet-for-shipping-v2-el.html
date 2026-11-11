@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Talos Group × EyeNet for Shipping — Εισαγωγή &amp; Κύριες λειτουργίες</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #0c1f2e;
+      --muted: #3d5166;
+      --soft: #6b7a86;
+      --line: #d7e3ef;
+      --band: #eef4fb;
+      --band-alt: #e8f4f8;
+      --brand: #125ea7;
+      --brand-mid: #0e7490;
+      --accent: #22d3ee;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      color: var(--ink);
+      background: #fff;
+      font-family: "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.45;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    @page {
+      size: A4;
+      margin: 14mm 12mm 18mm 12mm;
+    }
+
+    .doc { max-width: 190mm; margin: 0 auto; padding: 20px 16px 48px; }
+
+    .print-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; margin-bottom: 18px; flex-wrap: wrap;
+      padding: 12px 14px; border: 1px solid var(--line); background: var(--band);
+    }
+    .print-note { font-size: 12px; color: var(--soft); font-weight: 600; }
+    .print-button {
+      border: 0; border-radius: 8px; padding: 10px 16px;
+      background: var(--brand); color: #fff; font: inherit; font-weight: 700; cursor: pointer;
+    }
+
+    h1, h2, p { margin-top: 0; }
+    h1 {
+      margin: 0 0 10px; font-size: 28px; line-height: 1.12;
+      letter-spacing: -0.03em; color: #fff; max-width: 16ch;
+    }
+    h2 {
+      margin: 0 0 6px; font-size: 16pt; letter-spacing: -0.02em;
+      color: var(--brand); break-after: avoid; page-break-after: avoid;
+    }
+    p { margin: 0 0 10px; color: var(--muted); }
+    ul {
+      margin: 0;
+      padding-left: 1.15em;
+      color: var(--muted);
+    }
+    li { margin: 0 0 8px; padding-left: 0.15em; }
+    li::marker { color: var(--brand-mid); }
+    strong { color: var(--ink); font-weight: 700; }
+
+    .cover {
+      min-height: 250mm;
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: 18mm 14mm;
+      background: linear-gradient(165deg, #0b1220 0%, #125ea7 58%, #0e7490 100%);
+      color: #fff;
+      break-after: page;
+      page-break-after: always;
+    }
+    .cover-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .cover-logo {
+      display: inline-flex; align-items: center;
+      background: #071018; border: 1px solid rgba(34, 211, 238, 0.35);
+      padding: 10px 14px; border-radius: 10px;
+      font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: #faf8f4;
+    }
+    .cover-chip {
+      padding: 6px 10px; border: 1px solid rgba(255,255,255,0.22);
+      font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+      color: #c5eef8;
+    }
+    .cover-eyebrow {
+      margin: 42px 0 12px; color: #9eeaf9; font-size: 11px; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .cover-lead {
+      margin: 0; max-width: 48ch; color: #d7e3f2; font-size: 13px; line-height: 1.5;
+    }
+    .cover-meta {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+      margin-top: 36px; padding-top: 18px;
+      border-top: 1px solid rgba(255,255,255,0.16);
+    }
+    .cover-meta span {
+      display: block; margin-bottom: 3px;
+      color: #9fb0c3; font-size: 9px; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .cover-meta strong { font-size: 12px; font-weight: 600; color: #fff; }
+    .cover-foot {
+      display: flex; justify-content: space-between; gap: 16px;
+      color: #9fb0c3; font-size: 11px;
+    }
+
+    .section {
+      padding: 12px 0 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .section:last-of-type { border-bottom: 0; }
+    .section-head {
+      display: flex; align-items: baseline; gap: 10px;
+      margin-bottom: 10px;
+      break-after: avoid; page-break-after: avoid;
+    }
+    .section-num {
+      flex: 0 0 auto; min-width: 22px;
+      color: var(--brand); font-size: 11px; font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+    .intro p {
+      max-width: 68ch;
+      font-size: 11pt;
+      line-height: 1.5;
+    }
+    .points li { break-inside: avoid; page-break-inside: avoid; }
+
+    .footer-note {
+      margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line);
+      text-align: center; color: var(--soft); font-size: 10px; font-weight: 600;
+    }
+
+    @media print {
+      .doc { max-width: none; padding: 0; margin: 0; }
+      .print-bar { display: none !important; }
+      .cover { min-height: auto; padding: 16mm 12mm; }
+    }
+
+    @media (max-width: 720px) {
+      .cover-meta { grid-template-columns: 1fr; }
+      h1 { font-size: 24px; max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="doc">
+    <div class="print-bar no-print">
+      <span class="print-note">Talos Group × EyeNet for Shipping · εισαγωγή &amp; κύριες λειτουργίες · EL</span>
+      <button class="print-button" type="button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <section class="cover">
+      <div>
+        <div class="cover-top">
+          <div class="cover-logo">Talos × EyeNet</div>
+          <span class="cover-chip">Κύριες λειτουργίες · EL</span>
+        </div>
+        <p class="cover-eyebrow">Εισαγωγή &amp; κύριες λειτουργίες</p>
+        <h1>Το πλήρωμα, σε μία εικόνα.</h1>
+        <p class="cover-lead">
+          EyeNet for Shipping — παρουσία, ασφάλεια και διαχείριση πληρώματος για ναυτιλιακούς στόλους: βάρδια, σκάλα, πτώση ναυτικού και χρώμα προστατευτικού ρουχισμού — με λειτουργία στο πλοίο και εικόνα στόλου στην εταιρεία.
+        </p>
+        <div class="cover-meta">
+          <div><span>Από</span><strong>Απομονωμένο πλοίο</strong></div>
+          <div><span>Σε</span><strong>Ενιαία εικόνα στόλου</strong></div>
+          <div><span>Με</span><strong>Τοπική λειτουργία στη θάλασσα</strong></div>
+        </div>
+      </div>
+      <div class="cover-foot">
+        <span>Talos Group × EyeNet</span>
+        <span>Παρουσία · Ασφάλεια · Στόλος</span>
+      </div>
+    </section>
+
+    <section class="section intro">
+      <div class="section-head">
+        <span class="section-num">01</span>
+        <h2>Εισαγωγή</h2>
+      </div>
+      <p>Σήμερα, ένα πλοίο μακριά από την ακτή είναι ένας κόσμος μόνος του. Το πλήρωμα πρέπει να είναι γνωστό ανά πάσα στιγμή, η βάρδια δεν μένει κενή, οι περιορισμένες ζώνες πρέπει να τηρούνται όλο το εικοσιτετράωρο, ένας πεσμένος ναυτικός πρέπει να εντοπίζεται αμέσως — και όλα αυτά με την εταιρεία αλλού. Το EyeNet for Shipping τα ενώνει σε μία ενιαία εμπειρία πάνω στο σκάφος και, όταν υπάρχει σύνδεση, σε μία εικόνα για όλον τον στόλο.</p>
+      <p>Μέσα στην πλατφόρμα συναντιούνται η παρουσία πληρώματος (Presence), ο έλεγχος σκάλας (Gate), η επιτήρηση βάρδιας (Sentinel), η περιπολία με ανίχνευση πτώσης και χρώματος προστατευτικού ρουχισμού (Vradar), η ενημέρωση στις οθόνες (Signage) και η συγκεντρωτική εικόνα του στόλου (Matrix). Τοπικά στη θάλασσα και κεντρικά στην εταιρεία — η συνέχεια ανάμεσα στο συμβάν πάνω στο πλοίο και την απόφαση στην εταιρεία μένει ακέραιη.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <span class="section-num">02</span>
+        <h2>Κύριες λειτουργίες</h2>
+      </div>
+      <ul class="points">
+        <li><strong>Λειτουργία στη θάλασσα, χωρίς διαδίκτυο</strong> — παρουσία, αναγνώριση, έλεγχος πρόσβασης και ειδοποιήσεις τρέχουν τοπικά στο πλοίο. Τα δεδομένα μένουν σε ουρά και συγχρονίζονται μόνα τους μόλις το σκάφος ανοίξει σύνδεση.</li>
+        <li><strong>Ένα σημείο, ένα mini PC</strong> — 2–5 κάμερες ανά σημείο: γέφυρα, ένας χώρος μηχανοστασίου, σκάλα, κατάστρωμα, σταθμός συγκέντρωσης. Η πλήρης κάλυψη μεσαίου ή μεγάλου πλοίου κλιμακώνεται όπως ένα μικρό ή μεσαίο βιομηχανικό site — πολλά σημεία, ο ίδιος τοπικός κορμός.</li>
+        <li><strong>Presence — ποιος είναι στη βάρδια</strong> — πρόγραμμα βάρδιας και διπλός έλεγχος (σήμα QR ή NFC και αναγνώριση προσώπου) σε γέφυρα και μηχανοστάσιο. Καταμέτρηση σε κάθε σταθμό συγκέντρωσης, και αυτόματες αναφορές παρουσίας προς καπετάνιο, αξιωματικούς και HR στόλου.</li>
+        <li><strong>Πιστοποιήσεις πριν αρχίσει η βάρδια</strong> — το manifest και το πρόγραμμα έρχονται από το ERP πληρώματος. Αν ο ναυτικός που έχει ανατεθεί δεν κρατά έγκυρο STCW, ο πρώτος μηχανικός ειδοποιείται πριν ξεκινήσει η βάρδια.</li>
+        <li><strong>Gate — ποιος είναι πάνω στο πλοίο</strong> — κάθε επιβίβαση και αποβίβαση στη σκάλα, με ταυτότητα και ώρα. Επισκέπτες και εργολάβοι ξεχωρίζουν από το πλήρωμα· αν κάποιος δεν έχει αποβιβαστεί πριν από τον απόπλου, ο καπετάνιος το βλέπει. Η λίστα είναι έτοιμη για έλεγχο κράτους λιμένα.</li>
+        <li><strong>Sentinel — η βάρδια δεν μένει κενή</strong> — αν ο αξιωματικός βάρδιας λείπει από τη γέφυρα πέρα από το όριο, η ειδοποίηση ανεβαίνει: πρώτα σε εκείνον, έπειτα στον καπετάνιο και στον ύπαρχο. Το ίδιο για γύρους σε μη επανδρωμένο μηχανοστάσιο και για πόστο ασφαλείας κατά ISPS.</li>
+        <li><strong>Κόπωση πριν γίνει κίνδυνος</strong> — οι πραγματικές ώρες βάρδιας συγκρίνονται με τα όρια της MLC 2006. Ο καπετάνιος και ο DPA βλέπουν την απόκλιση πριν η κούραση γίνει συμβάν.</li>
+        <li><strong>Vradar — πεσμένος ναυτικός, αμέσως</strong> — ανίχνευση σώματος σε κατάστρωμα, διάδρομο, μηχανοστάσιο ή κύτος. Ειδοποίηση με ζώνη και ώρα προς αξιωματικό ασφαλείας, αξιωματικό υπηρεσίας και καπετάνιο — η απόκριση ξεκινά σε δευτερόλεπτα.</li>
+        <li><strong>Χρώμα προστατευτικού ρουχισμού ανά ζώνη</strong> — σε κάθε χώρο ορίζονται τα χρώματα που ανήκουν στον κανόνα ασφαλείας του. Αν ό,τι φοράει ο ναυτικός δεν πλησιάζει αυτά τα χρώματα, το Vradar ειδοποιεί τον υπεύθυνο χώρου πριν συνεχιστεί η εργασία.</li>
+        <li><strong>Περιπολία, περιορισμένη ζώνη, λαθρεπιβάτης</strong> — κάμερα/ες διασταυρώνουν κάθε πρόσωπο με το manifest και τη watchlist. Άγνωστο πρόσωπο στη σκάλα, στη γέφυρα ή στο μηχανοστάσιο φτάνει με εικόνα και θέση στον καπετάνιο· η αναζήτηση πριν από τον απόπλου επιταχύνεται.</li>
+        <li><strong>Signage — η οθόνη αλλάζει με το συμβάν</strong> — πρόγραμμα βάρδιας, επόμενο λιμάνι και δελτία ασφαλείας στη mess. Σε καπνό, φωτιά ή συγκέντρωση, όλες οι οθόνες περνούν σε οδηγίες εκκένωσης, στη γλώσσα του πληρώματος όπου έχει οριστεί.</li>
+        <li><strong>Ασφάλεια χώρου, μαζί με την παρουσία</strong> — μόνος εργαζόμενος, είσοδος σε κλειστό χώρο με καταμέτρηση εισόδου και εξόδου, οπτική ανίχνευση καπνού και φλόγας σε μηχανοστάσιο και κύτος. Κάθε συμβάν τεκμηριώνεται με ώρα, ζώνη και βίντεο, και ανεβαίνει στην εταιρεία όταν υπάρχει σύνδεση.</li>
+        <li><strong>Matrix — ο στόλος σε μία εικόνα</strong> — παρουσίες, συμβάντα ασφαλείας και συμμόρφωση από κάθε πλοίο, σε έναν πίνακα στην εταιρεία. Ρόλοι, watchlist και περιεχόμενο οθονών διανέμονται σε όλα τα σκάφη μαζί· οι αναφορές STCW, ISPS και MLC βγαίνουν με ένα ερώτημα.</li>
+        <li><strong>Ιδιωτικό δίκτυο στόλου</strong> — κάθε εταιρεία μένει απομονωμένη στο VPN mesh του EyeNet. Η κίνηση ταξιδεύει σε κρυπτογραφημένο τούνελ· νέα πλοία εγγράφονται και εμφανίζονται στο Matrix χωρίς χειροκίνητη δικτύωση.</li>
+        <li><strong>Τρία επίπεδα ειδοποίησης, ένα ERP</strong> — πάνω στο πλοίο, χωρίς καθυστέρηση· προς την εταιρεία μέσω VPN ή δορυφόρου για τα κρίσιμα· και αμφίδρομα με το ERP πληρώματος — manifest, βάρδιες και πιστοποιήσεις προς το πλοίο, πραγματικές ώρες και επιβιβάσεις προς την εταιρεία.</li>
+        <li><strong>Κοινή γλώσσα για τον στόλο</strong> — Presence, Gate, Sentinel, Vradar, Signage, Matrix — το ίδιο λεξιλόγιο για καπετάνιο, αξιωματικούς, ασφάλεια εταιρείας και εταιρεία.</li>
+      </ul>
+    </section>
+
+    <p class="footer-note">Talos Group × EyeNet for Shipping · εισαγωγή &amp; κύριες λειτουργίες · EL</p>
+  </div>
+</body>
+</html>

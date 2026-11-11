@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hardware Quote Request — Door Entrance Kit</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+    * { box-sizing: border-box; }
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    body { margin: 0; }
+    .page { max-width: var(--max-width); margin: 0 auto; padding: 32px 24px 72px; }
+    .print-bar { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+    .print-button {
+      border: 0; border-radius: 999px; padding: 12px 18px;
+      background: var(--brand-primary); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                  linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14); border-radius: 32px;
+      box-shadow: var(--shadow); overflow: hidden; position: relative; color: var(--text);
+    }
+    .hero::after {
+      content: ""; position: absolute; inset: auto -80px -80px auto;
+      width: 220px; height: 220px; border-radius: 50%; background: rgba(25, 118, 210, 0.26);
+    }
+    .hero-inner { display: grid; grid-template-columns: 1.35fr 0.9fr; gap: 28px; padding: 34px; position: relative; z-index: 1; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14); color: var(--brand-secondary);
+      font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin: 18px 0 16px; font-size: 42px; line-height: 1.05; letter-spacing: -0.03em; }
+    .lead { font-size: 18px; color: #334155; max-width: 62ch; }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+    .brand-stack { display: flex; align-items: center; gap: 14px; }
+    .brand-stack img { height: 36px; width: auto; }
+    .brand-chip {
+      padding: 8px 12px; border: 1px solid rgba(34, 211, 238, 0.24); border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9); color: #eef9ff; font-size: 13px; font-weight: 600;
+    }
+    .meta-card, .section {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04); border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px; align-self: start; color: var(--text);
+    }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+    .meta-item { padding-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+    .meta-label { display: block; margin-bottom: 6px; color: #9fb0c3; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .meta-value { font-size: 15px; font-weight: 600; color: #ffffff; }
+    .section { margin-top: 24px; padding: 28px; border-color: var(--panel-line); background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%); }
+    .section-title { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .section-number {
+      width: 34px; height: 34px; border-radius: 50%; display: inline-grid; place-items: center;
+      background: rgba(25, 118, 210, 0.1); color: var(--brand-primary); font-weight: 700;
+    }
+    h2 { margin-bottom: 0; font-size: 24px; letter-spacing: -0.02em; }
+    h3 { margin-bottom: 10px; font-size: 18px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid rgba(15, 23, 42, 0.08); }
+    th { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+    td { font-size: 14px; }
+    .footer-note { margin-top: 18px; color: #64748b; font-size: 13px; }
+    .blank-col { color: #94a3b8; font-style: italic; }
+    @page { size: A4; margin: 12mm; }
+    @media (max-width: 920px) {
+      .hero-inner { grid-template-columns: 1fr; }
+      h1 { font-size: 34px; }
+      .page { padding: 18px 16px 54px; }
+    }
+    @media print {
+      html { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page { max-width: none; padding: 0; }
+      .print-bar { display: none; }
+      .hero, .meta-card, .section { box-shadow: none; break-inside: avoid; }
+      .hero {
+        margin-bottom: 12px;
+        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                    linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+        color: #ffffff; border-color: rgba(34, 211, 238, 0.14);
+      }
+      .meta-card { background: rgba(255, 255, 255, 0.04); color: #ffffff; border-color: rgba(34, 211, 238, 0.12); }
+      .brand-chip { color: #f5fbff; }
+      .brand-link, .meta-label { color: inherit; }
+      .section { margin-top: 12px; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="assets/eyenet-dark.svg" alt="EyeNet logo" />
+              <span class="brand-chip">Hardware RFQ</span>
+            </div>
+          </div>
+          <span class="eyebrow">Request for Quotation</span>
+          <h1>Door Entrance Hardware</h1>
+        </div>
+        <aside class="meta-card">
+          <h3>RFQ Snapshot</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">RFQ Ref.</span>
+              <span class="meta-value">EYENET-HW-RFQ-DELOITTE-2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Related Offer</span>
+              <span class="meta-value">EYENET-DELOITTE-DOOR-2026-R2</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Issued On</span>
+              <span class="meta-value">1 October 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Scope</span>
+              <span class="meta-value">One door kit</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Introduction</h2>
+      </div>
+      <p class="lead">Please quote price, availability, and lead time for the door-entrance hardware below. This request is for one site, under offer EYENET-DELOITTE-DOOR-2026-R2.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>Equipment to Quote</h2>
+      </div>
+      <table>
+        <tr><th>Item</th><th>Qty</th><th>Your price (EUR)</th><th>Availability</th></tr>
+        <tr>
+          <td>Door mini PC, Intel N100 class, 8 GB RAM, SSD</td>
+          <td>1</td>
+          <td class="blank-col">—</td>
+          <td class="blank-col">—</td>
+        </tr>
+        <tr>
+          <td>10&quot; HDMI touch display</td>
+          <td>1</td>
+          <td class="blank-col">—</td>
+          <td class="blank-col">—</td>
+        </tr>
+        <tr>
+          <td>3D-printed enclosure for the mini PC, fitted inside the wall</td>
+          <td>1</td>
+          <td class="blank-col">—</td>
+          <td class="blank-col">—</td>
+        </tr>
+        <tr>
+          <td>3D-printed enclosure for the touch display, fitted outside, near the camera</td>
+          <td>1</td>
+          <td class="blank-col">—</td>
+          <td class="blank-col">—</td>
+        </tr>
+        <tr>
+          <td>TP-Link VIGI C340, outdoor, PoE (or newer version)</td>
+          <td>1</td>
+          <td class="blank-col">—</td>
+          <td class="blank-col">—</td>
+        </tr>
+        <tr>
+          <td>TP-Link VIGI C440, indoor, PoE (or newer version)</td>
+          <td>2</td>
+          <td class="blank-col">—</td>
+          <td class="blank-col">—</td>
+        </tr>
+        <tr>
+          <td>TP-Link TL-SG1005P, 4 PoE ports</td>
+          <td>1</td>
+          <td class="blank-col">—</td>
+          <td class="blank-col">—</td>
+        </tr>
+      </table>
+      <p class="footer-note">Please quote each line, and state whether VAT is included.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Submission</h2>
+      </div>
+      <p>Please send the completed quotation by email to:</p>
+      <p><strong>nick@eyenet-vision.com</strong></p>
+      <p>Put <strong>EYENET-HW-RFQ-DELOITTE-2026</strong> in the subject line. A reply within a few days is needed so the partner quote can go back to the customer.</p>
+      <p class="footer-note">This request is for procurement of the listed hardware. Issuing it is not a commitment to purchase. Software licensing is quoted separately and is not part of this request.</p>
+    </section>
+  </div>
+</body>
+</html>

@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eyenet Services</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+    * { box-sizing: border-box; }
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    body { margin: 0; }
+    .page { max-width: var(--max-width); margin: 0 auto; padding: 32px 24px 72px; }
+    .print-bar { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+    .print-button {
+      border: 0; border-radius: 999px; padding: 12px 18px;
+      background: var(--brand-primary); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                  linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14); border-radius: 32px;
+      box-shadow: var(--shadow); overflow: hidden; position: relative; color: var(--text);
+    }
+    .hero::after {
+      content: ""; position: absolute; inset: auto -80px -80px auto;
+      width: 220px; height: 220px; border-radius: 50%; background: rgba(25, 118, 210, 0.26);
+    }
+    .hero-inner { display: grid; grid-template-columns: 1.35fr 0.9fr; gap: 28px; padding: 34px; position: relative; z-index: 1; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14); color: var(--brand-secondary);
+      font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1 { margin: 18px 0 16px; font-size: 42px; line-height: 1.05; letter-spacing: -0.03em; }
+    .lead { font-size: 18px; color: #334155; max-width: 62ch; }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+    .brand-stack { display: flex; align-items: center; gap: 14px; }
+    .brand-stack img { height: 36px; width: auto; }
+    .brand-chip {
+      padding: 8px 12px; border: 1px solid rgba(34, 211, 238, 0.24); border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9); color: #eef9ff; font-size: 13px; font-weight: 600;
+    }
+    .meta-card, .section {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04); border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px; align-self: start; color: var(--text);
+    }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+    .meta-item { padding-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+    .meta-label { display: block; margin-bottom: 6px; color: #9fb0c3; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .meta-value { font-size: 15px; font-weight: 600; color: #ffffff; }
+    .section { margin-top: 24px; padding: 28px; border-color: var(--panel-line); background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%); }
+    .section-title { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .section-number {
+      width: 34px; height: 34px; border-radius: 50%; display: inline-grid; place-items: center;
+      background: rgba(25, 118, 210, 0.1); color: var(--brand-primary); font-weight: 700;
+    }
+    h2 { margin-bottom: 0; font-size: 24px; letter-spacing: -0.02em; }
+    h3 { margin-bottom: 10px; font-size: 18px; }
+    ul, ol { margin: 0; padding-left: 20px; }
+    li + li { margin-top: 8px; }
+    .callout {
+      padding: 18px 20px; border-left: 4px solid var(--brand-secondary); border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent); color: #f5fbff; font-weight: 600;
+    }
+    .footer-note { margin-top: 18px; color: #64748b; font-size: 13px; }
+    .grid-two { display: grid; gap: 22px; margin-top: 24px; grid-template-columns: 1.15fr 0.85fr; }
+    .summary-card {
+      padding: 22px; border-color: var(--panel-line); background: #ffffff;
+      border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .summary-card strong { color: #0f172a; }
+    .summary-card p:last-child { margin-bottom: 0; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .badge {
+      display: inline-flex; align-items: center; padding: 4px 12px;
+      border-radius: 999px; font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
+      background: rgba(25, 118, 210, 0.08); color: var(--brand-primary);
+      border: 1px solid rgba(25, 118, 210, 0.18);
+    }
+    .badge.mode { background: rgba(34, 211, 238, 0.08); color: #0891b2; border-color: rgba(34, 211, 238, 0.18); }
+    .badge.user { background: rgba(245, 158, 11, 0.08); color: #b45309; border-color: rgba(245, 158, 11, 0.18); }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid rgba(15, 23, 42, 0.08); }
+    th { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+    td { font-size: 14px; }
+    @page { size: A4; margin: 12mm; }
+    @media (max-width: 920px) {
+      .hero-inner, .grid-two { grid-template-columns: 1fr; }
+      h1 { font-size: 34px; }
+      .page { padding: 18px 16px 54px; }
+    }
+    @media print {
+      html { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page { max-width: none; padding: 0; }
+      .print-bar { display: none; }
+      .hero, .meta-card, .section, .summary-card { box-shadow: none; break-inside: avoid; }
+      .hero {
+        margin-bottom: 12px;
+        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                    linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+        color: #ffffff; border-color: rgba(34, 211, 238, 0.14);
+      }
+      .meta-card { background: rgba(255, 255, 255, 0.04); color: #ffffff; border-color: rgba(34, 211, 238, 0.12); }
+      .brand-chip, .callout { color: #f5fbff; }
+      .brand-link, .meta-label { color: inherit; }
+      .section { margin-top: 12px; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="../ppl-meta-frontend/assets/images/eyenet-dark.svg" alt="EyeNet logo" />
+              <span class="brand-chip">Application Suite</span>
+            </div>
+          </div>
+          <span class="eyebrow">Five Specialised Applications</span>
+          <h1>Eyenet Services</h1>
+        </div>
+        <aside class="meta-card">
+          <h3>Document Info</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Type</span>
+              <span class="meta-value">Product Overview</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Date</span>
+              <span class="meta-value">3 July 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Products</span>
+              <span class="meta-value">5 Applications + Matrix</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Deployment</span>
+              <span class="meta-value">On-Premises / VPN</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <section class="section">
+      <div class="section-title">
+        <h2>About Eyenet</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 12px; color: #f5fbff;">EyeNet is an on-premises, edge-computing computer vision platform for human activity monitoring and intelligent automation. It transforms standard cameras into powerful machine vision nodes — tracking and regulating human activity, empowering digital signage with real-time triggers, and taking complete control of entrance and exit points.</div>
+      <p class="lead">The platform operates efficiently on standard business hardware — 16 GB RAM and a modern multi-core CPU is all that's needed. There are no GPU servers, no cloud subscriptions, and no proprietary hardware lock-in. Connect any IP camera, WiFi cam, or mobile phone — the first detection runs in minutes. Scale from a single lens to a facility-wide mesh, from one office to entire maritime fleets, all connected securely over VPN with zero cloud dependency for video or data.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">0</span>
+        <h2>Overview</h2>
+      </div>
+      <p class="lead">Six specialised applications engineered to address distinct operational challenges with precision and intelligence — from attendance monitoring and digital signage to mobile security, entrance surveillance, personnel vigilance, and cross-site aggregated reporting.</p>
+    </section>
+
+    <!-- EYENET PRESENCE -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Eyenet Presence</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Enjoy next-level staff presence with vision powered two-factor auth.</div>
+      <div class="grid-two">
+        <div>
+          <p>A versatile solution for monitoring attendance and activity in specific areas such as schools, gyms, or industrial spaces. It provides detailed attendance reports and enhanced security by ensuring only authorized individuals are present.</p>
+          <h3>Key Features</h3>
+          <ul>
+            <li>Assigns schedules and members to rooms, then tracks attendance and generates comprehensive reports.</li>
+            <li>Sends automated alerts if unauthorized persons are detected in restricted areas.</li>
+            <li>Can collaborate with Eyenet Gate for end-to-end entrance-to-area monitoring.</li>
+            <li>Automatically sends attendance reports for minors to family members or sponsors in real time or on a recurring schedule.</li>
+            <li>Dynamic QR/NFC check-in combined with facial recognition for ironclad dual-factor verification.</li>
+            <li>Asynchronous two-factor vision applied on fast-moving gate scenarios.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Available Modes</strong></p>
+          <div class="badge-row">
+            <span class="badge mode">Area</span>
+            <span class="badge mode">Gate</span>
+          </div>
+          <p style="margin-top: 16px;"><strong>Target Users</strong></p>
+          <p>Schools, universities, gyms, industrial facilities, corporate offices, and hospitals.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- EYENET SIGNAGE -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>Eyenet Signage</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Empower your digital signage with real-time vision-adaptive playlists & demographic analytics.</div>
+      <div class="grid-two">
+        <div>
+          <p>Transforms traditional digital signage into a dynamic, data-driven marketing tool. By analyzing the age and gender of people approaching a display, it automatically serves targeted advertisements and media, maximizing engagement and campaign effectiveness.</p>
+          <h3>Key Features</h3>
+          <ul>
+            <li>Automatically displays content based on the demographics of the viewer — age, gender, group size — switching content in milliseconds.</li>
+            <li>Trigger playlists, promotions, or emergency messages automatically based on who is watching.</li>
+            <li>Owners and marketing collaborators can easily upload and assign targeted media via a user-friendly web interface.</li>
+            <li>Measure every impression: views, dwell time, engagement rate — prove your signage ROI with audience analytics.</li>
+            <li>Optional add-on for comprehensive people activity insights reports, including demographics, traffic counts, and activity heatmaps.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Available Modes</strong></p>
+          <div class="badge-row">
+            <span class="badge mode">Spot</span>
+            <span class="badge mode">Gate</span>
+            <span class="badge mode">Area</span>
+          </div>
+          <p style="margin-top: 16px;"><strong>Target Users</strong></p>
+          <p>Retail shops, shopping malls, airports, advertising agencies, event venues, and marketing firms.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- EYENET VRADAR -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Eyenet Vradar</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Cover restricted areas with machine vision protective nets and mobile eyewear alerts.</div>
+      <div class="grid-two">
+        <div>
+          <p>An advanced, mobile security solution that operates using wearable camera eyewear (goggles) to empower security agents. It provides on-the-go alerts and streams data to a central command unit for collaborative security operations.</p>
+          <h3>Key Features</h3>
+          <ul>
+            <li>Provides instant audio alerts to the agent if a person of interest is detected in their field of view.</li>
+            <li>All activity annotations are sent to a main computing unit, enabling the team operator to issue alerts and share information.</li>
+            <li>The team operator can add a recently detected person to the "person of interest" group directly from an agent's live feed.</li>
+            <li>Instant face recognition and POI alerts streamed directly to eyewear and mobile.</li>
+            <li>Whitelists, watchlists, and demographic profiling — all on-premises, fully private.</li>
+            <li>Parallel detection across entire venues, coordinated through a single dashboard.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Available Modes</strong></p>
+          <div class="badge-row">
+            <span class="badge mode">Goggles</span>
+            <span class="badge mode">Drone</span>
+          </div>
+          <p style="margin-top: 16px;"><strong>Target Users</strong></p>
+          <p>Security agencies, law enforcement, private security firms, and event security teams.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- EYENET GATE -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>Eyenet Gate</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Track exactly who is in and out of your premises in real time.</div>
+      <div class="grid-two">
+        <div>
+          <p>A robust security and operational tool designed to monitor people activity in gates, entrances, exits, and corridors. It provides real-time data and security alerts, enabling businesses to understand crowd dynamics and respond to security events proactively.</p>
+          <h3>Key Features</h3>
+          <ul>
+            <li>Provides real-time people counters, age and gender demographics, activity heatmaps, and advanced crowd behavior metrics.</li>
+            <li>Triggers instant notifications for abnormal crowd activity and performs facial recognition for persons of interest.</li>
+            <li>Offers live video streaming with people activity annotations and flexible video storage solutions (instant and deep archives).</li>
+            <li>Instant notifications on mobile devices and integration with your existing security systems.</li>
+            <li>Operational presence reports with full event history for compliance.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Available Modes</strong></p>
+          <div class="badge-row">
+            <span class="badge mode">Gate</span>
+          </div>
+          <p style="margin-top: 16px;"><strong>Target Users</strong></p>
+          <p>Security agencies, commercial buildings, industrial facilities, airports, public transport hubs, and event organizers.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- EYENET SENTINEL -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>Eyenet Sentinel</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Protect VIPs with instant machine vision eyeware.</div>
+      <div class="grid-two">
+        <div>
+          <p>This application ensures security personnel remain vigilant by automatically monitoring their activity at a watch station, providing business owners with peace of mind and guaranteeing consistent oversight during all shifts.</p>
+          <h3>Key Features</h3>
+          <ul>
+            <li>Delivers instant alerts and notifications based on customizable criteria for a guard's activity or inactivity.</li>
+            <li>Provides live video streams with complete people activity annotations.</li>
+            <li>Automated monitoring ensures no lapse in vigilance across any shift or watch station.</li>
+            <li>Customizable detection parameters allow tailoring to specific security post requirements.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Available Modes</strong></p>
+          <div class="badge-row">
+            <span class="badge mode">Area</span>
+          </div>
+          <p style="margin-top: 16px;"><strong>Target Users</strong></p>
+          <p>Security firms, corporate offices with dedicated security staff, industrial plants, and government buildings.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- EYENET MATRIX -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">6</span>
+        <h2>Eyenet Matrix</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Cross-installation aggregated reporting and centralised management over secure VPN.</div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff; border-left-color: #f59e0b;">A typical Eyenet installation runs on a single mini PC with 16–32 GB RAM and a standard GPU — no specialised GPU hardware required — comfortably handling a 2–5 camera load per site. Eyenet Matrix is the product that scales beyond a single location: it connects multiple installations over the VPN network, unifying reporting, user management, and operational visibility across all sites from one central dashboard.</div>
+      <div class="grid-two">
+        <div>
+          <p>Eyenet Matrix runs alongside the primary installation in a multi-site network, providing centralised management and aggregated reporting across all member installations. Designed to operate under VPN, it communicates with member installations via their internal VPN node URLs — all cross-installation queries go over the VPN tunnel, transparently within a private network without needing public internet exposure.</p>
+          <h3>Key Features</h3>
+          <ul>
+            <li><strong>Aggregated Reporting — 6 Report Types:</strong> Summary, Presence, Gate Activity, Camera Events, Demographics, and Logs — each querying all member installations in parallel and aggregating results.</li>
+            <li><strong>Matrix Groups & Installation Membership:</strong> Full CRUD for groups and member installations. Multi-install licensing enforcement via configurable flags.</li>
+            <li><strong>User Directory & SSO (JWT-based):</strong> Centralised user management across installations with role-based access control (RBAC). Capabilities include view reports, manage groups, manage users, view logs, and full admin.</li>
+            <li><strong>Degraded Mode:</strong> If some installations are unreachable, reports still return partial data with a `degraded: true` flag and an unreachable list — no single point of failure blocks visibility.</li>
+            <li><strong>Result Caching:</strong> 60-second TTL report cache for responsive dashboards across distributed sites.</li>
+            <li><strong>Time-Range Filtering:</strong> All reports support optional ISO-8601 timestamp query parameters for precise historical analysis.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Administrative Capabilities</strong></p>
+          <ul>
+            <li><strong>View Aggregated Reports</strong> — Access consolidated reports across all member installations</li>
+            <li><strong>Manage Matrix Groups</strong> — Create, update, and delete Matrix groups; manage installation memberships</li>
+            <li><strong>Manage Users & Permissions</strong> — Add and remove users from the Matrix directory; assign access rights</li>
+            <li><strong>View Aggregated Logs</strong> — Access consolidated log reports from all installations</li>
+            <li><strong>Full Administrator Access</strong> — Complete administrative control over all Matrix functions</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">7</span>
+        <h2>Use Cases</h2>
+      </div>
+      <p class="lead" style="margin-bottom: 20px;">Eyenet applications combine to solve real-world operational challenges across industries and environments.</p>
+      <div class="grid-two" style="grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
+        <div class="summary-card">
+          <img src="../../eyenet-web/assets/eyenet-presence-02.png" alt="Staff Presence" style="width:100%;height:130px;object-fit:cover;border-radius:8px;margin-bottom:10px;" />
+          <p><strong>Staff Presence & Attendance</strong></p>
+          <p style="font-size: 13px; color: #475569;">QR/NFC check-in combined with facial recognition for ironclad dual-factor staff verification. Automated attendance reports with full event history — from single offices to entire school campuses. Instant alerts for unauthorised access in restricted zones.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge">Presence</span>
+            <span class="badge">Gate</span>
+            <span class="badge mode">Area • Gate</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <img src="../../eyenet-web/assets/Digital%20signage.png" alt="Digital Signage" style="width:100%;height:130px;object-fit:cover;border-radius:8px;margin-bottom:10px;" />
+          <p><strong>Audience-Aware Digital Signage</strong></p>
+          <p style="font-size: 13px; color: #475569;">Displays that read the room — age, gender, group size — and switch content in milliseconds. Trigger playlists, promotions, or emergency messages automatically based on who is watching. Prove ROI with impression analytics, dwell time, and engagement rates.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge">Signage</span>
+            <span class="badge mode">Spot • Gate • Area</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <img src="../../eyenet-web/assets/shipping-presence.jpeg" alt="Gate Monitoring" style="width:100%;height:130px;object-fit:cover;border-radius:8px;margin-bottom:10px;" />
+          <p><strong>Entrance & Gate Monitoring</strong></p>
+          <p style="font-size: 13px; color: #475569;">Real-time people counters, age and gender demographics, and activity heatmaps at every entrance. Instant crowd alerts and facial recognition for persons of interest. Live video streaming with people activity annotations across all entry points.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge">Gate</span>
+            <span class="badge">Presence</span>
+            <span class="badge mode">Gate</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <img src="../../eyenet-web/assets/Restricted%20Area%20Protection.png" alt="Restricted Area" style="width:100%;height:130px;object-fit:cover;border-radius:8px;margin-bottom:10px;" />
+          <p><strong>Restricted Area Protection</strong></p>
+          <p style="font-size: 13px; color: #475569;">Define virtual perimeters around any zone — enforced 24/7 by AI. Mobile and email notifications the moment an unauthorised presence is detected. Lone-worker monitoring, PPE checks, and automatic incident documentation built in.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge">Vradar</span>
+            <span class="badge">Presence</span>
+            <span class="badge mode">Area • Goggles</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <img src="../../eyenet-web/assets/VIP%20Protection.png" alt="VIP Protection" style="width:100%;height:130px;object-fit:cover;border-radius:8px;margin-bottom:10px;" />
+          <p><strong>VIP & Personnel Protection</strong></p>
+          <p style="font-size: 13px; color: #475569;">Instant face recognition and POI alerts streamed directly to eyewear and mobile devices. Whitelists, watchlists, and demographic profiling — all on-premises, fully private. Parallel detection across entire venues coordinated through a single dashboard.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge">Sentinel</span>
+            <span class="badge">Vradar</span>
+            <span class="badge mode">Goggles • Drone • Area</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <img src="../../eyenet-web/assets/Remote%20Operations.jpg" alt="Remote Control" style="width:100%;height:130px;object-fit:cover;border-radius:8px;margin-bottom:10px;" />
+          <p><strong>Remote Operational Control</strong></p>
+          <p style="font-size: 13px; color: #475569;">Secure VPN-powered remote access to every camera, trigger, and dashboard worldwide. Live feeds, push alerts, and full configuration — manage an entire site from a single mobile phone. Zero cloud dependency for video or data — footage never leaves your premises.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge">Matrix</span>
+            <span class="badge">Gate</span>
+            <span class="badge mode">All Modes</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <img src="../../eyenet-web/assets/shipping%20operations.jpeg" alt="Maritime" style="width:100%;height:130px;object-fit:cover;border-radius:8px;margin-bottom:10px;" />
+          <p><strong>Maritime & Fleet Compliance</strong></p>
+          <p style="font-size: 13px; color: #475569;">Track staff presence across single offices or entire maritime fleets with offline-capable operation. Incident alerts delivered in real time to supervisors and stakeholders. Operational analytics for presence compliance across all locations — no internet required at sea.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge">Presence</span>
+            <span class="badge">Matrix</span>
+            <span class="badge mode">Area • Gate</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <img src="../../eyenet-web/assets/Platform%20Hero.png" alt="Multi-Site" style="width:100%;height:130px;object-fit:cover;border-radius:8px;margin-bottom:10px;" />
+          <p><strong>Multi-Site Aggregated Reporting</strong></p>
+          <p style="font-size: 13px; color: #475569;">Consolidated dashboards pulling Presence, Gate Activity, Camera Events, Demographics, and Logs from all installations in parallel. Centralised user management with role-based access across every site. Degraded mode ensures visibility even when individual sites are temporarily unreachable.</p>
+          <div class="badge-row" style="margin-top: 8px;">
+            <span class="badge">Matrix</span>
+            <span class="badge mode">All Modes</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">8</span>
+        <h2>Operating Modes Reference</h2>
+      </div>
+      <table>
+        <tr><th>Mode</th><th>Description</th><th>Used By</th></tr>
+        <tr><td>Spot</td><td>Precise monitoring of fixed, close-range areas such as POS counters and product displays</td><td>Signage</td></tr>
+        <tr><td>Gate</td><td>Comprehensive monitoring of entrances, exits, and corridors for traffic analysis</td><td>Presence, Signage, Gate</td></tr>
+        <tr><td>Area</td><td>Wide-area surveillance for large spaces including rooms and outdoor environments</td><td>Presence, Signage, Sentinel</td></tr>
+        <tr><td>Goggles</td><td>Mobile, first-person monitoring through wearable camera technology</td><td>Vradar</td></tr>
+        <tr><td>Drone</td><td>Aerial surveillance providing comprehensive, mobile perspective coverage</td><td>Vradar</td></tr>
+      </table>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">9</span>
+        <h2>Note</h2>
+      </div>
+      <p>All Eyenet applications run on-premises with no cloud dependency for video or data. The platform operates efficiently on standard business hardware (16 GB RAM minimum, modern multi-core CPU). Internet connectivity is required only for remote notifications and email — core operation functions fully offline.</p>
+      <p class="footer-note">Prepared by EyeNet for informational purposes. Product specifications and availability subject to change.</p>
+    </section>
+  </div>
+</body>
+</html>

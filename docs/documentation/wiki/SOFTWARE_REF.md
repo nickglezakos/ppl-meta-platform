@@ -53,6 +53,14 @@ Archived (not published online): [`../archived-wiki/distributors/release-channel
 
 ### Owner / platform-admin pages
 
+User guide sidebar is **grouped** (see `OWNERS_ADMINS_NAV_GROUPS` in `scripts/build_wiki_static.py`):
+
+| Main nav | Secondary items |
+|---|---|
+| **Start** → First install | Hardware · First install · Bootstrap |
+| **Features** | Users/roles · Cameras · Detections · Media · Vradar · Presence · Authenticator · Signage · Entrances · Analytics · Multi-site |
+| **Primary use cases** | The seven Value cases (section anchors on the Primary use cases page) |
+
 | Page | Topic | Menu order |
 |---|---|---|
 | [`owners-admins/hardware.md`](./owners-admins/hardware.md) | Host and WSL / Docker memory requirements | 10 |
@@ -66,11 +74,12 @@ Archived (not published online): [`../archived-wiki/distributors/release-channel
 | [`owners-admins/presence-attendance.md`](./owners-admins/presence-attendance.md) | Presence sessions, people, settings | 50 |
 | [`owners-admins/presence-authenticator.md`](./owners-admins/presence-authenticator.md) | EyeNet Authenticator (phone Presence, sandbox/pilot) | 51 |
 | [`owners-admins/digital-signage.md`](./owners-admins/digital-signage.md) | Playlists, devices, playback | 60 |
+| [`owners-admins/primary-use-cases.md`](./owners-admins/primary-use-cases.md) | Primary use cases: value intros, functionalities, compose how-tos for all seven MV cases | 65 |
 | [`owners-admins/entrances-and-activity.md`](./owners-admins/entrances-and-activity.md) | Compose cameras + analytics + Vradar + presence; two entrance use cases | 70 |
 | [`owners-admins/analytics-and-reports.md`](./owners-admins/analytics-and-reports.md) | MVR Analytics filters (incl. Face / Body / Both), Levels 1–4, Excel export | 80 |
 | [`owners-admins/multi-site-and-remote.md`](./owners-admins/multi-site-and-remote.md) | EyeNet VPN (licence), Network enroll/tokens, platform + mobile/signage, Matrix | 90 |
 
-Sidebar order is controlled by optional `nav_order` frontmatter on each page (lower first).
+Within a Features / Start drawer, order still follows `nav_order` only for orphan pages; listed children follow the group tuple order above.
 
 ## `software_ref` contract
 

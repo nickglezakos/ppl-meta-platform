@@ -65,7 +65,7 @@ Also see [Shared platform](./shared-platform.md) for cameras, vision, analytics,
 
 ## Primary use cases
 
-Aligned with the [Most Valuable Cases](https://value.eyenet-vision.com/why/) on the EyeNet Value site:
+Aligned with the [Most Valuable Cases](https://value.eyenet-vision.com/why/) on the EyeNet Value site. Operator how-to for each case (functionalities + EyeNet compose steps): [User guide — Primary use cases](../owners-admins/primary-use-cases.md).
 
 1. **Know who is present and who is not** — one flexible Presence tool from doorbell to office, warehouse, ship, and security post
 2. **Screens that sell themselves** — audience-aware signage with measurable views, dwell, and ROI

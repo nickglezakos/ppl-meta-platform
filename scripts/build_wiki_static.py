@@ -30,6 +30,71 @@ SITES = (
     ("distributors", "Distributors guide"),
 )
 
+# User guide sidebar: three main drawers with secondary items.
+# Pages listed under a group appear as children; group head links to href_rel.
+OWNERS_ADMINS_NAV_GROUPS: tuple[dict, ...] = (
+    {
+        "id": "start",
+        "label": "Start",
+        "href_rel": "index.html",
+        "pages": ("hardware.html", "index.html", "bootstrap.html"),
+    },
+    {
+        "id": "features",
+        "label": "Features",
+        "href_rel": "users-and-roles.html",
+        "pages": (
+            "users-and-roles.html",
+            "cameras-and-detection.html",
+            "detections-individuals-persons.html",
+            "media-management.html",
+            "alerts-and-automation.html",
+            "presence-attendance.html",
+            "presence-authenticator.html",
+            "digital-signage.html",
+            "entrances-and-activity.html",
+            "analytics-and-reports.html",
+            "multi-site-and-remote.html",
+        ),
+    },
+    {
+        "id": "primary-use-cases",
+        "label": "Primary use cases",
+        "href_rel": "primary-use-cases.html",
+        "pages": (),
+        "anchors": (
+            (
+                "Know who is present and who is not",
+                "primary-use-cases.html#1-know-who-is-present-and-who-is-not",
+            ),
+            (
+                "Screens that sell themselves",
+                "primary-use-cases.html#2-screens-that-sell-themselves",
+            ),
+            (
+                "See how shoppers move",
+                "primary-use-cases.html#3-see-how-shoppers-move",
+            ),
+            (
+                "Peace of mind at home — and away",
+                "primary-use-cases.html#4-peace-of-mind-at-home-and-away",
+            ),
+            (
+                "Hospital-grade care at home",
+                "primary-use-cases.html#5-hospital-grade-care-at-home",
+            ),
+            (
+                "Night shifts that never blink",
+                "primary-use-cases.html#6-night-shifts-that-never-blink",
+            ),
+            (
+                "Who’s onboard. Who’s on site. Who fell.",
+                "primary-use-cases.html#7-whos-onboard-whos-on-site-who-fell",
+            ),
+        ),
+    },
+)
+
 FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?", re.DOTALL)
 MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 TAG_RE = re.compile(r"<[^>]+>")
@@ -130,7 +195,99 @@ def file_version(path: Path) -> str:
     return digest[:10]
 
 
-def sidebar_pages_html(pages: list[PageInfo], current_url: str) -> str:
+def _page_url(audience: str, rel_html: str) -> str:
+    return f"/{audience}/" if rel_html == "index.html" else f"/{audience}/{rel_html}"
+
+
+def _nav_href(audience: str, rel_or_anchor: str) -> str:
+    """Resolve a group/child href that may include a #fragment."""
+    if "#" in rel_or_anchor:
+        rel, frag = rel_or_anchor.split("#", 1)
+        return f"{_page_url(audience, rel)}#{frag}"
+    return _page_url(audience, rel_or_anchor)
+
+
+def owners_admins_sidebar_html(pages: list[PageInfo], current_url: str) -> str:
+    """Grouped User guide nav: Start · Primary use cases · Features."""
+    by_rel = {p.rel_html: p for p in pages}
+    parts: list[str] = []
+
+    for group in OWNERS_ADMINS_NAV_GROUPS:
+        group_id = f"nav-group-{group['id']}"
+        href = _nav_href("owners-admins", group["href_rel"])
+        child_rels = list(group.get("pages") or ())
+        anchors = list(group.get("anchors") or ())
+
+        page_children = [by_rel[rel] for rel in child_rels if rel in by_rel]
+        has_children = bool(page_children or anchors)
+
+        active = current_url == href or any(p.url == current_url for p in page_children)
+        open_cls = " is-open" if active or not has_children else ""
+        parts.append(
+            f'<div class="nav-group{open_cls}" data-nav-group="{html.escape(group["id"])}">'
+        )
+        parts.append('<div class="nav-group-head">')
+        head_page = by_rel.get(group["href_rel"])
+        head_current = (
+            ' aria-current="page"'
+            if (head_page and head_page.url == current_url) or current_url == href
+            else ""
+        )
+        parts.append(
+            f'<a class="nav-group-link" href="{html.escape(href)}" '
+            f'data-title="{html.escape(group["label"])}"{head_current}>'
+            f'{html.escape(group["label"])}</a>'
+        )
+        if has_children:
+            expanded = "true" if open_cls else "false"
+            parts.append(
+                f'<button type="button" class="nav-group-toggle" aria-expanded="{expanded}" '
+                f'aria-controls="{html.escape(group_id)}" '
+                f'aria-label="Toggle {html.escape(group["label"])} pages">▾</button>'
+            )
+        parts.append("</div>")
+        if has_children:
+            parts.append(f'<div class="nav-group-body" id="{html.escape(group_id)}">')
+            for page in page_children:
+                current = ' aria-current="page"' if page.url == current_url else ""
+                parts.append(
+                    f'<a class="nav-child" href="{html.escape(page.url)}" '
+                    f'data-title="{html.escape(page.title)}"{current}>'
+                    f"{html.escape(page.title)}</a>"
+                )
+            for title, rel_anchor in anchors:
+                child_href = _nav_href("owners-admins", rel_anchor)
+                parts.append(
+                    f'<a class="nav-child" href="{html.escape(child_href)}" '
+                    f'data-title="{html.escape(title)}">'
+                    f"{html.escape(title)}</a>"
+                )
+            parts.append("</div>")
+        parts.append("</div>")
+
+    # Any page not listed in a group still appears (flat) so new docs are not lost
+    grouped_rels = {group["href_rel"] for group in OWNERS_ADMINS_NAV_GROUPS}
+    for group in OWNERS_ADMINS_NAV_GROUPS:
+        grouped_rels.update(group.get("pages") or ())
+    orphans = sorted(
+        (p for p in pages if p.rel_html not in grouped_rels),
+        key=lambda p: (p.nav_order, p.title.lower()),
+    )
+    for page in orphans:
+        current = ' aria-current="page"' if page.url == current_url else ""
+        parts.append(
+            f'<a href="{html.escape(page.url)}" data-title="{html.escape(page.title)}"{current}>'
+            f"{html.escape(page.title)}</a>"
+        )
+    return "\n".join(parts)
+
+
+def sidebar_pages_html(
+    pages: list[PageInfo], current_url: str, audience: str | None = None
+) -> str:
+    if audience == "owners-admins":
+        return owners_admins_sidebar_html(pages, current_url)
+
     items: list[str] = []
     # Explicit nav_order (from frontmatter), then title
     ordered = sorted(
@@ -339,7 +496,7 @@ def build_site_tree(
                 js_href=asset_href(asset_rel, "wiki.js", asset_version),
                 search_index_href=asset_href(asset_rel, "search-index.json", asset_version),
                 logo_href=asset_href(asset_rel, "eyenet-dark.svg", asset_version),
-                sidebar_html=sidebar_pages_html(pages, page.url),
+                sidebar_html=sidebar_pages_html(pages, page.url, audience),
                 sidebar_heading=section_label,
             ),
             encoding="utf-8",

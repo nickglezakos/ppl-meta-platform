@@ -80,6 +80,7 @@ Work from the local EyeNet home screen after login. Suggested order:
 | Presence and attendance | [Presence and attendance](./presence-attendance.md) | **Presence** → `/presence` |
 | EyeNet Authenticator | [EyeNet Authenticator](./presence-authenticator.md) | Android phone Presence (sandbox / pilot) |
 | Digital signage | [Digital signage](./digital-signage.md) | **Signage Management** → `/signage` |
+| Primary use cases | [Primary use cases](./primary-use-cases.md) | Compose Presence · Signage · Analytics · Vradar · Matrix |
 | Entrance and activity monitoring | [Entrances and activity](./entrances-and-activity.md) | Cameras + Analytics + Automation |
 | Analytics and reports | [Analytics and reports](./analytics-and-reports.md) | **Analytics** → `/analytics` (Face / Body / Both modality) |
 | Remote access and multi-site | [Remote access and multi-site](./multi-site-and-remote.md) | **Network** → `/network` |

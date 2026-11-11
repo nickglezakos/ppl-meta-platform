@@ -1,0 +1,1619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EyeNet Vision - Greek Financial Scenario</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-cyan: #000000;
+            --primary-teal: #1a1a1a;
+            --light-cyan: #333333;
+            --dark-slate: #ffffff;
+            --darker-slate: #ffffff;
+            --medium-slate: #666666;
+            --light-slate: #999999;
+            --text-primary: #1a1a1a;
+            --text-secondary: #333333;
+            --card-bg: #ffffff;
+            --success: #2a2a2a;
+            --warning: #666666;
+            --danger: #404040;
+            --border-color: #cccccc;
+            --header-height: auto;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Georgia', 'Times New Roman', serif;
+            background: #ffffff;
+            color: var(--text-primary);
+            line-height: 1.5;
+            min-height: 100vh;
+            font-size: 11pt;
+        }
+
+        /* Header - print-friendly inline header */
+        header {
+            background: #ffffff;
+            color: var(--text-primary);
+            padding: 0;
+            border-bottom: 3px solid #000000;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            margin: 0;
+            width: 100%;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            margin-left: 0;
+            height: 100%;
+            width: 100%;
+            padding: 1.5rem 2rem;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .logo-svg {
+            height: 50px;
+            width: auto;
+        }
+
+        header h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--primary-cyan);
+            margin: 0;
+            padding: 0;
+            line-height: 1.2;
+        }
+
+        header p {
+            font-size: 0.9rem;
+            opacity: 1;
+            margin: 0;
+            padding: 0;
+            color: var(--text-secondary);
+            line-height: 1.2;
+        }
+
+        .header-content > div {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            justify-content: center;
+            height: 100%;
+        }
+
+        /* Main Content */
+        main {
+            margin: 0;
+            padding: 1.5rem 2rem;
+            min-height: auto;
+        }
+
+        .page {
+            display: block !important;
+            animation: none !important;
+            margin-bottom: 0;
+        }
+
+        .content-wrapper {
+            max-width: 100%;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 1.5rem 0;
+            border-radius: 0;
+            box-shadow: none;
+            border: none;
+        }
+
+        /* Typography */
+        h1 {
+            color: var(--text-primary);
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            border-bottom: 3px solid var(--primary-cyan);
+            padding-bottom: 0.5rem;
+        }
+
+        h2 {
+            color: var(--primary-cyan);
+            font-size: 2rem;
+            font-weight: 700;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #666666;
+            padding-bottom: 0.3rem;
+        }
+
+        h3 {
+            color: #333333;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        h4 {
+            color: #333333;
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        p {
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+            line-height: 1.7;
+        }
+
+        /* Lists */
+        ul, ol {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+            color: var(--text-secondary);
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background: var(--darker-slate);
+            border: 1px solid var(--border-color);
+        }
+
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border: 1px solid var(--border-color);
+        }
+
+        th {
+            background: #333333;
+            color: #ffffff;
+            font-weight: 600;
+            font-size: 0.95rem;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        td {
+            color: var(--text-secondary);
+        }
+
+        tr:hover {
+            background: #eeeeee;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Info Boxes */
+        .info-box {
+            background: #f5f5f5;
+            border-left: 4px solid #333333;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .warning-box {
+            background: #f5f5f5;
+            border-left: 4px solid #666666;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .success-box {
+            background: #f5f5f5;
+            border-left: 4px solid #000000;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .danger-box {
+            background: #f5f5f5;
+            border-left: 4px solid #404040;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        /* Strong emphasis */
+        strong {
+            color: #000000;
+            font-weight: 700;
+        }
+
+        /* Chart sizing for print */
+        canvas[id$="Chart"] {
+            max-height: 400px;
+        }
+
+        /* ===== PRINT MEDIA RULES ===== */
+        @media print {
+            @page {
+                size: A4;
+                margin: 12mm 14mm;
+            }
+
+            body {
+                font-size: 10pt;
+                line-height: 1.4;
+                background: #ffffff;
+            }
+
+            header {
+                border-bottom: 2px solid #000000;
+                padding: 0.5rem 1rem;
+            }
+
+            header h1 {
+                font-size: 1.4rem;
+            }
+
+            main {
+                margin: 0;
+                padding: 0.5rem;
+            }
+
+            .page {
+                display: block !important;
+                animation: none !important;
+            }
+
+            .content-wrapper {
+                box-shadow: none;
+                border: none;
+                padding: 0.5rem;
+                page-break-inside: auto;
+            }
+
+            .info-box, .success-box, .warning-box, .danger-box {
+                page-break-inside: avoid;
+                break-inside: avoid;
+            }
+
+            table {
+                page-break-inside: avoid;
+                break-inside: avoid;
+                font-size: 9pt;
+            }
+
+            h1, h2, h3, h4 {
+                page-break-after: avoid;
+                break-after: avoid;
+            }
+
+            canvas[id$="Chart"] {
+                max-height: 320px !important;
+                width: 100% !important;
+                page-break-inside: avoid;
+                break-inside: avoid;
+            }
+
+            p {
+                orphans: 3;
+                widows: 3;
+            }
+
+            a[href]:after {
+                content: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <div class="logo-container">
+                <svg class="logo-svg" viewBox="5 5 285 70" xmlns="http://www.w3.org/2000/svg">
+                    <!-- E -->
+                    <rect x="10" y="10" width="8" height="60" fill="#22d3ee" opacity="1"/>
+                    <rect x="18" y="10" width="25" height="8" fill="#22d3ee" opacity="0.9"/>
+                    <rect x="18" y="36" width="20" height="8" fill="#22d3ee" opacity="0.8"/>
+                    <rect x="18" y="62" width="25" height="8" fill="#22d3ee" opacity="1"/>
+                    
+                    <!-- Y -->
+                    <rect x="55" y="10" width="8" height="25" fill="#67e8f9" opacity="1"/>
+                    <rect x="63" y="35" width="8" height="35" fill="#67e8f9" opacity="0.9"/>
+                    <rect x="71" y="10" width="8" height="25" fill="#67e8f9" opacity="0.8"/>
+                    
+                    <!-- E -->
+                    <rect x="95" y="10" width="8" height="60" fill="#22d3ee" opacity="1"/>
+                    <rect x="103" y="10" width="25" height="8" fill="#22d3ee" opacity="0.9"/>
+                    <rect x="103" y="36" width="20" height="8" fill="#22d3ee" opacity="0.8"/>
+                    <rect x="103" y="62" width="25" height="8" fill="#22d3ee" opacity="1"/>
+                    
+                    <!-- N -->
+                    <rect x="145" y="10" width="8" height="60" fill="#22d3ee" opacity="1"/>
+                    <rect x="153" y="20" width="8" height="13" fill="#22d3ee" opacity="0.9"/>
+                    <rect x="161" y="33" width="8" height="14" fill="#22d3ee" opacity="0.8"/>
+                    <rect x="169" y="47" width="8" height="13" fill="#22d3ee" opacity="0.9"/>
+                    <rect x="177" y="10" width="8" height="60" fill="#22d3ee" opacity="1"/>
+                    
+                    <!-- E -->
+                    <rect x="200" y="10" width="8" height="60" fill="#67e8f9" opacity="1"/>
+                    <rect x="208" y="10" width="25" height="8" fill="#67e8f9" opacity="0.9"/>
+                    <rect x="208" y="36" width="20" height="8" fill="#67e8f9" opacity="0.8"/>
+                    <rect x="208" y="62" width="25" height="8" fill="#67e8f9" opacity="1"/>
+                    
+                    <!-- T -->
+                    <rect x="250" y="10" width="30" height="8" fill="#22d3ee" opacity="1"/>
+                    <rect x="261" y="18" width="8" height="52" fill="#22d3ee" opacity="0.9"/>
+                </svg>
+            </div>
+            <div>
+                <h1>Greek Financial Scenario</h1>
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <p>Intelligent Vision Technology Platform — Greece Market</p>
+                    <span style="font-size: 0.8rem; color: var(--text-secondary);">Version 2.24.36 | February 15, 2026</span>
+                    <a href="https://eyenet-vision.com/" target="_blank" style="font-size: 0.8rem; color: var(--primary-cyan); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 0.3rem; transition: all 0.3s ease; width: fit-content;">
+                        <svg style="width: 14px; height: 14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6m4-3h6v6m-11-2.586a1 1 0 00-1.414 1.414l9 9"/>
+                        </svg>
+                        EyeNet Vision
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Greek Financial & Revenue Model -->
+        <div id="revenue" class="page">
+            <div class="content-wrapper">
+                <h1>Financial & Revenue Model — Greece</h1>
+                <p style="font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 2rem;">Greek market scenario with projected growth from €46K to €1.1M ARR over 3 years. GDPR-first, education and tourism-focused strategy.</p>
+
+                <h2>Executive Summary</h2>
+                <div class="success-box">
+                    <p>Greece serves as the EU pilot market with a compliance-first (GDPR) approach. Dual revenue model combining enterprise B2B subscriptions with consumer-focused B2C offerings targets the Greek retail, security, education, and tourism sectors with a lean 5-to-11 person team.</p>
+                </div>
+
+                <div class="info-box">
+                    <h3>Greek Market Overview</h3>
+                    <ul>
+                        <li><strong>Population:</strong> 10.7M</li>
+                        <li><strong>B2B Addressable:</strong> 500+ potential accounts</li>
+                        <li><strong>B2C Addressable:</strong> 2M+ potential users</li>
+                        <li><strong>Strategy:</strong> Compliance-first (GDPR focus), education &amp; tourism sector focus</li>
+                        <li><strong>Key Advantage:</strong> Lower personnel costs; strong EU regulatory compliance positioning</li>
+                    </ul>
+                </div>
+
+                <h2>3-Year Revenue Projection</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th>2026</th>
+                            <th>2027</th>
+                            <th>2028</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>B2B Enterprise Revenue</strong></td>
+                            <td>$30K</td>
+                            <td>$175K</td>
+                            <td>$700K</td>
+                        </tr>
+                        <tr>
+                            <td><strong>B2C Light Revenue</strong></td>
+                            <td>$20K</td>
+                            <td>$125K</td>
+                            <td>$500K</td>
+                        </tr>
+                        <tr style="background: #eeeeee;">
+                            <td><strong>Total Revenue</strong></td>
+                            <td><strong>$50K</strong></td>
+                            <td><strong>$300K</strong></td>
+                            <td><strong>$1.2M</strong></td>
+                        </tr>
+                        <tr>
+                            <td><strong>YoY Growth</strong></td>
+                            <td>—</td>
+                            <td>500%</td>
+                            <td>300%</td>
+                        </tr>
+                        <tr>
+                            <td><strong>B2B Accounts</strong></td>
+                            <td>5</td>
+                            <td>30</td>
+                            <td>120</td>
+                        </tr>
+                        <tr>
+                            <td><strong>B2C Paid Users</strong></td>
+                            <td>40</td>
+                            <td>250</td>
+                            <td>1,000+</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Gross Margin</strong></td>
+                            <td>65%</td>
+                            <td>62%</td>
+                            <td>60%</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
+                    <canvas id="revenueGrowthChart" style="max-height: 400px;"></canvas>
+                </div>
+
+                <h2>B2B Enterprise Model</h2>
+                <h3>Pricing Tiers</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tier</th>
+                            <th>Price Range</th>
+                            <th>Scope</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Starter</strong></td>
+                            <td>$499-999/month</td>
+                            <td>1-5 locations, 5 cameras, single app</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Professional</strong></td>
+                            <td>$1,499-2,999/month</td>
+                            <td>5-20 locations, 25 cameras, multiple apps</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Enterprise</strong></td>
+                            <td>$5,000+/month</td>
+                            <td>Unlimited locations/cameras, custom integrations</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Unit Economics (Greek Market)</h3>
+                <ul>
+                    <li><strong>Average Monthly Recurring Revenue:</strong> $500/customer (Starter-heavy mix)</li>
+                    <li><strong>Annual Contract Value:</strong> $6,000</li>
+                    <li><strong>Customer Acquisition Cost:</strong> $800-1,500</li>
+                    <li><strong>Lifetime Value:</strong> $36,000 (6-year average)</li>
+                    <li><strong>Payback Period:</strong> 2-3 months</li>
+                    <li><strong>Customer Retention Rate:</strong> 85-90% annually</li>
+                </ul>
+
+                <h2>B2C Light Model</h2>
+                <h3>Product Portfolio</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Target Market (Greece)</th>
+                            <th>Pricing</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Intelligent Signage Lite</strong></td>
+                            <td>Tourism operators, small agencies</td>
+                            <td>$29.99 - $99.99/month</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Home Security Lite</strong></td>
+                            <td>Homeowners, Airbnb/short-term rental hosts</td>
+                            <td>$19.99 - $49.99/month</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Event Security Lite</strong></td>
+                            <td>Security contractors, venue managers</td>
+                            <td>$199 - $1,200/event</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Retail Compliance Lite</strong></td>
+                            <td>Small retail, bars, restaurants</td>
+                            <td>$49.99 - $99.99/month</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>B2C Unit Economics (Greek Market)</h3>
+                <ul>
+                    <li><strong>Average Monthly Recurring Revenue:</strong> $40/user</li>
+                    <li><strong>Lifetime Value:</strong> $480-960 (18 months average)</li>
+                    <li><strong>Customer Acquisition Cost:</strong> $15-25</li>
+                    <li><strong>Payback Period:</strong> 1-2 months</li>
+                    <li><strong>Customer Retention Rate:</strong> 60-70% annually</li>
+                    <li><strong>CAC Ratio (LTV:CAC):</strong> 25:1 (highly profitable)</li>
+                </ul>
+
+                <h2>Market Opportunity — Greece</h2>
+                <h3>B2B Enterprise TAM (Greek Market)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Market Segment</th>
+                            <th>Market Size</th>
+                            <th>Target Penetration</th>
+                            <th>Opportunity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Retail chains &amp; stores</td>
+                            <td>5,000+ locations</td>
+                            <td>50-100 accounts</td>
+                            <td>$300K-600K</td>
+                        </tr>
+                        <tr>
+                            <td>Security agencies</td>
+                            <td>2,000+ firms</td>
+                            <td>30-60 accounts</td>
+                            <td>$180K-360K</td>
+                        </tr>
+                        <tr>
+                            <td>Educational institutions</td>
+                            <td>15,000+ schools</td>
+                            <td>50-100 accounts</td>
+                            <td>$300K-600K</td>
+                        </tr>
+                        <tr>
+                            <td>Commercial real estate &amp; tourism</td>
+                            <td>5,000+ buildings</td>
+                            <td>50-100 accounts</td>
+                            <td>$300K-600K</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p><strong>Total B2B TAM: $50-100M annually (Greek market)</strong></p>
+
+                <h3>B2C Consumer TAM (Greek Market)</h3>
+                <p><strong>Total B2C TAM: $20-50M annually (conservative Greek market)</strong></p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Market Size</th>
+                            <th>Target Penetration</th>
+                            <th>Opportunity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Intelligent Signage Lite</td>
+                            <td>5,000 tourism operators &amp; consultants</td>
+                            <td>250-500 users</td>
+                            <td>$150K-$300K</td>
+                        </tr>
+                        <tr>
+                            <td>Home Security Lite</td>
+                            <td>4M homeowners + 100K hosts</td>
+                            <td>500-1,000 users</td>
+                            <td>$240K-$480K</td>
+                        </tr>
+                        <tr>
+                            <td>Event Security Lite</td>
+                            <td>3,000 contractors</td>
+                            <td>100-200 users</td>
+                            <td>$60K-$120K</td>
+                        </tr>
+                        <tr>
+                            <td>Retail Compliance Lite</td>
+                            <td>100,000 small retailers</td>
+                            <td>300-600 users</td>
+                            <td>$180K-$360K</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <ul>
+                    <li>Intelligent Signage Lite: ~5,000 tourism operators &amp; marketing consultants</li>
+                    <li>Home Security Lite: 4M homeowners + 100K+ short-term rental hosts</li>
+                    <li>Event Security Lite: ~3,000 independent contractors</li>
+                    <li>Retail Compliance Lite: ~100,000 small retailers</li>
+                </ul>
+
+                <h2>Revenue Mix by Product (2028 Projection)</h2>
+                
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem auto; max-width: 550px; border: 1px solid #dddddd;">
+                    <canvas id="productRevenueChart" style="max-height: 450px;"></canvas>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Revenue</th>
+                            <th>% of Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Intelligent Signage</td>
+                            <td>$240K</td>
+                            <td>20%</td>
+                        </tr>
+                        <tr>
+                            <td>Gate Activity</td>
+                            <td>$200K</td>
+                            <td>17%</td>
+                        </tr>
+                        <tr>
+                            <td>Security Officer Agent</td>
+                            <td>$280K</td>
+                            <td>23%</td>
+                        </tr>
+                        <tr>
+                            <td>Sentinel</td>
+                            <td>$160K</td>
+                            <td>13%</td>
+                        </tr>
+                        <tr>
+                            <td>Home Security + Retail</td>
+                            <td>$220K</td>
+                            <td>18%</td>
+                        </tr>
+                        <tr>
+                            <td>Room &amp; Gate Protection</td>
+                            <td>$100K</td>
+                            <td>8%</td>
+                        </tr>
+                        <tr style="background: #eeeeee;">
+                            <td><strong>Total Revenue</strong></td>
+                            <td><strong>$1.2M</strong></td>
+                            <td><strong>100%</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h2>Regional Market Analysis — Greece</h2>
+                <p>Revenue projections by Greek region (2026-2028):</p>
+
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
+                    <canvas id="regionalRevenueChart" style="max-height: 400px;"></canvas>
+                </div>
+
+                <h3>Athens / Attica (Primary Market)</h3>
+                <div class="info-box">
+                    <ul>
+                        <li><strong>Population:</strong> 3.8M (35% of country)</li>
+                        <li><strong>B2B Addressable:</strong> 250+ potential accounts</li>
+                        <li><strong>B2C Addressable:</strong> 800K+ potential users</li>
+                        <li><strong>2026 Revenue:</strong> $25K</li>
+                        <li><strong>2027 Revenue:</strong> $150K</li>
+                        <li><strong>2028 Revenue:</strong> $600K</li>
+                        <li><strong>Strategy:</strong> Enterprise sales, government &amp; education partnerships</li>
+                    </ul>
+                </div>
+
+                <h3>Thessaloniki / Central Macedonia</h3>
+                <div class="info-box">
+                    <ul>
+                        <li><strong>Population:</strong> 1.9M (18% of country)</li>
+                        <li><strong>B2B Addressable:</strong> 100+ potential accounts</li>
+                        <li><strong>B2C Addressable:</strong> 400K+ potential users</li>
+                        <li><strong>2026 Revenue:</strong> $10K</li>
+                        <li><strong>2027 Revenue:</strong> $60K</li>
+                        <li><strong>2028 Revenue:</strong> $240K</li>
+                        <li><strong>Strategy:</strong> Technology hub partnerships, university collaborations</li>
+                    </ul>
+                </div>
+
+                <h3>Crete &amp; Islands</h3>
+                <div class="info-box">
+                    <ul>
+                        <li><strong>Population:</strong> 1.6M</li>
+                        <li><strong>B2B Addressable:</strong> 80+ potential accounts</li>
+                        <li><strong>B2C Addressable:</strong> 300K+ potential users</li>
+                        <li><strong>2026 Revenue:</strong> $8K</li>
+                        <li><strong>2027 Revenue:</strong> $50K</li>
+                        <li><strong>2028 Revenue:</strong> $200K</li>
+                        <li><strong>Strategy:</strong> Tourism-focused signage &amp; security for hospitality sector</li>
+                    </ul>
+                </div>
+
+                <h3>Rest of Greece</h3>
+                <div class="info-box">
+                    <ul>
+                        <li><strong>Population:</strong> 3.4M</li>
+                        <li><strong>B2B Addressable:</strong> 70+ potential accounts</li>
+                        <li><strong>B2C Addressable:</strong> 500K+ potential users</li>
+                        <li><strong>2026 Revenue:</strong> $7K</li>
+                        <li><strong>2027 Revenue:</strong> $40K</li>
+                        <li><strong>2028 Revenue:</strong> $160K</li>
+                        <li><strong>Strategy:</strong> Channel partners &amp; system integrators, retail security</li>
+                    </ul>
+                </div>
+
+                <h2>Scenario Analysis &amp; Cash Requirements</h2>
+
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
+                    <canvas id="scenarioComparisonChart" style="max-height: 450px;"></canvas>
+                </div>
+
+                <h3>Pessimistic Scenario</h3>
+                <div class="warning-box">
+                    <p><strong>Assumptions:</strong> 0.3% B2B penetration, 0.15% B2C penetration, 12-15% churn</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th>Revenue</th>
+                                <th>Operating Expenses</th>
+                                <th>Cash Burn</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>2026</td>
+                                <td>$20K</td>
+                                <td>$220K</td>
+                                <td>($200K)</td>
+                            </tr>
+                            <tr>
+                                <td>2027</td>
+                                <td>$120K</td>
+                                <td>$350K</td>
+                                <td>($230K)</td>
+                            </tr>
+                            <tr>
+                                <td>2028</td>
+                                <td>$500K</td>
+                                <td>$480K</td>
+                                <td>+$20K</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p><strong>Total Cash Injection Needed:</strong> $600K</p>
+                    <p><strong>Profitability Timeline:</strong> Q4 2028 (EBITDA breakeven)</p>
+                </div>
+
+                <h3>Baseline Scenario (Current Plan)</h3>
+                <div class="info-box">
+                    <p><strong>Assumptions:</strong> 0.7% B2B penetration, 0.3% B2C penetration, 8-10% churn</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th>Revenue</th>
+                                <th>Operating Expenses</th>
+                                <th>EBITDA</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>2026</td>
+                                <td>$50K</td>
+                                <td>$295K</td>
+                                <td>($245K)</td>
+                            </tr>
+                            <tr>
+                                <td>2027</td>
+                                <td>$300K</td>
+                                <td>$479K</td>
+                                <td>($179K)</td>
+                            </tr>
+                            <tr>
+                                <td>2028</td>
+                                <td>$1,200K</td>
+                                <td>$669K</td>
+                                <td>+$531K</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p><strong>Total Cash Injection Needed:</strong> $500K</p>
+                    <p><strong>Profitability Timeline:</strong> Q1 2028 (EBITDA breakeven)</p>
+                </div>
+
+                <h3>Optimistic Scenario</h3>
+                <div class="success-box">
+                    <p><strong>Assumptions:</strong> 1.5% B2B penetration, 0.6% B2C penetration, 5-8% churn</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th>Revenue</th>
+                                <th>Operating Expenses</th>
+                                <th>EBITDA</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>2026</td>
+                                <td>$65K</td>
+                                <td>$295K</td>
+                                <td>($230K)</td>
+                            </tr>
+                            <tr>
+                                <td>2027</td>
+                                <td>$400K</td>
+                                <td>$520K</td>
+                                <td>($120K)</td>
+                            </tr>
+                            <tr>
+                                <td>2028</td>
+                                <td>$1,500K</td>
+                                <td>$750K</td>
+                                <td>+$750K</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p><strong>Total Cash Injection Needed:</strong> $400K</p>
+                    <p><strong>Profitability Timeline:</strong> Q3 2027 (EBITDA breakeven)</p>
+                </div>
+
+                <h2>Operating Cost Structure</h2>
+
+                <h3>Personnel &amp; Headcount (70% of OpEx)</h3>
+                <p>Greek-market salaries including employer social security contributions (~25%). All figures in USD. <strong>Operations &amp; Finance is outsourced in this scenario.</strong></p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Department</th>
+                            <th>2026 Headcount</th>
+                            <th>2027 Headcount</th>
+                            <th>2028 Headcount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Sales &amp; BD</td>
+                            <td>0.5 FTE ($20K)</td>
+                            <td>0.5 FTE ($21K)</td>
+                            <td>1 FTE ($44K)</td>
+                        </tr>
+                        <tr>
+                            <td>Marketing</td>
+                            <td>0.5 FTE ($16.5K)</td>
+                            <td>0.5 FTE ($17.5K)</td>
+                            <td>1 FTE ($37K)</td>
+                        </tr>
+                        <tr>
+                            <td>Product &amp; Engineering</td>
+                            <td>2 FTE ($96K)</td>
+                            <td>2.5 FTE ($125K)</td>
+                            <td>2.5 FTE ($156K)</td>
+                        </tr>
+                        <tr>
+                            <td>Customer Success</td>
+                            <td>0 FTE</td>
+                            <td>0.5 FTE ($17K)</td>
+                            <td>1 FTE ($35K)</td>
+                        </tr>
+                        <tr>
+                            <td>Operations &amp; Finance</td>
+                            <td>Outsource</td>
+                            <td>Outsource</td>
+                            <td>Outsource</td>
+                        </tr>
+                        <tr style="background: #eeeeee;">
+                            <td><strong>Total Personnel</strong></td>
+                            <td><strong>3 FTE ($132.5K)</strong></td>
+                            <td><strong>4 FTE ($180.5K)</strong></td>
+                            <td><strong>5.5 FTE ($272K)</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>Average Cost Per 1 FTE by Department — Greece (Year-by-Year)</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Department</th>
+                            <th>2026 Avg Cost / FTE</th>
+                            <th>2027 Avg Cost / FTE</th>
+                            <th>2028 Avg Cost / FTE</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Sales &amp; BD</td>
+                            <td>$40.0K</td>
+                            <td>$42.0K</td>
+                            <td>$44.0K</td>
+                        </tr>
+                        <tr>
+                            <td>Marketing</td>
+                            <td>$33.0K</td>
+                            <td>$35.0K</td>
+                            <td>$37.0K</td>
+                        </tr>
+                        <tr>
+                            <td>Product &amp; Engineering</td>
+                            <td>$48.0K</td>
+                            <td>$50.0K</td>
+                            <td>$62.4K</td>
+                        </tr>
+                        <tr>
+                            <td>Customer Success</td>
+                            <td>N/A</td>
+                            <td>$34.0K</td>
+                            <td>$35.0K</td>
+                        </tr>
+                        <tr>
+                            <td>Operations &amp; Finance</td>
+                            <td>Outsource</td>
+                            <td>Outsource</td>
+                            <td>Outsource</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Marketing &amp; CAC (8% of OpEx)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>2026</th>
+                            <th>2027</th>
+                            <th>2028</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Paid Advertising (SEM, Display, Social)</td>
+                            <td>$8K</td>
+                            <td>$13K</td>
+                            <td>$18K</td>
+                        </tr>
+                        <tr>
+                            <td>Content &amp; SEO</td>
+                            <td>$4K</td>
+                            <td>$6K</td>
+                            <td>$10K</td>
+                        </tr>
+                        <tr>
+                            <td>Events &amp; Conferences</td>
+                            <td>$6K</td>
+                            <td>$9K</td>
+                            <td>$12K</td>
+                        </tr>
+                        <tr>
+                            <td>Tools &amp; Software</td>
+                            <td>$3K</td>
+                            <td>$4K</td>
+                            <td>$6K</td>
+                        </tr>
+                        <tr>
+                            <td>PR &amp; Partnerships</td>
+                            <td>$4K</td>
+                            <td>$8K</td>
+                            <td>$12K</td>
+                        </tr>
+                        <tr style="background: #eeeeee;">
+                            <td><strong>Total Marketing</strong></td>
+                            <td><strong>$25K</strong></td>
+                            <td><strong>$40K</strong></td>
+                            <td><strong>$58K</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Technology &amp; Infrastructure (6% of OpEx)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>2026</th>
+                            <th>2027</th>
+                            <th>2028</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Cloud Infrastructure (AWS/GCP)</td>
+                            <td>$1K</td>
+                            <td>$1.6K</td>
+                            <td>$2.2K</td>
+                        </tr>
+                        <tr>
+                            <td>Security &amp; Compliance (GDPR)</td>
+                            <td>$2K</td>
+                            <td>$3K</td>
+                            <td>$4K</td>
+                        </tr>
+                        <tr>
+                            <td>Database &amp; Storage</td>
+                            <td>$3K</td>
+                            <td>$5K</td>
+                            <td>$6K</td>
+                        </tr>
+                        <tr>
+                            <td>Development Tools</td>
+                            <td>$3K</td>
+                            <td>$4K</td>
+                            <td>$5K</td>
+                        </tr>
+                        <tr>
+                            <td>API &amp; Third-Party Services</td>
+                            <td>$2K</td>
+                            <td>$3K</td>
+                            <td>$5K</td>
+                        </tr>
+                        <tr>
+                            <td>Hardware &amp; IT Support</td>
+                            <td>$2K</td>
+                            <td>$3K</td>
+                            <td>$5K</td>
+                        </tr>
+                        <tr style="background: #eeeeee;">
+                            <td><strong>Total Tech/Infrastructure</strong></td>
+                            <td><strong>$13K</strong></td>
+                            <td><strong>$19.6K</strong></td>
+                            <td><strong>$27.2K</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Operations &amp; Facilities (4% of OpEx)</h3>
+                <ul>
+                    <li><strong>2026:</strong> $13K (co-working space Athens, legal, insurance, local travel)</li>
+                    <li><strong>2027:</strong> $20K (small office lease, expanded travel for sales across Greece)</li>
+                    <li><strong>2028:</strong> $28K (dedicated office, inter-city travel, comprehensive insurance)</li>
+                </ul>
+
+                <h3>Research &amp; Development (7% of OpEx)</h3>
+                <ul>
+                    <li><strong>2026:</strong> $21K (GDPR compliance R&amp;D, Greek localization, AI/ML tuning)</li>
+                    <li><strong>2027:</strong> $35K (continued compliance development, customer research, competitive intelligence)</li>
+                    <li><strong>2028:</strong> $38K (mature R&amp;D focusing on EU-wide feature expansion)</li>
+                </ul>
+
+                <h3>Total Operating Expenses Summary</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cost Center</th>
+                            <th>2026</th>
+                            <th>2027</th>
+                            <th>2028</th>
+                            <th>% of Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Personnel &amp; Payroll</td>
+                            <td>$205K</td>
+                            <td>$335K</td>
+                            <td>$477K</td>
+                            <td>70%</td>
+                        </tr>
+                        <tr>
+                            <td>Marketing &amp; CAC</td>
+                            <td>$25K</td>
+                            <td>$40K</td>
+                            <td>$58K</td>
+                            <td>8%</td>
+                        </tr>
+                        <tr>
+                            <td>Technology &amp; Infrastructure</td>
+                            <td>$17K</td>
+                            <td>$26K</td>
+                            <td>$36K</td>
+                            <td>6%</td>
+                        </tr>
+                        <tr>
+                            <td>Operations &amp; Facilities</td>
+                            <td>$13K</td>
+                            <td>$20K</td>
+                            <td>$28K</td>
+                            <td>4%</td>
+                        </tr>
+                        <tr>
+                            <td>Research &amp; Development</td>
+                            <td>$21K</td>
+                            <td>$35K</td>
+                            <td>$38K</td>
+                            <td>7%</td>
+                        </tr>
+                        <tr>
+                            <td>Contingency (5%)</td>
+                            <td>$14K</td>
+                            <td>$23K</td>
+                            <td>$32K</td>
+                            <td>5%</td>
+                        </tr>
+                        <tr style="background: #eeeeee;">
+                            <td><strong>Total OpEx</strong></td>
+                            <td><strong>$295K</strong></td>
+                            <td><strong>$479K</strong></td>
+                            <td><strong>$669K</strong></td>
+                            <td><strong>100%</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
+                    <canvas id="opexBreakdownChart" style="max-height: 450px;"></canvas>
+                </div>
+
+                <h2>Capital Requirements &amp; Funding Strategy</h2>
+                <div class="success-box">
+                    <h3>Greek Market Seed Funding: $500K</h3>
+                    <p><strong>Allocation:</strong></p>
+                    <ul>
+                        <li><strong>Q1 2026:</strong> $300K (initial team, GDPR compliance, product localization)</li>
+                        <li><strong>Q3 2026:</strong> $200K (market expansion, sales team buildout)</li>
+                    </ul>
+                    <p><strong>Use of Funds:</strong></p>
+                    <ul>
+                        <li>Engineering &amp; Development: $100K (GDPR compliance, Greek localization)</li>
+                        <li>Sales &amp; Marketing: $80K (local events, partnerships, go-to-market)</li>
+                        <li>Operations &amp; Infrastructure: $50K (cloud, tools, office)</li>
+                        <li>Working Capital: $270K (18-month runway to profitability)</li>
+                    </ul>
+                </div>
+
+                <h2>Key Financial Metrics</h2>
+                <div class="info-box">
+                    <h3>Gross Margin</h3>
+                    <ul>
+                        <li><strong>2026:</strong> 65% (high initial efficiency)</li>
+                        <li><strong>2027:</strong> 62% (scaling investments)</li>
+                        <li><strong>2028:</strong> 60% (mature operations)</li>
+                    </ul>
+                </div>
+
+                <div class="success-box">
+                    <h3>Profitability Path</h3>
+                    <ul>
+                        <li><strong>2026:</strong> -$245K EBITDA (investment phase, lean Greek team)</li>
+                        <li><strong>2027:</strong> -$179K EBITDA (growth phase, revenue accelerating)</li>
+                        <li><strong>2028:</strong> +$531K EBITDA (profitable, 44% margin)</li>
+                    </ul>
+                </div>
+
+                <div class="info-box">
+                    <h3>Greek Market Advantages</h3>
+                    <ul>
+                        <li><strong>Lower Personnel Costs:</strong> ~60% lower than U.S. fully-loaded salaries</li>
+                        <li><strong>EU Compliance Gateway:</strong> GDPR-first approach enables expansion to all EU markets</li>
+                        <li><strong>Tourism Sector:</strong> Strong seasonal demand for signage &amp; security in hospitality</li>
+                        <li><strong>Education Sector:</strong> 15,000+ schools represent a concentrated addressable market</li>
+                        <li><strong>Path to Profitability:</strong> Achievable with only $500K seed investment</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(initializeRevenueGrowthChart, 100);
+        setTimeout(initializeProductRevenueChart, 100);
+        setTimeout(initializeRegionalRevenueChart, 100);
+        setTimeout(initializeScenarioComparisonChart, 100);
+        setTimeout(initializeOpexBreakdownChart, 100);
+    });
+
+    function initializeRevenueGrowthChart() {
+        const canvas = document.getElementById('revenueGrowthChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['2026', '2027', '2028'],
+                datasets: [
+                    {
+                        label: 'B2B Enterprise',
+                        data: [0.03, 0.175, 0.7],
+                        backgroundColor: '#0d6efd',
+                        borderColor: '#0d6efd',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'B2C Light',
+                        data: [0.02, 0.125, 0.5],
+                        backgroundColor: '#198754',
+                        borderColor: '#198754',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '3-Year Revenue Projection — Greece (B2B vs B2C)',
+                        font: { size: 18, weight: 'bold' },
+                        color: '#000000',
+                        padding: 20
+                    },
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: { color: '#000000', padding: 15, font: { size: 12 } }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) {
+                                const val = context.raw;
+                                return context.dataset.label + ': $' + (val >= 1 ? val + 'M' : Math.round(val * 1000) + 'K');
+                            },
+                            afterBody: function(tooltipItems) {
+                                const year = tooltipItems[0].label;
+                                const totals = { '2026': '$50K', '2027': '$300K', '2028': '$1.2M' };
+                                return '\nTotal Revenue: ' + totals[year];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        ticks: {
+                            color: '#000000',
+                            callback: function(value) {
+                                return value >= 1 ? '$' + value + 'M' : '$' + Math.round(value * 1000) + 'K';
+                            }
+                        },
+                        grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                        title: { display: true, text: 'Revenue (USD)', color: '#000000' }
+                    },
+                    x: {
+                        stacked: true,
+                        ticks: { color: '#000000' },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function initializeProductRevenueChart() {
+        const canvas = document.getElementById('productRevenueChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: [
+                    'Security Officer Agent',
+                    'Intelligent Signage',
+                    'Gate Activity',
+                    'Home Security + Retail',
+                    'Sentinel',
+                    'Room & Gate Protection'
+                ],
+                datasets: [{
+                    data: [280, 240, 200, 220, 160, 100],
+                    backgroundColor: ['#0d6efd', '#198754', '#0dcaf0', '#ffc107', '#dc3545', '#6c757d'],
+                    borderColor: '#ffffff',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '2028 Revenue Mix by Product — Greece ($1.2M)',
+                        font: { size: 18, weight: 'bold' },
+                        color: '#000000',
+                        padding: 20
+                    },
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: {
+                            color: '#000000',
+                            padding: 12,
+                            font: { size: 11 },
+                            generateLabels: function(chart) {
+                                const data = chart.data;
+                                const dataset = data.datasets[0];
+                                const values = dataset.data || [];
+                                const total = values.reduce((sum, val) => sum + Number(val || 0), 0);
+                                return (data.labels || []).map((label, i) => {
+                                    const value = Number(values[i] || 0);
+                                    const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+                                    return {
+                                        text: `${label}: $${value}K (${percentage}%)`,
+                                        fillStyle: dataset.backgroundColor[i],
+                                        strokeStyle: dataset.borderColor,
+                                        lineWidth: dataset.borderWidth,
+                                        hidden: !chart.getDataVisibility(i),
+                                        index: i
+                                    };
+                                });
+                            }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.raw;
+                                const total = 1200;
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return context.label + ': $' + value + 'K (' + percentage + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function initializeRegionalRevenueChart() {
+        const canvas = document.getElementById('regionalRevenueChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Athens / Attica', 'Thessaloniki', 'Crete & Islands', 'Rest of Greece'],
+                datasets: [
+                    { label: '2026', data: [25, 10, 8, 7], backgroundColor: '#0d6efd', borderColor: '#0d6efd', borderWidth: 1 },
+                    { label: '2027', data: [150, 60, 50, 40], backgroundColor: '#0dcaf0', borderColor: '#0dcaf0', borderWidth: 1 },
+                    { label: '2028', data: [600, 240, 200, 160], backgroundColor: '#198754', borderColor: '#198754', borderWidth: 1 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Revenue by Greek Region (2026-2028)',
+                        font: { size: 18, weight: 'bold' },
+                        color: '#000000',
+                        padding: 20
+                    },
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: { color: '#000000', padding: 15, font: { size: 12 } }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) { return context.dataset.label + ': $' + context.raw + 'K'; }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: '#000000', callback: function(value) { return '$' + value + 'K'; } },
+                        grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                        title: { display: true, text: 'Revenue (Thousands USD)', color: '#000000' }
+                    },
+                    x: {
+                        ticks: { color: '#000000' },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function initializeScenarioComparisonChart() {
+        const canvas = document.getElementById('scenarioComparisonChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['2026', '2027', '2028'],
+                datasets: [
+                    {
+                        label: 'Pessimistic',
+                        data: [0.02, 0.12, 0.5],
+                        borderColor: '#dc3545',
+                        backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 5,
+                        pointBackgroundColor: '#dc3545',
+                        borderDash: [5, 5]
+                    },
+                    {
+                        label: 'Baseline',
+                        data: [0.05, 0.3, 1.2],
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 6,
+                        pointBackgroundColor: '#0d6efd'
+                    },
+                    {
+                        label: 'Optimistic',
+                        data: [0.065, 0.4, 1.5],
+                        borderColor: '#198754',
+                        backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 5,
+                        pointBackgroundColor: '#198754',
+                        borderDash: [5, 5]
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Revenue Scenarios — Greece',
+                        font: { size: 18, weight: 'bold' },
+                        color: '#000000',
+                        padding: 20
+                    },
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: { color: '#000000', padding: 15, font: { size: 12 }, usePointStyle: true }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) {
+                                const val = context.raw;
+                                return context.dataset.label + ': $' + (val >= 1 ? val + 'M' : Math.round(val * 1000) + 'K');
+                            },
+                            afterBody: function(tooltipItems) {
+                                const label = tooltipItems[0].dataset.label;
+                                const cashNeeds = { 'Pessimistic': '$600K', 'Baseline': '$500K', 'Optimistic': '$400K' };
+                                return '\nCash Injection: ' + cashNeeds[label];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: '#000000',
+                            callback: function(value) {
+                                return value >= 1 ? '$' + value + 'M' : '$' + Math.round(value * 1000) + 'K';
+                            }
+                        },
+                        grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                        title: { display: true, text: 'Revenue (USD)', color: '#000000' }
+                    },
+                    x: {
+                        ticks: { color: '#000000' },
+                        grid: { color: 'rgba(0, 0, 0, 0.1)' }
+                    }
+                },
+                interaction: { mode: 'index', intersect: false }
+            }
+        });
+    }
+
+    function initializeOpexBreakdownChart() {
+        const canvas = document.getElementById('opexBreakdownChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['2026', '2027', '2028'],
+                datasets: [
+                    { label: 'Personnel & Payroll', data: [205, 335, 477], backgroundColor: '#0d6efd', borderColor: '#0d6efd', borderWidth: 1 },
+                    { label: 'Marketing & CAC', data: [25, 40, 58], backgroundColor: '#198754', borderColor: '#198754', borderWidth: 1 },
+                    { label: 'Technology & Infrastructure', data: [17, 26, 36], backgroundColor: '#0dcaf0', borderColor: '#0dcaf0', borderWidth: 1 },
+                    { label: 'Operations & Facilities', data: [13, 20, 28], backgroundColor: '#ffc107', borderColor: '#ffc107', borderWidth: 1 },
+                    { label: 'R&D', data: [21, 35, 38], backgroundColor: '#dc3545', borderColor: '#dc3545', borderWidth: 1 },
+                    { label: 'Contingency', data: [14, 23, 32], backgroundColor: '#6c757d', borderColor: '#6c757d', borderWidth: 1 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Operating Expenses Breakdown — Greece (2026-2028)',
+                        font: { size: 18, weight: 'bold' },
+                        color: '#000000',
+                        padding: 20
+                    },
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: { color: '#000000', padding: 12, font: { size: 11 }, boxWidth: 12 }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) { return context.dataset.label + ': $' + context.raw + 'K'; },
+                            afterBody: function(tooltipItems) {
+                                const year = tooltipItems[0].label;
+                                const totals = { '2026': 295, '2027': 479, '2028': 669 };
+                                return '\nTotal OpEx: $' + totals[year] + 'K';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        ticks: { color: '#000000', callback: function(value) { return '$' + value + 'K'; } },
+                        grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                        title: { display: true, text: 'Operating Expenses (Thousands USD)', color: '#000000' }
+                    },
+                    x: {
+                        stacked: true,
+                        ticks: { color: '#000000' },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+    </script>
+</body>
+</html>

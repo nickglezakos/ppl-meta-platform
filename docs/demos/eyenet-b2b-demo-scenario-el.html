@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EyeNet B2B Demo Scenario — Φορητό Kit (EL)</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #475569;
+      --soft: #64748b;
+      --line: #dbe3ee;
+      --band: #f3f7fb;
+      --band-alt: #eaf1f8;
+      --brand: #1976d2;
+      --brand-dark: #0f2f57;
+      --cyan: #0891b2;
+      --warn: #b45309;
+      --ok: #166534;
+      --danger: #b91c1c;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      color: var(--ink);
+      background: #fff;
+      font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 13.5pt;
+      line-height: 1.6;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    @page {
+      size: A4;
+      margin: 14mm 12mm 16mm 12mm;
+    }
+
+    .sheet { max-width: 190mm; margin: 0 auto; padding: 14mm 0 96px; }
+    @media print {
+      .sheet { max-width: none; padding: 0; margin: 0; }
+      .no-print { display: none !important; }
+    }
+
+    .no-print.toolbar {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 14px 18px; margin-bottom: 18px;
+      background: #fff; border-bottom: 1px solid var(--line);
+    }
+    .no-print.toolbar p { margin: 0; color: var(--soft); font-size: 14px; max-width: 48ch; }
+    .no-print.toolbar button {
+      flex: 0 0 auto;
+      border: 0; border-radius: 8px; padding: 12px 18px;
+      background: var(--brand); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .doc-nav {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px;
+      padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+      background: rgba(255,255,255,0.96);
+      border-top: 1px solid var(--line);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.06);
+    }
+    .doc-nav button {
+      border: 1px solid var(--line); border-radius: 8px;
+      padding: 12px 14px; background: #fff; color: var(--ink);
+      font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+    }
+    .doc-nav button:disabled {
+      opacity: 0.35; cursor: default;
+    }
+    .doc-nav-prev { justify-self: start; }
+    .doc-nav-next { justify-self: end; }
+    .doc-nav-mid {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      min-width: 0; text-align: center;
+    }
+    .doc-nav-label {
+      max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: var(--soft); font-size: 13px; font-weight: 600;
+    }
+    .doc-nav-pdf {
+      border: 0 !important; border-radius: 8px !important;
+      padding: 10px 16px !important;
+      background: var(--brand) !important; color: #fff !important;
+      font-size: 14px !important; font-weight: 700 !important;
+    }
+
+    @media (max-width: 720px) {
+      .no-print.toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .no-print.toolbar p { display: none; }
+      .no-print.toolbar button {
+        width: 100%;
+        white-space: normal;
+        text-align: center;
+      }
+      .doc-nav { gap: 6px; padding-left: 8px; padding-right: 8px; }
+      .doc-nav button { padding: 12px 8px; font-size: 14px; }
+      .doc-nav-label { max-width: 34vw; font-size: 12px; }
+    }
+
+    /* Cover */
+    .cover {
+      min-height: 250mm;
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: 18mm 14mm;
+      background: linear-gradient(165deg, #0b1220 0%, #10284a 55%, #163a66 100%);
+      color: #fff;
+      break-after: page;
+      page-break-after: always;
+    }
+    .cover-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .cover-brand { display: flex; align-items: center; gap: 12px; }
+    .cover-brand img { height: 40px; width: auto; filter: brightness(0) invert(1); }
+    .cover-chip {
+      padding: 8px 12px; border: 1px solid rgba(255,255,255,0.22);
+      font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+      color: #cfefff;
+    }
+    .cover-eyebrow {
+      margin: 56px 0 18px;
+      color: #67e8f9; font-size: 15px; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .cover h1 {
+      margin: 0 0 20px; font-size: 44px; line-height: 1.08;
+      letter-spacing: -0.03em; font-weight: 700; max-width: 18ch;
+    }
+    .cover-lead {
+      margin: 0; max-width: 48ch; color: #d7e3f2; font-size: 17px; line-height: 1.65;
+    }
+    .cover-meta {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+      margin-top: 52px; padding-top: 26px;
+      border-top: 1px solid rgba(255,255,255,0.14);
+    }
+    .cover-meta div { min-width: 0; }
+    .cover-meta span {
+      display: block; margin-bottom: 4px;
+      color: #9fb0c3; font-size: 12px; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .cover-meta strong { font-size: 14px; font-weight: 600; color: #fff; }
+    .cover-foot {
+      display: flex; justify-content: space-between; gap: 16px;
+      color: #9fb0c3; font-size: 13px;
+    }
+
+    /* Body */
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h2 {
+      margin: 0 0 14px; font-size: 20pt; letter-spacing: -0.02em;
+      color: var(--brand-dark); break-after: avoid; page-break-after: avoid;
+    }
+    h3 {
+      margin: 20px 0 10px; font-size: 14.5pt; color: var(--ink);
+      break-after: avoid; page-break-after: avoid;
+    }
+    h4 {
+      margin: 0 0 10px; font-size: 13pt; color: var(--ink);
+    }
+    p { margin: 0 0 12px; color: var(--muted); }
+    ul { margin: 0 0 14px; padding-left: 18px; color: var(--muted); }
+    li + li { margin-top: 8px; }
+    strong { color: var(--ink); }
+
+    .sheet > section {
+      scroll-margin-top: 72px;
+      scroll-margin-bottom: 96px;
+    }
+    .section {
+      padding: 20px 0 26px;
+      border-bottom: 1px solid var(--line);
+      break-inside: avoid-page;
+    }
+    .section.flow { break-inside: auto; }
+    .section.page-start {
+      break-before: page;
+      page-break-before: always;
+      border-top: 0;
+      padding-top: 4px;
+    }
+    .section-head {
+      display: flex; align-items: baseline; gap: 12px;
+      margin-bottom: 16px; break-after: avoid; page-break-after: avoid;
+    }
+    .section-num {
+      flex: 0 0 auto;
+      min-width: 28px;
+      color: var(--brand); font-size: 14px; font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .kicker {
+      margin: 0 0 18px; padding: 16px 18px;
+      background: var(--brand-dark); color: #f5fbff;
+      font-size: 12.5pt; font-weight: 600; line-height: 1.55;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .kicker.warn { background: #1f2937; border-left: 3px solid #f59e0b; margin-bottom: 18px; }
+
+    .cols-3, .cols-2 { display: grid; gap: 14px; margin: 14px 0; }
+    .cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .cols-2 { grid-template-columns: 1.2fr 0.8fr; }
+    .panel {
+      background: var(--band); padding: 16px 16px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .panel.alt { background: var(--band-alt); }
+    .panel p, .panel li { font-size: 12pt; }
+    .stat {
+      display: block; margin-bottom: 4px;
+      font-size: 22pt; font-weight: 800; letter-spacing: -0.03em; line-height: 1;
+    }
+    .stat-label {
+      display: block; margin-bottom: 8px;
+      color: var(--soft); font-size: 11pt; font-weight: 700;
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .stat.cyan { color: var(--cyan); }
+    .stat.danger { color: var(--danger); }
+    .stat.brand { color: var(--brand); }
+    .stat.ok { color: var(--ok); }
+
+    .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .tag {
+      display: inline-block; padding: 5px 10px;
+      background: #fff; border: 1px solid var(--line);
+      color: var(--brand); font-size: 11pt; font-weight: 600;
+    }
+    .tag.mode { color: var(--cyan); }
+    .tag.user { color: var(--warn); }
+    .tag.safety { color: var(--danger); }
+    .tag.ok { color: var(--ok); }
+
+    .side-note {
+      margin-top: 12px; font-size: 11.5pt; color: var(--soft);
+    }
+
+    .persona-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0;
+    }
+    .persona {
+      background: var(--band); padding: 16px 18px;
+      margin: 0 0 18px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .persona:last-child { margin-bottom: 0; }
+    .persona.alt { background: var(--band-alt); }
+    .persona h4 {
+      margin: 0 0 8px; font-size: 13.5pt;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .persona .n {
+      display: inline-grid; place-items: center;
+      width: 22px; height: 22px; flex: none;
+      background: var(--brand); color: #fff;
+      font-size: 11px; font-weight: 700;
+    }
+    .persona .who {
+      margin: 0 0 12px; font-size: 11pt; color: var(--soft);
+    }
+    .persona ul {
+      margin: 0; padding-left: 16px; font-size: 12pt;
+    }
+    .persona li + li { margin-top: 6px; }
+    .persona .cols-2 { margin: 10px 0 0; }
+    .persona .panel { margin: 0; }
+
+    .notify {
+      margin-top: 12px; padding: 14px 16px;
+      background: #fff; border: 1px solid var(--line);
+      border-left: 3px solid var(--brand);
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .persona.alt .notify { background: rgba(255,255,255,0.72); }
+    .notify h5 {
+      margin: 0 0 8px; font-size: 11pt; font-weight: 800;
+      letter-spacing: 0.04em; text-transform: uppercase; color: var(--brand-dark);
+    }
+    .notify ul {
+      margin: 0; padding-left: 16px; font-size: 11.5pt; color: var(--muted);
+    }
+    .notify li + li { margin-top: 4px; }
+    .notify p {
+      margin: 0; font-size: 12pt; font-weight: 400;
+      color: var(--muted); line-height: 1.5;
+    }
+
+    .how-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0;
+    }
+    .how {
+      background: var(--band); padding: 16px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .how.alt { background: var(--band-alt); }
+    .how h4 {
+      margin: 0 0 10px; font-size: 12.5pt;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .how .n {
+      display: inline-grid; place-items: center;
+      width: 22px; height: 22px; background: var(--brand); color: #fff;
+      font-size: 11px; font-weight: 700;
+    }
+    .how p { font-size: 11.5pt; margin-bottom: 10px; }
+    .how ul { font-size: 11.5pt; padding-left: 16px; margin: 0; }
+    .how li + li { margin-top: 6px; }
+
+    .summary-panel {
+      margin-top: 18px;
+      padding: 16px 18px;
+    }
+    .summary-panel .tags { margin-top: 10px; }
+
+    .footer-note {
+      margin-top: 18px; color: var(--soft); font-size: 11.5pt;
+    }
+
+    .breaker-grid {
+      display: grid; gap: 14px; margin: 14px 0 18px;
+    }
+    .breaker-grid .notify {
+      margin-top: 0; padding: 16px 18px;
+      background: var(--band);
+    }
+    .breaker-grid .notify.alt { background: var(--band-alt); }
+
+    .device-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 18px;
+      font-size: 12pt;
+    }
+    .device-table th,
+    .device-table td {
+      text-align: left;
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    .device-table th {
+      color: var(--soft);
+      font-size: 11pt;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: var(--band);
+    }
+    .device-table td { color: var(--muted); }
+    .device-table td strong { color: var(--ink); }
+
+    .scene {
+      background: var(--band);
+      padding: 18px 18px;
+      margin: 0 0 14px;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .scene.alt { background: var(--band-alt); }
+    .scene h4 {
+      margin: 0 0 6px;
+      font-size: 14pt;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .scene .n {
+      display: inline-grid; place-items: center;
+      width: 28px; height: 28px; flex: none;
+      background: var(--brand); color: #fff;
+      font-size: 13px; font-weight: 700;
+    }
+    .scene .who {
+      margin: 0 0 10px;
+      font-size: 12pt;
+      color: var(--soft);
+      font-weight: 600;
+    }
+    .scene p { margin-bottom: 8px; font-size: 12.5pt; }
+    .scene .point {
+      margin: 12px 0 0;
+      padding: 12px 14px;
+      background: #fff;
+      border-left: 3px solid var(--cyan);
+      font-size: 12pt;
+      color: var(--muted);
+    }
+    .scene .point strong { color: var(--brand-dark); }
+
+    .script-list {
+      counter-reset: script;
+      list-style: none;
+      padding: 0;
+      margin: 14px 0;
+    }
+    .script-list li {
+      position: relative;
+      padding: 14px 16px 14px 56px;
+      margin: 0 0 10px;
+      background: var(--band);
+      color: var(--muted);
+      font-size: 12.5pt;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    .script-list li:nth-child(even) { background: var(--band-alt); }
+    .script-list li::before {
+      counter-increment: script;
+      content: counter(script);
+      position: absolute;
+      left: 14px; top: 14px;
+      display: inline-grid; place-items: center;
+      width: 28px; height: 28px;
+      background: var(--brand); color: #fff;
+      font-size: 13px; font-weight: 700;
+    }
+
+    @media (max-width: 720px) {
+      .cols-3, .cols-2, .how-grid, .persona-grid, .cover-meta {
+        grid-template-columns: 1fr;
+      }
+      .cover h1 { font-size: 34px; max-width: none; }
+      .device-table { font-size: 11pt; display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print toolbar">
+    <p>B2B demo runbook για το φορητό EyeNet kit. Διάταξη έτοιμη για εκτύπωση A4.</p>
+    <button type="button" onclick="window.print()">Εκτύπωση / Αποθήκευση ως PDF</button>
+  </div>
+
+  <div class="sheet">
+    <section class="cover" id="page-0" data-nav-label="Εξώφυλλο">
+      <div>
+        <div class="cover-top">
+          <div class="cover-brand">
+            <img src="../product/logos/svg/eyenet-dark.svg" alt="EyeNet" />
+            <span class="cover-chip">Demo Runbook</span>
+          </div>
+        </div>
+        <p class="cover-eyebrow">B2B · Φορητό Kit · Διαδικασίες &amp; Λειτουργίες</p>
+        <h1>Κλιμακούμενο σενάριο demo EyeNet</h1>
+        <p class="cover-lead">Ένα σενάριο πόρτας / μικρού γραφείου / πάγκου λιανικής που χτίζει τα modules του EyeNet ένα-ένα — με τις συσκευές που είναι ήδη δηλωμένες στο eyenet-demo και με groups / triggers ήδη ενεργά.</p>
+        <div class="cover-meta">
+          <div><span>Τύπος</span><strong>Live Demo Script</strong></div>
+          <div><span>Διάρκεια</span><strong>≈ 20–25 λεπτά</strong></div>
+          <div><span>Host</span><strong>eyenet-demo · Tailscale</strong></div>
+          <div><span>Δίκτυο</span><strong>Mobile router island</strong></div>
+        </div>
+      </div>
+      <div class="cover-foot">
+        <span>eyenet-vision.com</span>
+        <span>docs/demos</span>
+      </div>
+    </section>
+
+    <section class="section flow" id="page-1" data-nav-label="01 · Πρόλογος">
+      <div class="section-head"><span class="section-num">01</span><h2>Πρόλογος demo</h2></div>
+      <div class="kicker">Μία αφήγηση. Σταθεροί ρόλοι συσκευών. Δείχνετε τις λειτουργίες και τα οφέλη σταδιακά: Βλέπω → Γνωρίζω → Δρω → Δείχνω → Επαληθεύω → Μετακινώ → Κλείνω.</div>
+
+      <div class="breaker-grid">
+        <div class="notify">
+          <h5>Σενάριο</h5>
+          <p>Ασφαλισμένη είσοδος με προσαρμοστική οθόνη και check-in προσωπικού. Το demographic retail signage είναι προαιρετικό beat — όχι δεύτερο σενάριο.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Ήδη ενεργά</h5>
+          <p>Τα individual groups και τα triggers / actions είναι ήδη ενεργά στο eyenet-demo, προσβάσιμα από το IP του mobile router. Μην επεξεργάζεστε live εκτός αν το ζητήσει ο αγοραστής.</p>
+        </div>
+        <div class="notify">
+          <h5>Φυσική διαδρομή</h5>
+          <p>Διαδρομή βαδίσματος → Entrance Tapo → Signage tablet → Presence phone. Κρατήστε αυτή τη διάταξη σταθερή σε όλη τη συνεδρία.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Κλείσιμο παρουσίασης</h5>
+          <p>Αποδείξτε πρώτα την τοπική αξία. Χρησιμοποιήστε το Tailscale remote reach ως κλείσιμο της παρουσίασης — όχι ως άνοιγμα.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-2" data-nav-label="02 · Συσκευές">
+      <div class="section-head"><span class="section-num">02</span><h2>Ρόλοι συσκευών — ανάθεση μία φορά</h2></div>
+      <div class="kicker">Αυτές είναι οι συσκευές που είναι ήδη δηλωμένες στο eyenet-demo. Αναθέστε ρόλους μία φορά και κρατήστε τους σταθερούς σε κάθε επανάληψη.</div>
+
+      <table class="device-table">
+        <thead>
+          <tr>
+            <th>Ρόλος</th>
+            <th>Συσκευή</th>
+            <th>Τι αποδεικνύει</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Είσοδος / Gate</strong></td>
+            <td>Tapo A</td>
+            <td>Μετρήσεις, demographics, POI match στην πόρτα</td>
+          </tr>
+          <tr>
+            <td><strong>Χώρος / Zone</strong></td>
+            <td>Tapo B</td>
+            <td>Δεύτερη ζώνη (υποδοχή / απόθεμα / restricted)</td>
+          </tr>
+          <tr>
+            <td><strong>Φορητό μάτι</strong></td>
+            <td>Android mobile camera</td>
+            <td>Ίδιοι κανόνες όρασης σε κάμερα τηλεφώνου</td>
+          </tr>
+          <tr>
+            <td><strong>Edge μάτι</strong></td>
+            <td>Embedded κάμερα demo</td>
+            <td>Το κουτί έχει δικό του αισθητήρα</td>
+          </tr>
+          <tr>
+            <td><strong>Οθόνη</strong></td>
+            <td>Android digital signage app</td>
+            <td>Automation που βλέπει ο πελάτης</td>
+          </tr>
+          <tr>
+            <td><strong>Check-in</strong></td>
+            <td>EyeNet Presence Android app</td>
+            <td>Επαληθευμένη παρουσία / two-factor presence</td>
+          </tr>
+          <tr>
+            <td><strong>Εγκέφαλος</strong></td>
+            <td>eyenet-demo μέσω mobile router + Tailscale</td>
+            <td>On-prem λειτουργία + απομακρυσμένη πρόσβαση</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="tags">
+        <span class="tag">2× Tapo</span>
+        <span class="tag mode">Mobile camera</span>
+        <span class="tag user">Signage Android</span>
+        <span class="tag ok">Presence Android</span>
+        <span class="tag safety">Embedded + Tailscale</span>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-3" data-nav-label="03 · Σκηνές 0–3">
+      <div class="section-head"><span class="section-num">03</span><h2>Κλιμακούμενες σκηνές — μέρος Α</h2></div>
+      <div class="kicker">≈ 20–25 λεπτά συνολικά. Οι σκηνές 0–3 χτίζουν από το island site μέχρι live όραση, ταυτότητα και automation.</div>
+
+      <div class="scene">
+        <h4><span class="n">0</span> Island site</h4>
+        <p class="who">≈ 2 λεπτά</p>
+        <p>Ανοίξτε το UI από το IP του mobile router. Δείξτε κάμερες, signage και presence συσκευές online στο LAN του mobile router.</p>
+        <div class="point"><strong>Σημείο:</strong> Πλήρες site EyeNet, ικανό για offline, απομακρυσμένα προσβάσιμο. Χωρίς cloud video.</div>
+      </div>
+
+      <div class="scene alt">
+        <h4><span class="n">1</span> Live όραση</h4>
+        <p class="who">≈ 3 λεπτά · Gate / Cameras / Instant Detection</p>
+        <p>Περάστε μπροστά από την <strong>Tapo A</strong> και την <strong>embedded κάμερα</strong>. Δείξτε live feed + instant detection (πρόσωπα / άνθρωποι / demographics). Προαιρετικά στρέψτε την <strong>mobile camera</strong> ώστε να δουν ότι «το τηλέφωνο = κάμερα».</p>
+        <div class="point"><strong>Σημείο:</strong> Κάθε τύπος κάμερας γίνεται αισθητήρας.</div>
+      </div>
+
+      <div class="scene">
+        <h4><span class="n">2</span> Γνωστά πρόσωπα</h4>
+        <p class="who">≈ 3 λεπτά · Individual Groups + ppl_match</p>
+        <p>Ανοίξτε τα <strong>Individual Groups</strong> (Staff / VIP / Visitors — ό,τι είναι ήδη εγγεγραμμένο). Βεβαιωθείτε ότι 1–2 άτομα στην αίθουσα είναι μέλη group. Περάστε μπροστά από την <strong>Tapo A</strong> ως γνωστό πρόσωπο → δείξτε match στο Automation / last match info.</p>
+        <div class="point"><strong>Σημείο:</strong> Αυτόματη αναγνώριση ατόμων.</div>
+      </div>
+
+      <div class="scene alt">
+        <h4><span class="n">3</span> Automation που ήδη υπάρχει</h4>
+        <p class="who">≈ 4 λεπτά · Vradar / Triggers &amp; Actions</p>
+        <p>Ενεργοποιήστε ό,τι είναι ήδη ρυθμισμένο — μην ξαναχτίζετε live. Προτεινόμενο ζεύγος με <strong>πολλαπλά actions</strong> στο ίδιο trigger:</p>
+        <ul>
+          <li><strong>Known match</strong> → alert και/ή signage_rich_message («Καλώς ήρθες {matched_member_name}») + <strong>email</strong> + <strong>Slack</strong> (<code>messaging_app</code>)</li>
+          <li><strong>Negated match (unknown)</strong> → alert + visitor playlist / προειδοποίηση στο signage + <strong>email</strong> + <strong>Slack</strong> (@channel αν χρειάζεται)</li>
+        </ul>
+        <p>Ένα δεύτερο άτομο (ή σύντομη κάλυψη προσώπου) περνάει ως «άγνωστος». Ανοίξτε το email inbox και το κανάλι Slack ώστε να δουν τις ειδοποιήσεις να φτάνουν live.</p>
+        <div class="point"><strong>Σημείο:</strong> Vradar = όραση → επιχειρηματική δράση σε οθόνη, email και Slack μαζί. Συνήθως εδώ είναι το «aha».</div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-4" data-nav-label="04 · Σκηνές 4–7">
+      <div class="section-head"><span class="section-num">04</span><h2>Κλιμακούμενες σκηνές — μέρος Β</h2></div>
+      <div class="kicker">Οι σκηνές 4–6 κλείνουν με την επιχειρηματική οπτική / τα οφέλη: signage, presence check-in, κινητή κάλυψη. Η σκηνή 7 είναι προαιρετική.</div>
+
+      <div class="scene">
+        <h4><span class="n">4</span> Signage ως επιχειρηματική οπτική / οφέλη</h4>
+        <p class="who">≈ 3 λεπτά · Signage + Automation</p>
+        <p>Μείνετε στο Android player. Δείξτε default playlist → το trigger αλλάζει playlist <strong>ή</strong> rich overlay (καλωσόρισμα / επισκέπτης / promo). Προαιρετικά demographic trigger (π.χ. people_count ≥ 2 → promo playlist).</p>
+        <div class="point"><strong>Σημείο:</strong> Το Signage δεν είναι απλό σύστημα οθονών — αλλάζει αυτόματα από τους κανόνες του EyeNet.</div>
+      </div>
+
+      <div class="scene alt">
+        <h4><span class="n">5</span> Presence check-in</h4>
+        <p class="who">≈ 4 λεπτά · Presence</p>
+        <p>Χρησιμοποιήστε το Presence app + κάμερα πόρτας (Tapo A ή embedded):</p>
+        <ul>
+          <li>QR-only grant (γρήγορα)</li>
+          <li>Έπειτα QR + face ή camera match (υψηλότερη διασφάλιση)</li>
+        </ul>
+        <p>Δείξτε αποτέλεσμα session + πρόσφατα presence grants.</p>
+        <div class="point"><strong>Σημείο:</strong> Παρουσία / έλεγχος πόρτας με audit trail — όχι απλώς face alert.</div>
+      </div>
+
+      <div class="scene">
+        <h4><span class="n">6</span> Ίδιοι κανόνες, κινητή κάμερα</h4>
+        <p class="who">≈ 2 λεπτά · Mobile camera</p>
+        <p>Μετακινήστε την <strong>mobile camera</strong> σε δεύτερο σημείο («αποθήκη»). Δείξτε ότι ο ίδιος τύπος trigger μπορεί να εφαρμοστεί εκεί — ή ότι η search / multi-camera κάλυψη είναι το φυσικό επόμενο βήμα.</p>
+        <div class="point"><strong>Σημείο:</strong> Η κάλυψη ακολουθεί τον χώρο· δεν κλειδώνει σε σταθερές IP κάμερες.</div>
+      </div>
+
+      <div class="scene alt">
+        <h4><span class="n">7</span> Κλείσιμο του βρόχου <span class="tag user" style="margin-left:8px;">Προαιρετικό</span></h4>
+        <p class="who">≈ 2 λεπτά · Ops + VPN · μόνο αν ζητηθεί</p>
+        <p><strong>Προαιρετικό — μόνο αν το ζητήσει ο πελάτης.</strong> Στο UI: trigger execution log, presence sessions, προαιρετική ματιά στα analytics (κίνηση / demographics στην Είσοδο). Υπενθύμιση: διαχειρίζεστε το site μέσω Tailscale ενώ κάθεται σε travel router.</p>
+        <div class="point"><strong>Σημείο:</strong> Ops + ιδιωτικότητα + remote support χωρίς να στέλνετε video στο cloud.</div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-5" data-nav-label="05 · Λειτουργίες & οφέλη">
+      <div class="section-head"><span class="section-num">05</span><h2>Γιατί αυτή η σειρά δουλεύει στο B2B</h2></div>
+      <div class="kicker">Δείχνει τις λειτουργίες και τα οφέλη σταδιακά — όπως ήδη πουλάει το προϊόν — και χαρτογραφεί στο use case εισόδου.</div>
+
+      <div class="how-grid">
+        <div class="how">
+          <h4><span class="n">1</span> Βλέπω</h4>
+          <p>Cameras / Gate — live αισθητήρες σε συνηθισμένο hardware.</p>
+        </div>
+        <div class="how alt">
+          <h4><span class="n">2</span> Γνωρίζω</h4>
+          <p>Individual groups — ποιος είναι προσωπικό, VIP ή άγνωστος.</p>
+        </div>
+        <div class="how">
+          <h4><span class="n">3</span> Δρω</h4>
+          <p>Triggers / actions — η όραση γίνεται workflow.</p>
+        </div>
+        <div class="how alt">
+          <h4><span class="n">4</span> Δείχνω</h4>
+          <p>Signage — η επιχειρηματική οπτική / τα οφέλη που νιώθει ο πελάτης.</p>
+        </div>
+        <div class="how">
+          <h4><span class="n">5</span> Επαληθεύω</h4>
+          <p>Presence — grants, πολιτικές, ίχνος παρουσίας.</p>
+        </div>
+        <div class="how alt">
+          <h4><span class="n">6</span> Κλιμακώνω</h4>
+          <p>Mobile camera + Tailscale — μετακίνηση και απομακρυσμένη διαχείριση.</p>
+        </div>
+      </div>
+
+      <div class="panel summary-panel">
+        <h4>Modules σε ένα τόξο</h4>
+        <div class="tags">
+          <span class="tag">Presence</span>
+          <span class="tag mode">Signage</span>
+          <span class="tag user">Vradar / Automation</span>
+          <span class="tag ok">Gate / Instant Detection</span>
+          <span class="tag safety">Individual Groups</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-6" data-nav-label="06 · Πρακτικές συμβουλές">
+      <div class="section-head"><span class="section-num">06</span><h2>Πρακτικές συμβουλές για αυτό το kit</h2></div>
+
+      <div class="breaker-grid">
+        <div class="notify">
+          <h5>Ένα σενάριο μόνο</h5>
+          <p>Πρώτα demos: ασφαλισμένη είσοδος με προσαρμοστική οθόνη + staff check-in. Το demographic retail μπορεί να είναι Σκηνή 4b — όχι δεύτερο σενάριο.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Προετοιμάστε playlists &amp; κανάλια</h5>
+          <p>Welcome / Visitor / Crowd-promo έτοιμα πριν γεμίσει η αίθουσα. Ανοίξτε email inbox και Slack κανάλι πριν τη Σκηνή 3 — ώστε οι ειδοποιήσεις να φανούν live.</p>
+        </div>
+        <div class="notify">
+          <h5>Cooldown</h5>
+          <p>Κρατήστε το trigger cooldown σύντομο (15–30δ) στα demos ώστε τα περάσματα να ξανα-πυροδοτούν καθαρά.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Όχι live-edit</h5>
+          <p>Groups και triggers είναι ήδη ενεργά. Χρησιμοποιήστε τα. Επεξεργαστείτε μόνο αν ο αγοραστής ζητήσει να δει ρύθμιση.</p>
+        </div>
+        <div class="notify">
+          <h5>Tailscale τελευταίο</h5>
+          <p>Αποδείξτε τοπική αξία, μετά δείξτε remote reach ως κλείσιμο της παρουσίασης.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Παραλείψτε στο v1</h5>
+          <p>Sentinel / Matrix / left-object / plates περιμένουν δεύτερη συνάντηση εκτός αν ο αγοραστής είναι security ή multi-site.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section flow page-start" id="page-7" data-nav-label="07 · Προαιρετικό μενού">
+      <div class="section-head"><span class="section-num">07</span><h2>Προαιρετικό μενού μετά την κύρια παρουσίαση</h2></div>
+      <div class="kicker">Αν κλίνουν προς κάτι συγκεκριμένο, προσθέστε ένα beat μόνο — ποτέ και τα τέσσερα. Τα sections 08–10 είναι deep-dive όταν ζητηθούν.</div>
+
+      <div class="persona-grid">
+        <div class="persona">
+          <h4><span class="n">R</span> Retail / marketing</h4>
+          <p class="who">Έξτρα beat</p>
+          <p>Demographic → playlist A/B στο signage.</p>
+          <div class="tags"><span class="tag mode">Signage</span><span class="tag user">Demographics</span></div>
+        </div>
+        <div class="persona alt">
+          <h4><span class="n">S</span> Security</h4>
+          <p class="who">Έξτρα beat</p>
+          <p>Άγνωστος στην Tapo B + alert / email / Slack.</p>
+          <div class="tags"><span class="tag safety">Vradar</span><span class="tag">Restricted zone</span></div>
+        </div>
+        <div class="persona alt">
+          <h4><span class="n">H</span> HR / γραφείο</h4>
+          <p class="who">Έξτρα beat</p>
+          <p>Ημερήσιο Presence report / ιστορικό grants · section 08.</p>
+          <div class="tags"><span class="tag ok">Presence</span><span class="tag">Attendance</span></div>
+        </div>
+        <div class="persona">
+          <h4><span class="n">I</span> Integrator</h4>
+          <p class="who">Έξτρα beat</p>
+          <p>Webhook / HubSpot · sections 08–09.</p>
+          <div class="tags"><span class="tag mode">Webhook</span><span class="tag user">HubSpot</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 08 Presence stats + PPP + HubSpot -->
+    <section class="section flow page-start" id="page-8" data-nav-label="08 · Presence · PPP · HubSpot">
+      <div class="section-head"><span class="section-num">08</span><h2>Presence: στατιστικά, φίλτρα, PPP &amp; HubSpot</h2></div>
+      <div class="kicker">Δείξτε ότι η παρουσία δεν είναι μόνο check-in — έχει αναφορές, φίλτρα και διασύνδεση ταυτότητας μέχρι το CRM.</div>
+
+      <div class="scene">
+        <h4><span class="n">A</span> Presence Analytics &amp; φίλτρα</h4>
+        <p class="who">Presence → Analytics · Sessions</p>
+        <p>Ανοίξτε <strong>Presence → Analytics</strong>:</p>
+        <ul>
+          <li>Εύρος ημερομηνιών, summary cards, Outcomes / Client Origin donuts</li>
+          <li><strong>User-Day Presence Awards</strong> — φίλτρο χρήστη και ημερομηνίας· expand για grants της ημέρας (QR / Cam / Cam &amp; QR)</li>
+          <li>Μπάρες Session Modes, Grant Types, Failure Reasons, Policy Sources</li>
+        </ul>
+        <p>Μετά <strong>Presence → Sessions</strong>: φίλτρα User, ημερομηνίες, και Filter sheet (Mode, Decision, Grant, Policy, Failure, Origin, Camera, Group, Member, Profile). Δείξτε Apply / Clear και προαιρετικά Download Excel.</p>
+        <div class="point"><strong>Σημείο:</strong> Από ένα tap σε card/donut/bar → Sessions με τα ίδια φίλτρα. Audit trail για HR και security.</div>
+      </div>
+
+      <div class="scene alt">
+        <h4><span class="n">B</span> Διασύνδεση Group members · PPP · Users</h4>
+        <p class="who">Individual Groups · Presence → People</p>
+        <p>Δείξτε την αλυσίδα ταυτότητας:</p>
+        <ul>
+          <li><strong>Group member</strong> (Individual Groups) — το πρόσωπο που αναγνωρίζει το Vradar / Presence match</li>
+          <li><strong>PPP</strong> (Presence People Profile) — προφίλ παρουσίας (όνομα, email, τηλέφωνο…) που συνδέεται στο group member</li>
+          <li><strong>User</strong> — λογαριασμός πλατφόρμας / Authenticator που μπορεί να συνδεθεί με το ίδιο PPP</li>
+        </ul>
+        <p>Στο Individual Groups: εικονίδιο link σε μέλος → επιλογή / σύνδεση People Profile. Στο Presence → <strong>People</strong>: ανοίξτε το PPP και δείξτε τα συνδεδεμένα στοιχεία.</p>
+        <div class="point"><strong>Σημείο:</strong> Ένα πρόσωπο = μία ταυτότητα από την αναγνώριση μέχρι το check-in και τον χρήστη.</div>
+      </div>
+
+      <div class="scene">
+        <h4><span class="n">C</span> Διασύνδεση HubSpot CRM</h4>
+        <p class="who">Presence → Settings → HubSpot CRM</p>
+        <p>Ανοίξτε <strong>Settings → HubSpot CRM</strong> (αν είναι ήδη συνδεδεμένο στο demo):</p>
+        <ul>
+          <li>Import επαφών HubSpot → δημιουργία / ενημέρωση PPP (External Ref = HubSpot contact id)</li>
+          <li>Μετά από Presence grant → post στο HubSpot (Note στην επαφή + ιδιότητες <code>last_presence_*</code>)</li>
+          <li>Επιλογή τύπων grant που στέλνονται (check_in, presence_match, verified_presence)</li>
+        </ul>
+        <p>Αν υπάρχει live σύνδεση: τρέξτε ένα grant και ανοίξτε την επαφή στο HubSpot. Αν όχι: δείξτε την οθόνη ρύθμισης και εξηγήστε τη ροή.</p>
+        <div class="point"><strong>Σημείο:</strong> Η παρουσία φτάνει στο CRM χωρίς χειροκίνητο logging — HubSpot first connector.</div>
+      </div>
+    </section>
+
+    <!-- 09 General Analytics -->
+    <section class="section flow page-start" id="page-9" data-nav-label="09 · Analytics">
+      <div class="section-head"><span class="section-num">09</span><h2>Γενικά Analytics (MVR)</h2></div>
+      <div class="kicker">Home → Analytics: συνολική εικόνα κίνησης, demographics και συμπεριφοράς — όχι μόνο ένα γεγονός στην πόρτα.</div>
+
+      <div class="breaker-grid">
+        <div class="notify">
+          <h5>Πού πηγαίνετε</h5>
+          <p>Ανοίξτε <strong>Analytics</strong> (MVR People Detection Analytics). Πατήστε <strong>Filters</strong>: χρόνος (π.χ. Today), συλλογή / κάμερα (π.χ. Entrance Tapo), πηγή δεδομένων.</p>
+        </div>
+        <div class="notify alt">
+          <h5>Πηγές δεδομένων</h5>
+          <p><strong>Instant Detection</strong> (live), <strong>Video Recording</strong>, ή και τα δύο (combined) με απο-διπλασιασμό ταυτότητας.</p>
+        </div>
+      </div>
+
+      <div class="how-grid">
+        <div class="how">
+          <h4><span class="n">1</span> Level 1</h4>
+          <p>Βασικά: Total People, Active Collections, Sessions / Videos Analyzed.</p>
+        </div>
+        <div class="how alt">
+          <h4><span class="n">2</span> Level 2</h4>
+          <p>Time trends: Total, Peak, Average — ωριαία / ημερήσια κίνηση.</p>
+        </div>
+        <div class="how">
+          <h4><span class="n">3</span> Level 3</h4>
+          <p>Demographics: ηλικία, φύλο, ανά κάμερα.</p>
+        </div>
+        <div class="how alt">
+          <h4><span class="n">4</span> Level 4</h4>
+          <p>Behavioral: peak hours, visit frequency, weekly heatmap.</p>
+        </div>
+        <div class="how">
+          <h4><span class="n">5</span> Φίλτρα</h4>
+          <p>Apply → φαίνεται η μπάρα φίλτρων. Refresh για νέα δεδομένα.</p>
+        </div>
+        <div class="how alt">
+          <h4><span class="n">6</span> Export</h4>
+          <p>Προαιρετικά Export Analytics (π.χ. Excel) για τον αγοραστή.</p>
+        </div>
+      </div>
+
+      <div class="point" style="margin-top:14px;padding:14px 16px;background:var(--band);border-left:3px solid var(--cyan);">
+        <strong>Σημείο:</strong> Από το ίδιο kit (Tapo A/B + instant detection) βγαίνει operational dashboard για είσοδο, ωράρια και κοινό — χωρίς ξεχωριστό BI tool.
+      </div>
+    </section>
+
+    <!-- 10 MVR People Analysis -->
+    <section class="section flow page-start" id="page-10" data-nav-label="10 · MVR People Analysis">
+      <div class="section-head"><span class="section-num">10</span><h2>MVR People Analysis: Routes, Attendance &amp; Search Videos</h2></div>
+      <div class="kicker">Δείξτε πώς φτάνετε στην ανάλυση ατόμων από Search / Media και τι βλέπετε σε Routes και Attendance.</div>
+
+      <div class="scene">
+        <h4><span class="n">1</span> Πώς πάτε εκεί — Search Videos / Media</h4>
+        <p class="who">Διαδρομές εισόδου στην οθόνη ανάλυσης</p>
+        <ul>
+          <li><strong>My Media / Media Preview</strong> — ανοίξτε clip κάμερας → <strong>Details</strong> (μετά το processing) → οθόνη person / MVR analysis</li>
+          <li><strong>Search Videos</strong> (ή date/time MVR search στη συλλογή) → επιλογή αποτελεσμάτων → Analysis</li>
+          <li><strong>Individual Groups</strong> — Camera Search ή tap σε group member → Person Objects / cross-video analysis</li>
+        </ul>
+        <div class="point"><strong>Σημείο:</strong> Από αναζήτηση βίντεο ή από γνωστό μέλος group φτάνετε στην ίδια οικογένεια οθονών ανάλυσης.</div>
+      </div>
+
+      <div class="scene alt">
+        <h4><span class="n">2</span> Λειτουργίες οθόνης MVR People Analysis</h4>
+        <p class="who">Tabs στην οθόνη Details / Person analysis</p>
+        <ul>
+          <li><strong>Persons / Individuals</strong> — ποιος εμφανίστηκε στο βίντεο (ή σε πολλά βίντεο)</li>
+          <li><strong>Face Details</strong> — μεμονωμένες ανιχνεύσεις προσώπου όταν χρειάζεται βάθος</li>
+          <li><strong>Routes</strong> — διαδρομή κίνησης στο κάδρο (Camera View + Top View· Path ή Scatter)· dwell / πέρασμα από πόρτα</li>
+          <li><strong>Attendance</strong> (cross-video) — πίνακας ποιος εμφανίστηκε πότε + timeline ανά κάμερα στο παράθυρο ανάλυσης</li>
+        </ul>
+        <p>Σημειώστε: το Attendance εδώ είναι ανάλυση εμφανίσεων στα επιλεγμένα βίντεο — σχετικό αλλά διαφορετικό από τα Presence grants (section 08).</p>
+        <div class="point"><strong>Σημείο:</strong> Όχι μόνο «ποιος» — και «πού κινήθηκε» και «πότε εμφανίστηκε» στο παράθυρο αναζήτησης.</div>
+      </div>
+
+      <div class="scene">
+        <h4><span class="n">3</span> Demo beat στο kit</h4>
+        <p class="who">≈ 3–4 λεπτά αν ζητηθεί</p>
+        <ol style="margin:0 0 12px;padding-left:18px;color:var(--muted);">
+          <li>Κάντε ένα σύντομο recording ή ανοίξτε πρόσφατο clip από Tapo A / embedded</li>
+          <li>Search Videos ή Media Preview → Details</li>
+          <li>Δείξτε Persons → Routes → (αν multi-video) Attendance</li>
+          <li>Προαιρετικά: από Individual Group member ανοίξτε την ίδια ανάλυση</li>
+        </ol>
+        <div class="point"><strong>Σημείο:</strong> Forensics και λειτουργική ανασκόπηση χωρίς να φύγει το video από το site.</div>
+      </div>
+
+      <p class="footer-note">EyeNet Vision · B2B demo runbook · Φορητό kit στο eyenet-demo. Προδιαγραφές και διαθεσιμότητα υπόκεινται σε αλλαγή. Το απόθεμα συσκευών υποθέτει κάμερες Tapo, Android mobile camera, Android signage player, Presence Android app, embedded κάμερα και LAN mobile router με Tailscale remote access.</p>
+    </section>
+
+  </div>
+
+  <nav class="doc-nav no-print" aria-label="Πλοήγηση σελίδων">
+    <button type="button" class="doc-nav-prev">← Προηγούμενη</button>
+    <div class="doc-nav-mid">
+      <span class="doc-nav-label"></span>
+      <button type="button" class="doc-nav-pdf" onclick="window.print()">PDF</button>
+    </div>
+    <button type="button" class="doc-nav-next">Επόμενη →</button>
+  </nav>
+<script>
+(function () {
+  var pages = Array.prototype.slice.call(document.querySelectorAll(".sheet > section[data-nav-label]"));
+  if (!pages.length) return;
+  var prevBtn = document.querySelector(".doc-nav-prev");
+  var nextBtn = document.querySelector(".doc-nav-next");
+  var labelEl = document.querySelector(".doc-nav-label");
+  var index = 0;
+
+  function currentIndex() {
+    var mid = window.scrollY + window.innerHeight * 0.28;
+    var best = 0;
+    for (var i = 0; i < pages.length; i++) {
+      if (pages[i].offsetTop <= mid) best = i;
+    }
+    return best;
+  }
+
+  function sync() {
+    index = currentIndex();
+    var page = pages[index];
+    labelEl.textContent = (index + 1) + " / " + pages.length + " · " + page.getAttribute("data-nav-label");
+    prevBtn.disabled = index <= 0;
+    nextBtn.disabled = index >= pages.length - 1;
+  }
+
+  function go(delta) {
+    var next = Math.max(0, Math.min(pages.length - 1, currentIndex() + delta));
+    pages[next].scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  prevBtn.addEventListener("click", function () { go(-1); });
+  nextBtn.addEventListener("click", function () { go(1); });
+  window.addEventListener("scroll", sync, { passive: true });
+  window.addEventListener("resize", sync);
+  sync();
+})();
+</script>
+</body>
+</html>

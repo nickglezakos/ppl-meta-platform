@@ -1,0 +1,2408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EyeNet Executive Compliance Guide</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --success: #4caf50;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+      scroll-behavior: smooth;
+    }
+
+    body { margin: 0; }
+
+    .page {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 32px 24px 72px;
+    }
+
+    .print-bar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .print-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--brand-primary);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .print-button.secondary {
+      background: #0f172a;
+    }
+
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14);
+      border-radius: 32px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+      color: var(--text);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -80px auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: rgba(25, 118, 210, 0.26);
+    }
+
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1.35fr 0.9fr;
+      gap: 28px;
+      padding: 34px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14);
+      color: var(--brand-secondary);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, h4, p { margin-top: 0; }
+
+    h1 {
+      margin: 18px 0 16px;
+      font-size: 42px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      font-size: 17px;
+      color: #c7d7ea;
+      max-width: 58ch;
+      margin-bottom: 0;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .brand-stack {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-stack img {
+      height: 36px;
+      width: auto;
+    }
+
+    .brand-chip {
+      padding: 8px 12px;
+      border: 1px solid rgba(34, 211, 238, 0.24);
+      border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9);
+      color: #eef9ff;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .brand-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      color: var(--brand-secondary);
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .brand-link:hover { color: #8be9f8; }
+
+    .meta-card,
+    .section,
+    .key-card,
+    .note-card,
+    .summary-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px;
+      align-self: start;
+      color: var(--text);
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 18px;
+    }
+
+    .meta-item {
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .meta-item.full { grid-column: 1 / -1; }
+
+    .meta-label {
+      display: block;
+      margin-bottom: 6px;
+      color: #9fb0c3;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-value {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .toc {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 24px;
+    }
+
+    .toc a {
+      display: inline-flex;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(25, 118, 210, 0.08);
+      border: 1px solid var(--panel-line);
+      color: var(--brand-primary-dark);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .toc a:hover {
+      background: rgba(25, 118, 210, 0.14);
+    }
+
+    .grid-two,
+    .stats-grid,
+    .cards-3 {
+      display: grid;
+      gap: 22px;
+      margin-top: 24px;
+    }
+
+    .grid-two {
+      grid-template-columns: 1.1fr 0.9fr;
+      margin-top: 12px;
+    }
+
+    .stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .cards-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    .section {
+      margin-top: 24px;
+      padding: 28px;
+      border-color: var(--panel-line);
+      background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .section-number {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: inline-grid;
+      place-items: center;
+      background: rgba(25, 118, 210, 0.1);
+      color: var(--brand-primary);
+      font-weight: 700;
+      flex: 0 0 auto;
+      font-size: 13px;
+    }
+
+    h2 {
+      margin-bottom: 0;
+      font-size: 24px;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      margin: 22px 0 10px;
+      font-size: 18px;
+    }
+
+    h3:first-of-type { margin-top: 8px; }
+
+    .section > p,
+    .section > .lead-body {
+      color: #334155;
+      max-width: 78ch;
+    }
+
+    ul, ol {
+      margin: 0;
+      padding-left: 20px;
+      color: #334155;
+    }
+
+    li + li { margin-top: 8px; }
+
+    .callout {
+      padding: 18px 20px;
+      border-left: 4px solid var(--brand-secondary);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent);
+      color: #f5fbff;
+      font-weight: 600;
+      margin: 16px 0 0;
+    }
+
+    .callout.soft {
+      background: linear-gradient(135deg, rgba(25, 118, 210, 0.08), rgba(34, 211, 238, 0.08));
+      color: #0f172a;
+      border-left-color: var(--brand-primary);
+      font-weight: 500;
+    }
+
+    .summary-card,
+    .key-card,
+    .note-card {
+      padding: 22px;
+      border-color: var(--panel-line);
+      background: #ffffff;
+    }
+
+    .summary-card p:last-child,
+    .note-card p:last-child,
+    .key-card p:last-child {
+      margin-bottom: 0;
+    }
+
+    .stat-label {
+      color: #64748b;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .stat-value {
+      display: block;
+      margin-top: 10px;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+
+    .key-number {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      color: #64748b;
+      font-size: 13px;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      margin-top: 14px;
+      border: 1px solid rgba(15, 23, 42, 0.06);
+      border-radius: var(--radius-md);
+      background: #fff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0;
+      min-width: 640px;
+    }
+
+    th, td {
+      padding: 11px 14px;
+      text-align: left;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+      vertical-align: top;
+    }
+
+    th {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+      background: #f8fbff;
+      position: sticky;
+      top: 0;
+    }
+
+    td {
+      font-size: 13.5px;
+      color: #1e293b;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    code, .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+      background: rgba(25, 118, 210, 0.08);
+      padding: 1px 6px;
+      border-radius: 6px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .badge.high { background: rgba(239, 68, 68, 0.12); color: #b91c1c; }
+    .badge.med { background: rgba(245, 158, 11, 0.14); color: #b45309; }
+    .badge.low { background: rgba(76, 175, 80, 0.14); color: #2e7d32; }
+    .badge.met { background: rgba(76, 175, 80, 0.14); color: #2e7d32; }
+    .badge.partial { background: rgba(245, 158, 11, 0.14); color: #b45309; }
+    .badge.customer { background: rgba(25, 118, 210, 0.12); color: #125ea7; }
+    .badge.off { background: rgba(15, 23, 42, 0.08); color: #475569; }
+
+    .steps {
+      counter-reset: step;
+      list-style: none;
+      padding: 0;
+      margin: 12px 0 0;
+    }
+
+    .steps li {
+      position: relative;
+      padding: 14px 14px 14px 54px;
+      border: 1px solid var(--panel-line);
+      border-radius: var(--radius-md);
+      background: #fff;
+      margin-top: 10px;
+      color: #334155;
+    }
+
+    .steps li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 14px;
+      top: 14px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: rgba(25, 118, 210, 0.1);
+      color: var(--brand-primary);
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .companions {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .companions a {
+      display: block;
+      padding: 14px 16px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--panel-line);
+      background: #fff;
+      color: var(--brand-primary-dark);
+      text-decoration: none;
+      font-weight: 650;
+    }
+
+    .companions a:hover {
+      background: rgba(25, 118, 210, 0.06);
+    }
+
+    .companions span {
+      display: block;
+      margin-top: 4px;
+      color: #64748b;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    @page {
+      size: A4;
+      margin: 12mm;
+    }
+
+    @media (max-width: 920px) {
+      .hero-inner,
+      .grid-two,
+      .stats-grid,
+      .cards-3,
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 { font-size: 34px; }
+      .page { padding: 18px 16px 54px; }
+    }
+
+    @media print {
+      html {
+        background: #fff;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .page {
+        max-width: none;
+        padding: 0;
+      }
+
+      .print-bar,
+      .toc { display: none; }
+
+      .hero,
+      .meta-card,
+      .section,
+      .key-card,
+      .note-card,
+      .summary-card {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+
+      .hero {
+        margin-bottom: 12px;
+        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+        color: #ffffff;
+      }
+
+      .section { margin-top: 12px; }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .table-wrap {
+        overflow: visible;
+        border: 0;
+      }
+
+      table { min-width: 0; font-size: 11px; }
+      th, td { padding: 6px 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <a class="print-button secondary" href="#appendix-sources">FR / GR sources</a>
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="../product/logos/svg/eyenet-dark.svg" alt="EyeNet logo" />
+              <span class="brand-chip">Regulatory · Executive</span>
+            </div>
+          </div>
+          <span class="eyebrow">GDPR · Cybersecurity · Presence · Triggers · Mesh</span>
+          <h1>EyeNet Executive Compliance Guide</h1>
+          <p class="lead">
+            How current platform controls map to controller and processor duties in Greece, France, the wider EU, and the US — without claiming a software “GDPR certificate.”
+          </p>
+          <a class="brand-link" href="https://eyenet-vision.com/">https://eyenet-vision.com/</a>
+        </div>
+
+        <aside class="meta-card">
+          <h3>Document Snapshot</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Product</span>
+              <span class="meta-value">EyeNet Vision / PPL Meta</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Audience</span>
+              <span class="meta-value">Owners, DPOs, CISOs, sales</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Date</span>
+              <span class="meta-value">17 September 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Version</span>
+              <span class="meta-value">1.0</span>
+            </div>
+            <div class="meta-item full">
+              <span class="meta-label">Status</span>
+              <span class="meta-value">Informational executive map — not legal advice</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">0</span>
+        <h2>How to read this guide</h2>
+      </div>
+      <div class="callout">
+        Neither France nor Greece publishes a whitelist of “GDPR-compliant software.” Compliance is a controller duty (the customer) plus processor duties (EyeNet as vendor / installer).
+      </div>
+      <div class="companions">
+        <a href="#appendix-jurisdiction">
+          Jurisdiction &amp; use-case law summary
+          <span>Greek / EU / US mapping by EyeNet use case (March 2026)</span>
+        </a>
+        <a href="#appendix-sources">
+          Official FR / GR source index
+          <span>CNIL, ANSSI, HDPA, NCSA, KYA 1689/2025 links</span>
+        </a>
+      </div>
+      <nav class="toc" aria-label="Contents">
+        <a href="#intro">1 Intro</a>
+        <a href="#exec-summary">Exec summary</a>
+        <a href="#jurisdiction">2 Jurisdiction</a>
+        <a href="#risk-map">3 Risk map</a>
+        <a href="#presence">4 Presence</a>
+        <a href="#triggers">5 Triggers</a>
+        <a href="#authority">6 Authority</a>
+        <a href="#mesh">7 VPN mesh</a>
+        <a href="#checklists">8 Official checklists</a>
+        <a href="#matrix">9 Use-case matrix</a>
+        <a href="#presets">10 Presets</a>
+        <a href="#ops">11 Open items</a>
+        <a href="#sales">12 Sales / audit</a>
+        <a href="#appendix-fr">App. A France</a>
+        <a href="#appendix-gr">App. B Greece</a>
+        <a href="#appendix-jurisdiction">App. C Jurisdiction</a>
+        <a href="#appendix-sources">App. D Source index</a>
+      </nav>
+    </section>
+
+    <section class="section" id="intro">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>What EyeNet is from a compliance point of view</h2>
+      </div>
+      <p>
+        EyeNet is an <strong>on-premises computer-vision and operations platform</strong>.
+        A local installation processes camera, presence, and automation events at the customer site.
+        Authority (licence / identity) and Headscale (Matrix VPN mesh) sit on the internet only as coordination services.
+        After first enrollment, leaf devices prefer <strong>LAN</strong>, then fall back to the <strong>private mesh</strong> (<code>100.64.x.x</code>).
+        There is no requirement to send video to a public cloud.
+      </p>
+      <p>
+        That architecture is a strong privacy-by-design baseline. It is <strong>not a certificate</strong>.
+        Legal risk still depends on which module is switched on, what it infers, and where it is used.
+      </p>
+
+      <div class="stats-grid">
+        <div class="summary-card">
+          <span class="stat-label">Video path</span>
+          <span class="stat-value">On-prem</span>
+          <p class="footer-note">No public-cloud video requirement</p>
+        </div>
+        <div class="summary-card">
+          <span class="stat-label">Identification</span>
+          <span class="stat-value">Off by default</span>
+          <p class="footer-note">Face match is explicit, not silent</p>
+        </div>
+        <div class="summary-card">
+          <span class="stat-label">Remote path</span>
+          <span class="stat-value">LAN → mesh</span>
+          <p class="footer-note">Tunnel on demand, not a standing uplink</p>
+        </div>
+        <div class="summary-card">
+          <span class="stat-label">Licence key</span>
+          <span class="stat-value">lic_…</span>
+          <p class="footer-note">1:1 bind to owner + installation</p>
+        </div>
+      </div>
+
+      <h3>1.1 Roles</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Actor</th>
+              <th>Typical GDPR role</th>
+              <th>What they decide</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Customer (site owner)</td>
+              <td><strong>Controller</strong></td>
+              <td>Purpose, legal basis, notices, DPIA, retention, who may see footage</td>
+            </tr>
+            <tr>
+              <td>EyeNet / distributor / installer</td>
+              <td><strong>Processor</strong> (or joint controller if they set purposes)</td>
+              <td>How the software processes data, product security, support access</td>
+            </tr>
+            <tr>
+              <td>Authority (<code>authority.eyenet-vision.com</code>)</td>
+              <td>Processor for licence / mesh identity metadata</td>
+              <td>Installation UUID, owner email, application key, VPN tags — not video</td>
+            </tr>
+            <tr>
+              <td>Headscale VPN (<code>vpn.eyenet-vision.com</code>)</td>
+              <td>Processor for connectivity metadata</td>
+              <td>Mesh IPs, tags, enrollment keys — not video</td>
+            </tr>
+            <tr>
+              <td>Data subject</td>
+              <td>Employee, visitor, customer, passer-by</td>
+              <td>Access, erasure, objection, restriction</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>1.2 Privacy-by-design properties already in the product</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Property</th>
+              <th>Why it matters</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Local / edge processing</td><td>Reduces cross-border transfers and cloud exposure</td></tr>
+            <tr><td>Identification <strong>off by default</strong></td><td>Face match is an explicit trigger / presence mode</td></tr>
+            <tr><td>Modular enablement</td><td>Signage, presence, matching, plates, abandoned-object, VPN can stay off</td></tr>
+            <tr><td>Fine-grained local RBAC</td><td>Node capabilities limit who sees what</td></tr>
+            <tr><td>Machine application keys</td><td><code>lic_&lt;32 hex&gt;</code> bound 1:1 to owner email + installation UUID</td></tr>
+            <tr><td>Scoped mesh credentials</td><td>Platform <code>application_key</code>; devices <code>auth_key</code> + HMAC <code>api_token</code></td></tr>
+            <tr><td>LAN-first, mesh-on-demand</td><td>Remote access is a tunnel, not a standing video uplink</td></tr>
+            <tr><td>Audit trails</td><td>Presence decisions, trigger firings, Authority actions, user-action logs</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>1.3 What still sits with the customer</h3>
+      <ul>
+        <li>Legal basis and balancing test (especially workplaces and public-facing cameras)</li>
+        <li>DPIA before high-risk go-live (Greece Decision 65/2018; CNIL / EDPB video guidelines)</li>
+        <li>Physical signage and privacy notices</li>
+        <li>Retention policy per data class</li>
+        <li>Processor contracts (DPA) with EyeNet and any webhook / SaaS destinations</li>
+        <li>Human review before adverse automated decisions</li>
+        <li>NIS2 registration if the customer is an essential / important entity (Greece Law 5160/2024; France transposition pending as of this date)</li>
+      </ul>
+    </section>
+
+    <section class="section" id="exec-summary">
+      <div class="section-title">
+        <span class="section-number">ES</span>
+        <h2>Executive summary — readiness under strict frameworks</h2>
+      </div>
+      <p>
+        EyeNet is engineered so a customer can operate under <strong>strict EU regulatory frameworks</strong>
+        (GDPR, national DPA doctrine, and where applicable NIS2 / national cyber requirements)
+        without shipping video to a public cloud. Technical competence here means the platform can
+        <strong>implement privacy-by-design and Art. 32-class controls by default</strong>, expose
+        auditable decisions, and keep high-risk capabilities off until the customer’s DPO / legal
+        process authorises them.
+      </p>
+      <div class="callout">
+        Verdict for leadership: EyeNet is operationally ready as a privacy-first on-prem processor stack.
+        Lawfulness, DPIA, notices, and NIS2 entity registration remain the controller’s duty — typically
+        led by the customer’s DPO with EyeNet / distributor technical evidence.
+      </div>
+
+      <div class="stats-grid">
+        <div class="summary-card">
+          <span class="stat-label">EyeNet (processor)</span>
+          <span class="stat-value" style="font-size:20px">Technical controls</span>
+          <p class="footer-note">On-prem video, ID off by default, RBAC, scoped keys, LAN-first mesh, audit trails</p>
+        </div>
+        <div class="summary-card">
+          <span class="stat-label">Customer + DPO</span>
+          <span class="stat-value" style="font-size:20px">Legal programme</span>
+          <p class="footer-note">Purpose, legal basis, DPIA, signage, retention, DSAR, breach notify</p>
+        </div>
+        <div class="summary-card">
+          <span class="stat-label">National DPA</span>
+          <span class="stat-value" style="font-size:20px">Doctrine &amp; oversight</span>
+          <p class="footer-note">CNIL / HDPA guidance, DPIA lists, enforcement — not a product certifier</p>
+        </div>
+        <div class="summary-card">
+          <span class="stat-label">Cyber authority</span>
+          <span class="stat-value" style="font-size:20px">NIS2 / hygiene</span>
+          <p class="footer-note">ANSSI / NCSA frameworks; customer registers if in scope</p>
+        </div>
+      </div>
+
+      <h3>Who contributes what</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Layer</th>
+              <th>EyeNet technical competence</th>
+              <th>Customer / DPO must still do</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Architecture</td>
+              <td>Local processing; no public-cloud video path; Authority/VPN hold identity &amp; mesh metadata only</td>
+              <td>Confirm roles (controller vs processor) in contracts; map data flows into RoPA</td>
+            </tr>
+            <tr>
+              <td>Minimisation</td>
+              <td>Identification, plate OCR, multi-cam match, search lookback are opt-in / off by default</td>
+              <td>Approve which modules go live; keep least-intrusive alternative (e.g. Presence QR-only)</td>
+            </tr>
+            <tr>
+              <td>Access &amp; keys</td>
+              <td>Capability RBAC; machine <code>lic_</code> key 1:1 to installation; separate mesh tokens</td>
+              <td>Assign DPO / admins; review access; disable bootstrap-admin after setup</td>
+            </tr>
+            <tr>
+              <td>Accountability</td>
+              <td>Presence traces, trigger execution logs, Authority audit history</td>
+              <td>DPIA where required; retention policy; respond to subject rights; 72h breach process</td>
+            </tr>
+            <tr>
+              <td>Remote / mobile</td>
+              <td>LAN-first host order; WireGuard mesh; short Presence bursts by design</td>
+              <td>Mobile / wearable SOP and DPIA if soft-camera APK streams off-site</td>
+            </tr>
+            <tr>
+              <td>NIS2 (if in scope)</td>
+              <td>Supports inventory, access control, logs, on-prem evidence retention</td>
+              <td>Register with NCSA (GR) / prepare for ANSSI (FR); IR &amp; policies</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Representative use cases</h3>
+      <p>Short readiness view for commercial and DPO workshops — not the full matrix in §9.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Use case</th>
+              <th>Recommended EyeNet preset</th>
+              <th>Risk</th>
+              <th>DPO / client gate</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Office / school attendance</td>
+              <td>Presence <code>qr_only</code>; count-only cameras</td>
+              <td><span class="badge med">Med</span></td>
+              <td>Workplace notice + balancing test; prefer QR over face</td>
+            </tr>
+            <tr>
+              <td>Gate / logistics security</td>
+              <td><code>left_object</code>; vehicles without OCR</td>
+              <td><span class="badge med">Low–Med</span></td>
+              <td>Purpose = security; ROI; short retention</td>
+            </tr>
+            <tr>
+              <td>Verified staff presence</td>
+              <td>Presence <code>qr_plus_camera</code> only if needed</td>
+              <td><span class="badge high">High</span></td>
+              <td><strong>DPIA + Art. 9</strong>; keep non-biometric alternative</td>
+            </tr>
+            <tr>
+              <td>Known-person / watchlist</td>
+              <td><code>ppl_match</code> (single cam); avoid <code>vprofile_match</code> unless justified</td>
+              <td><span class="badge high">High</span></td>
+              <td>Legal basis, human review, short embedding retention</td>
+            </tr>
+            <tr>
+              <td>Retail / digital signage</td>
+              <td>Aggregate dwell / count only</td>
+              <td><span class="badge high">High</span> if individual targeting</td>
+              <td>No sensitive-category targeting; public notice</td>
+            </tr>
+            <tr>
+              <td>Mobile soft-camera ops</td>
+              <td>Enrolled APK; LAN-first; explicit start/stop</td>
+              <td><span class="badge high">High</span></td>
+              <td>Mobile DPIA; geo/time rules; no standing stream</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout soft">
+        EyeNet can demonstrate technical fitness for CNIL / HDPA / ANSSI / NCSA-style controls.
+        It does not replace the customer’s DPO programme or national DPA approval where the law requires prior consultation after a high residual DPIA risk.
+      </div>
+    </section>
+
+    <section class="section" id="jurisdiction">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>Jurisdiction snapshot</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Topic</th>
+              <th>Greece</th>
+              <th>France</th>
+              <th>Rest of EU</th>
+              <th>USA</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Privacy law</td>
+              <td>GDPR + Ν. 4624/2019</td>
+              <td>GDPR + Loi Informatique et Libertés</td>
+              <td>GDPR</td>
+              <td>State laws (CPRA, BIPA…) — no federal GDPR</td>
+            </tr>
+            <tr>
+              <td>Authority</td>
+              <td>ΑΠΔΠΧ (HDPA)</td>
+              <td>CNIL</td>
+              <td>National DPA + EDPB</td>
+              <td>State AGs / private litigation</td>
+            </tr>
+            <tr>
+              <td>Video guidance</td>
+              <td>Directive 1/2011 + EDPB 3/2019</td>
+              <td>CNIL caméras augmentées</td>
+              <td>EDPB 3/2019</td>
+              <td>Notice / biometric consent varies</td>
+            </tr>
+            <tr>
+              <td>Face identification</td>
+              <td>Art. 9; DPIA almost always</td>
+              <td>Art. 9; prohibited by default</td>
+              <td>Art. 9</td>
+              <td>BIPA-class; high litigation risk</td>
+            </tr>
+            <tr>
+              <td>Cyber hygiene</td>
+              <td>NCSA Handbook</td>
+              <td>ANSSI 42 measures + EBIOS</td>
+              <td>NIS2 + ENISA</td>
+              <td>Sectoral / contractual</td>
+            </tr>
+            <tr>
+              <td>Binding cyber list</td>
+              <td><strong>KYA 1689/2025 (22 req.)</strong> — NIS2 in force</td>
+              <td>NIS2 transposition not finished (Sep 2026)</td>
+              <td>NIS2</td>
+              <td>Not NIS2</td>
+            </tr>
+            <tr>
+              <td>Approved software list</td>
+              <td>None for GDPR</td>
+              <td>ANSSI catalogue / SecNumCloud (cyber, not GDPR)</td>
+              <td>EUCC</td>
+              <td>FedRAMP etc. (out of scope)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout soft">
+        Both EU DPAs treat anonymous / on-device detection more favourably than identification. Facial recognition cannot be “ticked compliant” by citing on-prem deployment.
+      </div>
+    </section>
+
+    <section class="section" id="risk-map">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Executive risk map by module</h2>
+      </div>
+      <p>
+        Legend: <span class="badge low">Low</span>
+        <span class="badge med">Med</span>
+        <span class="badge high">High</span>
+        is legal risk if the module is enabled in production. <strong>Default</strong> is the recommended privacy-by-default preset.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Module</th>
+              <th>What it does</th>
+              <th>Default</th>
+              <th>Risk</th>
+              <th>DPIA</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Instant detection</td>
+              <td>Live people/object boxes; optional age/gender</td>
+              <td>Detection on; ID off</td>
+              <td><span class="badge med">Med</span></td>
+              <td>If systematic / workplace</td>
+            </tr>
+            <tr>
+              <td>Presence <code>qr_only</code></td>
+              <td>Check-in via station / owner QR</td>
+              <td>Available</td>
+              <td><span class="badge med">Low–Med</span></td>
+              <td>Usually yes in GR/EU workplaces</td>
+            </tr>
+            <tr>
+              <td>Presence <code>camera_only</code></td>
+              <td>Face match to presence group</td>
+              <td><span class="badge off">Off</span></td>
+              <td><span class="badge high">High</span></td>
+              <td><strong>Required</strong></td>
+            </tr>
+            <tr>
+              <td>Presence <code>qr_plus_camera</code></td>
+              <td>QR + face for verified grant</td>
+              <td><span class="badge off">Off</span></td>
+              <td><span class="badge high">High</span></td>
+              <td><strong>Required</strong></td>
+            </tr>
+            <tr>
+              <td>Triggers <code>demographic</code></td>
+              <td>Live age/gender/count rules</td>
+              <td><span class="badge off">Off</span></td>
+              <td><span class="badge high">High</span></td>
+              <td>Required for public / signage targeting</td>
+            </tr>
+            <tr>
+              <td><code>ppl_match</code> / <code>vprofile_match</code></td>
+              <td>Live match to known people</td>
+              <td><span class="badge off">Off</span></td>
+              <td><span class="badge high">High</span></td>
+              <td><strong>Required</strong></td>
+            </tr>
+            <tr>
+              <td><code>search</code> / <code>search_demographic</code></td>
+              <td>Lookback on recordings</td>
+              <td><span class="badge off">Off</span></td>
+              <td><span class="badge high">High</span></td>
+              <td><strong>Required</strong></td>
+            </tr>
+            <tr>
+              <td><code>body_posture</code> / <code>velocity</code></td>
+              <td>Fall / motion in ROI</td>
+              <td><span class="badge off">Off</span></td>
+              <td><span class="badge med">Med</span></td>
+              <td>Yes if used to profile people</td>
+            </tr>
+            <tr>
+              <td><code>left_object</code></td>
+              <td>Abandoned bag / object</td>
+              <td><span class="badge off">Off</span></td>
+              <td><span class="badge med">Low–Med</span></td>
+              <td>Usually proportionate for security</td>
+            </tr>
+            <tr>
+              <td><code>vehicle_plate</code></td>
+              <td>Vehicle + optional OCR plate</td>
+              <td>OCR optional / off</td>
+              <td><span class="badge high">High</span> if OCR on</td>
+              <td>Required when plates stored</td>
+            </tr>
+            <tr>
+              <td>Authority + bootstrap</td>
+              <td>Licence, owner, roles</td>
+              <td>Required for install</td>
+              <td><span class="badge low">Low</span></td>
+              <td>No, unless logs mix with video</td>
+            </tr>
+            <tr>
+              <td>Matrix VPN mesh</td>
+              <td>Private remote path</td>
+              <td>LAN-first</td>
+              <td><span class="badge low">Low</span></td>
+              <td>If remote viewing of identifiable video</td>
+            </tr>
+            <tr>
+              <td>Mobile camera APK</td>
+              <td>Soft camera + mesh client</td>
+              <td>Enrolled device</td>
+              <td><span class="badge high">High</span></td>
+              <td><strong>Required</strong> (mobile / wearable)</td>
+            </tr>
+            <tr>
+              <td>Webhooks / third-party</td>
+              <td>Push event payloads off-box</td>
+              <td>Minimised payload</td>
+              <td><span class="badge high">High</span></td>
+              <td>DPA + allowlist required</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section" id="presence">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>Presence</h2>
+      </div>
+      <p>
+        Presence is the attendance / verification product. It orchestrates QR, camera, policy, and automation without replacing Node, Cameras, or Triggers.
+      </p>
+
+      <h3>4.1 Modes</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Mode</th>
+              <th>Assurance</th>
+              <th>Biometric?</th>
+              <th>Recommended EU basis</th>
+              <th>EyeNet control</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>qr_only</code></td>
+              <td>Simple check-in</td>
+              <td>No</td>
+              <td>Employment / legitimate interest + notice</td>
+              <td>Station or owner QR; timeout; max attempts</td>
+            </tr>
+            <tr>
+              <td><code>camera_only</code></td>
+              <td>Presence match</td>
+              <td><strong>Yes</strong></td>
+              <td>Art. 9 exception + necessity; non-biometric alternative</td>
+              <td>Reserved presence camera; group policy</td>
+            </tr>
+            <tr>
+              <td><code>qr_plus_camera</code></td>
+              <td>Verified presence</td>
+              <td><strong>Yes</strong></td>
+              <td>Same as camera_only</td>
+              <td>QR-to-camera window; retry; grant/deny/fail</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cards-3">
+        <div class="key-card">
+          <span class="key-number">qr_only</span>
+          <p><code>presence_check_in</code> → <code>presence_log</code></p>
+        </div>
+        <div class="key-card">
+          <span class="key-number">camera_only</span>
+          <p><code>presence_match</code> → <code>presence_grant</code></p>
+        </div>
+        <div class="key-card">
+          <span class="key-number">qr + camera</span>
+          <p><code>presence_verified_match</code> → <code>presence_grant</code></p>
+        </div>
+      </div>
+
+      <h3>4.2 Data that stays in Presence vs data that does not</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Store</th>
+              <th>Contents</th>
+              <th>On Presence API?</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Session / grant</td>
+              <td>User, device, mode, decision, reason, policy, timestamps</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <td>Decision history / traces</td>
+              <td>Why granted, policy, linked trigger/action UUIDs</td>
+              <td>Yes (role-gated)</td>
+            </tr>
+            <tr>
+              <td>Analytics</td>
+              <td>By user / device / installation / mode / grant type</td>
+              <td>Yes (prefer aggregate for extra-EU export)</td>
+            </tr>
+            <tr>
+              <td>Instant-detection path</td>
+              <td>Front-camera bursts, bboxes, optional embeddings</td>
+              <td><strong>No</strong> — Cameras / Vision / VMeta</td>
+            </tr>
+            <tr>
+              <td>QR payload</td>
+              <td><code>installation_uuid</code>, device, actor, token; optional licence reference</td>
+              <td>Challenge only — not licence activation</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout soft">
+        <strong>Product rule:</strong> Presence APIs return outcomes, not face images. Necessary but not sufficient — if camera modes are on, Art. 9 still applies because matching uses biometric data in the vision stack.
+      </div>
+
+      <h3>4.3 Mapping to the March 2026 legal summary</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Legal note requirement</th>
+              <th>Presence support</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Least-intrusive alternative before biometrics</td><td><code>qr_only</code> is the alternative; keep it as default</td></tr>
+            <tr><td>Workplace proportionality</td><td>Session timeout, max attempts, group policy, time windows</td></tr>
+            <tr><td>Human oversight of adverse outcomes</td><td><code>denied</code> / <code>failed</code> should notify a person, not lock a door alone</td></tr>
+            <tr><td>Traceability</td><td>Full session trace, policy source, audit log of actions</td></tr>
+            <tr><td>US BIPA-class risk</td><td>Do not enable camera modes in Illinois-like states without signed biometric policy</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section" id="triggers">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>Triggers — current types</h2>
+      </div>
+      <p>
+        Modes in media service:
+        <code>demographic</code> ·
+        <code>ppl_match</code> ·
+        <code>search</code> ·
+        <code>search_demographic</code> ·
+        <code>vprofile_match</code> ·
+        <code>body_posture</code> ·
+        <code>velocity</code> ·
+        <code>left_object</code> ·
+        <code>vehicle_plate</code>
+        — plus Presence-provisioned types.
+      </p>
+
+      <h3>5.1 Compliance by trigger type</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Identifies?</th>
+              <th>EU risk</th>
+              <th>Customer must</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>demographic</code></td>
+              <td>No (inferred attributes)</td>
+              <td><span class="badge high">High</span> if targeting / scoring</td>
+              <td>Notice + DPIA; no sensitive-category targeting</td>
+            </tr>
+            <tr>
+              <td><code>ppl_match</code></td>
+              <td><strong>Yes</strong></td>
+              <td><span class="badge high">High</span> Art. 9</td>
+              <td>Legal basis, DPIA, short retention, human review</td>
+            </tr>
+            <tr>
+              <td><code>vprofile_match</code></td>
+              <td><strong>Yes</strong>, multi-cam</td>
+              <td><span class="badge high">Higher</span></td>
+              <td>Same as match + justify multi-cam correlation</td>
+            </tr>
+            <tr>
+              <td><code>search</code></td>
+              <td><strong>Yes</strong>, on recordings</td>
+              <td><span class="badge high">High</span></td>
+              <td>Separate purpose; auto-prune lookback</td>
+            </tr>
+            <tr>
+              <td><code>search_demographic</code></td>
+              <td>Indirect aggregates</td>
+              <td><span class="badge high">High</span></td>
+              <td>Anonymisation thresholds; no re-ID</td>
+            </tr>
+            <tr>
+              <td><code>body_posture</code></td>
+              <td>No (body box)</td>
+              <td><span class="badge med">Med</span></td>
+              <td>Safety purpose; not performance scoring</td>
+            </tr>
+            <tr>
+              <td><code>velocity</code></td>
+              <td>No unless combined with match</td>
+              <td><span class="badge med">Med</span></td>
+              <td>Do not feed into individual scoring</td>
+            </tr>
+            <tr>
+              <td><code>left_object</code></td>
+              <td>No (object; V2 nearby body)</td>
+              <td><span class="badge med">Low–Med</span></td>
+              <td>Security purpose; pin bbox not face crop</td>
+            </tr>
+            <tr>
+              <td><code>vehicle_plate</code></td>
+              <td><strong>Yes if OCR on</strong></td>
+              <td><span class="badge high">High</span> with plates</td>
+              <td>Keep OCR off unless ANPR has a legal basis</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>5.2 Cross-cutting controls</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Control</th>
+              <th>Platform status</th>
+              <th>How to set it</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Identification off by default</td>
+              <td><span class="badge met">Supported</span></td>
+              <td>Do not create match / search triggers until approved</td>
+            </tr>
+            <tr>
+              <td>Trigger approval + purpose log</td>
+              <td><span class="badge partial">Partial</span></td>
+              <td>Change management; execution logs; add legal-basis field in ops</td>
+            </tr>
+            <tr>
+              <td>Explainable rules</td>
+              <td><span class="badge met">Supported</span></td>
+              <td>Named conditions; <code>last_match_info</code>; Presence reason codes</td>
+            </tr>
+            <tr>
+              <td>Human-in-the-loop</td>
+              <td><span class="badge customer">Customer + Partial</span></td>
+              <td>Do not bind match triggers to door-unlock / discipline alone</td>
+            </tr>
+            <tr>
+              <td>Notification minimisation</td>
+              <td><span class="badge met">Supported</span></td>
+              <td>Event ID / reason templates; avoid face crops</td>
+            </tr>
+            <tr>
+              <td>Webhook allowlist + DPA</td>
+              <td><span class="badge partial">Partial / Customer</span></td>
+              <td>Authenticated actions exist; customer contracts endpoints</td>
+            </tr>
+            <tr>
+              <td>Multi-cam only when needed</td>
+              <td><span class="badge met">Supported</span></td>
+              <td><code>vprofile_match</code> opt-in; keep single-cam <code>ppl_match</code> default</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section" id="authority">
+      <div class="section-title">
+        <span class="section-number">6</span>
+        <h2>Authority, fine-grained keys, and bootstrap</h2>
+      </div>
+      <p>
+        Authority is the <strong>licence and hierarchy control plane</strong>. Local Node remains the <strong>account and RBAC</strong> system.
+        Bootstrap no longer invents a second local licence secret.
+      </p>
+
+      <h3>6.1 Credentials</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Credential</th>
+              <th>Shape / issuer</th>
+              <th>Used for</th>
+              <th>Must not be used for</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Software licence = <code>application_key</code></td>
+              <td><code>lic_</code> + 32 hex, Authority</td>
+              <td>Activate, report state, update, platform VPN enroll</td>
+              <td>Sharing across sites; live secret in QR</td>
+            </tr>
+            <tr>
+              <td>Bootstrap-admin (temporary)</td>
+              <td><code>admin@authority.local</code> when flag enabled</td>
+              <td>First privileged Authority setup</td>
+              <td>Production — disable after setup</td>
+            </tr>
+            <tr>
+              <td>Local user JWT</td>
+              <td>Node</td>
+              <td>Day-to-day API via roles + capabilities</td>
+              <td>Licence activation</td>
+            </tr>
+            <tr>
+              <td>VPN <code>auth_key</code></td>
+              <td>Headscale pre-auth via Authority</td>
+              <td>One-time mesh join</td>
+              <td>API calls</td>
+            </tr>
+            <tr>
+              <td>Device <code>api_token</code></td>
+              <td>HMAC(secret, installation_uuid)</td>
+              <td>Discovery / resolve-platform</td>
+              <td>Owner login</td>
+            </tr>
+            <tr>
+              <td>Invitation token</td>
+              <td>Authority</td>
+              <td>User-first onboarding of roles</td>
+              <td>Device enroll</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout soft">
+        <strong>Fine-grained</strong> means: one machine licence key per installation, capability-level local permissions, and separate mesh/device tokens. There is no shared god-key that both unlocks video and enrolls phones.
+      </div>
+
+      <h3>6.2 Local installation bootstrap (target path)</h3>
+      <ol class="steps">
+        <li>Start local backend services; frontend bootstrap collects platform connection if missing.</li>
+        <li>Persist <code>application_key</code> + durable <code>installation_uuid</code>. Saving settings is <strong>not</strong> activation.</li>
+        <li>First owner registers with the <strong>approved owner email</strong>.</li>
+        <li>Node calls Authority <code>POST /api/v1/installations/activate</code> with key + email + UUID.</li>
+        <li>Only after <code>approved=true</code> does Node grant local <code>owner, admin, user</code>.</li>
+        <li>Authority remains source of truth for licence status, warning / offline grace; Node can enter safeguard.</li>
+        <li>Disable Authority bootstrap-admin.</li>
+      </ol>
+      <p class="footer-note">Mismatch of email, unknown key, or reuse of the same key on a second UUID is rejected.</p>
+
+      <h3>6.3 Authority / bootstrap compliance</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Control</th>
+              <th>FR</th>
+              <th>GR</th>
+              <th>EyeNet</th>
+              <th>Residual</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Unique machine identity</td>
+              <td>ANSSI inventory</td>
+              <td>KYA asset inventory</td>
+              <td><code>installation_uuid</code> + <code>lic_</code> key</td>
+              <td>Do not reuse keys</td>
+            </tr>
+            <tr>
+              <td>Least privilege</td>
+              <td>CNIL fiches 3–5</td>
+              <td>Access control</td>
+              <td>Node capabilities; Authority roles</td>
+              <td>Enforce on every API (tightening)</td>
+            </tr>
+            <tr>
+              <td>Privileged bootstrap closed</td>
+              <td>ANSSI secure admin</td>
+              <td>Access control</td>
+              <td>Bootstrap-admin default off</td>
+              <td>Operational discipline</td>
+            </tr>
+            <tr>
+              <td>Key not shown after bind</td>
+              <td>Secret handling</td>
+              <td>Security of processing</td>
+              <td>Key server-side after bootstrap</td>
+              <td>Frontend must not re-display</td>
+            </tr>
+            <tr>
+              <td>Support access</td>
+              <td>CNIL processors</td>
+              <td>Supply chain / remote</td>
+              <td>JIT, customer-approved, session-logged</td>
+              <td>No standing remote admin</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section" id="mesh">
+      <div class="section-title">
+        <span class="section-number">7</span>
+        <h2>Matrix VPN mesh (platform + mobile APKs)</h2>
+      </div>
+      <p>
+        The Matrix is the commercial overlay on a <strong>Headscale / WireGuard mesh</strong>.
+        Each app is its own VPN node. Platforms do not share a database.
+        Authority stores the only shared link: which client is assigned to which platform.
+      </p>
+
+      <div class="grid-two">
+        <div class="note-card">
+          <h3>How a device finds home</h3>
+          <p>Enrollment (one internet round-trip) returns:</p>
+          <ul>
+            <li><code>platform_tailscale_ip</code> — stable mesh IP</li>
+            <li><code>platform_local_ip</code> — current LAN IP</li>
+            <li><code>platform_hostname</code>, <code>matrix_group_id</code>, <code>auth_key</code>, <code>api_token</code></li>
+          </ul>
+          <p><strong>Steady-state host order:</strong></p>
+          <ol>
+            <li><code>platform_local_ip</code> (LAN)</li>
+            <li>manual <code>backendIP</code></li>
+            <li><code>vpn_platform_tailscale_ip</code> (remote)</li>
+          </ol>
+        </div>
+        <div class="note-card">
+          <h3>Tags</h3>
+          <ul>
+            <li><code>tag:install-&lt;hex&gt;</code> — immutable installation identity</li>
+            <li><code>tag:platform</code> / <code>tag:client</code> / <code>tag:analytics</code> — role (exclusive)</li>
+            <li><code>tag:camera</code> / <code>tag:signage</code> / future <code>tag:presence</code> — type</li>
+            <li><code>tag:matrix-&lt;uuid&gt;</code> — mesh membership</li>
+          </ul>
+          <p class="footer-note">ACLs should keep clients hub-and-spoke to their assigned platform. Cross-tenant mesh paths are a defect.</p>
+        </div>
+      </div>
+
+      <h3>7.3 Mesh / mobile APK compliance</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Control</th>
+              <th>Why</th>
+              <th>EyeNet</th>
+              <th>Gap</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Encrypt in transit</td>
+              <td>Art. 32, ANSSI, NCSA</td>
+              <td>WireGuard + TLS</td>
+              <td>Confirm APKs use mesh HTTP, not cleartext internet</td>
+            </tr>
+            <tr>
+              <td>LAN-first</td>
+              <td>CNIL / HDPA: don’t stream off-site by default</td>
+              <td>Designed <code>platformHost</code> order</td>
+              <td>Deploy local-IP reporter; rebuild APKs</td>
+            </tr>
+            <tr>
+              <td>No video to Authority / Headscale</td>
+              <td>Purpose limitation</td>
+              <td>Only IPs, tags, keys</td>
+              <td>Never put frames on enroll / resolve</td>
+            </tr>
+            <tr>
+              <td>Mobile / wearable DPIA</td>
+              <td>Legal summary §3.6 / §7.6</td>
+              <td>Soft-camera APK is a mobile source</td>
+              <td>Geo/time rules; pause capture</td>
+            </tr>
+            <tr>
+              <td>Wrong-hub risk</td>
+              <td>Tenant isolation</td>
+              <td><code>tag:platform</code> must be the on-prem node</td>
+              <td>Mis-enrollment to Hetzner = P1</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        A phone on the mesh is remote processing, not “local only.” Default: stream only on shift / geofence / explicit start-stop. Presence bursts should stay short.
+      </div>
+    </section>
+
+    <section class="section" id="checklists">
+      <div class="section-title">
+        <span class="section-number">8</span>
+        <h2>Official checklist mapping</h2>
+      </div>
+      <p>
+        Status legend:
+        <span class="badge met">Met</span>
+        <span class="badge partial">Partial</span>
+        <span class="badge customer">Customer</span>
+      </p>
+
+      <h3>8.1 CNIL — four first steps (France)</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>CNIL step</th>
+              <th>EyeNet contribution</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1. Register of processing</td>
+              <td>Camera inventory, Presence modes, triggers, VPN nodes, entitlements as data-flow facts</td>
+              <td><span class="badge partial">Partial / Customer</span></td>
+            </tr>
+            <tr>
+              <td>2. Minimise / sort data</td>
+              <td>ID off; QR-only Presence; plate OCR off; aggregate signage; Redis TTLs</td>
+              <td><span class="badge met">Met</span> if defaults kept</td>
+            </tr>
+            <tr>
+              <td>3. Inform &amp; honour rights</td>
+              <td>Signage is customer; platform: RBAC, traces, export/delete via ops</td>
+              <td><span class="badge partial">Partial</span></td>
+            </tr>
+            <tr>
+              <td>4. Secure + 72h breach</td>
+              <td>On-prem, mesh, keys, logs; customer incident process</td>
+              <td><span class="badge partial">Partial</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>CNIL 2024 security guide (selected fiches)</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Fiche</th>
+              <th>Theme</th>
+              <th>EyeNet mapping</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>Security governance</td><td>Authority licence lifecycle + owner/admin split</td><td><span class="badge partial">Partial</span></td></tr>
+            <tr><td>3–5</td><td>Auth / access</td><td>Node capabilities; no shared admin</td><td><span class="badge met">Met</span></td></tr>
+            <tr><td>8–9</td><td>Network / servers</td><td>LAN-first + WireGuard; local services</td><td><span class="badge met">Met</span></td></tr>
+            <tr><td>14</td><td>Processors</td><td>DPA; webhooks allowlist</td><td><span class="badge customer">Customer</span></td></tr>
+            <tr><td>22</td><td>Cloud</td><td>Not required; Authority/VPN are coordination only</td><td><span class="badge met">Met</span></td></tr>
+            <tr><td>23</td><td>Mobile apps</td><td>Camera + Presence APKs</td><td><span class="badge partial">Partial</span></td></tr>
+            <tr><td>24</td><td>AI</td><td>Instant detection, demographics, match</td><td><span class="badge customer">Customer DPIA</span></td></tr>
+            <tr><td>25</td><td>APIs</td><td>Scoped keys, capability checks</td><td><span class="badge partial">Partial</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>8.2 HDPA — ten steps (Greece)</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>HDPA step</th>
+              <th>EyeNet</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>Awareness / risk strategy</td><td>This guide + legal summary</td><td><span class="badge customer">Customer</span></td></tr>
+            <tr><td>2</td><td>Record of processing</td><td>Same as CNIL step 1</td><td><span class="badge partial">Partial / Customer</span></td></tr>
+            <tr><td>3</td><td>Lawfulness and rights</td><td>Feature flags per jurisdiction</td><td><span class="badge customer">Customer</span></td></tr>
+            <tr><td>4</td><td>Consent review</td><td>Prefer non-consent for security cameras; Art. 9 for Presence camera</td><td><span class="badge customer">Customer</span></td></tr>
+            <tr><td>5</td><td>Policies and rights procedures</td><td>Traces support investigation; erasure is ops</td><td><span class="badge partial">Partial</span></td></tr>
+            <tr><td>6</td><td>DPIA</td><td>Mandatory for match, Presence camera, search, plates, mobile, systematic video</td><td><span class="badge high">Customer — blocker</span></td></tr>
+            <tr><td>7</td><td>DPO</td><td>Customer appointment when required</td><td><span class="badge customer">Customer</span></td></tr>
+            <tr><td>8</td><td>Breach detection / notify</td><td>Logs exist; notify is customer</td><td><span class="badge partial">Partial</span></td></tr>
+            <tr><td>9</td><td>Lead authority if multi-state</td><td>Authority hierarchy is commercial, not one-stop-shop</td><td><span class="badge customer">Customer</span></td></tr>
+            <tr><td>10</td><td>Transfers outside EU</td><td>Default: no video transfer; mesh metadata in EU</td><td><span class="badge met">Met</span> if no US webhooks</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="grid-two" style="margin-top:22px">
+        <div class="note-card">
+          <h3>8.3 ANSSI hygiene (condensed)</h3>
+          <ul>
+            <li><strong>Inventory</strong> — cameras, Presence reservations, VPN nodes → Partial</li>
+            <li><strong>Authenticate</strong> — JWT + capabilities; machine keys → Met</li>
+            <li><strong>Separate privileges</strong> — Authority roles + local RBAC → Met</li>
+            <li><strong>Update / patch</strong> — check-update + installer → Partial</li>
+            <li><strong>VPN / filtering</strong> — mesh ACLs, LAN-first → Partial</li>
+            <li><strong>Log &amp; detect</strong> — trigger / Presence / Authority audit → Partial</li>
+            <li><strong>Backup / incident</strong> — customer-owned → Customer</li>
+          </ul>
+        </div>
+        <div class="note-card">
+          <h3>8.4 Greece NIS2 / KYA 1689/2025</h3>
+          <p>Law <strong>5160/2024</strong> in force. Register at nis2register.cyber.gov.gr. 22 national requirements. Incidents 24h / 72h / 1 month.</p>
+          <ul>
+            <li>Access control → <span class="badge met">Met</span></li>
+            <li>Asset inventory → <span class="badge partial">Partial</span></li>
+            <li>Supply chain → <span class="badge partial">Partial</span></li>
+            <li>Incident / backups / policies / training → <span class="badge customer">Customer</span></li>
+          </ul>
+          <p class="footer-note">France NIS2: prepare the same controls; ANSSI registration when transposition lands.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="matrix">
+      <div class="section-title">
+        <span class="section-number">9</span>
+        <h2>Use-case matrix (updated)</h2>
+      </div>
+      <p>From the March 2026 legal summary §11, plus new 2026 modules.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Function</th>
+              <th>Risk</th>
+              <th>Control</th>
+              <th>Owner</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>Real-time identification</td><td><span class="badge high">High</span></td><td>Off by default; DPIA; short retention</td><td>Legal + DPO + IT</td></tr>
+            <tr><td>2</td><td>Route / velocity tracking</td><td><span class="badge high">High/Med</span></td><td>Zone + time limits; auto-delete</td><td>DPO + IT</td></tr>
+            <tr><td>3</td><td>Demographics</td><td><span class="badge high">High</span></td><td>Aggregate only; no individual history</td><td>Legal + DPO</td></tr>
+            <tr><td>4</td><td>Webhooks</td><td><span class="badge high">High</span></td><td>DPA, minimise, allowlist</td><td>Legal + IT</td></tr>
+            <tr><td>5</td><td>Cross-camera match</td><td><span class="badge high">High</span></td><td><code>vprofile_match</code> opt-in only</td><td>Legal + DPO + IT</td></tr>
+            <tr><td>6</td><td>Signage targeting</td><td><span class="badge high">High</span></td><td>Broad segments; no sensitive classes</td><td>Legal + DPO + Ops</td></tr>
+            <tr><td>11</td><td>Attendance counting</td><td><span class="badge med">Med</span></td><td>Prefer QR Presence over face</td><td>DPO + Ops</td></tr>
+            <tr><td>P1</td><td>Presence QR-only</td><td><span class="badge med">Med</span></td><td>Notice, retention, no secondary HR scoring</td><td>DPO + Ops</td></tr>
+            <tr><td>P2</td><td>Presence camera / verified</td><td><span class="badge high">High</span></td><td>Alternative method; DPIA; Art. 9</td><td>Legal + DPO</td></tr>
+            <tr><td>T1</td><td><code>left_object</code></td><td><span class="badge med">Low–Med</span></td><td>ROI; object-only; no face crop</td><td>Ops + DPO</td></tr>
+            <tr><td>T2</td><td><code>vehicle_plate</code> OCR</td><td><span class="badge high">High</span></td><td>OCR off by default</td><td>Legal + DPO</td></tr>
+            <tr><td>T3</td><td>Search on recordings</td><td><span class="badge high">High</span></td><td>Short lookback; approval</td><td>DPO + IT</td></tr>
+            <tr><td>A1</td><td>Authority keys / bootstrap</td><td><span class="badge med">Med</span></td><td><code>lic_</code> format; 1:1 bind; hide key after bind</td><td>IT</td></tr>
+            <tr><td>V1</td><td>Matrix VPN + APKs</td><td><span class="badge med">Med–High</span></td><td>LAN-first; ACL hub-and-spoke; mobile SOP</td><td>IT + DPO</td></tr>
+            <tr><td>V2</td><td>Support over mesh</td><td><span class="badge med">Med</span></td><td>JIT, customer approval, session log</td><td>IT + Ops</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="footer-note">
+        Go-live gate still applies: jurisdiction check, DPIA where required, notices, retention / access / crypto / logs, named compliance owner, quarterly review.
+      </p>
+    </section>
+
+    <section class="section" id="presets">
+      <div class="section-title">
+        <span class="section-number">10</span>
+        <h2>Recommended production presets</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Environment</th>
+              <th>Enable</th>
+              <th>Keep off unless DPIA signed</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Office / school attendance</td>
+              <td>Presence <code>qr_only</code>; count-only cameras; <code>left_object</code> if needed</td>
+              <td>Face Presence, <code>ppl_match</code>, search, demographics targeting</td>
+            </tr>
+            <tr>
+              <td>Gate / logistics</td>
+              <td><code>left_object</code>; vehicle <strong>without</strong> OCR; event alerts</td>
+              <td>Plate OCR, vprofile multi-cam, non-EU webhooks</td>
+            </tr>
+            <tr>
+              <td>Retail signage</td>
+              <td>Aggregate dwell / count</td>
+              <td>Individual targeting; age/gender at person level</td>
+            </tr>
+            <tr>
+              <td>Security operations</td>
+              <td>Instant detection overlay; posture/fall; human-ack actions</td>
+              <td>Auto-unlock; disciplinary use of match; standing mobile stream</td>
+            </tr>
+            <tr>
+              <td>NIS2 operator</td>
+              <td>Full audit logs, mesh ACLs, backup, IR runbook</td>
+              <td>Any unidentified processor / plugin</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section" id="ops">
+      <div class="section-title">
+        <span class="section-number">11</span>
+        <h2>Open product / ops items that affect the claim</h2>
+      </div>
+      <p>Engineering or deployment facts, not legal theory:</p>
+      <ol class="steps">
+        <li>Rebuild mobile camera / player APKs with LAN-first <code>platformHost</code> and publish real mesh IPs.</li>
+        <li>Deploy Node <code>report_platform_local_ip</code> so tokens stop returning <code>platform_local_ip: null</code>.</li>
+        <li>Enroll the <strong>on-prem</strong> box as <code>tag:platform</code> — never the Hetzner Authority node.</li>
+        <li>Turn off <code>AUTHORITY_BOOTSTRAP_ADMIN_ENABLED</code> after first setup.</li>
+        <li>Do not put <code>application_key</code> in QR payloads as a live secret.</li>
+        <li>Add an operational “legal basis / DPIA ID” field to trigger and Presence policy records.</li>
+        <li>Publish a DSAR / erasure runbook for VMeta individuals, Presence sessions, and trigger logs.</li>
+        <li>Keep webhook and communications actions on an allowlist with payload minimisation.</li>
+      </ol>
+      <div class="callout" style="margin-top:18px">
+        Until items 1–3 are done, treat remote APK access as not production-ready from a security-evidence standpoint.
+      </div>
+    </section>
+
+    <section class="section" id="sales">
+      <div class="section-title">
+        <span class="section-number">12</span>
+        <h2>How to use this guide in a sale or audit</h2>
+      </div>
+      <div class="cards-3">
+        <div class="summary-card">
+          <span class="stat-label">Step 1–2</span>
+          <span class="stat-value" style="font-size:20px">Architecture &amp; RoPA</span>
+          <p>Start from §§1–3. Fill customer RoPA from Presence, triggers, keys, and mesh (§§4–7).</p>
+        </div>
+        <div class="summary-card">
+          <span class="stat-label">Step 3–4</span>
+          <span class="stat-value" style="font-size:20px">Tick official lists</span>
+          <p>Map §8 against CNIL, HDPA, ANSSI, and KYA. Attach March 2026 use-case checklists for the pitch.</p>
+        </div>
+        <div class="summary-card">
+          <span class="stat-label">Claim language</span>
+          <span class="stat-value" style="font-size:20px">Do not say “certified”</span>
+          <p>Claim: on-prem, identification off by default, scoped keys, LAN-first mesh, customer-controlled DPIA.</p>
+        </div>
+      </div>
+
+      <h3>Document control</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Version</td><td>1.0</td></tr>
+            <tr><td>Date</td><td>17 September 2026</td></tr>
+            <tr><td>Source markdown</td><td><code>docs/regulatory/eyenet-executive-compliance-guide.md</code></td></tr>
+            <tr><td>Next review</td><td>When Presence camera modes, trigger types, or mesh ACLs change, or France publishes NIS2 transposition</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="footer-note">
+        This page follows the EyeNet offer UX used in commercial quotes. It is an informational executive map and does not constitute legal advice.
+      </p>
+    </section>
+
+    <section class="section" id="appendix-fr">
+      <div class="section-title">
+        <span class="section-number">A</span>
+        <h2>Appendix A — France short compliance list</h2>
+      </div>
+      <p>
+        Authorities: <strong>CNIL</strong> (privacy) · <strong>ANSSI</strong> (cyber).
+        Law: GDPR + <em>Loi Informatique et Libertés</em>.
+        Full source index: <a href="#appendix-sources">Appendix D — Official FR / GR source index</a>.
+      </p>
+
+      <div class="grid-two">
+        <div class="note-card">
+          <h3>CNIL GDPR — first steps</h3>
+          <ol>
+            <li>Register of processing activities (RoPA)</li>
+            <li>Minimise / sort data and set retention</li>
+            <li>Inform people; honour rights (1-month SLA)</li>
+            <li>Secure processing; notify CNIL within 72h if required</li>
+          </ol>
+          <p class="footer-note">Also: document compliance (DPIAs, DPAs, SCCs/BCRs, notices, consent proofs). Use CNIL PIA software for AIPD.</p>
+        </div>
+        <div class="note-card">
+          <h3>CNIL security guide 2024 (Art. 32)</h3>
+          <ul>
+            <li>1 — Security governance</li>
+            <li>2–5 — Users, authentication, access rights</li>
+            <li>6–11 — Workstations, mobile, network, servers, websites, development</li>
+            <li>14–19 — Processors, maintenance, logging, backups, continuity, incidents</li>
+            <li>20–21 — Risk analysis; encryption / hashing / signature</li>
+            <li>22–25 — Cloud, mobile apps, AI, APIs</li>
+          </ul>
+          <p class="footer-note">CNIL uses this 25-fiche guide as its audit reference for personal-data security.</p>
+        </div>
+      </div>
+
+      <h3>ANSSI cybersecurity (baseline)</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>What to use</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Hygiene baseline</td>
+              <td>Guide d’hygiène informatique — <strong>42 measures</strong></td>
+            </tr>
+            <tr>
+              <td>Risk method</td>
+              <td>EBIOS Risk Manager</td>
+            </tr>
+            <tr>
+              <td>Auth / MFA</td>
+              <td>ANSSI + CNIL MFA / password recommendations</td>
+            </tr>
+            <tr>
+              <td>Admin hardening</td>
+              <td>Secure administration of IT systems guide</td>
+            </tr>
+            <tr>
+              <td>Public / trust services</td>
+              <td>RGS 2.0 (mainly administrations)</td>
+            </tr>
+            <tr>
+              <td>Qualified products / cloud</td>
+              <td>ANSSI certified/qualified catalogue; SecNumCloud (cyber qualification — <strong>not</strong> GDPR certification)</td>
+            </tr>
+            <tr>
+              <td>NIS2</td>
+              <td>Transposition still pending (Sep 2026); prepare via ANSSI NIS2 pack — register, risk measures, incident reporting</td>
+            </tr>
+            <tr>
+              <td>SME / incident help</td>
+              <td>cybermalveillance.gouv.fr</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Video / biometrics (CNIL)</h3>
+      <ul>
+        <li>Split <strong>anonymous / aggregate video analytics</strong> from <strong>facial recognition</strong></li>
+        <li>Facial recognition = Art. 9 biometric data — prohibited by default</li>
+        <li>Key refs: caméras augmentées; facial-recognition principles; video guide for collectivités</li>
+      </ul>
+      <div class="callout soft">
+        Practical FR stack for EyeNet: CNIL 4 steps + TPE/PME checklist → CNIL 2024 security guide → ANSSI 42 measures + EBIOS → CNIL video / face positions for any vision feature.
+      </div>
+    </section>
+
+    <section class="section" id="appendix-gr">
+      <div class="section-title">
+        <span class="section-number">B</span>
+        <h2>Appendix B — Greece short compliance list</h2>
+      </div>
+      <p>
+        Authorities: <strong>ΑΠΔΠΧ (HDPA)</strong> (privacy) · <strong>NCSA</strong> (cyber).
+        Laws: GDPR + <strong>Ν. 4624/2019</strong> + <strong>Ν. 5160/2024</strong> (NIS2).
+        Full source index: <a href="#appendix-sources">Appendix D — Official FR / GR source index</a>.
+      </p>
+
+      <div class="grid-two">
+        <div class="note-card">
+          <h3>HDPA GDPR — 10 steps</h3>
+          <ol>
+            <li>Awareness / readiness and risk strategy</li>
+            <li>Record of processing activities</li>
+            <li>Ongoing lawfulness and rights checks</li>
+            <li>Consent review</li>
+            <li>Update policies and rights-handling procedures</li>
+            <li>DPIA</li>
+            <li>Appoint a DPO if required</li>
+            <li>Breach detection, logging, HDPA notification</li>
+            <li>Lead supervisory authority if multi-state</li>
+            <li>Transfers outside the EU (SCCs, BCRs, etc.)</li>
+          </ol>
+          <p class="footer-note">Tools: byDesign SME toolkit; DPIA list (Decision 65/2018); DPIA completeness criteria.</p>
+        </div>
+        <div class="note-card">
+          <h3>Video / biometrics (HDPA)</h3>
+          <ul>
+            <li>Οδηγία <strong>1/2011</strong> + EDPB Guidelines <strong>3/2019</strong></li>
+            <li>No prior HDPA licence/notification required</li>
+            <li>Still mandatory: signage, purpose, minimisation, ROI, retention, accountability</li>
+            <li>Biometrics = Art. 9; identification is high-risk → DPIA typical</li>
+            <li>Systematic video / large-scale monitoring usually on the DPIA “must-do” list</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>NCSA cybersecurity</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>What to use</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Best-practice handbook</td>
+              <td>NCSA Cybersecurity Handbook — <strong>18 control families</strong> (ISO 27001 / NIST-aligned)</td>
+            </tr>
+            <tr>
+              <td>NIS2 law</td>
+              <td><strong>Ν. 5160/2024</strong> — already in force</td>
+            </tr>
+            <tr>
+              <td>Scope test</td>
+              <td>cyber.gov.gr NIS2 applicability / scope tool</td>
+            </tr>
+            <tr>
+              <td>Entity register</td>
+              <td>nis2register.cyber.gov.gr</td>
+            </tr>
+            <tr>
+              <td>Binding control set</td>
+              <td><strong>ΚΥΑ 1689/2025</strong> — National Cybersecurity Requirements Framework (<strong>22 requirements</strong>)</td>
+            </tr>
+            <tr>
+              <td>KYA themes (condensed)</td>
+              <td>Policies, risk management, asset inventory, access control, supply chain, incident response, backups, training</td>
+            </tr>
+            <tr>
+              <td>Incident reporting</td>
+              <td>24h early warning · 72h detailed report · 1-month final report</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout soft">
+        Practical GR stack for EyeNet: HDPA 10 steps + byDesign → DPIA list / criteria → Directive 1/2011 + EDPB 3/2019 → NCSA Handbook → if NIS2-in-scope: Law 5160/2024 + KYA 1689/2025 + NCSA register.
+        Greece already has a binding national cyber control list; France’s equivalent NIS2 transposition was still pending as of this guide’s date.
+      </div>
+    </section>
+
+    <section class="section" id="appendix-jurisdiction">
+      <div class="section-title">
+        <span class="section-number">C</span>
+        <h2>Appendix C — Jurisdiction &amp; use-case law summary</h2>
+      </div>
+      <p>
+        Condensed English rendering of the March 2026 EyeNet jurisdiction map
+        (Greece · EU · USA). Informational only — not legal advice.
+        Source document path in repo:
+        <code>docs/product/legal/Συνοπτική_Νομοθεσία_Προσωπικών_Δεδομένων_Ελλάδα_ΕΕ_ΗΠΑ.md</code>.
+      </p>
+
+      <div class="callout">
+        EyeNet’s on-prem / offline / modular design is a strong compliance baseline, but obligations still differ by jurisdiction and by which function is enabled. High-risk functions: identification, demographic profiling, cross-camera tracking, third-party webhooks, multi-tenant logs.
+      </div>
+
+      <h3>C.1 Short frame by geography</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Geography</th>
+              <th>Core frame</th>
+              <th>What matters for EyeNet</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Greece</strong></td>
+              <td>GDPR + Ν. 4624/2019 · Authority: ΑΠΔΠΧ (HDPA)</td>
+              <td>Workplace image processing, video surveillance, biometrics / sensitive data, proportionality and minimisation</td>
+            </tr>
+            <tr>
+              <td><strong>European Union</strong></td>
+              <td>GDPR principles (lawfulness, transparency, purpose, minimisation, accuracy, storage limitation, security, accountability)</td>
+              <td>DPIA for video analytics; clear legal basis; security measures; retention; data-subject rights; biometrics = special category (Art. 9)</td>
+            </tr>
+            <tr>
+              <td><strong>United States</strong></td>
+              <td>No federal GDPR equivalent — fragmented state / sectoral law (e.g. CPRA, BIPA)</td>
+              <td>Notice / opt-out gaps; biometric consent where required; security failures → litigation risk</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>C.2 Common requirements (all markets)</h3>
+      <ul>
+        <li>Privacy by Design / Privacy by Default</li>
+        <li>Purpose and data limitation (only what is necessary)</li>
+        <li>Retention policy with clear time limits</li>
+        <li>Technical measures: encryption, role-based access, audit logs</li>
+        <li>Process for data-subject rights (access, erasure, objection where applicable)</li>
+      </ul>
+
+      <h3>C.3 Use-case mapping (GR/EU vs USA)</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Use case</th>
+              <th>Greece / EU</th>
+              <th>USA</th>
+              <th>EyeNet preset</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Intelligent signage (demographic targeting)</td>
+              <td>High risk if profiling; notice + DPIA; prefer aggregate / anonymous stats</td>
+              <td>State-dependent (e.g. CPRA transparency / opt-out); biometrics raise risk sharply</td>
+              <td>Aggregate mode; identification off; short retention</td>
+            </tr>
+            <tr>
+              <td>Gate activity (security / crowd)</td>
+              <td>Often legitimate interest + balancing test; signage; limited FOV; short retention; human review for severe automated decisions</td>
+              <td>Broader in private spaces with notice; face recognition restricted in some states</td>
+              <td>Event-driven alerts; per-camera ROI; no mandatory face ID</td>
+            </tr>
+            <tr>
+              <td>Room &amp; gate protection / presence</td>
+              <td>Workplace: proportionality; biometrics need strong basis + alternatives</td>
+              <td>More flexible, but BIPA-class litigation risk</td>
+              <td>Prefer Presence <code>qr_only</code>; camera modes only with DPIA / Art. 9</td>
+            </tr>
+            <tr>
+              <td>Sentinel (staff monitoring)</td>
+              <td>Employee monitoring = high sensitivity; written policy; avoid continuous disproportionate surveillance</td>
+              <td>Often allowed with notice / contract terms; state variance</td>
+              <td>Event-based, shift windows, role-limited visibility</td>
+            </tr>
+            <tr>
+              <td>Underage detector (POS)</td>
+              <td>Positive when age-threshold only, no identification / image retention</td>
+              <td>Generally acceptable with notice; watch biometric statutes</td>
+              <td>Age estimation only; minimal logs; auto-delete frames</td>
+            </tr>
+            <tr>
+              <td>Security officer / wearable / mobile camera</td>
+              <td>High risk in public / mixed spaces; extensive DPIA; geo/time limits</td>
+              <td>State-variable; transparency and access control critical</td>
+              <td>Explicit start/stop; short bursts; no standing stream</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>C.4 Critical differences (executive takeaway)</h3>
+      <ol>
+        <li><strong>EU / Greece:</strong> stricter, principle-driven frame (lawfulness, proportionality, documentation, DPIA).</li>
+        <li><strong>USA:</strong> decentralised / state model with elevated practical risk on biometrics and class actions.</li>
+        <li><strong>For EyeNet:</strong> security and compliance use cases are strong commercially, but demographic analysis, employee monitoring, and wearable continuous capture need the most legal discipline.</li>
+      </ol>
+
+      <h3>C.5 Minimum commercial compliance plan</h3>
+      <ul>
+        <li>Jurisdiction matrix (Greece, rest of EU, US states as needed)</li>
+        <li>DPIA templates per use case (Signage, Gate, Underage, Wearable / Presence camera)</li>
+        <li>Feature flags per country / state</li>
+        <li>Retention standards (metadata-only where feasible)</li>
+        <li>Legal / technical review before each sensitive-sector pilot</li>
+      </ul>
+      <div class="callout soft">
+        Go-live gate: jurisdiction check · DPIA where required · notices · retention / access / crypto / logs · named compliance owner · quarterly review.
+        Full pilot checklists live in the March 2026 legal summary (§7–§11).
+      </div>
+    </section>
+
+    <section class="section" id="appendix-sources">
+      <div class="section-title">
+        <span class="section-number">D</span>
+        <h2>Appendix D — Official FR / GR source index</h2>
+      </div>
+      <p>
+        Primary official links for CNIL, ANSSI, HDPA, NCSA, and KYA 1689/2025.
+        Companion short lists: <a href="#appendix-fr">Appendix A (France)</a> · <a href="#appendix-gr">Appendix B (Greece)</a>.
+        Repo markdown mirror: <code>docs/regulatory/france-greece-gdpr-cybersecurity-guidelines.md</code>.
+      </p>
+
+      <h3>D.1 What exists — and what does not</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Need</th>
+              <th>France</th>
+              <th>Greece</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>GDPR how-to list</td>
+              <td>CNIL 4 steps + TPE/PME checklist</td>
+              <td>HDPA 10 steps + byDesign toolkit</td>
+            </tr>
+            <tr>
+              <td>Security-of-personal-data list</td>
+              <td>CNIL 25-fiche 2024 guide</td>
+              <td>HDPA guide + Art. 32 GDPR</td>
+            </tr>
+            <tr>
+              <td>Cyber hygiene list</td>
+              <td>ANSSI 42 measures</td>
+              <td>NCSA Cybersecurity Handbook (18 families)</td>
+            </tr>
+            <tr>
+              <td>Binding cyber controls (NIS2)</td>
+              <td>Transposition pending; use ANSSI NIS2 pack</td>
+              <td><strong>KYA 1689/2025 (22 requirements)</strong> in force</td>
+            </tr>
+            <tr>
+              <td>Official product catalogue</td>
+              <td>ANSSI qualified catalogue + SecNumCloud (cyber, not GDPR)</td>
+              <td>No equivalent public product catalogue</td>
+            </tr>
+            <tr>
+              <td>Video / face / analytics</td>
+              <td>CNIL caméras augmentées + Art. 9</td>
+              <td>HDPA Directive 1/2011 + EDPB 3/2019 + Art. 9</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>D.2 France — primary URLs</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Resource</th>
+              <th>URL</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>CNIL first steps</td>
+              <td><a href="https://www.cnil.fr/fr/passer-laction/rgpd-les-premieres-etapes" target="_blank" rel="noopener">cnil.fr/fr/passer-laction/rgpd-les-premieres-etapes</a></td>
+            </tr>
+            <tr>
+              <td>CNIL TPE/PME checklist</td>
+              <td><a href="https://www.cnil.fr/sites/cnil/files/atoms/files/check-list_rgpd_pour_les_tpe-pme.pdf" target="_blank" rel="noopener">check-list_rgpd_pour_les_tpe-pme.pdf</a></td>
+            </tr>
+            <tr>
+              <td>CNIL document the compliance</td>
+              <td><a href="https://www.cnil.fr/fr/documenter-la-conformite" target="_blank" rel="noopener">cnil.fr/fr/documenter-la-conformite</a></td>
+            </tr>
+            <tr>
+              <td>CNIL PIA tool</td>
+              <td><a href="https://www.cnil.fr/en/open-source-pia-software-helps-carry-out-data-protection-impact-assessment" target="_blank" rel="noopener">CNIL open-source PIA software</a></td>
+            </tr>
+            <tr>
+              <td>CNIL security guide 2024</td>
+              <td><a href="https://www.cnil.fr/fr/guide-de-la-securite-des-donnees-personnelles-nouvelle-edition-2024" target="_blank" rel="noopener">Guide sécurité données personnelles 2024</a></td>
+            </tr>
+            <tr>
+              <td>CNIL security checklist</td>
+              <td><a href="https://cnil-d10.cnil.fr/sites/cnil/files/2024-03/guide_securite_donnees_personnelles_checklist.pdf" target="_blank" rel="noopener">guide_securite_donnees_personnelles_checklist.pdf</a></td>
+            </tr>
+            <tr>
+              <td>CNIL augmented cameras</td>
+              <td><a href="https://www.cnil.fr/fr/cameras-augmentees-espaces-publics" target="_blank" rel="noopener">Caméras augmentées</a></td>
+            </tr>
+            <tr>
+              <td>ANSSI hygiene guide</td>
+              <td><a href="https://messervices.cyber.gouv.fr/guides/guide-dhygiene-informatique" target="_blank" rel="noopener">Guide d’hygiène informatique (42 measures)</a></td>
+            </tr>
+            <tr>
+              <td>EBIOS RM</td>
+              <td><a href="https://messervices.cyber.gouv.fr/guides/la-methode-ebios-risk-manager-le-guide" target="_blank" rel="noopener">EBIOS Risk Manager</a></td>
+            </tr>
+            <tr>
+              <td>ANSSI qualified catalogue</td>
+              <td><a href="https://cyber.gouv.fr/offre-de-service/solutions-certifiees-et-qualifiees/services-de-securite-evalue/decouvrir-les-solutions-certifiees-qualifiees/" target="_blank" rel="noopener">Solutions certifiées / qualifiées</a></td>
+            </tr>
+            <tr>
+              <td>SecNumCloud</td>
+              <td><a href="https://cyber.gouv.fr/enjeux-technologiques/cloud/" target="_blank" rel="noopener">cyber.gouv.fr — Cloud / SecNumCloud</a></td>
+            </tr>
+            <tr>
+              <td>ANSSI NIS2</td>
+              <td><a href="https://messervices.cyber.gouv.fr/nis2" target="_blank" rel="noopener">messervices.cyber.gouv.fr/nis2</a></td>
+            </tr>
+            <tr>
+              <td>Cybermalveillance</td>
+              <td><a href="https://www.cybermalveillance.gouv.fr" target="_blank" rel="noopener">cybermalveillance.gouv.fr</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>D.3 Greece — primary URLs</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Resource</th>
+              <th>URL</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>HDPA GDPR guide (10 steps)</td>
+              <td><a href="https://www.dpa.gr/el/foreis/odigos_gkpd" target="_blank" rel="noopener">dpa.gr — Συμμόρφωση με ΓΚΠΔ</a></td>
+            </tr>
+            <tr>
+              <td>byDesign toolkit</td>
+              <td><a href="https://www.dpa.gr/el/byDesign_toolkit" target="_blank" rel="noopener">dpa.gr — byDesign toolkit</a></td>
+            </tr>
+            <tr>
+              <td>HDPA DPIA list</td>
+              <td><a href="https://www.dpa.gr/el/enimerwtiko/prakseisArxis/katalogos-me-ta-eidi-ton-praxeon-epexergasias-poy-ypokeintai-stin" target="_blank" rel="noopener">Decision 65/2018 DPIA catalogue</a></td>
+            </tr>
+            <tr>
+              <td>DPIA completeness criteria</td>
+              <td><a href="https://www.dpa.gr/sites/default/files/2020-12/ESSENTIAL_STANDARD_CRITERIA_DPIA_0.pdf" target="_blank" rel="noopener">ESSENTIAL_STANDARD_CRITERIA_DPIA.pdf</a></td>
+            </tr>
+            <tr>
+              <td>Video surveillance</td>
+              <td><a href="https://www.dpa.gr/enimerwtiko/thematikes_enotites/eisagwgi_videoepitirisi" target="_blank" rel="noopener">dpa.gr — Συστήματα βιντεοεπιτήρησης</a></td>
+            </tr>
+            <tr>
+              <td>NCSA</td>
+              <td><a href="https://cyber.gov.gr" target="_blank" rel="noopener">cyber.gov.gr</a></td>
+            </tr>
+            <tr>
+              <td>Cybersecurity Handbook (EN)</td>
+              <td><a href="https://cyber.gov.gr/wp-content/uploads/2025/04/Cybersecurity-Handbook-English-version-1.pdf" target="_blank" rel="noopener">Cybersecurity Handbook PDF</a></td>
+            </tr>
+            <tr>
+              <td>NIS2</td>
+              <td><a href="https://cyber.gov.gr/odigia-nis2/" target="_blank" rel="noopener">cyber.gov.gr — Οδηγία NIS2</a></td>
+            </tr>
+            <tr>
+              <td>NIS2 scope test</td>
+              <td><a href="https://cyber.gov.gr/nis2-scope/" target="_blank" rel="noopener">cyber.gov.gr/nis2-scope</a></td>
+            </tr>
+            <tr>
+              <td>NIS2 register</td>
+              <td><a href="https://nis2register.cyber.gov.gr/" target="_blank" rel="noopener">nis2register.cyber.gov.gr</a></td>
+            </tr>
+            <tr>
+              <td>KYA 1689/2025 (22 requirements)</td>
+              <td><a href="https://cyber.gov.gr/thespisi-ethnikoy-plaisioy-apaitiseon-kyvernoasfaleias-gia-vasikes-kai-simantikes-ontotites/" target="_blank" rel="noopener">National Cybersecurity Requirements Framework</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>D.4 EU layer both countries apply</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Resource</th>
+              <th>URL / reference</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>EDPB Guidelines 3/2019 (video)</td>
+              <td><a href="https://www.edpb.europa.eu/our-work-tools/our-documents/guidelines/guidelines-32019-processing-personal-data-through-video_en" target="_blank" rel="noopener">EDPB Guidelines 3/2019</a></td>
+            </tr>
+            <tr>
+              <td>GDPR core articles</td>
+              <td>Arts. 5, 25, 28, 32, 33–34, 35</td>
+            </tr>
+            <tr>
+              <td>DPIA guidelines</td>
+              <td>EDPB / WP248</td>
+            </tr>
+            <tr>
+              <td>NIS2 Directive</td>
+              <td>(EU) 2022/2555</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="footer-note">
+        Neither France nor Greece publishes a whitelist of “GDPR-compliant software.” ANSSI catalogues qualify cybersecurity products/services — they are not GDPR certifications.
+      </p>
+    </section>
+  </div>
+</body>
+</html>

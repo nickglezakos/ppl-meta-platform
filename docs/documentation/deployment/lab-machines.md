@@ -26,16 +26,16 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 
 ## Fleet status (vs GHCR)
 
-**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.104`** (Mode D; last finalized **2026-10-28** — gateway `bd78deff018b…`, frontend `885b9752a71a…`, vmeta `75e7f374d7cb…`, cameras `ad18861f371f…`; vision retagged `fdc1f5f847c0…`).  
+**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.105`** (Mode D; last finalized **2026-11-02** — gateway `3ee88a186926…`, frontend `f5c06f6dfbb8…`, media `f803fe6b77b1…`, vmeta `6d447d8a662b…`, cameras `fb5425055ea4…`).  
 **Rule:** After every **Stage 3** on a named lab, update this table (pin, match state, date, short notes). Do not treat a matching *tag* as current — compare **running container Image ID** (and ideally `main.dart.js` sha256) to the manifest. Tag RepoDigests alone can lie if the container was not recreated.
 
 | Lab ID | Pin | Match GHCR? | Last Stage 3 | Notes |
 |---|---|---|---|---|
-| `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. Offline during 2.25.104 Stage 3. |
-| `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Offline during 2.25.104 Stage 3. |
-| `lab-work-dual-64g` | `2.25.104` | **Yes** (gateway `bd78deff018b…`, frontend `885b9752a71a…`, cameras `ad18861f371f…`, vmeta `75e7f374d7cb…`) | 2026-10-28 | Ubuntu `eyenet-demo` @ `192.168.9.13` / Tailscale `100.101.128.40`; wiki zip in-place (`RELEASE_TAG=2.25.104`); schema verify OK; discovery 11/11; UI/gw/media 200. |
-| `lab-work-eyenet2` | `2.25.93` | **Yes** (fresh Ubuntu Stage 3) | 2026-09-29 | Hostname `eyenet2` @ `192.168.9.8` / Tailscale `100.116.59.7`; empty UUID/key → `/bootstrap`. Offline during 2.25.104 Stage 3. |
-| `lab-work-win-eynetdell` | `2.25.104` | **Yes** (gateway `bd78deff018b…`, frontend `885b9752a71a…`, cameras `ad18861f371f…`, vmeta `75e7f374d7cb…`) | 2026-10-28 | Wiki zip in-place on WSL `eyenet` / `C:\ppl-meta-platform`; `ADVERTISE_HOST=192.168.9.11` / Tailscale `100.114.224.54`; schema verify OK; discovery 11/11; UI/gw/media 200. |
+| `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. Offline during 2.25.105 Stage 3. |
+| `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Offline during 2.25.105 Stage 3. |
+| `lab-work-dual-64g` | `2.25.105` | **Yes** (gateway `3ee88a186926…`, frontend `f5c06f6dfbb8…`, cameras `fb5425055ea4…`, vmeta `6d447d8a662b…`, media `f803fe6b77b1…`) | 2026-11-02 | Ubuntu `eyenet-demo` @ `192.168.9.13` / Tailscale `100.101.128.40`; compose to `:2.25.105`; behavioural schema verify OK; discovery healthy; UI/gw HTTP 200. |
+| `lab-work-eyenet2` | `2.25.93` | **Yes** (fresh Ubuntu Stage 3) | 2026-09-29 | Hostname `eyenet2` @ `192.168.9.8` / Tailscale `100.116.59.7`; empty UUID/key → `/bootstrap`. Offline during 2.25.105 Stage 3. |
+| `lab-work-win-eynetdell` | `2.25.105` | **Yes** (gateway `3ee88a186926…`, frontend `f5c06f6dfbb8…`, cameras `fb5425055ea4…`, vmeta `6d447d8a662b…`, media `f803fe6b77b1…`) | 2026-11-02 | WSL `eyenet` / `C:\ppl-meta-platform`; `ADVERTISE_HOST=192.168.9.11` / Tailscale `100.114.224.54`; behavioural schema verify OK; digests match; in-container UI/gw/discovery 200. App containers currently **no host port publishes** (WSL mirrored ghost binds on LAN IPs); reboot host then normal compose recreate to restore LAN `:3000/:8080`. |
 
 **How to refresh a row after Stage 3** (from the lab, or via SSH):
 

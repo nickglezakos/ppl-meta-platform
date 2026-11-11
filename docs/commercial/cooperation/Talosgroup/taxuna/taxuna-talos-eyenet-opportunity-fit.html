@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Talos Group — Texuna Opportunity Fit Brief</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-talos: #d97706;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --line: #0f0f14;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --shadow: 0 10px 28px rgba(5, 5, 9, 0.1);
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --max-width: 1080px;
+    }
+    * { box-sizing: border-box; }
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.4;
+    }
+    body { margin: 0; }
+    .page { max-width: var(--max-width); margin: 0 auto; padding: 20px 20px 40px; }
+    .print-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .print-note { font-size: 12px; color: #64748b; }
+    .print-button {
+      border: 0; border-radius: 999px; padding: 8px 14px;
+      background: var(--brand-talos); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    .hero {
+      background: radial-gradient(circle at top right, rgba(252, 211, 77, 0.18), transparent 28%),
+                  linear-gradient(135deg, #0b1220 0%, #1a1408 40%, #2a1c08 72%, #3d2a0c 100%);
+      border: 1px solid rgba(252, 211, 77, 0.18); border-radius: 20px;
+      box-shadow: var(--shadow); overflow: hidden; position: relative; color: var(--text);
+    }
+    .hero::after {
+      content: ""; position: absolute; inset: auto -60px -60px auto;
+      width: 160px; height: 160px; border-radius: 50%; background: rgba(217, 119, 6, 0.28);
+    }
+    .hero-inner { display: grid; grid-template-columns: 1.35fr 0.9fr; gap: 16px; padding: 18px 20px; position: relative; z-index: 1; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 999px;
+      background: rgba(252, 211, 77, 0.14); color: #fcd34d;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin: 8px 0 8px; font-size: 26px; line-height: 1.12; letter-spacing: -0.03em; }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+    .logo-pair {
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(255,255,255,0.07); border: 1px solid rgba(252,211,77,0.18);
+      padding: 6px 10px; border-radius: 10px;
+    }
+    .logo-pair img { height: 24px; width: auto; display: block; }
+    .brand-chip {
+      padding: 5px 10px; border: 1px solid rgba(252, 211, 77, 0.24); border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9); color: #eef9ff; font-size: 11px; font-weight: 600;
+    }
+    .meta-card, .section {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04); border-color: rgba(252, 211, 77, 0.14);
+      padding: 14px 16px; align-self: start; color: var(--text);
+    }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+    .meta-item { padding-bottom: 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+    .meta-label { display: block; margin-bottom: 2px; color: #c4b5a0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .meta-value { font-size: 13px; font-weight: 600; color: #ffffff; }
+    .meta-value.talos { color: #fcd34d; }
+    .section { margin-top: 12px; padding: 14px 16px; border-color: var(--panel-line); background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%); }
+    .section-title { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .section-number {
+      width: 26px; height: 26px; border-radius: 50%; display: inline-grid; place-items: center;
+      background: rgba(25, 118, 210, 0.1); color: var(--brand-primary); font-weight: 700; font-size: 13px;
+      flex: none;
+    }
+    .section-number.talos { background: rgba(217, 119, 6, 0.12); color: var(--brand-talos); }
+    h2 { margin-bottom: 0; font-size: 18px; letter-spacing: -0.02em; }
+    h3 { margin-bottom: 4px; font-size: 14px; line-height: 1.25; color: #0f172a; }
+    .callout {
+      padding: 10px 12px; border-left: 3px solid var(--brand-secondary); border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent); color: #f5fbff; font-weight: 600; font-size: 13px; line-height: 1.4;
+    }
+    .callout.amber { border-left-color: #f59e0b; }
+    .footer-note { margin-top: 10px; color: #64748b; font-size: 11px; line-height: 1.35; }
+    .fit-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+    .fit-item {
+      display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start;
+      padding: 10px 12px; border: 1px solid rgba(15, 23, 42, 0.08); border-radius: 12px;
+      background: #ffffff; box-shadow: var(--shadow);
+    }
+    .fit-num {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px; border-radius: 50%; margin-top: 1px;
+      background: rgba(25, 118, 210, 0.1); color: var(--brand-primary); font-size: 12px; font-weight: 800;
+    }
+    .fit-num.talos { background: rgba(217, 119, 6, 0.12); color: var(--brand-talos); }
+    .fit-item h3 { margin: 0 0 4px; }
+    .fit-item p { margin: 0; font-size: 13px; line-height: 1.4; color: #475569; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .badge {
+      display: inline-flex; align-items: center; padding: 2px 8px;
+      border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+      background: rgba(25, 118, 210, 0.08); color: var(--brand-primary);
+      border: 1px solid rgba(25, 118, 210, 0.18);
+    }
+    .badge.talos { background: rgba(217, 119, 6, 0.08); color: #b45309; border-color: rgba(217, 119, 6, 0.2); }
+    .badge.mode { background: rgba(34, 211, 238, 0.08); color: #0891b2; border-color: rgba(34, 211, 238, 0.18); }
+    .badge.success { background: rgba(34, 197, 94, 0.08); color: #166534; border-color: rgba(34, 197, 94, 0.18); }
+    .badge.muted { background: rgba(100, 116, 139, 0.08); color: #475569; border-color: rgba(100, 116, 139, 0.18); }
+    .badge.warn { background: rgba(245, 158, 11, 0.1); color: #b45309; border-color: rgba(245, 158, 11, 0.22); }
+    a.inline { color: #38bdf8; text-decoration: underline; text-underline-offset: 2px; }
+    .lead-tight { color: #d1d9e6; font-size: 13px; margin: 0 0 6px; }
+    .sites-tight { color: #c4b5a0; font-size: 11px; margin: 0; }
+    .body-tight { color: #475569; font-size: 13px; max-width: 78ch; margin: 0; line-height: 1.4; }
+    .source-tight { margin-top: 8px; color: #475569; font-size: 12px; max-width: 78ch; line-height: 1.35; }
+    .catalog {
+      display: grid; gap: 6px; margin-top: 8px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .catalog span {
+      padding: 8px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; color: #334155;
+      background: rgba(217, 119, 6, 0.06); border: 1px solid rgba(217, 119, 6, 0.16);
+    }
+    .product-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .product-table th, .product-table td {
+      padding: 10px 12px; text-align: left; vertical-align: top;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    }
+    .product-table th {
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+      color: #64748b; background: rgba(217, 119, 6, 0.05);
+    }
+    .product-table td { font-size: 13px; line-height: 1.4; color: #475569; }
+    .product-table td:first-child { font-weight: 700; color: #0f172a; white-space: nowrap; width: 22%; }
+    .product-table td:last-child { width: 34%; }
+    @page { size: A4; margin: 8mm; }
+    @media (max-width: 920px) {
+      .hero-inner, .meta-grid, .catalog { grid-template-columns: 1fr; }
+      h1 { font-size: 22px; }
+      .page { padding: 14px 14px 36px; }
+    }
+    @media print {
+      html { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; line-height: 1.32; }
+      .page { max-width: none; padding: 0; }
+      .print-bar { display: none; }
+      .hero, .meta-card, .section, .fit-item { box-shadow: none; }
+      .hero {
+        margin-bottom: 8px; border-radius: 14px;
+        background: radial-gradient(circle at top right, rgba(252, 211, 77, 0.18), transparent 28%),
+                    linear-gradient(135deg, #0b1220 0%, #1a1408 40%, #2a1c08 72%, #3d2a0c 100%);
+        color: #ffffff; border-color: rgba(252, 211, 77, 0.18);
+      }
+      .hero-inner { padding: 12px 14px; gap: 12px; }
+      .meta-card { background: rgba(255, 255, 255, 0.04); color: #ffffff; border-color: rgba(252, 211, 77, 0.14); padding: 10px 12px; }
+      .brand-chip, .callout { color: #f5fbff; }
+      .meta-label { color: inherit; }
+      .section { margin-top: 8px; padding: 10px 12px; break-inside: avoid; }
+      .section-title { margin-bottom: 6px; }
+      .fit-item { padding: 8px 10px; break-inside: avoid; }
+      .fit-item p { font-size: 11.5px; line-height: 1.3; }
+      .fit-item h3 { font-size: 12.5px; }
+      .callout { padding: 8px 10px; font-size: 11.5px; }
+      .body-tight, .catalog span { font-size: 11.5px; }
+      .source-tight { margin-top: 6px; font-size: 10.5px; }
+      .footer-note { margin-top: 6px; font-size: 10px; }
+      h1 { font-size: 22px; margin: 6px 0; }
+      h2 { font-size: 15px; }
+      .product-table th, .product-table td { padding: 6px 8px; font-size: 10.5px; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <span class="print-note">Internal fit brief · Texuna UK/EU opportunities · non-binding — high-level abstract match only</span>
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="logo-pair">
+              <img src="tma-logo.svg" alt="Talos / TMA logo" />
+            </div>
+            <span class="brand-chip">Opportunity Fit Brief</span>
+          </div>
+          <span class="eyebrow">Texuna · UK &amp; EU Funding / Procurement</span>
+          <h1>How Texuna proposals map to Talos × EyeNet — and to Talos alone</h1>
+          <p class="lead-tight">
+            Abstract fit of Texuna’s proposed opportunities against the TMAIX × EyeNet home-care
+            cooperation, and separately against Talos Group products only
+            (<a class="inline" href="https://talosgroup.eu/" target="_blank" rel="noopener">talosgroup.eu</a>).
+          </p>
+          <p class="sites-tight">
+            <span style="margin-right:16px;">talosgroup.eu</span>
+            <span style="margin-right:16px;">tmaix.eu</span>
+            <span>eyenet-vision.com</span>
+          </p>
+        </div>
+        <aside class="meta-card">
+          <h3 style="margin-bottom:8px;font-size:14px;color:#fff;">Document</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">From</span>
+              <span class="meta-value">Texuna</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">To</span>
+              <span class="meta-value talos">Talos Group</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Lens A</span>
+              <span class="meta-value">Talos × EyeNet</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Lens B</span>
+              <span class="meta-value talos">Talos only</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Status</span>
+              <span class="meta-value">Abstract</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Order</span>
+              <span class="meta-value">As in briefs</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">0</span>
+        <h2>Scope of reading</h2>
+      </div>
+      <p class="body-tight">
+        Opportunities are taken in the order they appear in Texuna’s briefs to Talos.
+        Lens A uses the operational home-care cooperation (clinical / IoMT platform + in-home
+        vision for presence, secure zones, falls, and help calls). Lens B uses only the
+        Talos / TMA product catalogue on
+        <a class="inline" href="https://talosgroup.eu/" target="_blank" rel="noopener" style="color:var(--brand-primary);">talosgroup.eu</a>.
+      </p>
+      <div class="catalog">
+        <span>ePokratis Health Cloud</span>
+        <span>eWAVE MD (EMR / HIS)</span>
+        <span>No.A.H. EMS / Maritime</span>
+        <span>Epione AI Robot</span>
+        <span>MediStation Kiosk</span>
+        <span>IoMT + Analytics / H.I.M.P.</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Lens A — Talos × EyeNet home-care partnership</h2>
+      </div>
+      <div class="callout" style="margin-bottom:8px;color:#f5fbff;">
+        High-level abstract fit: clinical care at home (TMAIX) plus vision safety in the unstaffed home (EyeNet).
+      </div>
+      <ol class="fit-list">
+        <li class="fit-item">
+          <span class="fit-num">1</span>
+          <div>
+            <h3>Medicines-shortage discovery (DHSC)</h3>
+            <p>Outside the partnership. About seeing and coordinating medicine supply problems — not care in the home.</p>
+            <div class="badge-row"><span class="badge muted">No fit</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num">2</span>
+          <div>
+            <h3>Electronic prescribing (Sheffield · PN426)</h3>
+            <p>Outside the partnership. A hospital prescribing system — not remote monitoring or in-home safety.</p>
+            <div class="badge-row"><span class="badge muted">No fit</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num">3</span>
+          <div>
+            <h3>Cancer referral pathways (St Vincent’s, Ireland)</h3>
+            <p>Outside the partnership. Hospital referral workflow — not monitoring at home.</p>
+            <div class="badge-row"><span class="badge muted">No fit</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num">4</span>
+          <div>
+            <h3>AI Dynamic Purchasing System (RM6200)</h3>
+            <p>A route only. Can carry EyeNet as AI — no care problem attached.</p>
+            <div class="badge-row"><span class="badge warn">Route only</span><span class="badge mode">EyeNet AI</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num">5</span>
+          <div>
+            <h3>Spark DPS (RM6094)</h3>
+            <p>A route only. Can carry an early pilot — no care problem attached.</p>
+            <div class="badge-row"><span class="badge warn">Route only</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num">6</span>
+          <div>
+            <h3>Extra Due North link</h3>
+            <p>No match can be stated. The brief gives a link and no description.</p>
+            <div class="badge-row"><span class="badge muted">Unknown</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num">7</span>
+          <div>
+            <h3>NHS Innovation Service</h3>
+            <p>A door into the NHS for the home-care product — not a funded project.</p>
+            <div class="badge-row"><span class="badge warn">Introduction route</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num">8</span>
+          <div>
+            <h3>HSE Virtual Ward DPS</h3>
+            <p>The direct match — and the one already answered: hospital-level care at home, with EyeNet as the safety layer in the unstaffed house.</p>
+            <div class="badge-row">
+              <span class="badge success">Direct fit</span>
+              <span class="badge talos">TMAIX core</span>
+              <span class="badge mode">EyeNet safety</span>
+            </div>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number talos">2</span>
+        <h2>Lens B — Talos products only (<a href="https://talosgroup.eu/" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;text-underline-offset:2px;">talosgroup.eu</a>)</h2>
+      </div>
+      <div class="callout amber" style="margin-bottom:8px;color:#f5fbff;">
+        Same opportunity order. Fit judged only against the Talos / TMA catalogue — no EyeNet layer.
+      </div>
+      <ol class="fit-list">
+        <li class="fit-item">
+          <span class="fit-num talos">1</span>
+          <div>
+            <h3>Medicines-shortage discovery (DHSC)</h3>
+            <p>No product applies. The catalogue watches the patient and the clinical record; this brief is about the medicines supply chain.</p>
+            <div class="badge-row"><span class="badge muted">No product</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num talos">2</span>
+          <div>
+            <h3>Electronic prescribing (Sheffield · PN426)</h3>
+            <p>Thin fit through <strong>eWAVE MD</strong> only — the hospital clinical system that sits beside prescribing. Nothing in the catalogue is an electronic prescribing product.</p>
+            <div class="badge-row"><span class="badge warn">Thin fit</span><span class="badge talos">eWAVE MD</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num talos">3</span>
+          <div>
+            <h3>Cancer referral pathways (St Vincent’s, Ireland)</h3>
+            <p>Thin fit through <strong>eWAVE MD</strong> and the analytics layer — the hospital record and workflow a referral pathway would run on. Nothing in the catalogue is a cancer-referral product.</p>
+            <div class="badge-row"><span class="badge warn">Thin fit</span><span class="badge talos">eWAVE MD</span><span class="badge talos">Analytics</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num talos">4</span>
+          <div>
+            <h3>AI Dynamic Purchasing System (RM6200)</h3>
+            <p>A route for AI already in the catalogue: <strong>No.A.H.</strong>, <strong>Epione</strong>, and deterioration analytics. No care problem is defined.</p>
+            <div class="badge-row"><span class="badge warn">Route only</span><span class="badge talos">No.A.H.</span><span class="badge talos">Epione</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num talos">5</span>
+          <div>
+            <h3>Spark DPS (RM6094)</h3>
+            <p>A route for an early pilot of <strong>Epione</strong>, <strong>MediStation</strong>, or <strong>No.A.H.</strong> No care problem is defined.</p>
+            <div class="badge-row"><span class="badge warn">Route only</span><span class="badge talos">Epione</span><span class="badge talos">MediStation</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num talos">6</span>
+          <div>
+            <h3>Extra Due North link</h3>
+            <p>No product can be matched. The brief has a link and no description.</p>
+            <div class="badge-row"><span class="badge muted">Unknown</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num talos">7</span>
+          <div>
+            <h3>NHS Innovation Service</h3>
+            <p>A door for <strong>ePokratis</strong>, the IoMT monitoring kit, <strong>MediStation</strong>, and <strong>Epione</strong> to be introduced to the NHS — introduction route, not a purchase.</p>
+            <div class="badge-row"><span class="badge warn">Introduction route</span><span class="badge talos">ePokratis</span></div>
+          </div>
+        </li>
+        <li class="fit-item">
+          <span class="fit-num talos">8</span>
+          <div>
+            <h3>HSE Virtual Ward DPS</h3>
+            <p>The direct fit. <strong>ePokratis</strong> plus IoMT vitals, telemedicine, and the clinical record is the remote-monitoring core of hospital-level care at home.</p>
+            <div class="badge-row">
+              <span class="badge success">Direct fit</span>
+              <span class="badge talos">ePokratis</span>
+              <span class="badge talos">IoMT</span>
+              <span class="badge talos">Telemedicine</span>
+            </div>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number talos">3</span>
+        <h2>One-line verdict</h2>
+      </div>
+      <div class="callout amber" style="color:#f5fbff;">
+        Under both lenses, <strong>HSE Virtual Ward</strong> is the only direct problem–product match.
+        Everything else is either outside scope, a thin hospital-system adjacency, an unknown link,
+        or a buying / introduction route with no defined care problem.
+      </div>
+      <p class="source-tight">
+        Sources: Texuna proposals briefs; TMAIX × EyeNet home-care cooperation; HSE Virtual Ward DPS selling points;
+        Talos Group catalogue —
+        <a class="inline" href="https://talosgroup.eu/" target="_blank" rel="noopener" style="color:var(--brand-primary);">talosgroup.eu</a>.
+      </p>
+    </section>
+
+    <section class="section" style="border-color:rgba(217,119,6,0.25);">
+      <div class="section-title">
+        <span class="section-number talos">A</span>
+        <h2>Appendix — Talos Group product catalogue</h2>
+      </div>
+      <p class="body-tight">
+        Products as presented on
+        <a class="inline" href="https://talosgroup.eu/" target="_blank" rel="noopener" style="color:var(--brand-primary);">talosgroup.eu</a>
+        (exclusive distributor of Telematic Medical Applications / TMA). Brief descriptions and named market target groups only.
+      </p>
+      <table class="product-table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>What it is</th>
+            <th>Market target groups</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>No.A.H. EMS</td>
+            <td>Portable AI telemedicine platform for ambulances and crisis response; reduces costly medical diversions.</td>
+            <td>Ambulance / EMS services; emergency &amp; crisis management; first-response organisations</td>
+          </tr>
+          <tr>
+            <td>No.A.H. Yacht / Maritime</td>
+            <td>Maritime AI telemedicine platform so clinical support is available on board; improves crew safety and cuts operational cost.</td>
+            <td>Commercial shipping fleets; yachts; maritime operators; offshore crews</td>
+          </tr>
+          <tr>
+            <td>eWAVE MD System</td>
+            <td>End-to-end EMR / HIS for clinics — turns hospital operational data into safer, more efficient care.</td>
+            <td>Clinics; hospitals; healthcare facilities needing clinical records &amp; hospital information systems</td>
+          </tr>
+          <tr>
+            <td>Epione AI Robot</td>
+            <td>Human-friendly AI nurse assistant: emotion detection, routine automation, and patient engagement in care settings.</td>
+            <td>Care facilities; nursing homes; inpatient / assisted-living environments</td>
+          </tr>
+          <tr>
+            <td>MediStation Kiosk</td>
+            <td>Smart telemedicine kiosk acting as a digital mini-hospital for remote consultation and vitals capture.</td>
+            <td>Military camps; hotels; municipalities; isolated / remote sites</td>
+          </tr>
+          <tr>
+            <td>ePokratis Health Cloud</td>
+            <td>Secure personal health record for home care, linked to smartwatches and medical devices for 24/7 monitoring.</td>
+            <td>Home-care providers; patients &amp; families; remote / community care programmes</td>
+          </tr>
+          <tr>
+            <td>eWAVE H.I.M.P. &amp; eHealth Intelligence</td>
+            <td>Advanced analytics layer that turns physiological and operational data into clinical insight and workflow optimisation.</td>
+            <td>Hospitals; clinicians / physicians; health systems seeking predictive &amp; operational intelligence</td>
+          </tr>
+          <tr>
+            <td>Ziosoft 4D Imaging</td>
+            <td>Advanced medical imaging analytics (4D) for clearer, actionable diagnostic insight from complex physiological data.</td>
+            <td>Hospitals; imaging / diagnostic centres; specialist clinical departments</td>
+          </tr>
+          <tr>
+            <td>IoMT Solutions</td>
+            <td>Connected medical sensors (wearables, smart rings, vitals monitors) with early-warning alerts, integrated into telemedicine networks and EMR/HIS.</td>
+            <td>Hospitals &amp; smart wards; maritime health networks; healthcare providers building connected eHealth ecosystems; governments / armed forces where stated as partners</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="source-tight">
+        Target groups taken from product positioning and stated partners on
+        <a class="inline" href="https://talosgroup.eu/" target="_blank" rel="noopener" style="color:var(--brand-primary);">talosgroup.eu</a>
+        (governments, maritime fleets, hospitals, armed forces, and the per-product audiences above).
+      </p>
+    </section>
+
+    <p class="footer-note">
+      Non-binding internal brief for Talos Group / partner use. Abstract fit only — not a bid, MoU, or commercial commitment.
+      Contact: info@talosgroup.eu · talosgroup.eu
+    </p>
+  </div>
+</body>
+</html>

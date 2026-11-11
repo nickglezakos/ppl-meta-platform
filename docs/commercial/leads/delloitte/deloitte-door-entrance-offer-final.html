@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EyeNet Door Entrance & Staff Monitoring Offer for Deloitte Business Solutions (R2)</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --success: #4caf50;
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    .page {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 32px 24px 72px;
+    }
+
+    .print-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 20px;
+    }
+
+    .print-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--brand-primary);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14);
+      border-radius: 32px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+      color: var(--text);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -80px auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: rgba(25, 118, 210, 0.26);
+    }
+
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1.35fr 0.9fr;
+      gap: 28px;
+      padding: 34px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14);
+      color: var(--brand-secondary);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin: 18px 0 16px;
+      font-size: 42px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      font-size: 18px;
+      color: #334155;
+      max-width: 62ch;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .brand-stack {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-stack img {
+      height: 36px;
+      width: auto;
+    }
+
+    .brand-chip {
+      padding: 8px 12px;
+      border: 1px solid rgba(34, 211, 238, 0.24);
+      border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9);
+      color: #eef9ff;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .brand-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      color: var(--brand-secondary);
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .brand-link:hover {
+      color: #8be9f8;
+    }
+
+    .meta-card,
+    .section,
+    .pricing-card,
+    .key-card,
+    .note-card,
+    .summary-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px;
+      align-self: start;
+      color: var(--text);
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 18px;
+    }
+
+    .meta-item {
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .meta-label {
+      display: block;
+      margin-bottom: 6px;
+      color: #9fb0c3;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-value {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .grid-two,
+    .pricing-grid,
+    .stats-grid {
+      display: grid;
+      gap: 22px;
+      margin-top: 24px;
+    }
+
+    .grid-two {
+      grid-template-columns: 1.15fr 0.85fr;
+      margin-top: 12px;
+    }
+
+    .pricing-grid,
+    .stats-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .section {
+      margin-top: 24px;
+      padding: 28px;
+      border-color: var(--panel-line);
+      background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .section-number {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: inline-grid;
+      place-items: center;
+      background: rgba(25, 118, 210, 0.1);
+      color: var(--brand-primary);
+      font-weight: 700;
+    }
+
+    h2 {
+      margin-bottom: 0;
+      font-size: 24px;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+
+    ul,
+    ol {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    li + li {
+      margin-top: 8px;
+    }
+
+    .callout {
+      padding: 18px 20px;
+      border-left: 4px solid var(--brand-secondary);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent);
+      color: #f5fbff;
+      font-weight: 600;
+    }
+
+    .stats-grid {
+      margin-top: 18px;
+    }
+
+    .summary-card,
+    .key-card,
+    .pricing-card,
+    .note-card {
+      padding: 22px;
+      border-color: var(--panel-line);
+      background: #ffffff;
+    }
+
+    .summary-card strong,
+    .pricing-value,
+    .key-number {
+      color: #0f172a;
+    }
+
+    .summary-card p:last-child,
+    .note-card p:last-child {
+      margin-bottom: 0;
+    }
+
+    .stat-label {
+      color: #64748b;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .stat-value {
+      display: block;
+      margin-top: 10px;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .pricing-card.featured,
+    .pricing-card.intro {
+      border-color: rgba(25, 118, 210, 0.3);
+      background: linear-gradient(180deg, rgba(16, 19, 29, 0.04) 0%, rgba(25, 118, 210, 0.08) 38%, #ffffff 100%);
+      position: relative;
+      padding-top: 62px;
+    }
+
+    .pricing-card.featured::before,
+    .pricing-card.intro::before {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: var(--brand-primary);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .pricing-card.featured::before {
+      content: "Recommended";
+    }
+
+    .pricing-card.intro::before {
+      content: "One-time offer";
+    }
+
+    .pricing-card.featured .pricing-label,
+    .pricing-card.intro .pricing-label {
+      display: block;
+    }
+
+    .pricing-label {
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .pricing-value {
+      margin: 14px 0 8px;
+      font-size: 38px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      font-weight: 800;
+    }
+
+    .pricing-subtext {
+      color: #475569;
+      font-size: 15px;
+      min-height: 44px;
+    }
+
+    .pricing-list {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(15, 23, 42, 0.08);
+    }
+
+    .pricing-list li {
+      margin-top: 10px;
+    }
+
+    .key-number {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      color: #64748b;
+      font-size: 13px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+
+    th,
+    td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    }
+
+    th {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+    }
+
+    td {
+      font-size: 14px;
+    }
+
+    td:last-child {
+      font-weight: 700;
+      text-align: right;
+    }
+
+    @page {
+      size: A4;
+      margin: 12mm;
+    }
+
+    @media (max-width: 920px) {
+      .hero-inner,
+      .grid-two,
+      .pricing-grid,
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+
+      .page {
+        padding: 18px 16px 54px;
+      }
+    }
+
+    @media print {
+      html {
+        background: #fff;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .page {
+        max-width: none;
+        padding: 0;
+      }
+
+      .print-bar {
+        display: none;
+      }
+
+      .hero,
+      .meta-card,
+      .pricing-card,
+      .key-card,
+      .note-card,
+      .summary-card {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+
+      .section {
+        box-shadow: none;
+        break-inside: auto;
+      }
+
+      .hero {
+        margin-bottom: 12px;
+        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+        color: #ffffff;
+        border-color: rgba(34, 211, 238, 0.14);
+      }
+
+      .meta-card {
+        background: rgba(255, 255, 255, 0.04);
+        color: #ffffff;
+        border-color: rgba(34, 211, 238, 0.12);
+      }
+
+      .brand-chip,
+      .callout {
+        color: #f5fbff;
+      }
+
+      .brand-link,
+      .meta-label,
+      .lead {
+        color: inherit;
+      }
+
+      .section {
+        margin-top: 12px;
+      }
+
+      .print-break-before {
+        break-before: page;
+        page-break-before: always;
+        margin-top: 0;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      /* Keep Software Licensing & Commercial Pricing cards on one printed page */
+      .licensing-pricing {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .licensing-pricing .section-title {
+        margin-bottom: 10px;
+      }
+
+      .licensing-pricing .section-title h2 {
+        font-size: 18px;
+      }
+
+      .licensing-pricing .pricing-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        gap: 10px;
+        margin-top: 0;
+      }
+
+      .licensing-pricing .pricing-card {
+        padding: 12px;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .licensing-pricing .pricing-card.featured,
+      .licensing-pricing .pricing-card.intro {
+        padding-top: 32px;
+      }
+
+      .licensing-pricing .pricing-card.featured::before,
+      .licensing-pricing .pricing-card.intro::before {
+        top: 10px;
+        right: 10px;
+        padding: 4px 7px;
+        font-size: 9px;
+      }
+
+      .licensing-pricing .pricing-value {
+        margin: 8px 0 4px;
+        font-size: 28px;
+      }
+
+      .licensing-pricing .pricing-subtext {
+        font-size: 11px;
+        min-height: 0;
+        line-height: 1.3;
+      }
+
+      .licensing-pricing .pricing-list {
+        margin-top: 10px;
+        padding-top: 10px;
+      }
+
+      .licensing-pricing .pricing-list li {
+        margin-top: 3px;
+        font-size: 11px;
+        line-height: 1.3;
+      }
+
+      .licensing-pricing .note-card {
+        margin-top: 12px !important;
+        padding: 12px 14px;
+        font-size: 11px;
+        line-height: 1.35;
+      }
+
+      .licensing-pricing .note-card p {
+        margin-bottom: 0;
+      }
+
+      /* Keep the four deployment package cards on one printed page */
+      .deployment-packages {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        break-before: auto;
+        margin-top: 18px;
+      }
+
+      .deployment-packages h3 {
+        margin-top: 0 !important;
+        margin-bottom: 8px;
+        font-size: 16px;
+      }
+
+      .deployment-packages > p {
+        margin-bottom: 10px !important;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .deployment-packages .pricing-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 10px;
+        margin-top: 0;
+      }
+
+      .deployment-packages .pricing-card {
+        padding: 12px;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .deployment-packages .pricing-card.featured,
+      .deployment-packages .pricing-card.intro {
+        padding-top: 32px;
+      }
+
+      .deployment-packages .pricing-card.featured::before,
+      .deployment-packages .pricing-card.intro::before {
+        top: 10px;
+        right: 10px;
+        padding: 4px 7px;
+        font-size: 9px;
+      }
+
+      .deployment-packages .pricing-value {
+        margin: 8px 0 4px;
+        font-size: 20px !important;
+      }
+
+      .deployment-packages .pricing-subtext {
+        font-size: 11px;
+        min-height: 0;
+        line-height: 1.3;
+      }
+
+      .deployment-packages .pricing-list {
+        margin-top: 10px;
+        padding-top: 10px;
+      }
+
+      .deployment-packages .pricing-list li {
+        margin-top: 4px;
+        font-size: 11px;
+      }
+
+      .deployment-packages .footer-note {
+        margin-top: 10px !important;
+        font-size: 11px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="assets/eyenet-dark.svg" alt="EyeNet logo" />
+              <span class="brand-chip">Revised offer for Deloitte Business Solutions</span>
+            </div>
+          </div>
+          <span class="eyebrow">Intelligent Door Entrance & Staff Monitoring</span>
+          <h1>EyeNet Door Entrance & Staff Monitoring Solution</h1>
+          <a class="brand-link" href="https://eyenet-vision.com/">https://eyenet-vision.com/</a>
+        </div>
+
+        <aside class="meta-card">
+          <h3>Offer Snapshot</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Customer</span>
+              <span class="meta-value">Deloitte Business Solutions S.A.</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Protocol No.</span>
+              <span class="meta-value">000665201001</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Address</span>
+              <span class="meta-value">3a Fragkokklisias & Granikou str., Marousi Attica, 151 25</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Brand</span>
+              <span class="meta-value">EyeNet</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Offer Ref.</span>
+              <span class="meta-value">EYENET-DELOITTE-DOOR-2026-R2</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Supersedes</span>
+              <span class="meta-value">000665201000 — EyeNet Door Entrance & Staff Monitoring Solution</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Prepared On</span>
+              <span class="meta-value">21 September 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">License Scope</span>
+              <span class="meta-value">9 modules for 1 door · 3 cameras</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Commercial Model</span>
+              <span class="meta-value">3-month EUR 200 prequel, then Professional</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Prep Phase</span>
+              <span class="meta-value">2-week on-premises pilot</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <section class="section print-break-before">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Executive Summary</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 12px; color: #f5fbff;">Know who is at your door before they arrive — welcome staff, guide visitors, and keep every entry accountable — on your premises, under your control.</div>
+      <p class="lead">EyeNet turns Deloitte’s entrance into an intelligent checkpoint: three professional PoE cameras watch the parking approach, staircase, and hallway; the door screen greets known people and warns when someone is unknown; and if instant recognition is unclear, a standard Presence check-in on the touch screen closes the gap.</p>
+
+      <div class="stats-grid" style="margin-top: 18px;">
+        <div class="summary-card">
+          <p><strong>See them early</strong></p>
+          <p>Staircase and outdoor cameras spot people on approach — not only at the door — so welcome or visitor messaging can start before they reach reception.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Staff vs visitor, automatically</strong></p>
+          <p>Vradar matches faces to enrolled VProfiles in real time. Known staff trigger a welcome video; unknown visitors trigger a warning / visitor playlist and optional alerts to Teams, Slack, or email.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Never leave a gap</strong></p>
+          <p>When live matching is inconclusive, the door touch screen opens Presence — QR and verified check-in — so every entry still has an authoritative record.</p>
+        </div>
+      </div>
+
+      <div class="grid-two" style="margin-top: 8px;">
+        <div>
+          <h3>Why Deloitte chooses this path</h3>
+          <ul>
+            <li><strong>On-premises & GDPR-ready</strong> — Face data stays on local devices; no cloud face APIs. EyeNet can run on its own locally managed infrastructure and remain completely decoupled from Deloitte’s digital / IT estate. Optionally, under strict authentication and security controls, EyeNet can push selected events to a Deloitte webhook via the automation module (Eyenet Logic + API) — only when Deloitte requests it. Platform and VPN are included via Eyenet Matrix.</li>
+            <li><strong>Business-grade cameras</strong> — Wired TP-Link VIGI C340 (outdoor / low-light parking) and two C440s (hallway + staircase). No consumer Wi-Fi cameras.</li>
+            <li><strong>One software stack, nine products</strong> — Gate, Vradar, VProfiles, Logic, Presence, Signage, Insights, Matrix, and API under a single licence path: three-month EUR 200 prequel, then Professional (annual option 10% off nominal).</li>
+            <li><strong>Prove it on site first</strong> — A two-week EyeNet on-premises pilot with similar hardware validates lighting, mounts, and Logic rules before production rollout.</li>
+            <li><strong>Clear commercial model</strong> — EUR 200 / month for three months as a one-time temporary licence for this single-door installation; after three months it automatically converts to the Professional package (EUR 499–999). Annual package subscriptions are 10% off nominal value.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>What you get</strong></p>
+          <ul style="margin-top: 8px;">
+            <li><strong>Full analytics (Eyenet Insights)</strong> — Staff vs visitor ratios, peak hours, demographics, zone-by-zone traffic (parking approach, staircase, hallway), Presence session outcomes, and trigger performance — filterable and exportable for operational and compliance reporting.</li>
+            <li><strong>Configurable rule engine (Eyenet Logic)</strong> — Define custom triggers and actions (welcome / warning signage, alerts, Presence fallback, webhooks) without a software upgrade. Administrators change rules as policies evolve; no new release required for new automation scenarios.</li>
+            <li><strong>Nine licensed EyeNet products</strong> — Detection, identity, automation, Presence, Signage, Insights, platform/VPN, and connectors in one commercial package.</li>
+            <li><strong>Decoupled local operation</strong> — EyeNet-managed on-prem stack; optional Deloitte webhook only if requested under strict auth.</li>
+            <li><strong>2-week preparatory phase</strong> — On-site validation before production go-live.</li>
+            <li><em>Indicative hardware</em> — Platform mini PC, door Linux player + touch, three VIGI PoE cameras (procured separately).</li>
+          </ul>
+          <p style="margin-top: 14px; margin-bottom: 0;">Hardware procurement remains separate; this offer locks the software scope, automation flexibility, and delivery sequence.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>The Door Entrance Use Case</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 24px; color: #f5fbff;">A unified platform covering early approach detection (staircase and parking), staff identification, welcome / warning door-screen content, Presence fallback, analytics, and automation — all driven by live Vradar detection and Logic rules across three wired cameras.</div>
+      <div class="grid-two">
+        <div>
+          <h3>How It Works</h3>
+          <ol>
+            <li><strong>Detection (Eyenet Vradar & Eyenet Gate)</strong> — Three TP-Link VIGI cameras, powered by <strong>Eyenet Vradar</strong>, continuously monitor the staircase corridor, the area just outside the door, and the small hallway inside. Vradar captures people count, demographics, and face data in real time, can issue Presence certificates when a match is strong enough, and is governed by <strong>Eyenet Gate</strong> (up to 5 cameras per installation). Any Vradar stream can drive trigger-action loops in Eyenet Logic.</li>
+            <li><strong>Identification (Eyenet VProfiles)</strong> — Detected faces are matched against Deloitte's registered staff profiles via the vmeta service. <strong>Eyenet VProfiles</strong> organizes staff as individual identity profile objects in collections. The system determines in real time: known staff member or unknown visitor?</li>
+            <li><strong>Automation (Eyenet Logic)</strong> — <strong>Eyenet Logic</strong> is the configurable rule engine connecting Vradar events to actions. Administrators can add, change, or retire custom triggers and actions without a software upgrade — new automation scenarios are configuration, not a release cycle. Typical rules for this site:
+              <ul>
+                <li>Staff VProfile matched (staircase or outdoor approach) → switch door signage to a <strong>welcome</strong> video / internal announcements, log the approach</li>
+                <li>Unknown person detected approaching → switch signage to a <strong>warning / visitor</strong> video, optional alert via email/Slack/Teams, log for audit</li>
+                <li>Close-range match still inconclusive on the outdoor door camera → open the <strong>Presence</strong> station UI on the door touch screen for standard QR / verification procedures</li>
+                <li>VIP staff matched → notify executive assistant, show premium welcome content</li>
+                <li>Optional — under strict authentication and security — push selected EyeNet events to a Deloitte-owned webhook when Deloitte requests integration with internal systems</li>
+              </ul>
+            </li>
+            <li><strong>Presence Verification (Eyenet Presence)</strong> — When instant VProfile detection fails or policy requires a verified session, staff and visitors use the door touch screen for standard Presence flows (station QR, mobile QR, optional confirmation). <strong>Eyenet Presence</strong> is the authoritative log of who passed through the door, with session traceability, policy-driven grant/deny, and reporting. Vradar Presence certificates can short-circuit the flow when live matching is reliable.</li>
+            <li><strong>Analytics (Eyenet Insights & Eyenet Matrix)</strong> — Every entry is logged with session traces. <strong>Eyenet Insights</strong> delivers full operational analytics: staff vs visitor ratios, peak hours, demographics, per-camera / per-zone traffic, Presence grant types and outcomes, and Logic trigger performance — filterable and exportable. <strong>Eyenet Matrix</strong> covers EyeNet’s own platform infrastructure and secure VPN (so the installation can stay decoupled from Deloitte IT) plus future multi-site aggregation.</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Key Capabilities</h3>
+          <table>
+            <tr><th>Capability</th><th>EyeNet Product</th></tr>
+            <tr><td>Camera management (1–5 cameras)</td><td>Eyenet Gate</td></tr>
+            <tr><td>Instant detection, demographics & Presence certificates</td><td>Eyenet Vradar</td></tr>
+            <tr><td>Staff identity profiles</td><td>Eyenet VProfiles</td></tr>
+            <tr><td>Custom triggers & actions (no upgrade needed)</td><td>Eyenet Logic</td></tr>
+            <tr><td>QR & verified check-in fallback</td><td>Eyenet Presence</td></tr>
+            <tr><td>Door screen content & playback</td><td>Eyenet Signage</td></tr>
+            <tr><td>Full entry & zone analytics</td><td>Eyenet Insights</td></tr>
+            <tr><td>Local platform, VPN & multi-site</td><td>Eyenet Matrix</td></tr>
+            <tr><td>Teams, Slack & optional Deloitte webhook</td><td>Eyenet API</td></tr>
+          </table>
+          <p class="footer-note">All data stays on-premises on EyeNet-managed infrastructure that can remain fully decoupled from Deloitte’s digital / IT systems. Face data remains on local devices and is never exposed through open APIs. Optional outbound webhooks to Deloitte run only when requested, under strict authentication and security. Full GDPR-aligned architecture.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Value Summary</h2>
+      </div>
+      <div class="grid-two">
+        <div>
+          <h3>Operational Benefits</h3>
+          <ul>
+            <li><strong>Unified platform</strong> — Nine integrated EyeNet products cover approach detection, staff identification, welcome/warning signage, Presence fallback, alerts, and analytics under one software environment.</li>
+            <li><strong>Real-time intelligence</strong> — Door-screen content adapts from afar based on who is approaching, powered by Vradar across three VIGI cameras and Eyenet Logic.</li>
+            <li><strong>Automation without upgrades</strong> — Eyenet Logic lets administrators define custom triggers and actions as policies change — no new software release required for new automation scenarios.</li>
+            <li><strong>Full analytics</strong> — Eyenet Insights covers staff vs visitor, peak hours, demographics, zone traffic, Presence outcomes, and trigger performance for operational and compliance use.</li>
+            <li><strong>Business-grade cameras</strong> — TP-Link VIGI C340 / C440 wired to the same LAN as the platform; no consumer Wi-Fi cloud cameras and no proprietary edge camera module.</li>
+            <li><strong>Decoupled & privacy-first</strong> — EyeNet can operate on its own locally managed infrastructure, fully decoupled from Deloitte IT. GDPR-aligned face processing stays local. Optionally, under strict auth, Logic can update a Deloitte webhook with selected EyeNet events when Deloitte asks for it.</li>
+            <li><strong>Offline-capable</strong> — Core operation runs locally without internet; internet needed only for remote notifications or optional outbound webhooks.</li>
+            <li><strong>Quiet door operation</strong> — Compact Linux door player + touch screen; heavy compute stays on the industrial platform PC in a secure room.</li>
+            <li><strong>On-site proof first</strong> — Two-week preparatory phase validates lighting, mounts, and Logic rules before production hardware commitment.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Commercial Benefits</h3>
+          <ul>
+            <li><strong>Modular licensing</strong> — Pay for the modules you need; add or remove as requirements evolve.</li>
+            <li><strong>Start with one door</strong> — Expand to additional doors or sites under the same license structure.</li>
+            <li><strong>Transparent pricing</strong> — EUR 200 / month one-time three-month prequel for this installation, then the Professional package (EUR 499–999); annual subscriptions are 10% off the nominal package value. Platform and VPN included in Eyenet Matrix.</li>
+            <li><strong>Integration-ready (optional)</strong> — Eyenet API provides connectors for Microsoft Teams, Slack, and generic webhooks. EyeNet stays decoupled from Deloitte IT by default; a Deloitte webhook can receive selected events only when requested, under strict authentication and security, driven by Eyenet Logic.</li>
+            <li><strong>Single contract</strong> — One software environment, one commercial relationship, clear expansion path.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>Scope of the Offer</h2>
+      </div>
+      <div class="stats-grid">
+        <div class="key-card">
+          <span class="stat-label">Platform Installation</span>
+          <span class="stat-value">1</span>
+          <p>One industrial fanless mini PC (32 GB RAM, 1 TB SSD) running all EyeNet backend services — node, gateway, media, cameras, orchestrator, presence, vmeta, discovery, communications, PostgreSQL, and Redis.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Door Player Unit</span>
+          <span class="stat-value">1</span>
+          <p>One small Linux mini PC (e.g. Intel N100/N150 class, 8 GB RAM, SSD) with HDMI touch screen at the door — running signage-simple-player and the Presence station UI. No edge camera module attached.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Cameras</span>
+          <span class="stat-value">3</span>
+          <p>Three wired TP-Link VIGI PoE RTSP cameras on the same Gigabit LAN: one outdoor-rated C340 just outside the door, one C440 in the small hallway inside, and one C440 in the staircase corridor.</p>
+        </div>
+      </div>
+      <p class="footer-note" style="margin-top: 16px;">Note: The hardware items listed above are indicative recommendations. Hardware procurement, pricing, and installation are handled separately — see Hardware Configuration below for details. The EUR 200 / month rate is a one-time three-month temporary licence for this single installation, then converts automatically to the Professional package (EUR 499–999) as set out in Section 7.</p>
+    </section>
+
+    <section class="section print-break-before">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>Hardware Configuration</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 24px; color: #f5fbff;">Hardware costs are quoted separately by vetted hardware partners. This offer covers software licensing only. The hardware recommendations shown below are indicative — final hardware pricing, procurement, and installation will be provided in a companion hardware offer from an approved EyeNet hardware partner.</div>
+      <div class="grid-two">
+        <div>
+          <h3>Platform Device (Secure Location)</h3>
+          <p>An industrial fanless mini PC with 32 GB DDR4/DDR5 RAM and 1 TB NVMe SSD, running Ubuntu Server 24.04 LTS. This device hosts the complete Docker-based EyeNet backend stack and is placed in a secure IT room or network closet — not at the door itself. All three VIGI cameras stream RTSP to this host over the local Gigabit Ethernet network.</p>
+          <table>
+            <tr><th>Services</th></tr>
+            <tr><td>Core node & user management</td></tr>
+            <tr><td>API gateway & routing</td></tr>
+            <tr><td>Media storage & signage backend</td></tr>
+            <tr><td>Camera management & RTSP streams</td></tr>
+            <tr><td>Analytics, demographics & Vradar</td></tr>
+            <tr><td>Presence verification & sessions</td></tr>
+            <tr><td>Face matching & VProfiles identity</td></tr>
+            <tr><td>Device & service discovery</td></tr>
+            <tr><td>Email, webhook & messaging</td></tr>
+            <tr><td>Cross-site aggregation (ready)</td></tr>
+            <tr><td>Databases & pub/sub</td></tr>
+          </table>
+        </div>
+        <div>
+          <h3>Door Player Unit (At the Door)</h3>
+          <p>A compact Linux mini PC (Intel N100/N150 class or equivalent, 8 GB RAM, SSD recommended) with a 7–10" HDMI touch screen, mounted at the door. This unit does <strong>not</strong> run the Edge Camera module — vision comes only from the three VIGI cameras. It runs:</p>
+          <ul>
+            <li><strong>ppl-meta-signage-simple-player</strong> — Full-screen video playback on the touch display; playlist content synced from the platform and cached locally on the SSD (welcome vs warning / visitor content switched by Eyenet Logic).</li>
+            <li><strong>Presence station UI</strong> — Station QR and standard Presence check-in flows when instant VProfile matching is inconclusive.</li>
+          </ul>
+          <h3 style="margin-top: 22px;">Three-Camera Setup (TP-Link VIGI)</h3>
+          <table>
+            <tr><th>Camera</th><th>Location & purpose</th></tr>
+            <tr><td>VIGI C340 (PoE, outdoor-rated)</td><td>Just outside the door — dark underground parking approach; IR + white light for low-light Vradar, staff matching, and close-up Presence certificates</td></tr>
+            <tr><td>VIGI C440 (PoE, indoor)</td><td>Small hallway inside the door — post-entry detection, secondary Vradar coverage, and corridor analytics</td></tr>
+            <tr><td>VIGI C440 (PoE, indoor)</td><td>Staircase corridor — early approach detection before the door; drives welcome / warning signage ahead of arrival</td></tr>
+          </table>
+          <p class="footer-note">All cameras and both compute devices communicate over a local Gigabit Ethernet / PoE network that can remain dedicated to EyeNet. Remote management is provided through the included EyeNet VPN Mesh (Tailscale/Headscale), so the stack need not depend on Deloitte corporate IT systems. Camera-side AI features are unused; all intelligence runs in EyeNet Vradar, VProfiles, Logic, and Presence.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">6</span>
+        <h2>Preparatory Phase — Two-Week On-Premises Pilot</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 24px; color: #f5fbff;">Before production rollout, the EyeNet team conducts a two-week on-premises preparatory phase at Deloitte's site using hardware similar to the configuration in this offer — so camera angles, lighting (including the dark underground parking approach), signage behaviour, and Presence fallback can be validated in the real environment.</div>
+      <div class="grid-two">
+        <div>
+          <h3>Objectives</h3>
+          <ul>
+            <li>Confirm VIGI C340 / C440 placement, PoE cabling, and RTSP stability on Deloitte's LAN.</li>
+            <li>Tune Vradar and VProfiles matching under site lighting — especially the outdoor approach corner.</li>
+            <li>Configure and dry-run Eyenet Logic rules: staff match → welcome video; unknown approach → warning video; inconclusive match → Presence station on the door touch screen.</li>
+            <li>Validate the door Linux mini PC + touch screen for Signage playback and Presence UI.</li>
+            <li>Enrol a sample staff cohort into VProfiles and exercise the full entry path end-to-end.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>What EyeNet Provides</h3>
+          <ul>
+            <li>On-site / on-premises EyeNet engineering presence for up to two calendar weeks.</li>
+            <li>Temporary pilot stack equivalent in role to the offered platform mini PC, door Linux player, touch screen, and three VIGI-class PoE cameras (or identical models when available).</li>
+            <li>Configuration of Gate, Vradar, VProfiles, Logic, Presence, Signage, Insights, Matrix, and API for the pilot door.</li>
+            <li>A short findings report: recommended mounts, Logic rule set, and any site-specific adjustments before production hardware is ordered.</li>
+          </ul>
+          <p class="footer-note" style="margin-top: 16px;">Pilot hardware remains EyeNet property unless otherwise agreed. Software licensing for the production phase follows Section 7; commercial terms for the preparatory phase can be agreed separately or bundled with optional remote onboarding.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="licensing-pricing">
+        <div class="section-title">
+          <span class="section-number">7</span>
+          <h2>Software Licensing & Commercial Pricing</h2>
+        </div>
+        <div class="pricing-grid">
+          <article class="pricing-card intro">
+            <span class="pricing-label">3-Month Prequel</span>
+            <div class="pricing-value">EUR 200.00</div>
+            <p class="pricing-subtext">One-time introductory offer for a single door installation — a three-month prequel to the Professional subscription. After three months this temporary licence automatically converts to the EUR 499–999 package.</p>
+            <ul class="pricing-list">
+              <li><strong>Eyenet Gate</strong> (1–5 cameras): EUR 30 / month</li>
+              <li><strong>Eyenet Vradar</strong> (anonymous instant detection, GDPR): EUR 20 / month</li>
+              <li><strong>Eyenet Logic</strong> (automations): EUR 15 / month</li>
+              <li><strong>Eyenet VProfiles</strong> (individual identity profiles): EUR 20 / month</li>
+              <li><strong>Eyenet Presence</strong> (check-in & verification): EUR 30 / month</li>
+              <li><strong>Eyenet Signage</strong> (digital signage): EUR 30 / month</li>
+              <li><strong>Eyenet Insights</strong> (analytics): EUR 10 / month</li>
+              <li><strong>Eyenet Matrix</strong> (platform + VPN + multi-site): EUR 30 / month</li>
+              <li><strong>Eyenet API</strong> (Teams, Slack, webhooks): EUR 15 / month</li>
+              <li style="margin-top: 12px; font-weight: 700;">Total during intro: EUR 200.00 / month · 3 months only</li>
+              <li>One installation only. Automatically converts to Professional (EUR 499–999) after three months.</li>
+            </ul>
+          </article>
+          <article class="pricing-card featured">
+            <span class="pricing-label">Ongoing Professional</span>
+            <div class="pricing-value">EUR 499–999</div>
+            <p class="pricing-subtext">Ongoing subscription after the three-month EUR 200 temporary licence. This installation moves automatically onto the Professional package when the prequel period ends.</p>
+            <ul class="pricing-list">
+              <li>Automatic conversion after month 3 — no new procurement cycle required.</li>
+              <li>Same nine EyeNet products continue; scope expands to the Professional tier (2–5 locations).</li>
+              <li>Final monthly rate within EUR 499–999 depends on active modules.</li>
+              <li>Annual subscription: 10% off the nominal package value.</li>
+              <li>Platform infrastructure and secure VPN remain included via Eyenet Matrix.</li>
+            </ul>
+          </article>
+          <article class="pricing-card">
+            <span class="pricing-label">Optional Services</span>
+            <div class="pricing-value">As Needed</div>
+            <p class="pricing-subtext">Optional commercial services that can be added without changing the software license structure.</p>
+            <ul class="pricing-list">
+              <li>Remote onboarding and deployment support: EUR 1,800 one-time.</li>
+              <li>Administrator training workshop: EUR 950 one-time.</li>
+              <li>Premium support package: EUR 420 / month.</li>
+              <li>Additional door player unit license: EUR 150 / month per extra door.</li>
+            </ul>
+          </article>
+        </div>
+        <div class="note-card" style="margin-top: 22px;">
+          <p><strong>Pricing note:</strong> The EUR 200 / month rate in this revision (protocol <strong>000665201001</strong>) is a <strong>one-time three-month temporary licence</strong> for this single door installation, offered as a prequel to the Professional package. After three months the licence <strong>automatically converts</strong> to EUR 499–999 / month (Professional). The platform infrastructure and secure VPN connectivity are covered by Eyenet Matrix — there is no separate platform or VPN charge. The modular structure allows Deloitte to add or remove EyeNet products as door monitoring needs evolve. Pricing can be revisited on contract renewal. Hardware and the two-week preparatory phase are scoped separately from the software fees above.</p>
+        </div>
+      </div>
+
+      <div class="deployment-packages">
+        <h3>Available Deployment Packages</h3>
+        <p>EyeNet offers four deployment tiers to match organisations of any scale. All tiers support 1–5 cameras per location and include platform infrastructure and secure VPN connectivity via Eyenet Matrix. Final pricing within each range depends on which EyeNet products are activated. <strong>An annual subscription is 10% off the nominal value</strong> of the selected package (12 × the applicable monthly rate, less 10%).</p>
+        <div class="pricing-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+          <article class="pricing-card intro">
+            <span class="pricing-label">Single Door</span>
+            <div class="pricing-value" style="font-size: 28px;">EUR 200.00</div>
+            <p class="pricing-subtext">One-time three-month temporary licence for this offer (protocol 000665201001): one location, one door, three VIGI cameras, all nine EyeNet products. After three months this licence automatically converts to Professional (EUR 499–999).</p>
+            <ul class="pricing-list">
+              <li>1 location · 3 months only</li>
+              <li>1–5 cameras</li>
+              <li>All modules included</li>
+              <li>Then converts to Professional</li>
+            </ul>
+          </article>
+          <article class="pricing-card featured">
+            <span class="pricing-label">Professional</span>
+            <div class="pricing-value" style="font-size: 28px;">EUR 499–999</div>
+            <p class="pricing-subtext">Ongoing package after the three-month Single Door prequel. For growing organisations with 2–5 locations. Price varies based on active modules selected.</p>
+            <ul class="pricing-list">
+              <li>2–5 locations</li>
+              <li>1–5 cameras per location</li>
+              <li>Modular product selection</li>
+              <li>Platform & VPN via Matrix</li>
+            </ul>
+          </article>
+          <article class="pricing-card">
+            <span class="pricing-label">Business</span>
+            <div class="pricing-value" style="font-size: 28px;">EUR 1,499–2,999</div>
+            <p class="pricing-subtext">For larger deployments across 6–20 locations. Price varies based on active modules selected.</p>
+            <ul class="pricing-list">
+              <li>6–20 locations</li>
+              <li>1–5 cameras per location</li>
+              <li>Modular product selection</li>
+              <li>Platform & VPN via Matrix</li>
+            </ul>
+          </article>
+          <article class="pricing-card">
+            <span class="pricing-label">Enterprise</span>
+            <div class="pricing-value" style="font-size: 22px;">Contact Sales</div>
+            <p class="pricing-subtext">Unlimited locations with priority support and custom deployment planning. Tailored pricing for large-scale rollouts.</p>
+            <ul class="pricing-list">
+              <li>Unlimited locations</li>
+              <li>1–5 cameras per location</li>
+              <li>Priority support included</li>
+              <li>Custom deployment planning</li>
+            </ul>
+          </article>
+        </div>
+        <p class="footer-note">All deployment packages include the EyeNet platform infrastructure and secure VPN connectivity via Eyenet Matrix at no additional charge. <strong>Annual subscription: 10% off the nominal value</strong> of the selected package. The EUR 200 Single Door rate is a one-time three-month temporary licence for one installation and then converts automatically to Professional (EUR 499–999). Hardware is not included — hardware procurement is handled separately through vetted EyeNet hardware partners. For Enterprise pricing or to discuss a tailored deployment, contact your EyeNet account representative.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">8</span>
+        <h2>Assumptions and Exclusions</h2>
+      </div>
+      <ul>
+        <li>The customer provides local networking equipment (Gigabit Ethernet / PoE switch as needed), Ethernet cabling, mounting hardware, and any civil works required for camera and door-player installation. The door touch screen may be supplied by the customer or via the hardware partner.</li>
+        <li>The hardware items listed in this offer (industrial platform mini PC, door Linux mini PC, VIGI C340 / C440 cameras, SSD, and touch screen) are indicative recommendations. The customer may procure equivalent or alternative hardware; the software licenses are independent of hardware procurement.</li>
+        <li>Taxes such as VAT are not included in the above pricing and will be applied according to applicable Greek tax regulations.</li>
+        <li>On-site production installation, screen mounting, cable routing, and custom software development are excluded unless separately quoted. The two-week preparatory phase is described in Section 6 and may be commercialised separately or bundled with optional onboarding.</li>
+        <li>Remote access, management, and support are provided through the included EyeNet VPN Mesh. The customer ensures the platform device, door player, and all three cameras have Ethernet connectivity to the local network.</li>
+        <li>Staff face enrollment into Eyenet VProfiles (individual identity profile objects grouped into collections) is a one-time setup activity; training on this process is covered under the optional administrator training workshop and can begin during the preparatory phase.</li>
+        <li>The platform infrastructure and secure VPN connectivity are covered by Eyenet Matrix. There is no separate charge for the platform or VPN components. EyeNet can be deployed as a locally managed, self-contained stack fully decoupled from Deloitte’s digital / IT infrastructure. Any outbound update to a Deloitte webhook is optional, request-driven, and subject to strict authentication and security controls via Eyenet Logic and Eyenet API.</li>
+        <li>This document (protocol <strong>000665201001</strong>) supersedes protocol <strong>000665201000 — EyeNet Door Entrance & Staff Monitoring Solution</strong> for hardware architecture, delivery sequence, and commercial model: the EUR 200 / month rate is a one-time three-month temporary licence for this installation, after which the licence automatically converts to the Professional package (EUR 499–999) as stated in Section 7.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">9</span>
+        <h2>Commercial Note</h2>
+      </div>
+      <p>This offer is structured to be printed or exported as PDF for internal review and commercial discussion. It revises protocol <strong>000665201000 — EyeNet Door Entrance & Staff Monitoring Solution</strong> with a three-camera TP-Link VIGI plan, a Linux door player + touch screen (no edge camera module), Vradar Presence certificates with Logic-driven welcome/warning content, a two-week on-premises preparatory phase, and a one-time three-month EUR 200 / month temporary licence that automatically converts to the Professional package (EUR 499–999). Annual package subscriptions are 10% off nominal value.</p>
+      <p class="footer-note">Prepared by EyeNet for commercial discussion purposes. Pricing can be adjusted after final scope confirmation. Protocol <strong>000665201001</strong> (Offer Ref. EYENET-DELOITTE-DOOR-2026-R2). Supersedes protocol <strong>000665201000 — EyeNet Door Entrance & Staff Monitoring Solution</strong>.</p>
+    </section>
+
+  </div>
+</body>
+</html>
