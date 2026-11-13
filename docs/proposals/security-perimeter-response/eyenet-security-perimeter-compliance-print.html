@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EyeNet — Mine Site Security Perimeter Compliance Report (Print)</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+    * { box-sizing: border-box; }
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    body { margin: 0; }
+    .page { max-width: var(--max-width); margin: 0 auto; padding: 32px 24px 72px; }
+    .print-bar {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .print-note { font-size: 13px; color: #64748b; max-width: 52ch; }
+    .print-button {
+      border: 0; border-radius: 999px; padding: 12px 18px;
+      background: var(--brand-primary); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%),
+                  linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14); border-radius: 32px;
+      box-shadow: var(--shadow); overflow: hidden; position: relative; color: var(--text);
+    }
+    .hero::after {
+      content: ""; position: absolute; inset: auto -80px -80px auto;
+      width: 220px; height: 220px; border-radius: 50%; background: rgba(25, 118, 210, 0.26);
+    }
+    .hero-inner { display: grid; grid-template-columns: 1.35fr 0.9fr; gap: 28px; padding: 34px; position: relative; z-index: 1; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14); color: var(--brand-secondary);
+      font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1 { margin: 18px 0 16px; font-size: 42px; line-height: 1.05; letter-spacing: -0.03em; }
+    .lead { font-size: 18px; color: #334155; max-width: 62ch; }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+    .brand-stack { display: flex; align-items: center; gap: 14px; }
+    .brand-stack img { height: 36px; width: auto; }
+    .brand-chip {
+      padding: 8px 12px; border: 1px solid rgba(34, 211, 238, 0.24); border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9); color: #eef9ff; font-size: 13px; font-weight: 600;
+    }
+    .meta-card, .section {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04); border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px; align-self: start; color: var(--text);
+    }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+    .meta-item { padding-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+    .meta-label { display: block; margin-bottom: 6px; color: #9fb0c3; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .meta-value { font-size: 15px; font-weight: 600; color: #ffffff; }
+    .section { margin-top: 24px; padding: 28px; border-color: var(--panel-line); background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%); }
+    .section-title { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .section-number {
+      width: 34px; height: 34px; border-radius: 50%; display: inline-grid; place-items: center;
+      background: rgba(25, 118, 210, 0.1); color: var(--brand-primary); font-weight: 700;
+    }
+    h2 { margin-bottom: 0; font-size: 24px; letter-spacing: -0.02em; }
+    h3 { margin-bottom: 10px; font-size: 18px; }
+    h4 { margin-bottom: 6px; font-size: 16px; color: #334155; }
+    ul, ol { margin: 0; padding-left: 20px; }
+    li + li { margin-top: 8px; }
+    .callout {
+      padding: 18px 20px; border-left: 4px solid var(--brand-secondary); border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent); color: #f5fbff; font-weight: 600;
+    }
+    .callout.amber { border-left-color: #f59e0b; }
+    .callout.green { border-left-color: #4caf50; }
+    .footer-note { margin-top: 18px; color: #64748b; font-size: 13px; }
+    .grid-two { display: grid; gap: 22px; margin-top: 24px; grid-template-columns: 1.15fr 0.85fr; }
+    .grid-three { display: grid; gap: 22px; margin-top: 24px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .summary-card {
+      padding: 22px; border-color: var(--panel-line); background: #ffffff;
+      border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    }
+    .summary-card strong { color: #0f172a; }
+    .summary-card p:last-child { margin-bottom: 0; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .badge {
+      display: inline-flex; align-items: center; padding: 4px 12px;
+      border-radius: 999px; font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
+      background: rgba(25, 118, 210, 0.08); color: var(--brand-primary);
+      border: 1px solid rgba(25, 118, 210, 0.18);
+    }
+    .badge.mode { background: rgba(34, 211, 238, 0.08); color: #0891b2; border-color: rgba(34, 211, 238, 0.18); }
+    .badge.user { background: rgba(245, 158, 11, 0.08); color: #b45309; border-color: rgba(245, 158, 11, 0.18); }
+    .badge.safety { background: rgba(239, 68, 68, 0.08); color: #b91c1c; border-color: rgba(239, 68, 68, 0.18); }
+    .badge.success { background: rgba(34, 197, 94, 0.08); color: #166534; border-color: rgba(34, 197, 94, 0.18); }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid rgba(15, 23, 42, 0.08); vertical-align: top; }
+    th { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+    td { font-size: 14px; }
+    .status-compliant { color: #166534; font-weight: 700; }
+    .status-partial { color: #b45309; font-weight: 700; }
+    .status-partner { color: #64748b; font-weight: 700; }
+    .key-number {
+      display: block; margin-bottom: 8px; font-size: 32px; font-weight: 800; letter-spacing: -0.03em;
+    }
+    .stat-label {
+      color: #64748b; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700;
+    }
+    .notification-chain {
+      display: grid; gap: 16px; margin-top: 20px; grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .notif-level {
+      padding: 20px; border-radius: var(--radius-md);
+      border: 1px solid var(--panel-line); background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%);
+    }
+    .notif-level h4 { margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    .notif-level .icon-circle {
+      width: 28px; height: 28px; border-radius: 50%; display: inline-grid; place-items: center;
+      font-size: 14px; font-weight: 700;
+    }
+    .notif-level.onboard .icon-circle { background: rgba(34, 211, 238, 0.12); color: #0891b2; }
+    .notif-level.hq .icon-circle { background: rgba(25, 118, 210, 0.12); color: var(--brand-primary); }
+    .notif-level.erp .icon-circle { background: rgba(245, 158, 11, 0.12); color: #b45309; }
+    .notif-level ul { font-size: 13px; color: #475569; }
+    .notif-level ul li + li { margin-top: 6px; }
+    @page { size: A4; margin: 14mm 12mm; }
+    @media (max-width: 920px) {
+      .hero-inner, .grid-two, .grid-three, .notification-chain { grid-template-columns: 1fr; }
+      h1 { font-size: 34px; }
+      .page { padding: 18px 16px 54px; }
+    }
+
+    @media print {
+      html {
+        background: #fff;
+        color: #0f172a;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      body { background: #fff; }
+      .page { max-width: none; padding: 0; margin: 0; }
+      .print-bar { display: none !important; }
+
+      h1, h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
+      .section-title { break-after: avoid; page-break-after: avoid; }
+      .lead { color: #334155; font-size: 15px; }
+
+      .hero,
+      .meta-card,
+      .section,
+      .summary-card,
+      .notif-level,
+      .callout,
+      .eyebrow,
+      .brand-chip,
+      .badge,
+      .section-number,
+      .icon-circle {
+        border-radius: 0 !important;
+        box-shadow: none !important;
+      }
+
+      .hero {
+        margin: 0 0 10px;
+        padding: 0;
+        border: none;
+        overflow: visible;
+        color: #ffffff;
+        background: #10203b;
+      }
+      .hero::after { display: none; }
+      .hero-inner { gap: 18px; padding: 22px 20px; }
+      h1 { font-size: 28px; margin: 12px 0 10px; }
+
+      .meta-card {
+        background: #163256;
+        border: none;
+        padding: 16px 18px;
+        color: #ffffff;
+      }
+      .meta-item { border-bottom-color: rgba(255, 255, 255, 0.12); }
+      .meta-label { color: #9fb0c3; }
+      .meta-value { color: #ffffff; }
+      .brand-chip {
+        background: #1e3a5f;
+        border-color: rgba(255, 255, 255, 0.2);
+        color: #eef9ff;
+      }
+      .eyebrow {
+        background: rgba(34, 211, 238, 0.12);
+        color: #67e8f9;
+      }
+
+      .section {
+        margin: 0;
+        padding: 16px 14px 18px;
+        border: none;
+        background: #ffffff;
+        break-inside: auto;
+      }
+      .section:nth-of-type(odd) { background: #f4f7fb; }
+      .section:nth-of-type(even) { background: #ffffff; }
+      .section.print-page-start {
+        break-before: page;
+        page-break-before: always;
+      }
+
+      .summary-card,
+      .notif-level {
+        border: none;
+        background: #eef4fb;
+        padding: 14px 16px;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .section:nth-of-type(odd) .summary-card,
+      .section:nth-of-type(odd) .notif-level {
+        background: #ffffff;
+      }
+
+      .callout {
+        border-left: 3px solid #22d3ee;
+        border-radius: 0;
+        background: #0f172a;
+        color: #f5fbff !important;
+        break-inside: avoid;
+        page-break-inside: avoid;
+        padding: 12px 14px;
+      }
+      .callout.amber { border-left-color: #f59e0b; background: #1a1520; }
+      .callout.green { border-left-color: #4caf50; background: #0f1a14; }
+
+      .badge {
+        border-radius: 2px;
+        background: #e8f1fb;
+        border-color: transparent;
+      }
+      .section-number {
+        border-radius: 2px;
+        background: #dbeafe;
+      }
+      .icon-circle { border-radius: 2px; }
+
+      .grid-two, .grid-three, .notification-chain { gap: 12px; margin-top: 14px; }
+      table { break-inside: auto; }
+      tr { break-inside: avoid; page-break-inside: avoid; }
+      th, td { padding: 7px 10px; font-size: 12px; }
+      .footer-note { color: #64748b; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <span class="print-note">Print-optimized compliance report — screen keeps card layout; PDF uses flat bands and page starts at major sections.</span>
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="../../product/logos/svg/eyenet-dark.svg" alt="EyeNet logo" />
+              <span class="brand-chip">Compliance Report</span>
+            </div>
+          </div>
+          <span class="eyebrow">Security Perimeter &amp; Autonomous Surveillance</span>
+          <h1>Mine Site Security Perimeter — EyeNet Compliance</h1>
+          <p style="color: #d1d9e6; font-size: 15px; margin-top: 8px;">How currently deployed EyeNet solutions serve unfenced wide-area detection, AI intrusion alerting, drone response, and alarm-led control-room operations for a care-and-maintenance mine site.</p>
+          <p style="color: #9fb0c3; font-size: 13px; margin-top: 12px;">
+            <span style="margin-right: 20px;">eyenet-vision.com</span>
+            <span>nick@eyenet-vision.com</span>
+          </p>
+        </div>
+        <aside class="meta-card">
+          <h3>Document Info</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Type</span>
+              <span class="meta-value">Solution Compliance Report</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Date</span>
+              <span class="meta-value">13 November 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Site profile</span>
+              <span class="meta-value">7.44 km² · 12.12 km perimeter · no fence</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Deployment</span>
+              <span class="meta-value">On-Premises / VPN Mesh</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <!-- 1. EXECUTIVE VERDICT -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Executive Verdict</h2>
+      </div>
+      <div class="callout green" style="margin-bottom: 16px; color: #f5fbff;">EyeNet fully complies as the AI detection, alarm, recording, and remote-command software layer for the requested perimeter. Physical towers, solar masts, loudspeakers, drone airframes/docks, ground radar, and radio/GPS hardware remain partner or site-supplied — EyeNet ingests their video and turns detections into verified alarms and response workflow.</div>
+      <p class="lead">Cost effectiveness is the governing constraint: the site rejected an aerostat. EyeNet avoids proprietary camera lock-in, runs on standard business hardware without mandatory GPU farms, and replaces wall-watching with alarm-led operations — so capital is spent on cameras and coverage where line of sight matters, not on passive video walls.</p>
+      <div class="grid-three">
+        <div class="summary-card">
+          <span class="key-number" style="color: #166534;">Software</span>
+          <span class="stat-label">Compliant</span>
+          <p style="font-size: 13px; color: #475569; margin-top: 8px;">Gate, Presence, Vradar, Sentinel, Matrix, Cameras/Vision, ONVIF connectors, Area &amp; Drone modes cover intrusion, loitering, virtual perimeters, archives, and multi-workstation viewing.</p>
+        </div>
+        <div class="summary-card">
+          <span class="key-number" style="color: #b45309;">Hybrid</span>
+          <span class="stat-label">Partial — partner UAV</span>
+          <p style="font-size: 13px; color: #475569; margin-top: 8px;">Drone mode and Vradar analyse aerial feeds and can cue or receive alarm launches via webhooks. Hybrid fuel, tethered, and drone-in-a-box hardware are not EyeNet SKUs.</p>
+        </div>
+        <div class="summary-card">
+          <span class="key-number" style="color: #64748b;">BOM</span>
+          <span class="stat-label">Site / partner</span>
+          <p style="font-size: 13px; color: #475569; margin-top: 8px;">Tower PTZ/thermal optics, solar mobile towers, PA/sirens, LTE/mesh radios, UPS, lightning protection, radio dispatch, and vehicle AVL remain outside the EyeNet software licence.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. REQUESTED OPERATING MODEL -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>Requested Operating Model</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Care-and-maintenance mine: improve autonomous hybrid drone-based surveillance against intruders and theft — especially at night — then trigger a hands-on response team with a regular drone for close imaging and tracking.</div>
+      <div class="grid-two">
+        <div>
+          <h3>Site constraints from the inbound brief</h3>
+          <ul>
+            <li><strong>No fence</strong> — open access over rough terrain and heavy vegetation; boundaries are virtual.</li>
+            <li><strong>~7.44 km² site / ~12.12 km perimeter</strong> — wide-area detection required; static guard posts to be replaced in stages by mobile response to verified alarms.</li>
+            <li><strong>Connectivity</strong> — cellular, local Wi‑Fi and Starlink at main central areas; <em>not</em> at perimeters.</li>
+            <li><strong>Night priority</strong> — thermal + day/night optical detection for people and vehicles in dust and darkness.</li>
+            <li><strong>Cost effectiveness</strong> — aerostat already rejected; start lean and expand from alarm heatmaps.</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <p><strong>Local security wish-list (summary)</strong></p>
+          <ol>
+            <li>Cameras on two existing towers (PTZ thermal + fixed AI)</li>
+            <li>4–6 solar mobile CCTV towers</li>
+            <li>1 drone-in-a-box + 1 tethered / overwatch drone</li>
+            <li>Control-room upgrade to alarm-led VMS + GIS map + talk-down + resilience</li>
+          </ol>
+          <div class="badge-row">
+            <span class="badge safety">Intrusion</span>
+            <span class="badge safety">Loitering</span>
+            <span class="badge mode">Night / thermal</span>
+            <span class="badge user">Alarm-led response</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. EYENET SOLUTIONS COMPLIANCE -->
+    <section class="section print-page-start">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Currently Deployed EyeNet Solutions — Compliance Map</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">Six applications on one shared on-premises platform. Core detection runs offline; internet is used for remote access, notifications, and licensing. Video does not require cloud.</div>
+      <table>
+        <thead>
+          <tr>
+            <th>EyeNet solution</th>
+            <th>Status</th>
+            <th>Serves which request</th>
+            <th>How it fits this site</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Shared platform — Cameras &amp; Vision</strong></td>
+            <td><span class="status-compliant">Deployed</span></td>
+            <td>Tower cams, mobile towers, drone video</td>
+            <td>ONVIF/RTSP IP, PTZ and thermal streams; live detection; local instant/deep archives for evidence retention</td>
+          </tr>
+          <tr>
+            <td><strong>Surveillance connectors (IP / NVR–VMS)</strong></td>
+            <td><span class="status-compliant">Deployed</span></td>
+            <td>Control-room VMS upgrade</td>
+            <td>Vendor-neutral ONVIF path; sit beside or replace wall-watching VMS; ingest existing and new cameras</td>
+          </tr>
+          <tr>
+            <td><strong>Gate</strong></td>
+            <td><span class="status-compliant">Deployed</span></td>
+            <td>Approaches, access roads, pit edge</td>
+            <td>People/vehicle activity, abnormal crowd, POI match, annotated live video → alarm-led ops</td>
+          </tr>
+          <tr>
+            <td><strong>Presence (Area)</strong></td>
+            <td><span class="status-compliant">Deployed</span></td>
+            <td>Restricted zones / virtual perimeter</td>
+            <td>Unauthorised presence in defined zones; schedules/members to separate staff from intruders</td>
+          </tr>
+          <tr>
+            <td><strong>Vradar (Automation)</strong></td>
+            <td><span class="status-compliant">Deployed</span></td>
+            <td>AI analytics: intrusion / loitering / after-hours</td>
+            <td>Instant-detection triggers → in-app, email, webhooks; works on fixed, mobile, wearable and drone cameras</td>
+          </tr>
+          <tr>
+            <td><strong>Area mode</strong></td>
+            <td><span class="status-compliant">Deployed</span></td>
+            <td>Wide exterior / dumps / tracks</td>
+            <td>Virtual perimeters where cameras have line of sight across open ground and vegetation</td>
+          </tr>
+          <tr>
+            <td><strong>Drone mode</strong></td>
+            <td><span class="status-partial">Deployed (software)</span></td>
+            <td>Drone-in-a-box + response drone</td>
+            <td>Treats aerial feed as another instant-detection camera; scheduled or alarm-cued via automation/webhooks — does not supply UAV hardware</td>
+          </tr>
+          <tr>
+            <td><strong>Goggles / Security Officer Agent</strong></td>
+            <td><span class="status-compliant">Productized / mobile path</span></td>
+            <td>Hands-on response team close imaging</td>
+            <td>Wearable first-person video and alerts to command while teams track culprits</td>
+          </tr>
+          <tr>
+            <td><strong>Sentinel</strong></td>
+            <td><span class="status-compliant">Deployed</span></td>
+            <td>Control-room / remaining static posts</td>
+            <td>Vigilance while posts remain; supports staged move from static guards to mobile response</td>
+          </tr>
+          <tr>
+            <td><strong>Matrix + EyeNet VPN</strong></td>
+            <td><span class="status-compliant">Deployed</span></td>
+            <td>Remote ops, backup viewing, multi-node</td>
+            <td>On-prem mesh over cellular / Wi‑Fi / Starlink at hub; edge nodes where link exists; aggregated events, logs, dashboards</td>
+          </tr>
+          <tr>
+            <td><strong>Analytics &amp; incident history</strong></td>
+            <td><span class="status-compliant">Deployed</span></td>
+            <td>Digital occurrence book / dashboards</td>
+            <td>Camera events and presence/gate reports by time and place to site the next mobile towers</td>
+          </tr>
+          <tr>
+            <td><strong>Signage</strong></td>
+            <td><span class="status-partner">Optional / weak PA fit</span></td>
+            <td>Talk-down messaging</td>
+            <td>Can push emergency content on displays; not a substitute for tower loudspeakers</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 4. WISH-LIST COMPLIANCE -->
+    <section class="section print-page-start">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>Wish-List Item Compliance</h2>
+      </div>
+      <div class="callout amber" style="margin-bottom: 16px; color: #f5fbff;">“Compliant” means EyeNet software meets the operational intent. Hardware, aviation approvals, and facilities remain separate BOM lines.</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Wish-list item</th>
+            <th>EyeNet compliance</th>
+            <th>Gap / partner needed</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>1. Cameras on two existing towers</strong></td>
+            <td><span class="status-compliant">Software compliant</span> — dual-sensor PTZ + fixed AI cams as Gate/Area sources; Vradar flags intrusion/loitering; tower-base camera as tamper/Presence zone</td>
+            <td>Long-range thermal/optical PTZ, mounts, UPS, fibre/radio, loudspeaker, structural and LOS survey</td>
+          </tr>
+          <tr>
+            <td><strong>2. 4–6 mobile solar CCTV towers</strong></td>
+            <td><span class="status-compliant">Software compliant</span> — same analytics; relocate cameras as pit/dumps change; tamper via Presence/Vradar</td>
+            <td>Solar towers, LTE/mesh radios, LED/siren/PA, GPS tracker hardware</td>
+          </tr>
+          <tr>
+            <td><strong>3a. Drone-in-a-box</strong></td>
+            <td><span class="status-partial">Partial</span> — Drone mode + Vradar for alarm-triggered or scheduled patrol analytics into the control room</td>
+            <td>Airframe, dock, BVLOS approval, pilots, maintenance; hybrid fuel UAV is not an EyeNet SKU</td>
+          </tr>
+          <tr>
+            <td><strong>3b. Tethered / response drone</strong></td>
+            <td><span class="status-partial">Partial</span> — same software path for long overwatch and close tracking</td>
+            <td>Tether system / vehicle mount / gasoline or hybrid platform</td>
+          </tr>
+          <tr>
+            <td><strong>4 / #2–#3 VMS + AI analytics</strong></td>
+            <td><span class="status-compliant">Strong fit</span> — EyeNet is the alarm-led analytics layer</td>
+            <td>Keep legacy VMS only if required for bulk recording policy</td>
+          </tr>
+          <tr>
+            <td><strong>#4 GIS site map + SOP per alarm</strong></td>
+            <td><span class="status-partial">Partial</span> — live cameras, alarms, Matrix overview; webhooks to GIS/CAD</td>
+            <td>Full GIS map and vehicle layer need map/dispatch integration</td>
+          </tr>
+          <tr>
+            <td><strong>#5 Servers / ~30 days storage</strong></td>
+            <td><span class="status-compliant">Compliant</span> — on-prem archives; scale storage with camera count</td>
+            <td>Site sizing for perimeter camera load</td>
+          </tr>
+          <tr>
+            <td><strong>#6 Video wall / workstations</strong></td>
+            <td><span class="status-partial">Partial</span> — operator UI is alarm-oriented</td>
+            <td>Physical video wall and desk layout are facilities</td>
+          </tr>
+          <tr>
+            <td><strong>#7 Radio + vehicle GPS</strong></td>
+            <td><span class="status-partial">Partial</span> — webhooks/alerts to dispatch</td>
+            <td>Radio console + AVL tracking third party</td>
+          </tr>
+          <tr>
+            <td><strong>#8 Talk-down audio</strong></td>
+            <td><span class="status-partner">Weak / integrate</span> — optional camera two-way audio where ONVIF supports it</td>
+            <td>Loudspeakers on towers are hardware</td>
+          </tr>
+          <tr>
+            <td><strong>#9 Resilience (UPS, surge, HVAC, door)</strong></td>
+            <td><span class="status-partner">Out of scope</span></td>
+            <td>Site electrical / facilities</td>
+          </tr>
+          <tr>
+            <td><strong>#10 Backup viewing position</strong></td>
+            <td><span class="status-compliant">Compliant</span> — Matrix/VPN second workstation (e.g. security office)</td>
+            <td>Second room power and network</td>
+          </tr>
+          <tr>
+            <td><strong>#11 Digital occurrence book</strong></td>
+            <td><span class="status-compliant">Compliant</span> — event/incident reports and dashboards</td>
+            <td>Optional export to site OH&amp;S system</td>
+          </tr>
+          <tr>
+            <td><strong>#12 Retrain to alarm-led SOP</strong></td>
+            <td><span class="status-compliant">Compliant</span> — matches EyeNet operating model</td>
+            <td>Procedure rewrite + annual licence/support</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 5. HOW EACH APPLICATION SERVES THE PERIMETER -->
+    <section class="section print-page-start">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>How Each Application Serves the Perimeter</h2>
+      </div>
+
+      <div class="grid-two" style="margin-top: 0;">
+        <div>
+          <h3>Gate + Area — fixed and mobile detection</h3>
+          <p>Mount long-range PTZ and fixed wide-angle cameras on the two towers and on solar mobile towers. Gate covers approaches and access roads; Area covers pit edge, dumps, community boundary and artisanal hotspots. Instant detection feeds Vradar so operators receive person/vehicle alarms instead of empty footage.</p>
+          <div class="badge-row">
+            <span class="badge mode">Gate</span>
+            <span class="badge mode">Area</span>
+            <span class="badge success">Compliant</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <p><strong>Night &amp; dust</strong></p>
+          <p style="font-size: 13px; color: #475569;">Thermal + day/night optical streams are supported as standard camera sources. Analytics run on the normalised RTSP/ONVIF feed; sensor choice is a camera BOM decision, not a platform lock-in.</p>
+        </div>
+      </div>
+
+      <div class="grid-two">
+        <div>
+          <h3>Presence — virtual fence where there is no fence</h3>
+          <p>Define restricted zones for pit edge, dumps and community-facing boundary. Unauthorised presence triggers alerts. Staff and contractors can be enrolled so known presence does not flood the control room; unknown people and vehicles escalate.</p>
+          <div class="badge-row">
+            <span class="badge mode">Area</span>
+            <span class="badge safety">Unauthorised presence</span>
+          </div>
+        </div>
+        <div>
+          <h3>Vradar — alarm-led autonomy</h3>
+          <p>Program parallel rules across all cameras: intrusion, loitering, after-hours movement, line-of-interest approaches. Actions include in-app alerts, email and webhooks that can cue a drone dock, dispatch console or response SOP. Same rules apply to aerial and wearable feeds.</p>
+          <div class="badge-row">
+            <span class="badge mode">Drone</span>
+            <span class="badge mode">Goggles</span>
+            <span class="badge user">Webhooks</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-two">
+        <div>
+          <h3>Drone mode + Goggles — verify then respond</h3>
+          <p>When a tower or mobile unit raises a verified alarm, a docked or response UAV streams into Drone mode for close imaging and tracking. Response teams can use Goggles / Security Officer Agent for first-person collaboration with the control room — matching the brief’s “hands-on response including a regular drone.”</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Hybrid fuel / tethered endurance</strong></p>
+          <p style="font-size: 13px; color: #475569;">EyeNet is airframe-agnostic. Long nocturnal endurance (hybrid fuel, gasoline, tethered overwatch, or hot-swap electric units) is a drone OEM selection. EyeNet remains the AI and command layer for whichever feed arrives.</p>
+        </div>
+      </div>
+
+      <div class="grid-two">
+        <div>
+          <h3>Sentinel — while static posts remain</h3>
+          <p>As the site stages from static guard posts to mobile response, Sentinel keeps remaining posts accountable — inactive or empty posts escalate before they become blind spots.</p>
+        </div>
+        <div>
+          <h3>Matrix + VPN — hub and backup office</h3>
+          <p>Control room and security-office backup viewing share the same installation mesh. Starlink/cellular at the hub carries remote access; perimeter cameras use local radio/LTE backhaul into the on-prem node. Degraded mode continues to show reachable cameras if a link drops.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. ALARM-LED CONTROL ROOM -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">6</span>
+        <h2>Alarm-Led Control Room Mapping</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">The inbound brief asks operators to respond to alarms on one site map instead of watching a wall of feeds. EyeNet’s operating model is built for that shift.</div>
+      <div class="notification-chain">
+        <div class="notif-level onboard">
+          <h4><span class="icon-circle">1</span>Detect</h4>
+          <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">Edge / on-prem vision on every enrolled camera.</p>
+          <ul>
+            <li>Tower PTZ + fixed AI cameras</li>
+            <li>Mobile solar tower cameras</li>
+            <li>Drone and wearable streams</li>
+            <li>Local recording for ~30-day evidence policy (storage sized to load)</li>
+          </ul>
+        </div>
+        <div class="notif-level hq">
+          <h4><span class="icon-circle">2</span>Decide</h4>
+          <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">Only real events reach operators.</p>
+          <ul>
+            <li>Vradar intrusion / loitering / after-hours rules</li>
+            <li>Presence restricted-zone breaches</li>
+            <li>Gate approach and pit-edge activity</li>
+            <li>SOP steps attached via procedures + webhook payloads</li>
+          </ul>
+        </div>
+        <div class="notif-level erp">
+          <h4><span class="icon-circle">3</span>Dispatch</h4>
+          <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">Verified alarm → response assets.</p>
+          <ul>
+            <li>Cue drone-in-a-box or response UAV</li>
+            <li>Alert nearest mobile team (radio/AVL partner)</li>
+            <li>Optional talk-down via camera/PA hardware</li>
+            <li>Log incident for occurrence book / dashboards</li>
+          </ul>
+        </div>
+      </div>
+      <div class="summary-card" style="margin-top: 24px;">
+        <p><strong>Control-room upgrade items EyeNet covers vs partners</strong></p>
+        <div class="badge-row" style="margin-top: 8px;">
+          <span class="badge success">AI analytics</span>
+          <span class="badge success">Alarm UI</span>
+          <span class="badge success">Archives</span>
+          <span class="badge success">Backup viewing (VPN)</span>
+          <span class="badge success">Incident dashboards</span>
+          <span class="badge user">GIS map layer (integrate)</span>
+          <span class="badge user">Radio / AVL (integrate)</span>
+          <span class="badge safety">PA talk-down (hardware)</span>
+          <span class="badge">UPS / HVAC / door (facilities)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. COST-EFFECTIVE STACK -->
+    <section class="section print-page-start">
+      <div class="section-title">
+        <span class="section-number">7</span>
+        <h2>Recommended Cost-Effective Stack</h2>
+      </div>
+      <div class="callout green" style="margin-bottom: 16px; color: #f5fbff;">Phased deployment aligned with the brief: start with towers and four mobile units, add cameras from alarm heatmaps, introduce drone autonomy when aviation approvals and OEM kit are ready.</div>
+      <ol>
+        <li><strong>EyeNet node(s) in the control room</strong> — Gate + Area + Vradar + archives; optional second workstation / Matrix path for the security office backup viewing position.</li>
+        <li><strong>Cameras on the two existing towers first</strong> — thermal + optical PTZ where night and dust matter; fixed wide-angle AI cams on approaches and pit edge; tower-base camera for tamper.</li>
+        <li><strong>Start with four solar mobile AI towers</strong> — pit floor, dumps, remote tracks, community boundary; add up to two more from alarm data.</li>
+        <li><strong>One response UAV now (dock later)</strong> — feed Drone mode for close imaging; hybrid long-endurance or tethered overwatch via OEM when nocturnal flight time is proven necessary.</li>
+        <li><strong>Starlink / cellular at hub + radio / LTE at edges</strong> — EyeNet VPN for remote and backup viewing; no cloud dependency for video.</li>
+      </ol>
+      <div class="grid-three" style="margin-top: 24px;">
+        <div class="summary-card">
+          <span class="key-number" style="color: #1976d2;">Phase 1</span>
+          <span class="stat-label">Detect</span>
+          <p style="font-size: 13px; color: #475569; margin-top: 8px;">EyeNet + 2 tower packs + 4 mobile towers + control-room workstations. Replace wall-watching with alarm-led SOPs.</p>
+        </div>
+        <div class="summary-card">
+          <span class="key-number" style="color: #0891b2;">Phase 2</span>
+          <span class="stat-label">Respond</span>
+          <p style="font-size: 13px; color: #475569; margin-top: 8px;">Response drone + webhook cueing; radio/AVL integration; talk-down PA on high-value towers.</p>
+        </div>
+        <div class="summary-card">
+          <span class="key-number" style="color: #b45309;">Phase 3</span>
+          <span class="stat-label">Extend</span>
+          <p style="font-size: 13px; color: #475569; margin-top: 8px;">Drone-in-a-box and/or tethered overwatch; optional ground radar slaved to PTZ; +1–2 mobile towers from heatmaps.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. BOTTOM LINE -->
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">8</span>
+        <h2>Bottom Line</h2>
+      </div>
+      <div class="callout" style="margin-bottom: 16px; color: #f5fbff;">EyeNet is the compliant software brain for unfenced mine-perimeter surveillance: virtual zones, AI intrusion and loitering alerts, drone and wearable response feeds, on-prem recording, and VPN backup viewing — without forcing cloud video or proprietary cameras.</div>
+      <p>Towers, solar masts, PA, radar, radio GPS, aviation approvals and hybrid/tethered airframes are partner BOM items that EyeNet consumes and drives into verified, alarm-led response. That split maximises coverage per dollar against the site’s stated cost constraint and rejected aerostat alternative.</p>
+      <p class="footer-note">Source brief: <code>docs/proposals/security-perimeter-response/incoming</code>. Product baseline: EyeNet applications Gate, Presence, Vradar, Sentinel, Matrix, Signage; operating modes Spot, Gate, Area, Goggles, Drone; on-premises / VPN deployment. Site map reference supplied in inbound notes (Google Maps link).</p>
+    </section>
+  </div>
+</body>
+</html>

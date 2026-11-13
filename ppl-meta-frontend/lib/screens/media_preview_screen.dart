@@ -373,71 +373,84 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
       final mediaApiClient = ref.read(mediaApiClientProvider);
       final personObjectsApiClient = ref.read(personObjectsApiClientProvider);
       final mediaUuid = widget.mediaItem.uuid;
-      List<Map<String, dynamic>> personObjects = const <Map<String, dynamic>>[];
 
+      // Happy path: cache-friendly MVR load so Details can enable quickly.
+      // Face/bbox overlay (Enhanced Logic V2) stays on its own path in
+      // SmartVideoPlayer and must not gate Details.
+      // Do not forceRefresh on every preview open — that bypasses Redis and
+      // made Details take ~10s even when MVRs already existed locally.
       var mvrPeople = await _loadExistingMvrPeople(
         mediaApiClient,
         mediaUuid,
-        forceRefresh: true,
+        forceRefresh: false,
       );
 
-      final hasPersonObjects = await personObjectsApiClient.hasPersonObjectsForMedia(mediaUuid);
-      if (hasPersonObjects) {
-        final personObjectsData = await personObjectsApiClient.getPersonObjectsForMedia(mediaUuid);
-        personObjects = personObjectsData?.rawPersonGroups ?? const <Map<String, dynamic>>[];
-
-        final persistedPersonCount = personObjects.length;
-        final mvrPersonCount = mvrPeople.length;
-        final requiresRematerialization =
-            persistedPersonCount > 0 && mvrPersonCount != persistedPersonCount;
-
-        if (requiresRematerialization) {
-          debugPrint(
-            '🔁 Preview MVR mismatch for $mediaUuid: '
-            'persisted persons=$persistedPersonCount, MVR people=$mvrPersonCount. '
-            'Requesting authoritative rematerialization.',
-          );
-
-          final materializeResponse =
-              await mediaApiClient.materializePersistedPersonObjects(
-            mediaUuid: mediaUuid,
-            personObjects: personObjects,
-            mediaType: 'video',
-            awaitAuthoritativeRefresh: true,
-          );
-
-          if (materializeResponse.success) {
-            mvrPeople = await _loadExistingMvrPeople(mediaApiClient, mediaUuid);
-          } else {
-            debugPrint(
-              '❌ Preview rematerialization failed for $mediaUuid: '
-              '${materializeResponse.error}',
-            );
-          }
-        }
-      }
-
-      // NOTE: We deliberately do NOT call materializePersistedPersonObjects
-      // here. MVR creation is owned by the backend pipeline (orchestrator
-      // STEP 1.7 / vmeta single-media materialization) and is triggered
-      // automatically when a recording finishes. Triggering it from the
-      // preview screen caused MVRs to be "fired by" UI navigation and
-      // produced the race-condition flicker between two preview layouts.
-
-      // Rectangle overlay needs full per-frame detections (Enhanced Logic V2 /
-      // detection_result.faces_by_frame). MVR / person-object payloads only carry
-      // sparse representative faces and must not be used as overlay input — that
-      // blocked the stored-face load path and left the painter on the wrong JSON.
       if (!mounted) {
         return;
       }
 
-      final analysisContext = mvrPeople.isEmpty ? null : _buildPreviewAnalysisContext(mvrPeople);
-
+      // Enable Details as soon as MVRs are known — before any PO repair work.
+      final analysisContext =
+          mvrPeople.isEmpty ? null : _buildPreviewAnalysisContext(mvrPeople);
       setState(() {
         _previewMvrPeople = mvrPeople;
         _previewMvrFaces = const [];
         _previewAnalysisContext = analysisContext;
+        _isPreparingMvrPreview = false;
+      });
+
+      // Background repair only when MVRs are missing (or empty) but person
+      // objects exist. Never block Details when mvrPeople is already non-empty.
+      if (mvrPeople.isNotEmpty) {
+        return;
+      }
+
+      final hasPersonObjects =
+          await personObjectsApiClient.hasPersonObjectsForMedia(mediaUuid);
+      if (!hasPersonObjects || !mounted) {
+        return;
+      }
+
+      final personObjectsData =
+          await personObjectsApiClient.getPersonObjectsForMedia(mediaUuid);
+      final personObjects =
+          personObjectsData?.rawPersonGroups ?? const <Map<String, dynamic>>[];
+      if (personObjects.isEmpty || !mounted) {
+        return;
+      }
+
+      debugPrint(
+        '🔁 Preview: MVRs empty but ${personObjects.length} person objects '
+        'exist for $mediaUuid — rematerializing in background for Details.',
+      );
+
+      final materializeResponse =
+          await mediaApiClient.materializePersistedPersonObjects(
+        mediaUuid: mediaUuid,
+        personObjects: personObjects,
+        mediaType: 'video',
+        awaitAuthoritativeRefresh: true,
+      );
+
+      if (!materializeResponse.success || !mounted) {
+        if (!materializeResponse.success) {
+          debugPrint(
+            '❌ Preview rematerialization failed for $mediaUuid: '
+            '${materializeResponse.error}',
+          );
+        }
+        return;
+      }
+
+      mvrPeople = await _loadExistingMvrPeople(mediaApiClient, mediaUuid);
+      if (!mounted || mvrPeople.isEmpty) {
+        return;
+      }
+
+      setState(() {
+        _previewMvrPeople = mvrPeople;
+        _previewMvrFaces = const [];
+        _previewAnalysisContext = _buildPreviewAnalysisContext(mvrPeople);
       });
     } catch (e) {
       debugPrint('❌ Failed to prepare preview MVR data for ${widget.mediaItem.uuid}: $e');
@@ -446,10 +459,11 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
           _previewMvrPeople = const [];
           _previewMvrFaces = const [];
           _previewAnalysisContext = null;
+          _isPreparingMvrPreview = false;
         });
       }
     } finally {
-      if (mounted) {
+      if (mounted && _isPreparingMvrPreview) {
         setState(() {
           _isPreparingMvrPreview = false;
         });

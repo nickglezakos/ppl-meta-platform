@@ -17,7 +17,16 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-_(none)_
+### 2026-11-13 — Preview Details: decouple from overlay + light MVR happy path
+- **Status:** Pending (lab hotfix on `lab-work-dual-64g` / `eyenet-demo`; Stage 1–3 not done)
+- **Lab:** `lab-work-dual-64g` (`eyenet-demo` @ `100.101.128.40`) — Flutter web rebuild + `docker cp` into `pplmeta-ppl-meta-frontend-1` `/usr/share/nginx/html/` (2026-11-13)
+- **Source:** `ppl-meta-frontend/lib/screens/media_preview_screen.dart` — `_preparePreviewMvrData`
+- **Fix:**
+  - Details enables as soon as cached MVRs load (`forceRefresh: false`); no longer waits on rematerialize / PO repair
+  - Rematerialize runs only when MVRs are empty but person objects exist (background), so overlay / Enhanced Logic V2 does not gate Details
+  - Removes the ~10s Details delay on the happy path when Redis/local MVR cache already has people
+- **Next Stage 1 must include:** commit + push this frontend source; CHANGELOG; pin bump; Stage 2 rebuild **frontend**; Stage 3 compose pull (no schema)
+- **Tracker:** [`platform-release-cicd.md`](../../../docs/deployment/platform-release-cicd.md) § Open for next full Stage 1 → 2 → 3
 
 ---
 

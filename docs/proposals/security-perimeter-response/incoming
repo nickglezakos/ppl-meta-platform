@@ -1,0 +1,148 @@
+Hi Phillip, 
+As I mentioned we have a mine site that is going into care and maintenance and we want to improve autonomous hybrid drone-based surveillance to guard against intruders and theft around specific perimeters at night time in particular.  
+ 
+I am particularly interested in a hybrid fuel (or gasoline-only?) drone (fixed wing or helio ?) to maximise nocturnal flight time - although it could be an option to have alternative drones being swapped in and out of service to allow refueling etc.  We do have cellular signal with local WiFi and Starlinks at the main central areas but not at perimeters.   The objective is to remotely and autonomously patrol exterior areas using AI to pick up signs of intruders.  We would then trigger deployment of a hands-on response team including a regular drone for up close imaging and tracking of any culprits.  
+ 
+Onboard AI can make this more autonomous and alert based which would greatly simplify our workload and focus our attentions on the ground.   This means potentially programming flight routes (may not be required if we have sufficient altitude) and identifying people movement around perimeter areas (the boundaries are not fenced so there is open access over rough terrain including sometimes heavy vegetation).  This link will give you the location and an idea of the terrain. 
+ 
+ 
+https://maps.app.goo.gl/8UvWxVv9ZdZgbRxS7?g_st=ic
+ 
+ 
+Below is the wish list from the local security team on site.  However much of this will probably be denied if it is too expensive.  So cost effectiveness is key.  They already rejected an aerostat helium balloon with mounted camera.  
+We recommend adding cameras to the two existing towers, deploying 4 to 6 mobile camera towers and two drones, and upgrading the existing control room. Together these give wide-area detection across the 7.44 km² site, which has no fence and a 12.12 km perimeter. This lets static guard posts be replaced in stages by mobile response teams sent to verified alarms. Fuel management is not included at this stage.
+1. Cameras on the two existing towers
+Fit each existing tower with long-range cameras so it becomes the main lookout over its half of the site.
+One dual-sensor long-range PTZ camera per tower (thermal + day/night optical), to detect people and vehicles at night and in dust and identify them.
+One or two fixed wide-angle cameras with AI analytics per tower, covering approaches, access roads and the pit edge, to flag intrusion and loitering automatically.
+Option to add ground surveillance radar later, with the PTZ camera slaved to radar detections. This is the most effective way to cover open ground at night.
+Loudspeaker for remote warnings from the control room.
+Supporting works: structural check for camera weight and wind load, stabilised mounts, lightning and surge protection, UPS at the tower base, fibre or radio link to the control room, and a camera watching the tower base.
+Confirm before ordering: each tower's height, location and line of sight into the pit, and power and data at the base.
+ 
+2. Mobile camera towers (4 to 6)
+Deploy 4 to 6 solar-powered mobile CCTV towers to cover what the two fixed towers cannot see, and move them as the pit and dumps expand.
+Placement: the pit floor, behind waste dumps, remote access tracks, artisanal mining hotspots and the boundary near communities.
+Specification: PTZ and fixed cameras with AI analytics, LED lighting, siren and loudspeaker, solar panels with battery backup for at least 3 nights, and a 4G/LTE or mesh radio link.
+Protection: tamper alarms and GPS tracking on each unit, with the mast raised high enough to deter vandalism.
+Start with 4, then add up to 2 more once alarm data shows where gaps remain.
+ 
+3. Drones: 1 drone-in-a-box and 1 tethered drone
+The two drones do different jobs: one responds quickly anywhere on site, the other gives long, fixed overwatch.
+Drone-in-a-box (1 unit)
+Docking station placed centrally, so the drone reaches any point on the site within a few minutes.
+Launches automatically on an alarm from the towers, or flies scheduled patrols of the boundary, dumps and haul roads.
+Thermal and zoom camera, live video streamed into the control room.
+Charges itself in the dock, so no pilot is needed on site for routine flights.
+Tethered drone (1 unit)
+Powered through a cable from a ground unit or vehicle, so it can stay up for many hours at a fixed point.
+Used for incidents, blasting days, large intrusions, night operations and community events.
+Can be mounted on a response vehicle and moved where needed.
+Also covers gaps when the drone-in-a-box is charging or under maintenance.
+Requirements for both: national aviation authority approval for flights, including beyond visual line of sight for the drone-in-a-box; trained pilots (the drone pilot/technician role in the control room); and a maintenance and spare parts contract.
+ 
+4. Control room upgrade
+Upgrade the existing control room so operators respond to alarms on one site map, instead of watching a wall of camera feeds.
+Audit the current system: VMS brand and version, camera count (IP or analogue), server and storage age, days of recording kept, UPS and air conditioning condition.
+Upgrade or replace the VMS so it can take the new tower cameras, mobile towers and both drones. Choose an open platform that supports ONVIF cameras.
+Add AI video analytics for intrusion, loitering and line-crossing, so only real alarms reach the operators.
+Add an integration layer with a GIS site map showing cameras, drones, alarms and response vehicles on one screen, with a step-by-step procedure attached to each alarm type.
+Expand servers and storage for the new cameras (about 30 days of recording), and add a GPU server if analytics run centrally.
+Rearrange the video wall around the live site map and alarm feeds, with 3 to 4 operator workstations and a supervisor position.
+Add a radio dispatch console and GPS tracking of response vehicles, so operators send the nearest team.
+Add talk-down audio to speak through tower and mobile-tower loudspeakers.
+Fix resilience weak points: replace UPS batteries, add surge and lightning protection, dust filtering on air conditioning, and access control on the control room door.
+Set up a backup viewing position in the main security office, so a failure in the control room does not blind the site.
+Introduce a digital occurrence book and incident dashboards to track incidents by type, place and time.
+Retrain operators and rewrite procedures for alarm-led working, and include an annual software support and licence contract in the budget.
+ 
+What each upgrade does, in plain terms
+#
+	
+Upgrade
+	
+What it does
+
+
+1
+	
+Audit the current system
+	
+Checks what we already have and what is worn out, so we keep what still works and only buy what we need.
+
+
+2
+	
+Upgrade or replace the VMS
+	
+The VMS is the software that shows and records every camera. The upgrade lets it take in the new tower cameras, mobile towers and drones, so everything appears in one place.
+
+
+3
+	
+AI video analytics
+	
+The computer watches every camera all the time and alerts an operator only when it sees a person or vehicle where there shouldn't be one. Operators react to real events instead of watching empty footage.
+
+
+4
+	
+Integration layer with site map
+	
+A live map of the mine on the main screen. When an alarm goes off, the operator sees where it is, what the nearest camera shows, where the drones and response vehicles are, and the steps to follow.
+
+
+5
+	
+Expand servers and storage
+	
+More computers and hard drives to record the extra cameras, keeping about a month of footage for looking back at incidents and for evidence.
+
+
+6
+	
+Rearrange the video wall
+	
+The centre of the wall shows the site map and current alarms instead of a grid of camera pictures. Each operator has their own desk and screens for handling incidents.
+
+
+7
+	
+Radio dispatch and vehicle tracking
+	
+Operators see every response vehicle on the map and talk to them from the control room, so the closest team is sent and gets there faster.
+
+
+8
+	
+Talk-down audio
+	
+Operators speak through loudspeakers on the towers and mobile towers, e.g. "You are on mine property and being recorded, leave the area now." Often this is enough to make intruders leave.
+
+
+9
+	
+Fix resilience weak points
+	
+New backup batteries so power cuts don't switch everything off, lightning and surge protection, dust filters on the air conditioning, and a controlled lock on the door.
+
+
+10
+	
+Backup viewing position
+	
+A spare set of screens in another building, such as the security office, so staff can still see the site if the control room loses power or has a fire.
+
+
+11
+	
+Digital occurrence book and dashboards
+	
+Replaces the paper logbook. Incidents are recorded on computer, so management can see where and when most incidents happen and decide where to put cameras and patrols.
+
+
+12
+	
+Retrain operators and rewrite procedures
+	
+Trains operators to respond to alarms rather than watch screens, with step-by-step instructions for each alarm type. Includes a yearly support contract to keep the software updated and fixed.

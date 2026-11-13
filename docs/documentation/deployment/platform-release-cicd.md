@@ -1,24 +1,26 @@
 # Platform release CI/CD (single source of truth)
 
 **Status:** Active  
-**Last updated:** 2026-11-01  
+**Last updated:** 2026-11-13  
 **Current pin:** root [`VERSION`](../../VERSION) (today `2.25.105`)  
 **Registry:** `ghcr.io/nickglezakos/ppl-meta-platform`  
 **Architecture:** `linux/amd64` only for customer/lab installs  
 
 ### Open for next full Stage 1 → 2 → 3
 
-**Behavioural triggers (Media DDL) — must ship with the next pin cut.** Source is already on `main` (`ppl-meta-media` + frontend), but labs/prod cannot use Behavioural until Stage 3 applies the columns.
+**Preview Details / light MVR happy path (frontend) — must ship with the next pin cut.** Lab hotfix applied on `eyenet-demo` (`lab-work-dual-64g`) 2026-11-13 via Flutter web rebuild + `docker cp`; other labs stay on the slow Details path until Stage 3.
 
 | Step | Must include |
 |---|---|
-| **Stage 1** | Pack `ppl-meta-media/migrations/add_behavioural_trigger_fields.sql` via `bash deployment/mac-lima/sync-schema-pack.sh`; keep the three `triggers.behavioural_*` checks in `schema/verify.sh`; CHANGELOG + pin bump; rebuild **media** (+ **frontend**) |
-| **Stage 2** | Mode D rebuild at least `ppl-meta-media` and `ppl-meta-frontend` for the new pin |
-| **Stage 3** | `schema/apply.sh` then `schema/verify.sh` on each lab **before** enabling Behavioural triggers — verify must show `OK` for `triggers.behavioural_lookback_flushes`, `triggers.behavioural_conditions`, `triggers.behavioural_condition_logic` |
+| **Stage 1** | Land `ppl-meta-frontend/lib/screens/media_preview_screen.dart` (`_preparePreviewMvrData`: `forceRefresh: false`, enable Details as soon as MVRs load, rematerialize only when MVRs empty); CHANGELOG + pin bump |
+| **Stage 2** | Mode D (or selective) rebuild **`ppl-meta-frontend`** for the new pin |
+| **Stage 3** | Compose pull/recreate frontend on each lab — **no schema** |
 
 Tracker: [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) § Pending. Clear that Pending entry only after Stage 3 verify passes on the target labs.
 
-**Analytics Face | Body | Both — no new DB migration.** Gateway/cameras/vmeta/frontend work for `detection_modality` uses existing `mvr_people_body` (pack `022_mvr_people_body.sql` / already on labs that ran body detection) and JSON `body_persons` on Instant flush/span payloads. Next pin Stage 1–2 must rebuild **gateway**, **cameras**, **vmeta**, **frontend** (and wiki source is docs-only). Stage 3: normal compose pull + existing schema apply/verify is enough — **do not** add a new DDL file or `schema/verify.sh` checks for this feature. (Behavioural Media columns above remain the only open DDL gate.)
+**Behavioural triggers (Media DDL) — already Completed in pin `2.25.105`** (see HOTFIXES Completed 2026-11-02). Do not re-open as the next Stage 1 gate unless a new Behavioural follow-up lands.
+
+**Analytics Face | Body | Both — no new DB migration.** Already shipped with `2.25.105` image set where rebuilt; modality uses existing `mvr_people_body` / JSON `body_persons`. No DDL gate for next pin unless new Analytics columns appear.
 
 **How we ship (memorize this):**
 
