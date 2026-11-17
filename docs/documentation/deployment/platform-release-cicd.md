@@ -8,15 +8,15 @@
 
 ### Open for next full Stage 1 → 2 → 3
 
-**Pin `2.25.106` Stage 1 + Stage 2 done; pending Stage 3.** Includes People & Groups UI, Details MVR happy path, vmeta featured-video best-image fallback, and packed motion/velocity trigger DDL.
+**Pin `2.25.106` Stage 1–3 complete on eyenet-demo (`lab-work-dual-64g`).** Remaining labs still pull when scheduled. Bundle: People & Groups UI, Details MVR happy path, vmeta featured-video best-image fallback, packed motion/velocity trigger DDL.
 
 | Step | Must include |
 |---|---|
 | **Stage 1** | Done (`a4bd47cc`): Frontend People & Groups + Details happy path; vmeta `mvr_image_manager` featured-video fallback; pack `add_motion_velocity_trigger_fields.sql` + verify gates; CHANGELOG + pin `2.25.106` |
-| **Stage 2** | Done (Mode D eyenet-demo): rebuilt **`ppl-meta-frontend`** `c5247454dd73…` + **`ppl-meta-vmeta-protected`** `4156939eb6f4…`; retag-forward others from `2.25.105`; release-manifest finalized |
-| **Stage 3** | Compose pull/recreate frontend + vmeta; **apply schema pack** and `schema/verify.sh` (motion/velocity gates) |
+| **Stage 2** | Done (Mode D eyenet-demo): rebuilt **`ppl-meta-frontend`** `c5247454dd73…` + **`ppl-meta-vmeta-protected`** `4156939eb6f4…`; retag-forward others from `2.25.105`; release-manifest `0dc75102` |
+| **Stage 3** | Done on eyenet-demo: compose pull `:2.25.106`; digests match; schema verify motion/velocity gates OK |
 
-Tracker: [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) § Pending. Clear Pending entries only after Stage 3 verify passes on the target labs.
+Tracker: [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md). Schedule Stage 3 on other fleet labs as needed.
 
 **Behavioural triggers (Media DDL) — already Completed in pin `2.25.105`**. Do not re-open unless a new Behavioural follow-up lands.
 

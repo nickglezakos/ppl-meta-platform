@@ -17,31 +17,19 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-### 2026-11-17 — Pin 2.25.106 bundle (People & Groups + Details + vmeta fallback + motion DDL pack)
-- **Status:** Pending Stage 3 (Stage 1 + Stage 2 done; GHCR images + release-manifest for `2.25.106`)
-- **Stage 1:** `a4bd47cc` — People & Groups, Details happy path, vmeta featured-video fallback, motion/velocity DDL pack + verify gates
-- **Stage 2:** Mode D on eyenet-demo — rebuilt frontend `c5247454dd73…`, vmeta-protected `4156939eb6f4…`; retag-forward others from `2.25.105`; manifest finalized
-- **Source:**
-  - People & Groups: `individual_groups_screen.dart`, `people_profiles_tab.dart`, `individual_groups_tab.dart`, router/home/presence wiring
-  - Details happy path: `media_preview_screen.dart` (already on `main` since `29ab02b4`)
-  - VMeta featured-video best-image fallback: `mvr_image_manager.py`
-  - Schema: `ppl-meta-media/migrations/add_motion_velocity_trigger_fields.sql` → pack `051_add_motion_velocity_trigger_fields.sql`; `verify.sh` motion/velocity/body/left/vehicle gates
-- **Next:** Stage 3 compose pull/recreate frontend + vmeta; apply schema pack + `schema/verify.sh` (motion/velocity gates)
-- **Lab data only (not product):** Philip dirty PPP deletes; Tolis membership prune + Recognize Tolis threshold 0.80 — do not ship as migrations
-- **Tracker:** [`platform-release-cicd.md`](./platform-release-cicd.md) § Open
-
-### 2026-11-13 — Preview Details: decouple from overlay + light MVR happy path
-- **Status:** Pending (folded into **2.25.106** bundle above; clear after Stage 3)
-- **Lab:** `lab-work-dual-64g` (`eyenet-demo` @ `100.101.128.40`) — Flutter web rebuild + `docker cp` (2026-11-13; later wiped by image recreate)
-- **Source:** `ppl-meta-frontend/lib/screens/media_preview_screen.dart` — `_preparePreviewMvrData` (on `main` via `29ab02b4`)
-- **Fix:**
-  - Details enables as soon as cached MVRs load (`forceRefresh: false`); no longer waits on rematerialize / PO repair
-  - Rematerialize runs only when MVRs are empty but person objects exist (background)
-- **Ships in:** pin `2.25.106` Stage 2 frontend rebuild
+_(none for pin `2.25.106` on eyenet-demo — see Completed. Other labs still need Stage 3 pull when scheduled.)_
 
 ---
 
 ## Completed
+
+### 2026-11-17 — Pin 2.25.106 bundle (People & Groups + Details + vmeta fallback + motion DDL pack)
+- **Status:** Completed on `lab-work-dual-64g` / `eyenet-demo`
+- **VERSION / pin:** `2.25.106`
+- **Stage 1:** `a4bd47cc` — People & Groups, Details happy path, vmeta featured-video fallback, motion/velocity DDL pack + verify gates
+- **Stage 2:** Mode D on eyenet-demo — rebuilt frontend `c5247454dd73…`, vmeta-protected `4156939eb6f4…`; retag-forward others from `2.25.105`; manifest `0dc75102`
+- **Stage 3 (eyenet-demo):** compose pull `:2.25.106`; all 12 digests match release-manifest; `schema/verify.sh` OK including motion/velocity/body/left/vehicle gates; frontend assets contain People & Groups tab strings; motion trigger create persists `motion_conditions`; featured-video best-image fallback returns thumbnail when orchestrator faces empty
+- **Lab data only (not product):** Philip dirty PPP deletes; Tolis membership prune + Recognize Tolis threshold 0.80 — not shipped as migrations
 
 ### 2026-11-02 — Behavioural Media DDL + Analytics Face | Body | Both
 - **Status:** Completed

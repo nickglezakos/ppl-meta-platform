@@ -26,14 +26,14 @@ Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *�
 
 ## Fleet status (vs GHCR)
 
-**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.105`** (Mode D; last finalized **2026-11-02** — gateway `3ee88a186926…`, frontend `f5c06f6dfbb8…`, media `f803fe6b77b1…`, vmeta `6d447d8a662b…`, cameras `fb5425055ea4…`).  
+**GHCR truth:** [`deployment/windows-installer/release-manifest.yml`](../../deployment/windows-installer/release-manifest.yml) for pin **`2.25.106`** (Mode D; last finalized **2026-11-17** — frontend `c5247454dd73…`, vmeta `4156939eb6f4…`; others retagged from `2.25.105`).  
 **Rule:** After every **Stage 3** on a named lab, update this table (pin, match state, date, short notes). Do not treat a matching *tag* as current — compare **running container Image ID** (and ideally `main.dart.js` sha256) to the manifest. Tag RepoDigests alone can lie if the container was not recreated.
 
 | Lab ID | Pin | Match GHCR? | Last Stage 3 | Notes |
 |---|---|---|---|---|
 | `lab-home-win-nickg` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Overlay frame-dim fallback + FaceNet MVR embedding fix. Offline during 2.25.105 Stage 3. |
 | `lab-work-u24-mini-8g` | `2.25.83` | **Yes** (frontend `3afac7f6…`, vmeta `28dc8f0a…`) | 2026-09-21 | Same; hard-refresh UI once. Offline during 2.25.105 Stage 3. |
-| `lab-work-dual-64g` | `2.25.105` | **Yes** (gateway `3ee88a186926…`, frontend `f5c06f6dfbb8…`, cameras `fb5425055ea4…`, vmeta `6d447d8a662b…`, media `f803fe6b77b1…`) | 2026-11-02 | Ubuntu `eyenet-demo` @ `192.168.9.13` / Tailscale `100.101.128.40`; compose to `:2.25.105`; behavioural schema verify OK; discovery healthy; UI/gw HTTP 200. |
+| `lab-work-dual-64g` | `2.25.106` | **Yes** (frontend `c5247454dd73…`, vmeta `4156939eb6f4…`; others match `2.25.106` manifest) | 2026-11-17 | Ubuntu `eyenet-demo` @ `192.168.9.13` / Tailscale `100.101.128.40`; Stage 3 compose `:2.25.106`; schema verify OK incl. motion/velocity gates; discovery healthy=11; People & Groups assets in frontend; featured-video fallback + motion_conditions persistence proven. |
 | `lab-work-eyenet2` | `2.25.93` | **Yes** (fresh Ubuntu Stage 3) | 2026-09-29 | Hostname `eyenet2` @ `192.168.9.8` / Tailscale `100.116.59.7`; empty UUID/key → `/bootstrap`. Offline during 2.25.105 Stage 3. |
 | `lab-work-win-eynetdell` | `2.25.105` | **Yes** (gateway `3ee88a186926…`, frontend `f5c06f6dfbb8…`, cameras `fb5425055ea4…`, vmeta `6d447d8a662b…`, media `f803fe6b77b1…`) | 2026-11-02 | WSL `eyenet` / `C:\ppl-meta-platform`; `ADVERTISE_HOST=192.168.9.11` / Tailscale `100.114.224.54`; behavioural schema verify OK; digests match; in-container UI/gw/discovery 200. App containers currently **no host port publishes** (WSL mirrored ghost binds on LAN IPs); reboot host then normal compose recreate to restore LAN `:3000/:8080`. |
 
