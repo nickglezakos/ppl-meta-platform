@@ -18,14 +18,15 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 ## Pending
 
 ### 2026-11-17 — Pin 2.25.106 bundle (People & Groups + Details + vmeta fallback + motion DDL pack)
-- **Status:** Pending (Stage 1 source/docs/schema for `2.25.106`; Stage 2–3 not done)
-- **Lab debug (eyenet-demo):** Flutter web + vmeta `docker cp` / in-container patches — wiped on compose recreate; must be replaced by GHCR
+- **Status:** Pending Stage 3 (Stage 1 + Stage 2 done; GHCR images + release-manifest for `2.25.106`)
+- **Stage 1:** `a4bd47cc` — People & Groups, Details happy path, vmeta featured-video fallback, motion/velocity DDL pack + verify gates
+- **Stage 2:** Mode D on eyenet-demo — rebuilt frontend `c5247454dd73…`, vmeta-protected `4156939eb6f4…`; retag-forward others from `2.25.105`; manifest finalized
 - **Source:**
   - People & Groups: `individual_groups_screen.dart`, `people_profiles_tab.dart`, `individual_groups_tab.dart`, router/home/presence wiring
   - Details happy path: `media_preview_screen.dart` (already on `main` since `29ab02b4`)
   - VMeta featured-video best-image fallback: `mvr_image_manager.py`
   - Schema: `ppl-meta-media/migrations/add_motion_velocity_trigger_fields.sql` → pack `051_add_motion_velocity_trigger_fields.sql`; `verify.sh` motion/velocity/body/left/vehicle gates
-- **Next:** Stage 2 rebuild **frontend** + **vmeta-protected**; Stage 3 compose pull + schema verify
+- **Next:** Stage 3 compose pull/recreate frontend + vmeta; apply schema pack + `schema/verify.sh` (motion/velocity gates)
 - **Lab data only (not product):** Philip dirty PPP deletes; Tolis membership prune + Recognize Tolis threshold 0.80 — do not ship as migrations
 - **Tracker:** [`platform-release-cicd.md`](./platform-release-cicd.md) § Open
 

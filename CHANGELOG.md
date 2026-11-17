@@ -36,6 +36,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 - Lab-only data hygiene on eyenet-demo (Philip PPP deletes, Tolis membership/threshold edits) is **not** part of this pin.
 - Do not treat eyenet-demo `docker cp` frontend/vmeta patches as a release; GHCR pull replaces them at Stage 3.
+- GHCR images published for **2.25.106** (Mode D on eyenet-demo): rebuilt frontend `c5247454dd73…`, vmeta-protected `4156939eb6f4…`; retagged the other ten from `2.25.105`. Manifest finalized 2026-11-17 (`git_sha` `a4bd47c`).
 
 ## [2.25.105] — 2026-11-02
 
