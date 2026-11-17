@@ -17,16 +17,26 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
+### 2026-11-17 — Pin 2.25.106 bundle (People & Groups + Details + vmeta fallback + motion DDL pack)
+- **Status:** Pending (Stage 1 source/docs/schema for `2.25.106`; Stage 2–3 not done)
+- **Lab debug (eyenet-demo):** Flutter web + vmeta `docker cp` / in-container patches — wiped on compose recreate; must be replaced by GHCR
+- **Source:**
+  - People & Groups: `individual_groups_screen.dart`, `people_profiles_tab.dart`, `individual_groups_tab.dart`, router/home/presence wiring
+  - Details happy path: `media_preview_screen.dart` (already on `main` since `29ab02b4`)
+  - VMeta featured-video best-image fallback: `mvr_image_manager.py`
+  - Schema: `ppl-meta-media/migrations/add_motion_velocity_trigger_fields.sql` → pack `051_add_motion_velocity_trigger_fields.sql`; `verify.sh` motion/velocity/body/left/vehicle gates
+- **Next:** Stage 2 rebuild **frontend** + **vmeta-protected**; Stage 3 compose pull + schema verify
+- **Lab data only (not product):** Philip dirty PPP deletes; Tolis membership prune + Recognize Tolis threshold 0.80 — do not ship as migrations
+- **Tracker:** [`platform-release-cicd.md`](./platform-release-cicd.md) § Open
+
 ### 2026-11-13 — Preview Details: decouple from overlay + light MVR happy path
-- **Status:** Pending (lab hotfix on `lab-work-dual-64g` / `eyenet-demo`; Stage 1–3 not done)
-- **Lab:** `lab-work-dual-64g` (`eyenet-demo` @ `100.101.128.40`) — Flutter web rebuild + `docker cp` into `pplmeta-ppl-meta-frontend-1` `/usr/share/nginx/html/` (2026-11-13)
-- **Source:** `ppl-meta-frontend/lib/screens/media_preview_screen.dart` — `_preparePreviewMvrData`
+- **Status:** Pending (folded into **2.25.106** bundle above; clear after Stage 3)
+- **Lab:** `lab-work-dual-64g` (`eyenet-demo` @ `100.101.128.40`) — Flutter web rebuild + `docker cp` (2026-11-13; later wiped by image recreate)
+- **Source:** `ppl-meta-frontend/lib/screens/media_preview_screen.dart` — `_preparePreviewMvrData` (on `main` via `29ab02b4`)
 - **Fix:**
   - Details enables as soon as cached MVRs load (`forceRefresh: false`); no longer waits on rematerialize / PO repair
-  - Rematerialize runs only when MVRs are empty but person objects exist (background), so overlay / Enhanced Logic V2 does not gate Details
-  - Removes the ~10s Details delay on the happy path when Redis/local MVR cache already has people
-- **Next Stage 1 must include:** commit + push this frontend source; CHANGELOG; pin bump; Stage 2 rebuild **frontend**; Stage 3 compose pull (no schema)
-- **Tracker:** [`platform-release-cicd.md`](../../../docs/deployment/platform-release-cicd.md) § Open for next full Stage 1 → 2 → 3
+  - Rematerialize runs only when MVRs are empty but person objects exist (background)
+- **Ships in:** pin `2.25.106` Stage 2 frontend rebuild
 
 ---
 

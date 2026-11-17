@@ -6,6 +6,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -2475,55 +2476,67 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
     ];
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        profile.name,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (profile.pppUuid.isNotEmpty)
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: profile.pppUuid.isEmpty
+            ? null
+            : () => context.go(
+                  '/individual-groups?tab=people&pppUuid=${Uri.encodeQueryComponent(profile.pppUuid)}',
+                ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          _truncateId(profile.pppUuid),
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[500]),
+                          profile.name,
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
                         ),
+                        if (profile.pppUuid.isNotEmpty)
+                          Text(
+                            _truncateId(profile.pppUuid),
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[500]),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Edit profile',
+                        icon: const Icon(Icons.edit_outlined, size: 20),
+                        onPressed: _isPeopleSaving
+                            ? null
+                            : () => _showPeopleProfileDialog(context, profile: profile),
+                      ),
+                      IconButton(
+                        tooltip: 'Delete profile',
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                        onPressed: _isPeopleSaving
+                            ? null
+                            : () => _deletePeopleProfile(context, profile),
+                      ),
                     ],
                   ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: 'Edit profile',
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-                      onPressed: _isPeopleSaving ? null : () => _showPeopleProfileDialog(context, profile: profile),
-                    ),
-                    IconButton(
-                      tooltip: 'Delete profile',
-                      icon: const Icon(Icons.delete_outline, size: 20),
-                      onPressed: _isPeopleSaving ? null : () => _deletePeopleProfile(context, profile),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(spacing: 8, runSpacing: 8, children: chips),
-            if (profile.notes != null && profile.notes!.isNotEmpty) ...[
+                ],
+              ),
               const SizedBox(height: 8),
-              Text(profile.notes!, style: Theme.of(context).textTheme.bodyMedium),
+              Wrap(spacing: 8, runSpacing: 8, children: chips),
+              if (profile.notes != null && profile.notes!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(profile.notes!, style: Theme.of(context).textTheme.bodyMedium),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

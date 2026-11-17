@@ -1,26 +1,26 @@
 # Platform release CI/CD (single source of truth)
 
 **Status:** Active  
-**Last updated:** 2026-11-13  
-**Current pin:** root [`VERSION`](../../VERSION) (today `2.25.105`)  
+**Last updated:** 2026-11-17  
+**Current pin:** root [`VERSION`](../../VERSION) (today `2.25.106`)  
 **Registry:** `ghcr.io/nickglezakos/ppl-meta-platform`  
 **Architecture:** `linux/amd64` only for customer/lab installs  
 
 ### Open for next full Stage 1 → 2 → 3
 
-**Preview Details / light MVR happy path (frontend) — must ship with the next pin cut.** Lab hotfix applied on `eyenet-demo` (`lab-work-dual-64g`) 2026-11-13 via Flutter web rebuild + `docker cp`; other labs stay on the slow Details path until Stage 3.
+**Pin `2.25.106` Stage 1 cut in progress / pending Stage 2–3.** Includes People & Groups UI, Details MVR happy path, vmeta featured-video best-image fallback, and packed motion/velocity trigger DDL.
 
 | Step | Must include |
 |---|---|
-| **Stage 1** | Land `ppl-meta-frontend/lib/screens/media_preview_screen.dart` (`_preparePreviewMvrData`: `forceRefresh: false`, enable Details as soon as MVRs load, rematerialize only when MVRs empty); CHANGELOG + pin bump |
-| **Stage 2** | Mode D (or selective) rebuild **`ppl-meta-frontend`** for the new pin |
-| **Stage 3** | Compose pull/recreate frontend on each lab — **no schema** |
+| **Stage 1** | Frontend People & Groups + Details happy path; vmeta `mvr_image_manager` featured-video fallback; pack `add_motion_velocity_trigger_fields.sql` + verify gates; CHANGELOG + pin `2.25.106` |
+| **Stage 2** | Mode D rebuild **`ppl-meta-frontend`** + **`ppl-meta-vmeta-protected`**; retag-forward others from `2.25.105`; finalize release-manifest |
+| **Stage 3** | Compose pull/recreate frontend + vmeta; **apply schema pack** and `schema/verify.sh` (motion/velocity gates) |
 
-Tracker: [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) § Pending. Clear that Pending entry only after Stage 3 verify passes on the target labs.
+Tracker: [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) § Pending. Clear Pending entries only after Stage 3 verify passes on the target labs.
 
-**Behavioural triggers (Media DDL) — already Completed in pin `2.25.105`** (see HOTFIXES Completed 2026-11-02). Do not re-open as the next Stage 1 gate unless a new Behavioural follow-up lands.
+**Behavioural triggers (Media DDL) — already Completed in pin `2.25.105`**. Do not re-open unless a new Behavioural follow-up lands.
 
-**Analytics Face | Body | Both — no new DB migration.** Already shipped with `2.25.105` image set where rebuilt; modality uses existing `mvr_people_body` / JSON `body_persons`. No DDL gate for next pin unless new Analytics columns appear.
+**Analytics Face | Body | Both — no new DB migration.** Already shipped with `2.25.105`.
 
 **How we ship (memorize this):**
 

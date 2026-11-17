@@ -101,6 +101,34 @@ check "triggers.behavioural_conditions" \
 check "triggers.behavioural_condition_logic" \
   "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='behavioural_condition_logic'" \
   "1"
+# Velocity / motion trigger columns (packed in 2.25.106; worker falls back to velocity_band)
+check "triggers.velocity_scope" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='velocity_scope'" \
+  "1"
+check "triggers.velocity_band" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='velocity_band'" \
+  "1"
+check "triggers.motion_scope" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='motion_scope'" \
+  "1"
+check "triggers.motion_conditions" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='motion_conditions'" \
+  "1"
+check "triggers.motion_condition_logic" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='motion_condition_logic'" \
+  "1"
+check "triggers.motion_roi" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='motion_roi'" \
+  "1"
+check "triggers.body_posture_target" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='body_posture_target'" \
+  "1"
+check "triggers.left_object_class_allowlist" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='left_object_class_allowlist'" \
+  "1"
+check "triggers.vehicle_class_allowlist" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='vehicle_class_allowlist'" \
+  "1"
 
 if [[ "$fail" -ne 0 ]]; then
   echo

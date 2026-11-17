@@ -99,8 +99,10 @@ add "$CAM/add_instant_detection_flush_settings.sql"
 add "$REPO_ROOT/ppl-meta-media/migrations/add_recording_timestamps.sql"
 add "$REPO_ROOT/ppl-meta-media/migrations/add_signage_rich_message_templates.sql"
 add "$REPO_ROOT/ppl-meta-media/migrations/add_instant_detection_logs.sql"
-# Behavioural triggers (next pin Stage 1–3 — see platform-release-cicd.md § Open)
+# Behavioural triggers (shipped in 2.25.105)
 add "$REPO_ROOT/ppl-meta-media/migrations/add_behavioural_trigger_fields.sql"
+# Body / velocity / left_object / vehicle / motion trigger columns (2.25.106)
+add "$REPO_ROOT/ppl-meta-media/migrations/add_motion_velocity_trigger_fields.sql"
 
 # --- Installer ORM clash fixes only ---
 add "$COMPAT/012_recording_sessions_cameras_compat.sql"

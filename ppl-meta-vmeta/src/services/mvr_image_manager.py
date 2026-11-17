@@ -182,6 +182,25 @@ class MVRImageManager:
         
         if not video_appearances:
             logger.warning(f"No video appearances found for MVR {mvr_uuid}")
+            featured = await self._featured_video_fallback(mvr_uuid)
+            if featured is not None:
+                best_face, frame_image, featured_url = featured
+                return BestImageResponse(
+                    mvr_people_uuid=mvr_uuid,
+                    is_super_individual=is_super_individual,
+                    best_face=best_face,
+                    frame_image=frame_image,
+                    metadata={
+                        'total_appearances_checked': 0,
+                        'total_mvr_checked': len(mvr_uuids),
+                        'cache_hit': False,
+                        'processing_time_ms': int(
+                            (datetime.utcnow() - start_time).total_seconds() * 1000
+                        ),
+                        'fallback_image_urls': [featured_url],
+                        'featured_video_fallback': True,
+                    },
+                )
             # Return empty response
             return BestImageResponse(
                 mvr_people_uuid=mvr_uuid,
@@ -216,6 +235,21 @@ class MVRImageManager:
                 video_uuid=best_face.video_uuid,
                 timestamp=best_face.timestamp
             )
+
+        # Featured-video fallback: orchestrator may return appearances with no
+        # usable face payloads; still show the MVR's featured media thumbnail
+        # so Groups/People cards are not blank.
+        if best_face is None:
+            featured = await self._featured_video_fallback(mvr_uuid)
+            if featured is not None:
+                best_face, frame_image, featured_url = featured
+                if featured_url not in fallback_image_urls:
+                    fallback_image_urls = [featured_url, *fallback_image_urls]
+                logger.info(
+                    "Using featured_video fallback for MVR %s → %s",
+                    mvr_uuid[:8],
+                    best_face.video_uuid[:8],
+                )
         
         # Build response
         processing_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
@@ -233,6 +267,46 @@ class MVRImageManager:
                 'fallback_image_urls': fallback_image_urls
             }
         )
+
+    async def _featured_video_fallback(
+        self, mvr_uuid: str
+    ) -> Optional[tuple]:
+        """Build a thumbnail-only best_face from mvr_people.featured_video_uuid."""
+        query = """
+            SELECT featured_video_uuid, featured_person_object_uuid, quality_score
+            FROM mvr_people
+            WHERE mvr_people_uuid = $1::uuid
+              AND featured_video_uuid IS NOT NULL
+        """
+        async with self.mvr_repo.pool.acquire() as conn:
+            row = await conn.fetchrow(query, UUID(mvr_uuid))
+        if not row or not row["featured_video_uuid"]:
+            return None
+        video_uuid = str(row["featured_video_uuid"])
+        person_object_uuid = (
+            str(row["featured_person_object_uuid"])
+            if row["featured_person_object_uuid"]
+            else ""
+        )
+        thumb_url = f"/api/v1/media/thumbnail/{video_uuid}"
+        quality = float(row["quality_score"] or 0.0)
+        if quality > 1.0:
+            quality = quality / 100.0
+        best_face = BestFaceData(
+            image_url=thumb_url,
+            quality_score=quality,
+            person_object_uuid=person_object_uuid,
+            video_uuid=video_uuid,
+            timestamp="",
+            source_mvr_uuid=mvr_uuid,
+        )
+        frame_image = FrameImageData(
+            image_url=thumb_url,
+            person_object_uuid=person_object_uuid,
+            video_uuid=video_uuid,
+            timestamp="",
+        )
+        return best_face, frame_image, thumb_url
     
     async def _get_video_appearances_for_mvr(
         self,

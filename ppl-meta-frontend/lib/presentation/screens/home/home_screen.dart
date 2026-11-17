@@ -206,8 +206,8 @@ class HomeScreen extends ConsumerWidget {
                       _ActionCard(
                         icon: AppIcons.groups,
                         iconColor: AppColors.secondary, // Unified cyan color
-                        title: 'Individual Groups',
-                        subtitle: 'Organize people by groups',
+                        title: 'People & Groups',
+                        subtitle: 'People profiles and groups',
                         onTap: () {
                           context.go('/individual-groups');
                         },

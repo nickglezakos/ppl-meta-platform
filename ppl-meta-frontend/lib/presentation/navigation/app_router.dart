@@ -436,9 +436,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/individual-groups',
         name: 'individual-groups',
-        builder: (context, state) => const ProviderScreenWrapper(
-          child: IndividualGroupsScreen(),
-        ),
+        builder: (context, state) {
+          final tab = state.uri.queryParameters['tab'];
+          final pppUuid = state.uri.queryParameters['pppUuid'] ??
+              state.uri.queryParameters['ppp_uuid'];
+          return ProviderScreenWrapper(
+            child: IndividualGroupsScreen(
+              initialTab: tab,
+              initialPppUuid: pppUuid,
+            ),
+          );
+        },
       ),
       GoRoute(
         path: '/individual-groups/:groupId',

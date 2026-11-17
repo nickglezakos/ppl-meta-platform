@@ -15,6 +15,28 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+## [2.25.106] — 2026-11-17
+
+### Added
+
+- **People & Groups** UI: `/individual-groups` is a tabbed host (**Individual Groups** | **People**). Home card renamed; Presence people row deep-links with `?tab=people&pppUuid=`. People pane lists profiles and linked group members with Groups-parity face thumbnails (fast-path stubs, mvrUuid-keyed images, duplicate-name dedupe).
+- Schema pack: `add_motion_velocity_trigger_fields.sql` packs Media Alembic trigger DDL that was missing from the installer pack — body posture, velocity (`velocity_scope` / `velocity_band`), left_object, vehicle_plate, and motion (`motion_scope` / `motion_conditions` / `motion_condition_logic` / `motion_roi`), plus safe velocity→motion backfill. `schema/verify.sh` gates these columns.
+
+### Fixed
+
+- Preview Details / light MVR happy path: Details enables as soon as cached MVRs load (`forceRefresh: false`); rematerialize only when MVRs are empty (lands prior lab hotfix from `media_preview_screen.dart`).
+- VMeta best-image: when orchestrator returns no usable face but `mvr_people.featured_video_uuid` exists, return a media thumbnail fallback so Groups/People cards are not blank.
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.105 → 2.25.106**.
+- Mode D Stage 2 rebuild: **frontend**, **vmeta-protected** (retag-forward others from `2.25.105` unless changed). Schema pack apply required on Stage 3 for motion/velocity verify gates.
+
+### Notes
+
+- Lab-only data hygiene on eyenet-demo (Philip PPP deletes, Tolis membership/threshold edits) is **not** part of this pin.
+- Do not treat eyenet-demo `docker cp` frontend/vmeta patches as a release; GHCR pull replaces them at Stage 3.
+
 ## [2.25.105] — 2026-11-02
 
 ### Added
