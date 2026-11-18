@@ -91,6 +91,54 @@ check "table.face_detection_sessions" \
 check "table.session_individuals" \
   "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='session_individuals'" \
   "1"
+# Behavioural triggers (Media) — required before enabling Behavioural mode in lab/prod
+check "triggers.behavioural_lookback_flushes" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='behavioural_lookback_flushes'" \
+  "1"
+check "triggers.behavioural_conditions" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='behavioural_conditions'" \
+  "1"
+check "triggers.behavioural_condition_logic" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='behavioural_condition_logic'" \
+  "1"
+# Velocity / motion trigger columns (packed in 2.25.106; worker falls back to velocity_band)
+check "triggers.velocity_scope" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='velocity_scope'" \
+  "1"
+check "triggers.velocity_band" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='velocity_band'" \
+  "1"
+check "triggers.motion_scope" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='motion_scope'" \
+  "1"
+check "triggers.motion_conditions" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='motion_conditions'" \
+  "1"
+check "triggers.motion_condition_logic" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='motion_condition_logic'" \
+  "1"
+check "triggers.motion_roi" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='motion_roi'" \
+  "1"
+check "triggers.body_posture_target" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='body_posture_target'" \
+  "1"
+check "triggers.left_object_class_allowlist" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='left_object_class_allowlist'" \
+  "1"
+check "triggers.vehicle_class_allowlist" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='vehicle_class_allowlist'" \
+  "1"
+# Route / analytics quality invariants (2.25.107)
+check "face_detections.timestamp" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='face_detections' AND column_name='timestamp'" \
+  "1"
+check "individual_video_appearances.quality_score" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='individual_video_appearances' AND column_name='quality_score'" \
+  "1"
+check "individual_video_appearances.movement_pattern" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='individual_video_appearances' AND column_name='movement_pattern'" \
+  "1"
 
 if [[ "$fail" -ne 0 ]]; then
   echo

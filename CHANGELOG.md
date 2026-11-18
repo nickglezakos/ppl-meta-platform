@@ -15,6 +15,30 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 ## [Unreleased]
 
+## [2.25.107] — 2026-11-18
+
+### Fixed
+
+- Recording Routes/Motion: Vision persists `face_detections.timestamp`; Orchestrator derives timestamps/velocities from frame when ts missing; VMeta route expand repairs `timestamp<=0`, recomputes velocities, and maps `iva.quality_score` (existing Tapo C120 IVA rows render without reprocess).
+- Instant persist: `movement_pattern` can include `route_points`; stores real face quality instead of confidence-as-quality; Cameras attach movement_tracking on Instant people.
+- Cross-individual FE: route normalize keeps `speed_mps` / real `frame_number`; Motion derives magnitude from frame deltas when velocities are zero.
+- Recording analytics load: gateway caches the merge dataset (20s TTL), reuses merge sessions by default, pages media search, and parallelizes collection fetches.
+- Analytics Image Quality: always send `source_type`; VMeta falls back to `iva.quality_score` when MVR quality empty; Instant flush quality reads person/face quality fields.
+
+### Added
+
+- Schema: `add_face_detections_timestamp.sql` + pack `052_ensure_iva_quality_and_movement_pattern.sql`; `verify.sh` gates for `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`.
+
+### Changed
+
+- Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.106 → 2.25.107**.
+- Mode D Stage 2 rebuild: **frontend**, **vmeta-protected**, **gateway**, **vision-protected**, **orchestrator**, **cameras**; retag-forward others from `2.25.106`.
+
+### Notes
+
+- No historical Vision reprocess in this pin; read-path repair covers existing IVA route points.
+- Appearance-level SQL cursor paging for routes remains deferred.
+
 ## [2.25.106] — 2026-11-17
 
 ### Added

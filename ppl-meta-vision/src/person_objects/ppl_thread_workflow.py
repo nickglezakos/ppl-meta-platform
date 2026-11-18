@@ -1227,6 +1227,7 @@ class PPLThreadWorkflowController:
             SELECT 
                 fd.id,
                 fd.frame_number,
+                fd.timestamp,
                 fd.bbox_x1,
                 fd.bbox_y1,
                 fd.bbox_x2,
@@ -1258,6 +1259,20 @@ class PPLThreadWorkflowController:
                 bbox_center_y = (face_dict["bbox_y1"] + face_dict["bbox_y2"]) / 2
                 face_dict["position_x"] = float(bbox_center_x)
                 face_dict["position_y"] = float(bbox_center_y)
+
+                # Prefer DB timestamp; derive from frame_number when missing/zero.
+                try:
+                    ts = float(face_dict.get("timestamp") or 0.0)
+                except (TypeError, ValueError):
+                    ts = 0.0
+                if ts <= 0.0:
+                    try:
+                        frame_no = float(face_dict.get("frame_number") or 0.0)
+                    except (TypeError, ValueError):
+                        frame_no = 0.0
+                    if frame_no > 0.0:
+                        ts = frame_no / 30.0
+                face_dict["timestamp"] = ts
 
                 face_detections.append(face_dict)
 
@@ -1516,9 +1531,24 @@ class PPLThreadWorkflowController:
                                 str(mapping.get("face_detection_id", "")),
                                 {},
                             )
+                            frame_number = face_det.get(
+                                "frame_number", mapping.get("frame_number", 0)
+                            )
+                            try:
+                                timestamp = float(face_det.get("timestamp") or 0.0)
+                            except (TypeError, ValueError):
+                                timestamp = 0.0
+                            if timestamp <= 0.0:
+                                try:
+                                    frame_no = float(frame_number or 0.0)
+                                except (TypeError, ValueError):
+                                    frame_no = 0.0
+                                if frame_no > 0.0:
+                                    timestamp = frame_no / 30.0
                             all_faces_route.append({
                                 "face_id": str(mapping.get("face_detection_id", "")),
-                                "frame_number": face_det.get("frame_number", mapping.get("frame_number", 0)),
+                                "frame_number": frame_number,
+                                "timestamp": timestamp,
                                 "bbox": [
                                     face_det.get("bbox_x1", 0),
                                     face_det.get("bbox_y1", 0),
@@ -1968,10 +1998,23 @@ class PPLThreadWorkflowController:
                 route_points = []
                 for route_face in all_faces_route_data:
                     position = route_face.get("position") or {}
+                    frame_number = route_face.get("frame_number", 0)
+                    try:
+                        timestamp = float(route_face.get("timestamp") or 0.0)
+                    except (TypeError, ValueError):
+                        timestamp = 0.0
+                    if timestamp <= 0.0:
+                        try:
+                            frame_no = float(frame_number or 0.0)
+                        except (TypeError, ValueError):
+                            frame_no = 0.0
+                        if frame_no > 0.0:
+                            timestamp = frame_no / 30.0
                     route_points.append(
                         {
                             "face_id": route_face.get("face_id"),
-                            "frame_number": route_face.get("frame_number", 0),
+                            "frame_number": frame_number,
+                            "timestamp": timestamp,
                             "center_x": float(position.get("x", 0.0)),
                             "center_y": float(position.get("y", 0.0)),
                             "bbox": route_face.get("bbox", []),

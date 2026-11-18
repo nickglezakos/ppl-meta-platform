@@ -319,30 +319,79 @@ async def get_mvr_quality_metrics(
         """
         
         sessions = await db_connection.fetch(sessions_query, start_time_local, end_time_local, source_type)
-        
-        if not sessions:
-            logger.info(f"No completed tracking sessions found for {collection_display}")
+
+        async def _iva_quality_fallback() -> Dict[str, Any]:
+            """Use IVA.quality_score when MVR/session quality is empty."""
+            iva_query = """
+            SELECT quality_score
+            FROM individual_video_appearances
+            WHERE created_at >= $1
+              AND created_at <= $2
+              AND quality_score IS NOT NULL
+              AND quality_score > 0
+            """
+            if source_type == "instant_detection":
+                iva_query += " AND processing_method = 'instant_detection'"
+            elif source_type == "recording_pipeline":
+                iva_query += (
+                    " AND (processing_method IS NULL OR processing_method <> 'instant_detection')"
+                )
+            rows = await db_connection.fetch(iva_query, start_time_local, end_time_local)
+            scores = [float(r["quality_score"]) for r in rows if r["quality_score"] is not None]
+            if not scores:
+                return {
+                    "collection_name": collection_display,
+                    "start_time": start_time.isoformat(),
+                    "end_time": end_time.isoformat(),
+                    "tracking_sessions_count": len(sessions) if sessions else 0,
+                    "total_individuals": 0,
+                    "total_mvr_people": 0,
+                    "total_videos_processed": 0,
+                    "mvr_with_quality": 0,
+                    "mvr_without_quality": 0,
+                    "total_quality_scores": 0,
+                    "average_quality": 0.0,
+                    "min_quality": 0.0,
+                    "max_quality": 0.0,
+                    "quality_std_dev": 0.0,
+                    "data_completeness": {
+                        "total_mvr_people": 0,
+                        "mvr_with_quality_scores": 0,
+                        "percentage": 0.0,
+                    },
+                    "data_source": "individual_video_appearances.quality_score",
+                }
+            avg = statistics.mean(scores)
+            std = statistics.stdev(scores) if len(scores) > 1 else 0.0
             return {
                 "collection_name": collection_display,
                 "start_time": start_time.isoformat(),
                 "end_time": end_time.isoformat(),
-                "tracking_sessions_count": 0,
-                "total_individuals": 0,
-                "total_mvr_people": 0,
+                "tracking_sessions_count": len(sessions) if sessions else 0,
+                "total_individuals": len(scores),
+                "total_mvr_people": len(scores),
                 "total_videos_processed": 0,
-                "mvr_with_quality": 0,
+                "mvr_with_quality": len(scores),
                 "mvr_without_quality": 0,
-                "total_quality_scores": 0,
-                "average_quality": 0.0,
-                "min_quality": 0.0,
-                "max_quality": 0.0,
-                "quality_std_dev": 0.0,
+                "total_quality_scores": len(scores),
+                "average_quality": float(avg),
+                "min_quality": float(min(scores)),
+                "max_quality": float(max(scores)),
+                "quality_std_dev": float(std),
                 "data_completeness": {
-                    "total_mvr_people": 0,
-                    "mvr_with_quality_scores": 0,
-                    "percentage": 0.0
-                }
+                    "total_mvr_people": len(scores),
+                    "mvr_with_quality_scores": len(scores),
+                    "percentage": 100.0,
+                },
+                "data_source": "individual_video_appearances.quality_score",
             }
+
+        if not sessions:
+            logger.info(
+                "No completed tracking sessions for %s — falling back to IVA quality",
+                collection_display,
+            )
+            return await _iva_quality_fallback()
         
         logger.info(f"Found {len(sessions)} completed tracking sessions")
         
@@ -456,6 +505,13 @@ async def get_mvr_quality_metrics(
                     logger.debug(f"MVR {mvr['mvr_people_uuid']} has no quality score (both fields None)")
                 else:
                     logger.debug(f"MVR {mvr['mvr_people_uuid']} has zero quality: {quality}")
+
+        if mvr_with_quality <= 0:
+            logger.info(
+                "MVR quality empty for %s — falling back to IVA quality scores",
+                collection_display,
+            )
+            return await _iva_quality_fallback()
         
         # Step 5: Calculate aggregate statistics
         if all_quality_scores:

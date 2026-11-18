@@ -129,6 +129,16 @@ check "triggers.left_object_class_allowlist" \
 check "triggers.vehicle_class_allowlist" \
   "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='triggers' AND column_name='vehicle_class_allowlist'" \
   "1"
+# Route / analytics quality invariants (2.25.107)
+check "face_detections.timestamp" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='face_detections' AND column_name='timestamp'" \
+  "1"
+check "individual_video_appearances.quality_score" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='individual_video_appearances' AND column_name='quality_score'" \
+  "1"
+check "individual_video_appearances.movement_pattern" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='individual_video_appearances' AND column_name='movement_pattern'" \
+  "1"
 
 if [[ "$fail" -ne 0 ]]; then
   echo

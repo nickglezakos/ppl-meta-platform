@@ -2064,6 +2064,7 @@ class MVRRepository:
                 iva.person_object_uuid::text AS person_object_uuid,
                 iva.individual_uuid::text AS individual_uuid,
                 iva.confidence,
+                iva.quality_score,
                 iva.movement_pattern
             FROM individual_video_appearances iva
             WHERE {' AND '.join(conditions)}
@@ -2371,6 +2372,7 @@ class MVRRepository:
             if not route_pts:
                 return [row]
             base_ts_ms = int(row.get("timestamp_ms") or 0)
+            fps = 30.0
             out: List[Dict[str, Any]] = []
             for rp in route_pts:
                 new_row = dict(row)
@@ -2387,24 +2389,71 @@ class MVRRepository:
 
                 new_row["precomputed_center_x"] = center_x
                 new_row["precomputed_center_y"] = center_y
+                new_row["precomputed_frame_number"] = rp.get("frame_number")
 
-                rp_ts = rp.get("timestamp")
-                if rp_ts is not None:
+                # Treat missing or non-positive timestamps as absent so we can
+                # derive unique times from frame_number (stored zeros break Δt).
+                rp_ts_raw = rp.get("timestamp")
+                rp_ts_val: Optional[float] = None
+                if rp_ts_raw is not None:
                     try:
-                        new_row["timestamp_ms"] = base_ts_ms + int(float(rp_ts) * 1000)
+                        candidate = float(rp_ts_raw)
+                        if candidate > 0.0:
+                            rp_ts_val = candidate
                     except (TypeError, ValueError):
-                        pass
+                        rp_ts_val = None
+
+                if rp_ts_val is not None:
+                    new_row["timestamp_ms"] = base_ts_ms + int(rp_ts_val * 1000)
                 else:
                     frame_no = rp.get("frame_number")
                     if frame_no is not None:
                         try:
-                            # Approximate timestamp at 30 fps so each route
-                            # point gets a unique, monotonically increasing ts.
-                            new_row["timestamp_ms"] = base_ts_ms + int(float(frame_no) * (1000.0 / 30.0))
+                            new_row["timestamp_ms"] = base_ts_ms + int(
+                                float(frame_no) * (1000.0 / fps)
+                            )
+                        except (TypeError, ValueError):
+                            pass
+
+                for vel_key in ("velocity_x", "velocity_y", "velocity_magnitude"):
+                    if rp.get(vel_key) is not None:
+                        try:
+                            new_row[f"precomputed_{vel_key}"] = float(rp.get(vel_key) or 0.0)
                         except (TypeError, ValueError):
                             pass
 
                 out.append(new_row)
+
+            # If stored velocities are all zero, recompute from consecutive centers.
+            has_nonzero_vel = any(
+                float(r.get("precomputed_velocity_magnitude") or 0.0) > 0.0 for r in out
+            )
+            if not has_nonzero_vel and len(out) > 1:
+                out_sorted = sorted(
+                    out, key=lambda r: int(r.get("timestamp_ms") or 0)
+                )
+                for i in range(1, len(out_sorted)):
+                    prev = out_sorted[i - 1]
+                    curr = out_sorted[i]
+                    dt_ms = int(curr.get("timestamp_ms") or 0) - int(
+                        prev.get("timestamp_ms") or 0
+                    )
+                    if dt_ms <= 0:
+                        continue
+                    dt = dt_ms / 1000.0
+                    dx = float(curr.get("precomputed_center_x") or 0.0) - float(
+                        prev.get("precomputed_center_x") or 0.0
+                    )
+                    dy = float(curr.get("precomputed_center_y") or 0.0) - float(
+                        prev.get("precomputed_center_y") or 0.0
+                    )
+                    vx = dx / dt
+                    vy = dy / dt
+                    mag = (vx * vx + vy * vy) ** 0.5
+                    curr["precomputed_velocity_x"] = vx
+                    curr["precomputed_velocity_y"] = vy
+                    curr["precomputed_velocity_magnitude"] = mag
+                return out_sorted
             return out
 
         # First pass: expand any rows that already carry inline route_points
@@ -2588,17 +2637,44 @@ class MVRRepository:
             if not bbox:
                 bbox = row.get("entry_bbox") or row.get("exit_bbox")
             center_x, center_y = MVRRepository._bbox_to_center(bbox)
+
+        def _vel(key: str, precomputed_key: str) -> float:
+            if row.get(precomputed_key) is not None:
+                try:
+                    return float(row.get(precomputed_key) or 0.0)
+                except (TypeError, ValueError):
+                    pass
+            if row.get(key) is not None:
+                try:
+                    return float(row.get(key) or 0.0)
+                except (TypeError, ValueError):
+                    pass
+            return 0.0
+
+        quality = row.get("quality_score")
+        try:
+            detection_quality = float(quality) if quality is not None else None
+        except (TypeError, ValueError):
+            detection_quality = None
+
+        frame_number = row.get("precomputed_frame_number")
+        if frame_number is None:
+            frame_number = row.get("frame_number")
+
         return {
             "sequence_number": seq,
             "timestamp_ms": ts_ms,
+            "frame_number": frame_number,
             "center_x": center_x,
             "center_y": center_y,
-            "velocity_x": 0.0,
-            "velocity_y": 0.0,
-            "velocity_magnitude": 0.0,
+            "velocity_x": _vel("velocity_x", "precomputed_velocity_x"),
+            "velocity_y": _vel("velocity_y", "precomputed_velocity_y"),
+            "velocity_magnitude": _vel(
+                "velocity_magnitude", "precomputed_velocity_magnitude"
+            ),
             "direction_radians": 0.0,
             "confidence_score": float(row.get("confidence") or 0.0),
-            "detection_quality": None,
+            "detection_quality": detection_quality,
             "video_uuid": row.get("video_uuid"),
             "person_object_uuid": row.get("person_object_uuid"),
             "individual_uuid": row.get("individual_uuid"),

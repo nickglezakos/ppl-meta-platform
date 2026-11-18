@@ -2,21 +2,21 @@
 
 **Status:** Active  
 **Last updated:** 2026-11-17  
-**Current pin:** root [`VERSION`](../../VERSION) (today `2.25.106`)  
+**Current pin:** root [`VERSION`](../../VERSION) (today `2.25.107`)  
 **Registry:** `ghcr.io/nickglezakos/ppl-meta-platform`  
 **Architecture:** `linux/amd64` only for customer/lab installs  
 
 ### Open for next full Stage 1 → 2 → 3
 
-**Pin `2.25.106` Stage 1–3 complete on eyenet-demo (`lab-work-dual-64g`).** Remaining labs still pull when scheduled. Bundle: People & Groups UI, Details MVR happy path, vmeta featured-video best-image fallback, packed motion/velocity trigger DDL.
+**Pin `2.25.107` Stage 1 cut / pending Stage 2–3.** Routes/Motion timestamp+velocity repair, analytics merge cache, Image Quality IVA fallback, schema gates for `face_detections.timestamp` + IVA quality/movement_pattern.
 
 | Step | Must include |
 |---|---|
-| **Stage 1** | Done (`a4bd47cc`): Frontend People & Groups + Details happy path; vmeta `mvr_image_manager` featured-video fallback; pack `add_motion_velocity_trigger_fields.sql` + verify gates; CHANGELOG + pin `2.25.106` |
-| **Stage 2** | Done (Mode D eyenet-demo): rebuilt **`ppl-meta-frontend`** `c5247454dd73…` + **`ppl-meta-vmeta-protected`** `4156939eb6f4…`; retag-forward others from `2.25.105`; release-manifest `0dc75102` |
-| **Stage 3** | Done on eyenet-demo: compose pull `:2.25.106`; digests match; schema verify motion/velocity gates OK |
+| **Stage 1** | Vision/Orchestrator/VMeta/Gateway/Cameras/Frontend route+quality+analytics fixes; pack face_detections.timestamp + IVA quality/movement_pattern; verify gates; CHANGELOG + pin `2.25.107` |
+| **Stage 2** | Mode D rebuild **frontend**, **vmeta-protected**, **gateway**, **vision-protected**, **orchestrator**, **cameras**; retag-forward others from `2.25.106`; finalize release-manifest |
+| **Stage 3** | Compose pull rebuilt services; apply schema pack + `schema/verify.sh` (new route/quality gates) |
 
-Tracker: [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md). Schedule Stage 3 on other fleet labs as needed.
+Tracker: [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) § Pending.
 
 **Behavioural triggers (Media DDL) — already Completed in pin `2.25.105`**. Do not re-open unless a new Behavioural follow-up lands.
 

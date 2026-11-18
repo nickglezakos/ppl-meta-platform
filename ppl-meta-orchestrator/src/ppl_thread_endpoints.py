@@ -417,17 +417,29 @@ class PPLThreadEndpoints:
                 face_id = route_point.get("face_id") or f"{source_person_id}:{index}"
                 representative_face = representative_faces_by_id.get(str(face_id), {})
                 face_data = representative_face.get("face_data") or {}
+                frame_number = route_point.get(
+                    "frame_number",
+                    temporal_span.get("start_frame", 0),
+                )
+                try:
+                    timestamp = float(route_point.get("timestamp") or 0.0)
+                except (TypeError, ValueError):
+                    timestamp = 0.0
+                if timestamp <= 0.0:
+                    try:
+                        frame_no = float(frame_number or 0.0)
+                    except (TypeError, ValueError):
+                        frame_no = 0.0
+                    if frame_no > 0.0:
+                        timestamp = frame_no / 30.0
 
                 grouping_faces.append(
                     {
                         "id": face_id,
                         "source_person_id": source_person_id,
                         "bbox": bbox,
-                        "frame_number": route_point.get(
-                            "frame_number",
-                            temporal_span.get("start_frame", 0),
-                        ),
-                        "timestamp": route_point.get("timestamp", 0),
+                        "frame_number": frame_number,
+                        "timestamp": timestamp,
                         "center_x": float(center_x),
                         "center_y": float(center_y),
                         "confidence": route_point.get("confidence", quality_score),
@@ -528,7 +540,7 @@ class PPLThreadEndpoints:
             )
 
             movement_tracking = self._generate_movement_tracking(group_faces)
-            movement_tracking["source_person_ids"] = member_ids
+            movement_tracking["source_person_ids"] = member_ids  # timestamps repaired inside helper
 
             person_groups.append(
                 PPLThreadPersonGroup(
@@ -944,7 +956,7 @@ class PPLThreadEndpoints:
 
         return demographics
 
-    def _generate_movement_tracking(self, group_faces):
+    def _generate_movement_tracking(self, group_faces, video_fps: float = 30.0):
         """Generate route tracking data for person group."""
         if not group_faces:
             return {
@@ -958,8 +970,26 @@ class PPLThreadEndpoints:
                 },
             }
 
+        fps = float(video_fps) if video_fps and video_fps > 0 else 30.0
+
+        def _resolve_timestamp(face) -> float:
+            try:
+                ts = float(face.get("timestamp") or 0.0)
+            except (TypeError, ValueError):
+                ts = 0.0
+            if ts > 0.0:
+                return ts
+            try:
+                frame_no = float(face.get("frame_number") or 0.0)
+            except (TypeError, ValueError):
+                frame_no = 0.0
+            if frame_no > 0.0:
+                return frame_no / fps
+            return 0.0
+
         # Sort faces by frame number/timestamp
         sorted_faces = sorted(group_faces, key=lambda f: f.get("frame_number", 0))
+        resolved_timestamps = [_resolve_timestamp(face) for face in sorted_faces]
 
         route_points = []
         velocities = []
@@ -970,7 +1000,7 @@ class PPLThreadEndpoints:
         for i, face in enumerate(sorted_faces):
             center_x = face.get("center_x", 0)
             center_y = face.get("center_y", 0)
-            timestamp = face.get("timestamp", 0)
+            timestamp = resolved_timestamps[i]
 
             # Calculate velocity if not first point
             velocity_x = velocity_y = velocity_magnitude = 0
@@ -978,9 +1008,19 @@ class PPLThreadEndpoints:
                 prev_face = sorted_faces[i - 1]
                 prev_center_x = prev_face.get("center_x", 0)
                 prev_center_y = prev_face.get("center_y", 0)
-                prev_timestamp = prev_face.get("timestamp", 0)
+                prev_timestamp = resolved_timestamps[i - 1]
 
                 time_diff = timestamp - prev_timestamp
+                if time_diff <= 0:
+                    # Fallback: frame deltas when timestamps still collapse.
+                    try:
+                        frame_diff = float(face.get("frame_number") or 0.0) - float(
+                            prev_face.get("frame_number") or 0.0
+                        )
+                    except (TypeError, ValueError):
+                        frame_diff = 0.0
+                    if frame_diff > 0:
+                        time_diff = frame_diff / fps
                 if time_diff > 0:
                     velocity_x = (center_x - prev_center_x) / time_diff
                     velocity_y = (center_y - prev_center_y) / time_diff
@@ -1082,7 +1122,9 @@ class PPLThreadEndpoints:
         dropped = 0
 
         for group_faces in groups.values():
-            movement_tracking = self._generate_movement_tracking(group_faces)
+            movement_tracking = self._generate_movement_tracking(
+                group_faces, video_fps=video_fps
+            )
             decision = should_keep_person_group(
                 group_faces=group_faces,
                 route_points=movement_tracking.get("route_points") or [],

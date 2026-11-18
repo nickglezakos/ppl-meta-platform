@@ -4,6 +4,7 @@ Analytics endpoints for MVR people detection insights.
 Aggregates camera MVR count data to provide analytics dashboard metrics.
 """
 
+import asyncio
 import logging
 import os
 from collections import defaultdict
@@ -248,6 +249,10 @@ def _normalize_age_group(age: Optional[int]) -> str:
 # Short TTL cache: Instant Detection analytics hits this dataset 4–5 times per page load.
 _INSTANT_DATASET_TTL_SECONDS = 20.0
 _instant_dataset_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+
+# Recording analytics hits the same merge dataset from summary/time/demo/behavioral/fov.
+_RECORDING_DATASET_TTL_SECONDS = 20.0
+_recording_dataset_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 
 
 async def _fetch_media_collections(auth_token: str) -> List[Dict[str, Any]]:
@@ -530,7 +535,38 @@ def _people_from_flush_log(log: Dict[str, Any]) -> List[Dict[str, Any]]:
             or "unknown"
         )
         age = _age_from_age_gender(age_gender)
-        quality = (mvr or {}).get("quality_score") or (mvr or {}).get("face_quality")
+        quality = None
+        for source in (mvr, velocity_source):
+            if not isinstance(source, dict):
+                continue
+            for key in ("quality_score", "face_quality"):
+                raw = source.get(key)
+                if raw is None:
+                    continue
+                try:
+                    value = float(raw)
+                except (TypeError, ValueError):
+                    continue
+                if value > 0:
+                    quality = value
+                    break
+            if quality is not None:
+                break
+            best_face = source.get("best_face")
+            if isinstance(best_face, dict):
+                for key in ("quality_score", "face_quality"):
+                    raw = best_face.get(key)
+                    if raw is None:
+                        continue
+                    try:
+                        value = float(raw)
+                    except (TypeError, ValueError):
+                        continue
+                    if value > 0:
+                        quality = value
+                        break
+            if quality is not None:
+                break
         velocity = (
             _extract_route_velocity(velocity_source)
             or _extract_route_velocity(mvr)
@@ -1406,10 +1442,27 @@ async def _build_recording_pipeline_search_dataset(
     start_date: Optional[str],
     end_date: Optional[str],
     explicit_video_uuids: Optional[List[str]] = None,
+    force_refresh: bool = False,
 ) -> Dict[str, Any]:
+    explicit_video_uuids = list(dict.fromkeys(explicit_video_uuids or []))
+    cache_key = "|".join(
+        [
+            (auth_token or "")[:24],
+            time_filter or "",
+            collection_ids or "",
+            start_date or "",
+            end_date or "",
+            ",".join(sorted(explicit_video_uuids)),
+        ]
+    )
+    now_mono = datetime.now(timezone.utc).timestamp()
+    if not force_refresh:
+        cached = _recording_dataset_cache.get(cache_key)
+        if cached and (now_mono - cached[0]) <= _RECORDING_DATASET_TTL_SECONDS:
+            return dict(cached[1])
+
     start_time, end_time = _parse_time_filter(time_filter, start_date, end_date)
     selected_collection_ids = _parse_csv_query_values(collection_ids)
-    explicit_video_uuids = list(dict.fromkeys(explicit_video_uuids or []))
 
     if explicit_video_uuids:
         collections = await _fetch_target_collections(auth_token, selected_collection_ids)
@@ -1567,44 +1620,64 @@ async def _build_recording_pipeline_search_dataset(
                 video_uuids[:10],
             )
         else:
-            for collection in collections:
+            async def _fetch_collection_videos(collection: Dict[str, Any]):
                 collection_identifier = _get_collection_identifier(collection)
                 collection_name = _get_collection_display_name(collection)
-                collection_uuid = collection.get("uuid") or collection.get("collection_uuid") or collection_identifier
-
-                if not collection_identifier or not collection_uuid:
-                    continue
-
-                camera_ids.append(collection_identifier)
-
-                videos_response = await client.get(
-                    f"{MEDIA_SERVICE_URL}/api/v1/media/search",
-                    headers={"Authorization": f"Bearer {auth_token}"},
-                    params={
-                        "collection_id": collection_uuid,
-                        "page_size": 500,
-                        "start_date": start_time.isoformat(),
-                        "end_date": end_time.isoformat(),
-                    },
+                collection_uuid = (
+                    collection.get("uuid")
+                    or collection.get("collection_uuid")
+                    or collection_identifier
                 )
+                if not collection_identifier or not collection_uuid:
+                    return collection_identifier, collection_name, []
 
-                if videos_response.status_code != 200:
-                    logger.warning(
-                        "Failed to fetch videos for collection %s: %s",
-                        collection_identifier,
-                        videos_response.status_code,
+                page = 1
+                page_size = 500
+                collected: List[Dict[str, Any]] = []
+                while True:
+                    videos_response = await client.get(
+                        f"{MEDIA_SERVICE_URL}/api/v1/media/search",
+                        headers={"Authorization": f"Bearer {auth_token}"},
+                        params={
+                            "collection_id": collection_uuid,
+                            "page": page,
+                            "page_size": page_size,
+                            "start_date": start_time.isoformat(),
+                            "end_date": end_time.isoformat(),
+                        },
                     )
-                    continue
-
-                collection_videos = videos_response.json()
+                    if videos_response.status_code != 200:
+                        logger.warning(
+                            "Failed to fetch videos for collection %s page=%s: %s",
+                            collection_identifier,
+                            page,
+                            videos_response.status_code,
+                        )
+                        break
+                    page_videos = videos_response.json()
+                    if not isinstance(page_videos, list):
+                        break
+                    collected.extend(page_videos)
+                    if len(page_videos) < page_size:
+                        break
+                    page += 1
                 logger.info(
-                    "Analytics collection video fetch: collection_id=%s collection_name=%s collection_uuid=%s video_count=%s",
+                    "Analytics collection video fetch: collection_id=%s collection_name=%s collection_uuid=%s video_count=%s pages=%s",
                     collection_identifier,
                     collection_name,
                     collection_uuid,
-                    len(collection_videos),
+                    len(collected),
+                    page,
                 )
+                return collection_identifier, collection_name, collected
 
+            collection_results = await asyncio.gather(
+                *[_fetch_collection_videos(collection) for collection in collections]
+            )
+            for collection_identifier, collection_name, collection_videos in collection_results:
+                if not collection_identifier:
+                    continue
+                camera_ids.append(collection_identifier)
                 for video in collection_videos:
                     video_uuid = str(video.get("uuid") or "").strip()
                     if not video_uuid or video_uuid in video_details_by_uuid:
@@ -1630,7 +1703,7 @@ async def _build_recording_pipeline_search_dataset(
                     video_details_by_uuid[video_uuid] = details
 
         if not video_uuids:
-            return {
+            empty_dataset = {
                 "start_time": start_time,
                 "end_time": end_time,
                 "collections": collections,
@@ -1643,6 +1716,8 @@ async def _build_recording_pipeline_search_dataset(
                 "search_session_uuid": None,
                 "detection_modality": "face",
             }
+            _recording_dataset_cache[cache_key] = (now_mono, empty_dataset)
+            return dict(empty_dataset)
 
         search_response = await client.post(
             f"{VMETA_SERVICE_URL}/api/v1/mvr-people/search/by-videos/persisted-merge-session",
@@ -1653,15 +1728,16 @@ async def _build_recording_pipeline_search_dataset(
                 "start_time": start_time.isoformat(),
                 "end_time": end_time.isoformat(),
                 "limit": 500,
-                "ignore_existing_session": True,
+                "ignore_existing_session": bool(force_refresh),
                 "video_details": video_details,
             },
         )
         logger.info(
-            "Analytics merged search request: camera_ids=%s total_videos=%s sample_video_uuids=%s",
+            "Analytics merged search request: camera_ids=%s total_videos=%s sample_video_uuids=%s force_refresh=%s",
             sorted(set(camera_ids)),
             len(video_uuids),
             video_uuids[:10],
+            force_refresh,
         )
 
     if search_response.status_code != 200:
@@ -1679,7 +1755,7 @@ async def _build_recording_pipeline_search_dataset(
     for person in face_people:
         person.setdefault("identity_modality", "face")
 
-    return {
+    dataset = {
         "start_time": start_time,
         "end_time": end_time,
         "collections": collections,
@@ -1692,6 +1768,11 @@ async def _build_recording_pipeline_search_dataset(
         "search_session_uuid": search_data.get("search_session_uuid"),
         "detection_modality": "face",
     }
+    _recording_dataset_cache[cache_key] = (now_mono, dataset)
+    if len(_recording_dataset_cache) > 64:
+        oldest_key = min(_recording_dataset_cache.items(), key=lambda kv: kv[1][0])[0]
+        _recording_dataset_cache.pop(oldest_key, None)
+    return dict(dataset)
 
 
 async def _load_recording_body_people(
@@ -2257,7 +2338,7 @@ async def get_analytics_summary(
     Get aggregated analytics summary across collections.
     """
 
-    _ = force_refresh, current_user
+    _ = current_user
 
     try:
         auth_header = request.headers.get("authorization", "")
@@ -2287,6 +2368,7 @@ async def get_analytics_summary(
             start_date,
             end_date,
             explicit_video_uuids=_parse_csv_query_values(video_uuids),
+            force_refresh=bool(force_refresh),
         )
         dataset = await _with_recording_modality(dataset, auth_token, modality)
         filtered_people = _filter_people_for_analytics(dataset, selected_genders, selected_age_groups)
@@ -3406,9 +3488,19 @@ async def get_mvr_quality_metrics(
             )
             quality_scores: List[float] = []
             for person in dataset.get("people") or []:
-                score = person.get("quality_score")
-                if isinstance(score, (int, float)):
-                    quality_scores.append(float(score))
+                for key in ("quality_score", "face_quality"):
+                    score = person.get(key)
+                    if isinstance(score, (int, float)) and float(score) > 0:
+                        quality_scores.append(float(score))
+                        break
+                    if isinstance(score, str):
+                        try:
+                            value = float(score)
+                        except ValueError:
+                            continue
+                        if value > 0:
+                            quality_scores.append(value)
+                            break
             flush_count = int(dataset.get("flush_count") or 0)
             total_people = len(dataset.get("people") or [])
             total_mvrs = total_people
@@ -3453,7 +3545,23 @@ async def get_mvr_quality_metrics(
             metrics["quality_grade"] = _get_quality_grade(avg or 0.0)
             return metrics
 
+        vmeta_url = f"{VMETA_SERVICE_URL}/api/v1/mvr/quality-metrics"
+        headers = {"Authorization": request.headers.get("Authorization")}
+
+        async def _fetch_vmeta_quality(target_collection_name: Optional[str]) -> Dict:
+            params = {
+                "collection_name": target_collection_name or "all",
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "source_type": effective_source or "recording_pipeline",
+            }
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.get(vmeta_url, params=params, headers=headers)
+                response.raise_for_status()
+                return response.json()
+
         # Body / Both (and explicit video Face path): build from recording search + modality.
+        # If merge entities lack quality scores, fall back to vmeta/IVA quality endpoint.
         if (
             modality != "face"
             or (explicit_video_uuid_list and effective_source == "recording_pipeline")
@@ -3468,6 +3576,14 @@ async def get_mvr_quality_metrics(
             )
             dataset = await _with_recording_modality(dataset, auth_token, modality)
             metrics = _build_quality_metrics_from_dataset(dataset, time_filter)
+            if int(metrics.get("mvr_with_quality") or 0) <= 0:
+                try:
+                    metrics = await _fetch_vmeta_quality(None)
+                except Exception as exc:
+                    logger.warning(
+                        "Quality fallback to vmeta failed after empty merge scores: %s",
+                        exc,
+                    )
             metrics["quality_grade"] = _get_quality_grade(metrics.get("average_quality") or 0.0)
             metrics["generated_at"] = datetime.now(timezone.utc).isoformat()
             metrics["data_source"] = (
@@ -3477,22 +3593,6 @@ async def get_mvr_quality_metrics(
             )
             metrics["detection_modality"] = modality
             return metrics
-        
-        vmeta_url = f"{VMETA_SERVICE_URL}/api/v1/mvr/quality-metrics"
-        headers = {"Authorization": request.headers.get("Authorization")}
-
-        async def _fetch_vmeta_quality(target_collection_name: Optional[str]) -> Dict:
-            params = {
-                "collection_name": target_collection_name or "all",
-                "start_time": start_time.isoformat(),
-                "end_time": end_time.isoformat(),
-            }
-            if effective_source != "recording_pipeline":
-                params["source_type"] = effective_source
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.get(vmeta_url, params=params, headers=headers)
-                response.raise_for_status()
-                return response.json()
 
         metrics: Dict
         if collection_ids:

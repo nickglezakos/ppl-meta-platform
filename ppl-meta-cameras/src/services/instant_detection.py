@@ -160,6 +160,7 @@ def _map_group_from_faces_response(vision_response: Dict) -> List[Dict]:
             or 0
         )
 
+        face_quality = float(best.get("quality_score", 0.0) or 0.0)
         person_objects.append(
             {
                 "person_id": po_uuid,
@@ -167,11 +168,13 @@ def _map_group_from_faces_response(vision_response: Dict) -> List[Dict]:
                 "faces": instant_faces,
                 "face_count": group.get("face_count", len(instant_faces)),
                 "avg_confidence": group.get("avg_confidence", 0.0),
+                "quality_score": face_quality,
+                "face_quality": face_quality,
                 "best_face": {
                     "bbox": best_bbox,
                     "confidence": best.get("confidence", 0.0),
                     "frame_index": best.get("frame_number", 0),
-                    "quality_score": best.get("quality_score", 0.0),
+                    "quality_score": face_quality,
                 },
                 "best_bbox": best_bbox,
                 "velocity": {
@@ -1148,6 +1151,18 @@ class InstantDetectionSampler:
 
         # Step 5: Per-person + crowd velocity (Vision px/ms → m/s via face height)
         velocity_summary = attach_cycle_velocity(person_objects, body_persons)
+
+        # Attach route_points / movement_tracking for Motions UI + IVA persist parity.
+        try:
+            from src.services.instant_detection_flush import (
+                attach_movement_tracking_to_person_groups,
+            )
+
+            attach_movement_tracking_to_person_groups(person_objects)
+        except Exception as route_exc:
+            logger.warning(
+                "⚠️ Failed to attach Instant movement_tracking: %s", route_exc
+            )
 
         # Mirror speed onto nested InstantMvr so flush / log-search records carry m/s.
         for person in person_objects:

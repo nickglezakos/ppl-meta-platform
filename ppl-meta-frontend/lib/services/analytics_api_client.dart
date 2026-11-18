@@ -46,8 +46,9 @@ class AnalyticsApiClient {
           'genders': genders.join(','),
         if (ageGroups != null && ageGroups.isNotEmpty)
           'age_groups': ageGroups.join(','),
-        if (dataSource != null && dataSource != 'recording')
-          'source_type': dataSource,
+        'source_type': (dataSource == null || dataSource == 'recording')
+            ? 'recording_pipeline'
+            : dataSource,
         if (normalised && dataSource == 'instant_detection')
           'normalised': true,
       };

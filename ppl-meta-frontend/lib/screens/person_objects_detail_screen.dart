@@ -7504,16 +7504,24 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     String cameraId,
     String cameraName,
   ) {
+    final sequence = (point['sequence_number'] as num?)?.toInt() ?? 0;
+    final frameNumber = (point['frame_number'] as num?)?.toInt() ?? sequence;
+    final timestampMs = (point['timestamp_ms'] as num?)?.toInt() ??
+        (point['timestamp'] as num?)?.toInt() ??
+        0;
     return <String, dynamic>{
-      'sequence_number': (point['sequence_number'] as num?)?.toInt() ?? 0,
-      'timestamp': (point['timestamp_ms'] as num?)?.toInt() ?? 0,
-      'frame_number': (point['sequence_number'] as num?)?.toInt() ?? 0,
+      'sequence_number': sequence,
+      'timestamp': timestampMs,
+      'timestamp_ms': timestampMs,
+      'frame_number': frameNumber,
       'center_x': (point['center_x'] as num?)?.toDouble() ?? 0.0,
       'center_y': (point['center_y'] as num?)?.toDouble() ?? 0.0,
       'velocity_x': (point['velocity_x'] as num?)?.toDouble() ?? 0.0,
       'velocity_y': (point['velocity_y'] as num?)?.toDouble() ?? 0.0,
       'velocity_magnitude':
           (point['velocity_magnitude'] as num?)?.toDouble() ?? 0.0,
+      'speed_mps': (point['speed_mps'] as num?)?.toDouble(),
+      'detection_quality': (point['detection_quality'] as num?)?.toDouble(),
       'camera_id': cameraId,
       'camera_name': cameraName,
       'video_uuid': point['video_uuid'],
@@ -7937,6 +7945,13 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       var dt = (tCurr != null && tPrev != null)
           ? tCurr.difference(tPrev).inMilliseconds / 1000.0
           : 0.0;
+      if (dt <= 0) {
+        final fCurr = (curr['frame_number'] as num?)?.toDouble();
+        final fPrev = (prev['frame_number'] as num?)?.toDouble();
+        if (fCurr != null && fPrev != null && fCurr > fPrev) {
+          dt = (fCurr - fPrev) / 30.0;
+        }
+      }
       if (dt <= 0) dt = 0.05;
       final mag =
           math.sqrt((cx - px) * (cx - px) + (cy - py) * (cy - py)) / dt;

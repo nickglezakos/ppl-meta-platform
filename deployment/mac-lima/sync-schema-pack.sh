@@ -43,6 +43,8 @@ add "$VIS/003_add_mv_model_provenance.sql"
 add "$VIS/004_add_object_detections.sql"
 add "$VIS/005_object_detections_keypoints.sql"
 add "$VIS/add_representative_faces_and_route_data.sql"
+# Route velocity write-path: face_detections.timestamp (2.25.107)
+add "$VIS/add_face_detections_timestamp.sql"
 
 # --- VMeta MVR first ---
 VMETA="$REPO_ROOT/ppl-meta-vmeta/migrations"
@@ -115,7 +117,8 @@ for pack_only in \
   048_individuals_created_by_session.sql \
   049_individual_video_appearances_instant_columns.sql \
   050_individuals_instant_detection_columns.sql \
-  051_media_processing_status_last_updated_trigger.sql
+  051_media_processing_status_last_updated_trigger.sql \
+  052_ensure_iva_quality_and_movement_pattern.sql
 do
   src="$COMPAT/$pack_only"
   if [[ -f "$src" ]]; then

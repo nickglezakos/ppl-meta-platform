@@ -29,6 +29,7 @@ router = APIRouter()
 class BestFace(BaseModel):
     bbox: Optional[List[float]] = None
     confidence: Optional[float] = None
+    quality_score: Optional[float] = None
 
 
 class AgeGender(BaseModel):
@@ -58,6 +59,12 @@ class PersonObject(BaseModel):
     gait_band: Optional[str] = None
     samples: Optional[int] = None
     scale_face_height_m: Optional[float] = None
+    # Image quality (prefer over avg_confidence when present)
+    quality_score: Optional[float] = None
+    face_quality: Optional[float] = None
+    # Optional route series for IVA movement_pattern parity with recordings
+    route_points: Optional[List[Dict[str, Any]]] = None
+    movement_tracking: Optional[Dict[str, Any]] = None
 
 
 class InstantDetectionPersistRequest(BaseModel):
@@ -316,9 +323,45 @@ async def persist_instant_detection_batch(
 # ---------- Internal helpers ----------
 
 
+def _person_image_quality(po: PersonObject) -> float:
+    """Prefer true face/image quality over detection confidence."""
+    for candidate in (
+        po.quality_score,
+        po.face_quality,
+        (po.best_face.quality_score if po.best_face else None),
+    ):
+        if candidate is None:
+            continue
+        try:
+            value = float(candidate)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return float(po.avg_confidence or 0.0)
+
+
+def _route_points_for_person(po: PersonObject) -> List[Dict[str, Any]]:
+    tracking = po.movement_tracking if isinstance(po.movement_tracking, dict) else {}
+    candidates = [
+        po.route_points,
+        tracking.get("route_points") if isinstance(tracking, dict) else None,
+    ]
+    for raw in candidates:
+        if isinstance(raw, list) and raw:
+            return [p for p in raw if isinstance(p, dict)]
+    return []
+
+
 def _movement_pattern_for_person(po: PersonObject) -> Optional[str]:
     """Build recording-compatible movement_pattern JSON for one appearance."""
-    if po.speed_mps is None and po.velocity_px_ms is None and not po.gait_band:
+    route_points = _route_points_for_person(po)
+    if (
+        po.speed_mps is None
+        and po.velocity_px_ms is None
+        and not po.gait_band
+        and not route_points
+    ):
         return None
 
     px_per_s = None
@@ -326,20 +369,35 @@ def _movement_pattern_for_person(po: PersonObject) -> Optional[str]:
         mag = (float(po.velocity_px_ms.x) ** 2 + float(po.velocity_px_ms.y) ** 2) ** 0.5
         px_per_s = round(mag * 1000.0, 4)
 
-    return json.dumps(
-        {
-            "movement_statistics": {
-                "average_speed_mps": po.speed_mps,
-                "average_speed_pixels_per_second": px_per_s,
-                "gait_band": po.gait_band,
-                "samples": po.samples,
-                "scale": {
-                    "method": "face_height",
-                    "face_height_m": po.scale_face_height_m or 0.20,
-                },
-            }
+    payload: Dict[str, Any] = {
+        "movement_statistics": {
+            "average_speed_mps": po.speed_mps,
+            "average_speed_pixels_per_second": px_per_s,
+            "gait_band": po.gait_band,
+            "samples": po.samples,
+            "scale": {
+                "method": "face_height",
+                "face_height_m": po.scale_face_height_m or 0.20,
+            },
         }
-    )
+    }
+    if route_points:
+        payload["route_points"] = route_points
+        stats = payload["movement_statistics"]
+        stats["total_route_points"] = len(route_points)
+        if isinstance(po.movement_tracking, dict):
+            nested_stats = po.movement_tracking.get("movement_statistics")
+            if isinstance(nested_stats, dict):
+                for key in (
+                    "average_velocity",
+                    "max_velocity",
+                    "total_distance_pixels",
+                    "time_in_frame_seconds",
+                ):
+                    if nested_stats.get(key) is not None:
+                        stats[key] = nested_stats.get(key)
+
+    return json.dumps(payload)
 
 
 async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]) -> Dict[str, int]:
@@ -454,11 +512,17 @@ async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]
             if is_new:
                 new_created += 1
 
+            image_quality = _person_image_quality(po)
             representative_faces = None
             if po.best_face:
-                representative_faces = json.dumps(
-                    [{"bbox": po.best_face.bbox, "confidence": po.best_face.confidence}]
-                )
+                face_entry: Dict[str, Any] = {
+                    "bbox": po.best_face.bbox,
+                    "confidence": po.best_face.confidence,
+                    "quality_score": po.best_face.quality_score
+                    if po.best_face.quality_score is not None
+                    else image_quality,
+                }
+                representative_faces = json.dumps([face_entry])
 
             movement_pattern = _movement_pattern_for_person(po)
 
@@ -481,7 +545,11 @@ async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]
                 DO UPDATE SET
                     movement_pattern = COALESCE(EXCLUDED.movement_pattern, individual_video_appearances.movement_pattern),
                     confidence = EXCLUDED.confidence,
-                    quality_score = EXCLUDED.quality_score
+                    quality_score = EXCLUDED.quality_score,
+                    representative_faces = COALESCE(
+                        EXCLUDED.representative_faces,
+                        individual_video_appearances.representative_faces
+                    )
                 """,
                 individual_uuid,
                 synthetic_video_uuid,
@@ -489,7 +557,7 @@ async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]
                 cycle_ts,
                 cycle_ts,
                 po.avg_confidence,
-                po.avg_confidence,
+                image_quality,
                 "instant_detection",
                 session_id,
                 representative_faces,

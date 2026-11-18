@@ -17,7 +17,12 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-_(none for pin `2.25.106` on eyenet-demo — see Completed. Other labs still need Stage 3 pull when scheduled.)_
+### 2026-11-18 — Pin 2.25.107 Routes/Motion + analytics quality/cache
+- **Status:** Pending Stage 2–3 (Stage 1 source/schema for `2.25.107`)
+- **Source:** Vision timestamp persist; Orchestrator fps/frame velocity; VMeta expand repair + quality map; Instant persist route_points/real quality; Cameras movement_tracking attach; FE normalize/motion; Gateway recording dataset cache + quality plumbing
+- **Schema:** `add_face_detections_timestamp.sql`; pack `052_ensure_iva_quality_and_movement_pattern.sql`; verify gates for `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`
+- **Next:** Stage 2 rebuild frontend + vmeta + gateway + vision + orchestrator + cameras; Stage 3 pull + schema verify
+- **Tracker:** [`platform-release-cicd.md`](./platform-release-cicd.md) § Open
 
 ---
 
