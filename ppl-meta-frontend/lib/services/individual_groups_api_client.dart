@@ -263,6 +263,7 @@ class IndividualGroupsApiClient {
     int skip = 0,
     int limit = 50,
     String sort = 'added_date',
+    bool includeArchived = false,
   }) async {
     try {
       final response = await _apiClient.get(
@@ -271,6 +272,7 @@ class IndividualGroupsApiClient {
           'skip': skip,
           'limit': limit,
           'sort': sort,
+          if (includeArchived) 'include_archived': true,
         },
       );
 

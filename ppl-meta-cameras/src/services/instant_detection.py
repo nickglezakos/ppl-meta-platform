@@ -1289,36 +1289,63 @@ class InstantDetectionSampler:
             logger.debug("instant model resolve failed for %s: %s", camera_id, exc)
             return self._resolved_runtime.get(camera_id, fallback)
 
-    def _camera_auto_face_enabled(self, camera_id: str) -> bool:
-        """Per-camera Face detection setting; default False if unknown."""
+    def _load_camera_detection_flags(self, camera_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Load detection flags without ORM Camera mapper init.
+
+        Celery prefork workers often fail Mapper[Camera] because RecordingSession
+        is not registered in that process; raw SQL keeps face/body paths alive.
+        """
         if not camera_id:
-            return False
+            return None
         try:
-            # Ensure relationship target is registered before querying Camera.
+            from sqlalchemy import text
             from src.database import SessionLocal
-            from src.models.camera import Camera
-            from src.models.recording_session import RecordingSession  # noqa: F401
 
             db = SessionLocal()
             try:
-                camera = db.query(Camera).filter(Camera.device_id == camera_id).first()
-                if not camera:
-                    logger.info(
-                        "🎯 Instant face path skipped for camera %s (camera row not found)",
-                        camera_id,
-                    )
-                    return False
-                enabled = bool(getattr(camera, "auto_face_detection", False))
-                return enabled
+                row = db.execute(
+                    text(
+                        "SELECT auto_face_detection, instant_detection_enabled, "
+                        "processing_options FROM cameras WHERE device_id = :id"
+                    ),
+                    {"id": camera_id},
+                ).fetchone()
+                if not row:
+                    return None
+                opts = row[2] or {}
+                if isinstance(opts, str):
+                    try:
+                        opts = json.loads(opts)
+                    except Exception:
+                        opts = {}
+                if not isinstance(opts, dict):
+                    opts = {}
+                return {
+                    "auto_face_detection": bool(row[0]),
+                    "instant_detection_enabled": bool(row[1]),
+                    "processing_options": opts,
+                }
             finally:
                 db.close()
         except Exception as exc:
             logger.warning(
-                "🎯 auto_face_detection lookup failed for %s (treating as OFF): %s",
+                "camera detection flags lookup failed for %s: %s",
                 camera_id,
                 exc,
             )
+            return None
+
+    def _camera_auto_face_enabled(self, camera_id: str) -> bool:
+        """Per-camera Face detection setting; default False if unknown."""
+        flags = self._load_camera_detection_flags(camera_id)
+        if not flags:
+            logger.info(
+                "🎯 Instant face path skipped for camera %s (camera row not found)",
+                camera_id,
+            )
             return False
+        return bool(flags.get("auto_face_detection"))
 
     def _camera_instant_face_enabled(self, camera_id: str) -> bool:
         """
@@ -1329,104 +1356,45 @@ class InstantDetectionSampler:
         an already-running (or pipeline-enabled) instant session.
         Post-record enhanced-v2 still keys only off auto_face_detection.
         """
-        if not camera_id:
+        flags = self._load_camera_detection_flags(camera_id)
+        if not flags:
             return False
-        try:
-            from src.database import SessionLocal
-            from src.models.camera import Camera
-            from src.models.recording_session import RecordingSession  # noqa: F401
-
-            db = SessionLocal()
-            try:
-                camera = db.query(Camera).filter(Camera.device_id == camera_id).first()
-                if not camera:
-                    return False
-                auto_face = bool(getattr(camera, "auto_face_detection", False))
-                instant_on = bool(getattr(camera, "instant_detection_enabled", False))
-                return auto_face or instant_on
-            finally:
-                db.close()
-        except Exception as exc:
-            logger.warning(
-                "🎯 instant face enable lookup failed for %s (treating as OFF): %s",
-                camera_id,
-                exc,
-            )
-            return False
+        return bool(flags.get("auto_face_detection")) or bool(
+            flags.get("instant_detection_enabled")
+        )
 
     def _camera_auto_body_enabled(self, camera_id: str) -> bool:
         """Per-camera Body detection setting from processing_options; default False."""
-        if not camera_id:
-            return False
-        try:
-            # Ensure relationship target is registered before querying Camera.
-            from src.database import SessionLocal
-            from src.models.camera import Camera
-            from src.models.recording_session import RecordingSession  # noqa: F401
-
-            db = SessionLocal()
-            try:
-                camera = db.query(Camera).filter(Camera.device_id == camera_id).first()
-                if not camera:
-                    logger.info(
-                        "🧍 Instant body path skipped for camera %s (camera row not found)",
-                        camera_id,
-                    )
-                    return False
-                opts = getattr(camera, "processing_options", None) or {}
-                if isinstance(opts, str):
-                    opts = json.loads(opts)
-                if not isinstance(opts, dict):
-                    logger.info(
-                        "🧍 Instant body path skipped for camera %s "
-                        "(processing_options not a dict: %s)",
-                        camera_id,
-                        type(opts).__name__,
-                    )
-                    return False
-                return bool(opts.get("auto_body_detection", False))
-            finally:
-                db.close()
-        except Exception as exc:
-            logger.warning(
-                "🧍 auto_body_detection lookup failed for %s (treating as OFF): %s",
+        flags = self._load_camera_detection_flags(camera_id)
+        if not flags:
+            logger.info(
+                "🧍 Instant body path skipped for camera %s (camera row not found)",
                 camera_id,
-                exc,
             )
             return False
+        opts = flags.get("processing_options") or {}
+        if not isinstance(opts, dict):
+            logger.info(
+                "🧍 Instant body path skipped for camera %s "
+                "(processing_options not a dict: %s)",
+                camera_id,
+                type(opts).__name__,
+            )
+            return False
+        return bool(opts.get("auto_body_detection", False))
 
     def _camera_auto_object_enabled(self, camera_id: str) -> bool:
         """Per-camera object detection for left_object triggers; default False."""
-        if not camera_id:
+        flags = self._load_camera_detection_flags(camera_id)
+        if not flags:
             return False
-        try:
-            from src.database import SessionLocal
-            from src.models.camera import Camera
-            from src.models.recording_session import RecordingSession  # noqa: F401
-
-            db = SessionLocal()
-            try:
-                camera = db.query(Camera).filter(Camera.device_id == camera_id).first()
-                if not camera:
-                    return False
-                opts = getattr(camera, "processing_options", None) or {}
-                if isinstance(opts, str):
-                    opts = json.loads(opts)
-                if not isinstance(opts, dict):
-                    return False
-                return bool(
-                    opts.get("auto_object_detection", False)
-                    or opts.get("enable_object_detection", False)
-                )
-            finally:
-                db.close()
-        except Exception as exc:
-            logger.warning(
-                "auto_object_detection lookup failed for %s (treating as OFF): %s",
-                camera_id,
-                exc,
-            )
+        opts = flags.get("processing_options") or {}
+        if not isinstance(opts, dict):
             return False
+        return bool(
+            opts.get("auto_object_detection", False)
+            or opts.get("enable_object_detection", False)
+        )
 
     def _resolve_object_model(self, camera_id: str) -> Dict[str, str]:
         cached = self._resolved_object.get(camera_id)
@@ -1582,34 +1550,16 @@ class InstantDetectionSampler:
             return empty
 
     def _camera_auto_vehicle_enabled(self, camera_id: str) -> bool:
-        try:
-            from src.database import SessionLocal
-            from src.models.camera import Camera
-            from src.models.recording_session import RecordingSession  # noqa: F401
-
-            db = SessionLocal()
-            try:
-                camera = db.query(Camera).filter(Camera.device_id == camera_id).first()
-                if not camera:
-                    return False
-                opts = getattr(camera, "processing_options", None) or {}
-                if isinstance(opts, str):
-                    opts = json.loads(opts)
-                if not isinstance(opts, dict):
-                    return False
-                return bool(
-                    opts.get("auto_vehicle_detection", False)
-                    or opts.get("enable_vehicle_detection", False)
-                )
-            finally:
-                db.close()
-        except Exception as exc:
-            logger.warning(
-                "auto_vehicle_detection lookup failed for %s (treating as OFF): %s",
-                camera_id,
-                exc,
-            )
+        flags = self._load_camera_detection_flags(camera_id)
+        if not flags:
             return False
+        opts = flags.get("processing_options") or {}
+        if not isinstance(opts, dict):
+            return False
+        return bool(
+            opts.get("auto_vehicle_detection", False)
+            or opts.get("enable_vehicle_detection", False)
+        )
 
     def _resolve_vehicle_model(self, camera_id: str) -> Dict[str, str]:
         cached = self._resolved_vehicle.get(camera_id)

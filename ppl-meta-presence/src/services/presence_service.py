@@ -1955,6 +1955,49 @@ class PresenceService:
             self._refresh_linked_member_counts()
         return changed
 
+    def repoint_or_unlink_individual(
+        self,
+        from_individual_id: str,
+        to_individual_id: str | None = None,
+    ) -> dict:
+        """
+        After MVR archive: re-point PPP links from archived MVR to promoted
+        winner, or unlink all links when there is no promotion target.
+        """
+        from_id = str(from_individual_id or "").strip()
+        to_id = str(to_individual_id or "").strip() or None
+        if not from_id:
+            return {"unlinked": 0, "repointed": 0}
+        matching = [
+            link for link in self.people_profile_links
+            if str(link.individual_id) == from_id
+        ]
+        unlinked = 0
+        repointed = 0
+        for link in matching:
+            if to_id:
+                # Avoid duplicate (group, to_id) links.
+                conflict = any(
+                    l.group_id == link.group_id and str(l.individual_id) == to_id
+                    for l in self.people_profile_links
+                )
+                if conflict:
+                    if self.unlink_member(link.ppp_uuid, link.group_id, from_id):
+                        unlinked += 1
+                else:
+                    self.unlink_member(link.ppp_uuid, link.group_id, from_id)
+                    self.link_member(
+                        ppp_uuid=link.ppp_uuid,
+                        group_id=link.group_id,
+                        individual_id=to_id,
+                        linked_by=link.linked_by,
+                    )
+                    repointed += 1
+            else:
+                if self.unlink_member(link.ppp_uuid, link.group_id, from_id):
+                    unlinked += 1
+        return {"unlinked": unlinked, "repointed": repointed}
+
     def lookup_people_profile_by_member(self, individual_id: str) -> dict | None:
         profile = self._ppp_for_member(individual_id)
         if profile is None:

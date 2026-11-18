@@ -3335,6 +3335,62 @@ async def update_mvr_person_gender(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.post("/mvr-people/{mvr_person_uuid}/archive")
+async def archive_mvr_person(request: Request, mvr_person_uuid: str):
+    """Proxy MVR soft-archive, then re-point/unlink Presence People links."""
+    vmeta_resp = await _proxy_to_vmeta_service(request)
+    if vmeta_resp.status_code >= 400:
+        return vmeta_resp
+
+    try:
+        payload = json.loads(vmeta_resp.body.decode("utf-8"))
+    except Exception:
+        return vmeta_resp
+
+    if not isinstance(payload, dict) or not payload.get("success", True):
+        return vmeta_resp
+
+    archived_uuid = payload.get("archived_mvr_uuid") or mvr_person_uuid
+    promoted_uuid = payload.get("promoted_mvr_uuid")
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in ["host", "content-length"]
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            presence_resp = await client.post(
+                f"{SERVICES['presence']}/api/v1/presence/people-profiles/repoint-individual",
+                headers=headers,
+                json={
+                    "from_individual_id": archived_uuid,
+                    "to_individual_id": promoted_uuid,
+                },
+            )
+        if presence_resp.status_code < 400:
+            data = presence_resp.json()
+            result = data.get("data") if isinstance(data, dict) else None
+            if isinstance(result, dict):
+                transferred = int(result.get("repointed") or 0)
+                payload["people_links_transferred"] = transferred
+                # Keep response message useful when links moved.
+                if transferred and not payload.get("promoted_mvr_uuid"):
+                    payload["message"] = (
+                        f"{payload.get('message', 'Archived.')} "
+                        f"Unlinked {result.get('unlinked', 0)} people profile link(s)."
+                    )
+        else:
+            logger.warning(
+                "Presence repoint after archive failed (%s): %s",
+                presence_resp.status_code,
+                presence_resp.text[:300],
+            )
+    except Exception as exc:
+        logger.warning("Presence repoint after archive error (non-fatal): %s", exc)
+
+    return JSONResponse(content=payload, status_code=vmeta_resp.status_code)
+
+
 # ============================================================================
 # Discovery Service Routes
 # ============================================================================

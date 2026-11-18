@@ -197,6 +197,9 @@ class IndividualSummary(BaseModel):
     name_updated_at: Optional[datetime] = None
     name_updated_by: Optional[str] = None
 
+    # Soft-archive (visible only when include_archived=true)
+    is_archived: bool = False
+
 
 class IndividualGroupResponse(BaseModel):
     """Response model for individual group with member preview"""

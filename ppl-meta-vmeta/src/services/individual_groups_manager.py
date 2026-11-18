@@ -1011,6 +1011,7 @@ class IndividualGroupsManager:
         limit: int = 50,
         sort: str = "added_date",
         *,
+        include_archived: bool = False,
         acting_user: Optional[Dict[str, Any]] = None,
         auth_header: Optional[str] = None,
     ) -> tuple[List[IndividualSummary], int]:
@@ -1025,6 +1026,7 @@ class IndividualGroupsManager:
             skip: Number of records to skip
             limit: Maximum number of records to return
             sort: Sort field (added_date, appearances, last_seen)
+            include_archived: When False (default), hide soft-archived MVRs
             acting_user: Authenticated caller (used for can_manage_member)
             auth_header: Forwarded Bearer token for private-group media ACL
             
@@ -1032,11 +1034,12 @@ class IndividualGroupsManager:
             Tuple of (members list, total count)
         """
         logger.info(
-            "[IG-DEBUG] get_group_members start group_id=%s skip=%s limit=%s sort=%s",
+            "[IG-DEBUG] get_group_members start group_id=%s skip=%s limit=%s sort=%s include_archived=%s",
             group_id,
             skip,
             limit,
             sort,
+            include_archived,
         )
 
         # Do not auto-clean orphaned members during reads; this can hide valid
@@ -1170,15 +1173,27 @@ class IndividualGroupsManager:
         # memberships (e.g. stale recording_pipeline individuals that were never
         # promoted to an MVR person and have no mapping) resolve to a NULL
         # mvr_person_uuid and must not surface to clients.
-        count_query = """
+        archive_clause = (
+            ""
+            if include_archived
+            else """
+          AND NOT EXISTS (
+                SELECT 1 FROM mvr_people md_arch
+                WHERE md_arch.mvr_people_uuid = gm.individual_id::uuid
+                  AND COALESCE(md_arch.is_archived, FALSE) = TRUE
+          )
+"""
+        )
+        count_query = f"""
         SELECT COUNT(*)
         FROM group_memberships gm
         WHERE gm.group_id = $1
-          AND gm.individual_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+          AND gm.individual_id ~* '^[0-9a-f]{{8}}-[0-9a-f]{{4}}-[1-5][0-9a-f]{{3}}-[89ab][0-9a-f]{{3}}-[0-9a-f]{{12}}$'
           AND (
                 EXISTS (SELECT 1 FROM mvr_people md WHERE md.mvr_people_uuid = gm.individual_id::uuid)
             OR EXISTS (SELECT 1 FROM individual_mvr_mapping imm WHERE imm.individual_uuid = gm.individual_id::uuid)
           )
+          {archive_clause}
         """
         
         async with self.db.pool.acquire() as conn:
@@ -1195,6 +1210,26 @@ class IndividualGroupsManager:
         # Skip members that could not be resolved to an MVR identity. These are
         # stale/corrupt shell memberships; returning them yields frontend members
         # with null mvr_person_uuid that cannot be analysed or displayed.
+        archived_ids: set = set()
+        if not include_archived and rows:
+            mvr_ids = [
+                str(r.get("mvr_person_uuid"))
+                for r in rows
+                if r.get("mvr_person_uuid")
+            ]
+            if mvr_ids:
+                async with self.db.pool.acquire() as conn:
+                    archived_rows = await conn.fetch(
+                        """
+                        SELECT mvr_people_uuid::text AS id
+                        FROM mvr_people
+                        WHERE mvr_people_uuid = ANY($1::uuid[])
+                          AND COALESCE(is_archived, FALSE) = TRUE
+                        """,
+                        mvr_ids,
+                    )
+                    archived_ids = {r["id"] for r in archived_rows}
+
         resolvable_rows = []
         for index, row in enumerate(rows):
             if not row.get("mvr_person_uuid"):
@@ -1203,6 +1238,9 @@ class IndividualGroupsManager:
                     group_id,
                     row.get("individual_id"),
                 )
+                continue
+            mvr_id = str(row.get("mvr_person_uuid"))
+            if mvr_id in archived_ids:
                 continue
             logger.info(
                 "[IG-DEBUG] member_row idx=%s group_id=%s individual_id=%s resolved_mvr=%s name=%s name_updated_at=%s name_updated_by=%s",
@@ -1227,9 +1265,32 @@ class IndividualGroupsManager:
                     auth_header=auth_header,
                 )
 
+        archived_flag_by_mvr: Dict[str, bool] = {}
+        if include_archived and resolvable_rows:
+            mvr_ids = [
+                str(r.get("mvr_person_uuid"))
+                for r in resolvable_rows
+                if r.get("mvr_person_uuid")
+            ]
+            if mvr_ids:
+                async with self.db.pool.acquire() as conn:
+                    flag_rows = await conn.fetch(
+                        """
+                        SELECT mvr_people_uuid::text AS id,
+                               COALESCE(is_archived, FALSE) AS is_archived
+                        FROM mvr_people
+                        WHERE mvr_people_uuid = ANY($1::uuid[])
+                        """,
+                        mvr_ids,
+                    )
+                    archived_flag_by_mvr = {
+                        r["id"]: bool(r["is_archived"]) for r in flag_rows
+                    }
+
         members = []
         for row in resolvable_rows:
             member_id = str(row["individual_id"])
+            mvr_id = str(row.get("mvr_person_uuid") or "")
             members.append(
                 IndividualSummary(
                     id=member_id,
@@ -1244,6 +1305,7 @@ class IndividualGroupsManager:
                     name=row.get("name"),
                     name_updated_at=row.get("name_updated_at"),
                     name_updated_by=row.get("name_updated_by"),
+                    is_archived=archived_flag_by_mvr.get(mvr_id, False),
                 )
             )
 
@@ -1880,10 +1942,11 @@ class IndividualGroupsManager:
         async with self.db.pool.acquire() as conn:
             top_embeddings_query = """
                 WITH super_individual_hierarchy AS (
-                    -- Get the super-individual itself
+                    -- Get the super-individual itself (never use archived MVRs for match)
                     SELECT mvr_people_uuid, face_quality, face_embedding, created_at, 'super_individual' as source
                     FROM mvr_people
                     WHERE mvr_people_uuid = $1
+                      AND COALESCE(is_archived, FALSE) = FALSE
 
                     UNION
 
@@ -1892,6 +1955,7 @@ class IndividualGroupsManager:
                     FROM mvr_people mp
                     JOIN mvr_merge_hierarchy mh ON mh.merged_mvr_uuid = mp.mvr_people_uuid
                     WHERE mh.super_individual_uuid = $1
+                      AND COALESCE(mp.is_archived, FALSE) = FALSE
                 )
                 SELECT mvr_people_uuid, face_embedding, face_quality, source
                 FROM super_individual_hierarchy
@@ -2519,6 +2583,7 @@ class IndividualGroupsManager:
                         m.gender
                     FROM mvr_people m
                     WHERE m.mvr_people_uuid = gm.individual_uuid
+                      AND COALESCE(m.is_archived, FALSE) = FALSE
                     LIMIT 1
                 ) m_direct ON TRUE
                 LEFT JOIN LATERAL (
@@ -2532,6 +2597,7 @@ class IndividualGroupsManager:
                     FROM individual_mvr_mapping imm
                     JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
                     WHERE imm.individual_uuid = gm.individual_uuid
+                      AND COALESCE(m.is_archived, FALSE) = FALSE
                     ORDER BY imm.is_representative DESC, imm.linked_at DESC
                     LIMIT 1
                 ) m_mapped ON TRUE
@@ -2747,9 +2813,14 @@ class IndividualGroupsManager:
                     result["errors"].append({"uuid": uuid_str, "error": "invalid_uuid_format"})
                     continue
 
-                # Step 1: Direct MVR lookup
+                # Step 1: Direct MVR lookup (skip soft-archived)
                 row = await conn.fetchrow(
-                    "SELECT face_embedding FROM mvr_people WHERE mvr_people_uuid = $1 AND face_embedding IS NOT NULL",
+                    """
+                    SELECT face_embedding FROM mvr_people
+                    WHERE mvr_people_uuid = $1
+                      AND face_embedding IS NOT NULL
+                      AND COALESCE(is_archived, FALSE) = FALSE
+                    """,
                     uuid_obj,
                 )
                 if row and row["face_embedding"]:
@@ -2769,6 +2840,7 @@ class IndividualGroupsManager:
                     JOIN mvr_people mp ON imm.mvr_people_uuid = mp.mvr_people_uuid
                     WHERE imm.individual_uuid = $1
                       AND mp.face_embedding IS NOT NULL
+                      AND COALESCE(mp.is_archived, FALSE) = FALSE
                     ORDER BY imm.is_representative DESC, imm.linked_at DESC
                     LIMIT 1
                     """,
@@ -2791,6 +2863,7 @@ class IndividualGroupsManager:
                     JOIN mvr_people mp ON imm.mvr_people_uuid = mp.mvr_people_uuid
                     WHERE iva.person_object_uuid = $1
                       AND mp.face_embedding IS NOT NULL
+                      AND COALESCE(mp.is_archived, FALSE) = FALSE
                     ORDER BY imm.is_representative DESC, iva.start_timestamp DESC, imm.linked_at DESC
                     LIMIT 1
                     """,
@@ -2858,6 +2931,7 @@ class IndividualGroupsManager:
                     SELECT mp.mvr_people_uuid, mp.face_embedding::text as face_embedding, mp.name, mp.age_min, mp.age_max, mp.gender
                     FROM mvr_people mp
                     WHERE mp.mvr_people_uuid::text = gm.individual_id
+                      AND COALESCE(mp.is_archived, FALSE) = FALSE
                     LIMIT 1
                 ) m_direct ON TRUE
                 LEFT JOIN LATERAL (
@@ -2865,6 +2939,7 @@ class IndividualGroupsManager:
                     FROM individual_mvr_mapping imm
                     JOIN mvr_people mp ON imm.mvr_people_uuid = mp.mvr_people_uuid
                     WHERE imm.individual_uuid::text = gm.individual_id
+                      AND COALESCE(mp.is_archived, FALSE) = FALSE
                     ORDER BY imm.is_representative DESC, imm.linked_at DESC
                     LIMIT 1
                 ) m_mapped ON TRUE

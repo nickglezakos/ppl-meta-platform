@@ -1,20 +1,20 @@
 # Platform release CI/CD (single source of truth)
 
 **Status:** Active  
-**Last updated:** 2026-11-17  
-**Current pin:** root [`VERSION`](../../VERSION) (today `2.25.106`)  
+**Last updated:** 2026-11-18  
+**Current pin:** root [`VERSION`](../../VERSION) (today `2.25.107`)  
 **Registry:** `ghcr.io/nickglezakos/ppl-meta-platform`  
 **Architecture:** `linux/amd64` only for customer/lab installs  
 
 ### Open for next full Stage 1 → 2 → 3
 
-**Pin `2.25.106` Stage 1 cut in progress / pending Stage 2–3.** Includes People & Groups UI, Details MVR happy path, vmeta featured-video best-image fallback, and packed motion/velocity trigger DDL.
+**Pin `2.25.107` Stage 1 landed / pending Stage 2–3.** Routes/Motion + analytics quality/cache + **MVR soft-archive**.
 
 | Step | Must include |
 |---|---|
-| **Stage 1** | Frontend People & Groups + Details happy path; vmeta featured-video fallback; pack `add_motion_velocity_trigger_fields.sql` + verify gates; CHANGELOG + pin `2.25.106` |
-| **Stage 2** | Mode D rebuild **`ppl-meta-frontend`** + **`ppl-meta-vmeta-protected`**; retag-forward others from `2.25.105`; finalize release-manifest |
-| **Stage 3** | Compose pull/recreate frontend + vmeta; **apply schema pack** and `schema/verify.sh` (motion/velocity gates) |
+| **Stage 1** | Routes/Motion series + camera filter; MVR soft-archive (FE/vmeta/gateway/presence + pack `055_add_mvr_people_archive.sql`); CHANGELOG + pin `2.25.107` |
+| **Stage 2** | Mode D rebuild **frontend** + **vmeta-protected** + **gateway** + **presence** + vision + orchestrator + cameras; retag-forward others from `2.25.106`; finalize release-manifest |
+| **Stage 3** | Compose pull/recreate; **apply schema pack** and `schema/verify.sh` including `055_add_mvr_people_archive.sql` / `mvr_people.is_archived` gates |
 
 Tracker: [`HOTFIXES_NOTES.md`](../documentation/deployment/HOTFIXES_NOTES.md) § Pending. Clear Pending entries only after Stage 3 verify passes on the target labs.
 
@@ -539,8 +539,10 @@ Manual upgrade of existing `~/eyenet-platform`:
 
 ```bash
 cd ~/eyenet-platform
-docker compose --project-name pplmeta --env-file .env -f docker-compose.yml pull
-docker compose --project-name pplmeta --env-file .env -f docker-compose.yml up -d
+# Omit `-f docker-compose.yml` alone so Compose also merges `docker-compose.override.yml`
+# (required on Ubuntu labs for USB `/dev/video*` device mounts).
+docker compose --project-name pplmeta --env-file .env pull
+docker compose --project-name pplmeta --env-file .env up -d
 bash ~/ppl-meta-platform/deployment/windows-installer/schema/apply.sh
 bash ~/ppl-meta-platform/deployment/windows-installer/schema/verify.sh
 bash ~/ppl-meta-platform/deployment/windows-installer/reregister-discovery-services.sh

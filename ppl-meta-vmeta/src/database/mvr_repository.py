@@ -850,6 +850,7 @@ class MVRRepository:
                         ON m.mvr_people_uuid = im.mvr_people_uuid
                     WHERE im.individual_uuid = $1
                     AND m.is_orphaned = FALSE
+                    AND COALESCE(m.is_archived, FALSE) = FALSE
                     ORDER BY im.linked_at DESC
                     LIMIT 1
                 """, individual_uuid)
@@ -1089,7 +1090,12 @@ class MVRRepository:
                 embedding_str = '[' + ','.join(map(str, embedding_list)) + ']'
                 
                 orphan_filter = (
-                    "AND is_orphaned = FALSE" if exclude_orphaned else ""
+                    (
+                        "AND is_orphaned = FALSE "
+                        "AND COALESCE(is_archived, FALSE) = FALSE"
+                        if exclude_orphaned
+                        else "AND COALESCE(is_archived, FALSE) = FALSE"
+                    )
                 )
                 
                 results = await conn.fetch(f"""
@@ -1560,7 +1566,10 @@ class MVRRepository:
         """
         async with self.pool.acquire() as conn:
             try:
-                conditions = ["is_orphaned = FALSE"]
+                conditions = [
+                    "is_orphaned = FALSE",
+                    "COALESCE(is_archived, FALSE) = FALSE",
+                ]
                 params = []
                 param_count = 1
                 
@@ -1855,6 +1864,329 @@ class MVRRepository:
         # Note: people-counters batch invalidation for unmerge is performed
         # by the unmerge endpoint after the transaction commits, by calling
         # mark_batches_stale_for_mvr_people([orphaned_mvr_uuid, winner_uuid]).
+
+    async def archive_mvr_person(
+        self,
+        mvr_people_uuid: UUID,
+        user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Soft-archive an MVR person (irreversible for users; row retained).
+
+        - Delinks from all group_memberships (or transfers to promoted winner).
+        - If this MVR is a merge winner with children, promotes the highest
+          quality_score non-archived child as the new winner and rewires
+          remaining children / hierarchy before archiving.
+        - Sets is_archived / archived_at / archived_by.
+
+        Returns a dict suitable for ArchiveMvrResponse (including promote info).
+        """
+        archived_id = str(mvr_people_uuid)
+        async with self.pool.acquire() as conn:
+            try:
+                async with conn.transaction():
+                    row = await conn.fetchrow(
+                        """
+                        SELECT mvr_people_uuid, is_archived, is_orphaned, name,
+                               quality_score
+                        FROM mvr_people
+                        WHERE mvr_people_uuid = $1
+                        """,
+                        mvr_people_uuid,
+                    )
+                    if not row:
+                        raise MVRRepositoryError(
+                            f"MVR {mvr_people_uuid} not found"
+                        )
+                    if row["is_archived"]:
+                        return {
+                            "archived_mvr_uuid": archived_id,
+                            "promoted_mvr_uuid": None,
+                            "promoted_name": None,
+                            "promoted_quality_score": None,
+                            "groups_transferred": 0,
+                            "groups_removed": 0,
+                            "people_links_transferred": 0,
+                            "already_archived": True,
+                        }
+                    if row["is_orphaned"]:
+                        raise MVRRepositoryError(
+                            f"MVR {mvr_people_uuid} is orphaned (merged); "
+                            "archive the active winner instead"
+                        )
+
+                    # Children currently pointing at this winner (non-archived).
+                    children = await conn.fetch(
+                        """
+                        SELECT mvr_people_uuid, quality_score, name, orphaned_at
+                        FROM mvr_people
+                        WHERE merged_into_mvr_uuid = $1
+                          AND is_orphaned = TRUE
+                          AND COALESCE(is_archived, FALSE) = FALSE
+                        ORDER BY quality_score DESC NULLS LAST,
+                                 orphaned_at ASC NULLS LAST
+                        """,
+                        mvr_people_uuid,
+                    )
+
+                    promoted_uuid: Optional[UUID] = None
+                    promoted_name: Optional[str] = None
+                    promoted_quality: Optional[float] = None
+                    groups_transferred = 0
+                    groups_removed = 0
+
+                    if children:
+                        winner_row = children[0]
+                        promoted_uuid = winner_row["mvr_people_uuid"]
+                        promoted_name = (
+                            (winner_row["name"] or "").strip() or None
+                        )
+                        try:
+                            promoted_quality = float(
+                                winner_row["quality_score"] or 0
+                            )
+                        except (TypeError, ValueError):
+                            promoted_quality = 0.0
+
+                        # Promote runner-up to active winner.
+                        await conn.execute(
+                            """
+                            UPDATE mvr_people
+                            SET is_orphaned = FALSE,
+                                orphaned_at = NULL,
+                                merged_into_mvr_uuid = NULL,
+                                updated_at = NOW()
+                            WHERE mvr_people_uuid = $1
+                            """,
+                            promoted_uuid,
+                        )
+
+                        # Retarget remaining children to the new winner.
+                        remaining = [
+                            c["mvr_people_uuid"]
+                            for c in children
+                            if c["mvr_people_uuid"] != promoted_uuid
+                        ]
+                        if remaining:
+                            await conn.execute(
+                                """
+                                UPDATE mvr_people
+                                SET merged_into_mvr_uuid = $1,
+                                    updated_at = NOW()
+                                WHERE mvr_people_uuid = ANY($2::uuid[])
+                                """,
+                                promoted_uuid,
+                                remaining,
+                            )
+
+                        # Hierarchy: remove archive target as super; re-point
+                        # children under promoted winner.
+                        await conn.execute(
+                            """
+                            DELETE FROM mvr_merge_hierarchy
+                            WHERE super_individual_uuid = $1
+                               OR merged_mvr_uuid = $1
+                            """,
+                            mvr_people_uuid,
+                        )
+                        for child_uuid in remaining:
+                            await conn.execute(
+                                """
+                                INSERT INTO mvr_merge_hierarchy (
+                                    super_individual_uuid, merged_mvr_uuid
+                                )
+                                VALUES ($1, $2)
+                                ON CONFLICT (super_individual_uuid, merged_mvr_uuid)
+                                DO NOTHING
+                                """,
+                                promoted_uuid,
+                                child_uuid,
+                            )
+                        # Promoted child is no longer a hierarchy loser under old.
+                        await conn.execute(
+                            """
+                            DELETE FROM mvr_merge_hierarchy
+                            WHERE merged_mvr_uuid = $1
+                            """,
+                            promoted_uuid,
+                        )
+
+                        # Transfer group memberships archived → promoted.
+                        memberships = await conn.fetch(
+                            """
+                            SELECT group_id, added_by, added_at, notes,
+                                   member_number
+                            FROM group_memberships
+                            WHERE individual_id = $1
+                            """,
+                            archived_id,
+                        )
+                        for mem in memberships:
+                            group_id = mem["group_id"]
+                            exists = await conn.fetchval(
+                                """
+                                SELECT 1 FROM group_memberships
+                                WHERE group_id = $1 AND individual_id = $2
+                                """,
+                                group_id,
+                                str(promoted_uuid),
+                            )
+                            if not exists:
+                                await conn.execute(
+                                    """
+                                    INSERT INTO group_memberships (
+                                        id, group_id, individual_id, added_by,
+                                        added_at, notes, member_number
+                                    )
+                                    VALUES (
+                                        gen_random_uuid()::text, $1, $2, $3,
+                                        COALESCE($4, NOW()), $5, $6
+                                    )
+                                    """,
+                                    group_id,
+                                    str(promoted_uuid),
+                                    mem["added_by"] or "system",
+                                    mem["added_at"],
+                                    mem["notes"],
+                                    mem["member_number"],
+                                )
+                                groups_transferred += 1
+                            await conn.execute(
+                                """
+                                DELETE FROM group_memberships
+                                WHERE group_id = $1 AND individual_id = $2
+                                """,
+                                group_id,
+                                archived_id,
+                            )
+                            await conn.execute(
+                                """
+                                UPDATE individual_groups
+                                SET member_ids = (
+                                        SELECT ARRAY(
+                                            SELECT DISTINCT x FROM unnest(
+                                                array_append(
+                                                    array_remove(member_ids, $2),
+                                                    $3
+                                                )
+                                            ) AS x
+                                        )
+                                    ),
+                                    member_count = (
+                                        SELECT COUNT(*) FROM group_memberships
+                                        WHERE group_id = $1
+                                    ),
+                                    updated_at = NOW()
+                                WHERE id = $1
+                                """,
+                                group_id,
+                                archived_id,
+                                str(promoted_uuid),
+                            )
+                    else:
+                        # Standalone: keep membership rows so "Show archived" can
+                        # still browse them in group grids, but remove from the
+                        # active member_ids array used by search/embedding loads.
+                        memberships = await conn.fetch(
+                            """
+                            SELECT group_id FROM group_memberships
+                            WHERE individual_id = $1
+                            """,
+                            archived_id,
+                        )
+                        for mem in memberships:
+                            group_id = mem["group_id"]
+                            await conn.execute(
+                                """
+                                UPDATE individual_groups
+                                SET member_ids = array_remove(member_ids, $2),
+                                    updated_at = NOW()
+                                WHERE id = $1
+                                """,
+                                group_id,
+                                archived_id,
+                            )
+                            groups_removed += 1
+
+                    await conn.execute(
+                        """
+                        UPDATE mvr_people
+                        SET is_archived = TRUE,
+                            archived_at = NOW(),
+                            archived_by = $2,
+                            updated_at = NOW()
+                        WHERE mvr_people_uuid = $1
+                        """,
+                        mvr_people_uuid,
+                        user_id,
+                    )
+
+                    # Audit: archive of a winner with promote.
+                    if promoted_uuid is not None:
+                        feat = await conn.fetchval(
+                            """
+                            SELECT COALESCE(featured_individual_uuid, mvr_people_uuid)
+                            FROM mvr_people WHERE mvr_people_uuid = $1
+                            """,
+                            mvr_people_uuid,
+                        )
+                        await conn.execute(
+                            """
+                            INSERT INTO mvr_merge_audit_log (
+                                source_mvr_uuid,
+                                target_mvr_uuid,
+                                source_individual_uuid,
+                                merge_action,
+                                merge_reason,
+                                similarity_score,
+                                matching_threshold,
+                                source_quality_score,
+                                target_quality_score,
+                                winner_mvr_uuid,
+                                user_id,
+                                system_mode,
+                                merged_at
+                            ) VALUES (
+                                $1, $2, $3, 'archived', 'archive_promote',
+                                0.0, 0.0,
+                                COALESCE($4, 0.0), COALESCE($5, 0.0),
+                                $2, $6, 'manual', NOW()
+                            )
+                            """,
+                            mvr_people_uuid,
+                            promoted_uuid,
+                            feat or mvr_people_uuid,
+                            float(row["quality_score"] or 0),
+                            promoted_quality or 0,
+                            user_id,
+                        )
+
+                    logger.info(
+                        "Archived MVR %s (promoted=%s groups_transferred=%s "
+                        "groups_removed=%s)",
+                        archived_id,
+                        promoted_uuid,
+                        groups_transferred,
+                        groups_removed,
+                    )
+                    return {
+                        "archived_mvr_uuid": archived_id,
+                        "promoted_mvr_uuid": (
+                            str(promoted_uuid) if promoted_uuid else None
+                        ),
+                        "promoted_name": promoted_name,
+                        "promoted_quality_score": promoted_quality,
+                        "groups_transferred": groups_transferred,
+                        "groups_removed": groups_removed,
+                        "people_links_transferred": 0,
+                        "already_archived": False,
+                    }
+
+            except MVRRepositoryError:
+                raise
+            except Exception as e:
+                logger.error(f"Failed to archive MVR {mvr_people_uuid}: {e}")
+                raise MVRRepositoryError(f"Failed to archive MVR: {e}") from e
 
     async def get_merged_mvr_people(
         self,

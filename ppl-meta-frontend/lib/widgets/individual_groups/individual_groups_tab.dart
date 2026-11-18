@@ -17,6 +17,7 @@ import '../../providers/mvr_image_service_provider.dart';
 import '../../screens/individual_group_detail_screen.dart';
 import '../../screens/person_objects_detail_screen.dart';
 import '../../services/individual_groups_api_client.dart';
+import '../../services/mvr_api_client.dart';
 import '../../services/presence_api_client.dart';
 import '../people_profile_picker.dart';
 import 'camera_search_dialog.dart';
@@ -24,7 +25,13 @@ import 'create_group_dialog.dart';
 import 'edit_group_dialog.dart';
 
 class IndividualGroupsTab extends ConsumerStatefulWidget {
-  const IndividualGroupsTab({super.key});
+  /// When true, member grids include soft-archived MVRs (view-only).
+  final bool showArchived;
+
+  const IndividualGroupsTab({
+    super.key,
+    this.showArchived = false,
+  });
 
   @override
   ConsumerState<IndividualGroupsTab> createState() =>
@@ -240,9 +247,10 @@ class IndividualGroupsTabState extends ConsumerState<IndividualGroupsTab> {
             Text('Members', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             GroupMembersGrid(
-              key: ValueKey(group.id),
+              key: ValueKey('${group.id}_${widget.showArchived}'),
               groupId: group.id,
               groupName: group.name,
+              includeArchived: widget.showArchived,
             ),
           ],
         ),
@@ -634,11 +642,13 @@ class LinkedMemberView {
 class GroupMembersGrid extends ConsumerStatefulWidget {
   final String groupId;
   final String groupName;
+  final bool includeArchived;
 
   const GroupMembersGrid({
     super.key,
     required this.groupId,
     required this.groupName,
+    this.includeArchived = false,
   });
 
   @override
@@ -655,15 +665,32 @@ class _GroupMembersGridState extends ConsumerState<GroupMembersGrid> {
     return IndividualGroupsApiClient(apiClient);
   }
 
+  MVRApiClient get _mvrApiClient {
+    final apiClient = ref.read(apiClientProvider);
+    return MVRApiClient(apiClient);
+  }
+
   @override
   void initState() {
     super.initState();
     _load();
   }
 
+  @override
+  void didUpdateWidget(covariant GroupMembersGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.includeArchived != widget.includeArchived ||
+        oldWidget.groupId != widget.groupId) {
+      _load();
+    }
+  }
+
   Future<void> _load() async {
-    final response =
-        await _apiClient.getGroupMembers(widget.groupId, limit: 200);
+    final response = await _apiClient.getGroupMembers(
+      widget.groupId,
+      limit: 200,
+      includeArchived: widget.includeArchived,
+    );
     if (!mounted) return;
     if (response.success && response.data != null) {
       setState(() {
@@ -772,6 +799,81 @@ class _GroupMembersGridState extends ConsumerState<GroupMembersGrid> {
     }
   }
 
+  Future<void> _archiveMember(IndividualSummary member) async {
+    final mvrUuid = member.mvrPersonUuid ?? member.id;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Archive person'),
+        content: const Text(
+          'Archive this person? This cannot be undone. They will be removed '
+          'from groups and people links and ignored in searches. The record '
+          'is kept in the database as archived.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Archive'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final response = await _mvrApiClient.archiveMvrPerson(mvrUuid);
+    if (!mounted) return;
+
+    if (!response.success || response.data == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response.error ?? 'Failed to archive person'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final result = response.data!;
+    if (!widget.includeArchived) {
+      setState(() {
+        _members.removeWhere((m) => m.id == member.id || m.mvrPersonUuid == mvrUuid);
+        _images.remove(member.id);
+      });
+    } else {
+      await _load();
+    }
+
+    final promoted = result.promotedMvrUuid;
+    final promotedLabel = (result.promotedName?.trim().isNotEmpty == true)
+        ? result.promotedName!.trim()
+        : (promoted != null && promoted.length >= 8
+            ? '${promoted.substring(0, 8)}…'
+            : promoted);
+    if (promoted != null && promoted.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Archived. Next best match $promotedLabel is now the group/search winner.',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message ?? 'Person archived'),
+        ),
+      );
+    }
+  }
+
   void _showMemberPeopleProfile(IndividualSummary member) {
     showDialog(
       context: context,
@@ -855,7 +957,10 @@ class _GroupMembersGridState extends ConsumerState<GroupMembersGrid> {
   Widget _memberCard(IndividualSummary member, int index) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    return Card(
+    final archived = member.isArchived == true;
+    return Opacity(
+      opacity: archived ? 0.55 : 1,
+      child: Card(
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
@@ -868,7 +973,36 @@ class _GroupMembersGridState extends ConsumerState<GroupMembersGrid> {
                 fit: StackFit.expand,
                 children: [
                   GroupMemberFaceImage(bestImage: _images[member.id]),
-                  if (member.canManage) ...[
+                  if (archived)
+                    Positioned(
+                      bottom: 6,
+                      left: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.archive, size: 12, color: Colors.white),
+                            SizedBox(width: 4),
+                            Text(
+                              'Archived',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (member.canManage && !archived) ...[
                     Positioned(
                       top: 6,
                       left: 6,
@@ -895,24 +1029,48 @@ class _GroupMembersGridState extends ConsumerState<GroupMembersGrid> {
                     Positioned(
                       top: 6,
                       right: 6,
-                      child: Tooltip(
-                        message: 'Remove from group',
-                        child: Material(
-                          color: Colors.black54,
-                          shape: const CircleBorder(),
-                          child: InkWell(
-                            customBorder: const CircleBorder(),
-                            onTap: () => _removeMember(member),
-                            child: const Padding(
-                              padding: EdgeInsets.all(6),
-                              child: Icon(
-                                Icons.delete_outline,
-                                size: 22,
-                                color: Colors.white,
+                      child: Column(
+                        children: [
+                          Tooltip(
+                            message: 'Archive person',
+                            child: Material(
+                              color: Colors.black54,
+                              shape: const CircleBorder(),
+                              child: InkWell(
+                                customBorder: const CircleBorder(),
+                                onTap: () => _archiveMember(member),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(6),
+                                  child: Icon(
+                                    Icons.archive_outlined,
+                                    size: 22,
+                                    color: Colors.white,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
+                          const SizedBox(height: 4),
+                          Tooltip(
+                            message: 'Remove from group',
+                            child: Material(
+                              color: Colors.black54,
+                              shape: const CircleBorder(),
+                              child: InkWell(
+                                customBorder: const CircleBorder(),
+                                onTap: () => _removeMember(member),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(6),
+                                  child: Icon(
+                                    Icons.delete_outline,
+                                    size: 22,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -945,6 +1103,7 @@ class _GroupMembersGridState extends ConsumerState<GroupMembersGrid> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

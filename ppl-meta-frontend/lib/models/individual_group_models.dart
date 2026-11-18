@@ -83,6 +83,9 @@ class IndividualSummary {
   /// media (same ACL as the thumbnail). Hide link/delete when false.
   @JsonKey(name: 'can_manage_member')
   final bool? canManageMember;
+  /// Soft-archived MVR (visible only when include_archived=true).
+  @JsonKey(name: 'is_archived')
+  final bool? isArchived;
   
   // Individual naming (v2.21.0)
   final String? name;
@@ -102,6 +105,7 @@ class IndividualSummary {
     required this.confidenceScore,
     this.addedBy,
     this.canManageMember,
+    this.isArchived,
     this.name,
     this.nameUpdatedAt,
     this.nameUpdatedBy,

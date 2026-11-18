@@ -1,8 +1,9 @@
 # Lab machines inventory
 
 **Status:** Active  
-**Last updated:** 2026-10-20  
+**Last updated:** 2026-11-18  
 **Operator console:** developer Mac (Apple Silicon) — Stage 1 git, docs, RDP/SSH into labs; **not** the default Stage 2 image builder  
+**Stage 2 default builder:** `lab-work-win-eynetdell` (`EYNETDELL` / WSL `eyenet`). Do **not** use `lab-work-dual-64g` / `eyenet-demo` for Stage 2 unless the operator explicitly approves that fallback.  
 **Canonical release process:** [platform-release-cicd.md](./platform-release-cicd.md)  
 **Operator guide (for dummies + glossary):** [eyenet-cicd-operator-guide.md](./eyenet-cicd-operator-guide.md)
 
@@ -16,11 +17,11 @@ This document names and describes the physical lab hosts used for EyeNet install
 |---|---|---|---|---|
 | **`lab-home-win-nickg`** | Home | Windows (user `nickg`) | Windows laptop | Home Windows/WSL install path; optional Stage 2 builder when disk/RAM allow |
 | **`lab-work-u24-mini-8g`** | Work LAN | Ubuntu 24.04 only | Mini PC, **8 GB RAM** | Stress / failure-mode lab: what happens **under** the 16 GB product threshold |
-| **`lab-work-dual-64g`** | Work LAN | Dual-boot Windows + Ubuntu 24.04 | Laptop, **16 GB RAM** (lab ID keeps historical “64g” name) | Primary work lab; Stage 3 soak |
+| **`lab-work-dual-64g`** | Work LAN | Dual-boot Windows + Ubuntu 24.04 | Laptop, **16 GB RAM** (lab ID keeps historical “64g” name) | Primary work lab; **Stage 3 soak only** (Stage 2 fallback only with operator approval) |
 | **`lab-work-eyenet2`** | Work LAN | Ubuntu 24.04 only | Laptop / desktop, **16 GB RAM**, hostname `eyenet2` | Second Ubuntu soak / install path |
 | **`lab-work-win-eynetdell`** | Work LAN | Windows only | Dell PC, hostname `EYNETDELL`, **32 GB RAM** | **Preferred Stage 2** (WSL `eyenet` + Docker) + Windows soak; LAN SSH `Administrator@192.168.9.11` |
 
-Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *“Stage 2 on lab-work-dual-64g”*).
+Use these **lab IDs** in chat, CHANGELOG notes, and agent instructions (e.g. *“Stage 2 on lab-work-win-eynetdell”*).
 
 ---
 
@@ -160,8 +161,8 @@ ssh eyenet-server 'hostname; free -h | head -2; cat ~/ppl-meta-platform/VERSION;
 | Install dir (Ubuntu) | `~/eyenet-platform` (user `eyenet`) |
 | Product path (Windows) | WSL `eyenet` + Windows installer |
 | Product path (Ubuntu) | Native Docker CE + `deployment/ubuntu/install-eyenet-ubuntu.sh` |
-| Stage 2 builder? | Light / selective only (**16 GB**); full Mode D (esp. vmeta/frontend) needs headroom — prefer a host with ≥24 GB visible to Docker/WSL |
-| Notes | Only one OS active at a time. Use for Stage 3 soak / wiki-install validation. GHCR pull can hit stub-resolver timeouts — retry `docker compose pull`. If schema verify fails on first apply, drop app-created `schema_migrations` (wrong shape vs pack) and re-run `schema/apply.sh`. |
+| Stage 2 builder? | **No by default** — 16 GB soak host. **Fallback only** when `lab-work-win-eynetdell` is unavailable **and** the operator explicitly approves eyenet-demo |
+| Notes | Only one OS active at a time. Use for Stage 3 soak / wiki-install validation. Agents must **ask before** any Stage 2 here. GHCR pull can hit stub-resolver timeouts — retry `docker compose pull`. If schema verify fails on first apply, drop app-created `schema_migrations` (wrong shape vs pack) and re-run `schema/apply.sh`. |
 
 ---
 
@@ -252,14 +253,14 @@ If the tunnel drops, re-run the `ssh -N -R 2201:…` command on Windows before r
 | Operator Mac | **Yes** (usual) | No (default) | No |
 | `lab-home-win-nickg` | Rarely | Optional (Tailscale OK) | Windows/WSL customer path |
 | `lab-work-u24-mini-8g` | No | **No** | Ubuntu under-threshold |
-| `lab-work-dual-64g` | Rarely | No (16 GB) | Full Windows **or** full Ubuntu soak / Stage 3 |
+| `lab-work-dual-64g` | Rarely | **Ask first** (fallback only; 16 GB) | Full Windows **or** full Ubuntu soak / Stage 3 |
 | `lab-work-eyenet2` | Rarely | No (16 GB) | Ubuntu soak |
-| `lab-work-win-eynetdell` | No | **Preferred** (32 GB WSL) | Stage 2 builds + Windows soak |
+| `lab-work-win-eynetdell` | Optional (local Cursor) | **Preferred / default** (32 GB WSL) | Stage 2 builds + Windows soak |
 
 Agent wording examples:
 
-- *“Stage 2 on lab-work-win-eynetdell (WSL eyenet).”*
-- *“Stage 2 on lab-work-dual-64g — light only; prefer eyenetdell.”*
+- *“Stage 2 on lab-work-win-eynetdell (WSL eyenet).”* — **default**
+- *“eyenetdell unavailable — may I use eyenet-demo / lab-work-dual-64g as Stage 2 fallback?”* — required before any demo build
 - *“Upgrade lab-home-win-nickg after Stage 2.”*  
 - *“Reproduce under-RAM behavior on lab-work-u24-mini-8g.”*
 - *“SSH eyenet-server / lab-work-u24-mini-8g from work LAN.”*

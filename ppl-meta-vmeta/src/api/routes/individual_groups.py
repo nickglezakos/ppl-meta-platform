@@ -276,6 +276,10 @@ async def get_group_members(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     sort: str = Query("added_date", regex="^(added_date|appearances|last_seen)$"),
+    include_archived: bool = Query(
+        False,
+        description="When true, include soft-archived MVRs (Show archived toggle)",
+    ),
     manager: IndividualGroupsManager = Depends(get_groups_manager),
     current_user: Optional[dict] = Depends(get_optional_user),
 ) -> ListMembersResponse:
@@ -287,6 +291,7 @@ async def get_group_members(
         skip: Pagination offset
         limit: Page size
         sort: Sort field
+        include_archived: Include soft-archived MVR members
         manager: IndividualGroupsManager dependency
         
     Returns:
@@ -298,6 +303,7 @@ async def get_group_members(
             skip=skip,
             limit=limit,
             sort=sort,
+            include_archived=include_archived,
             acting_user=current_user,
             auth_header=http_request.headers.get("Authorization"),
         )

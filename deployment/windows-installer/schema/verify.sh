@@ -139,6 +139,16 @@ check "individual_video_appearances.quality_score" \
 check "individual_video_appearances.movement_pattern" \
   "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='individual_video_appearances' AND column_name='movement_pattern'" \
   "1"
+# MVR soft-archive (user-facing irreversible archive; row retained)
+check "mvr_people.is_archived" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='mvr_people' AND column_name='is_archived'" \
+  "1"
+check "mvr_people.archived_at" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='mvr_people' AND column_name='archived_at'" \
+  "1"
+check "mvr_people.archived_by" \
+  "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='mvr_people' AND column_name='archived_by'" \
+  "1"
 
 if [[ "$fail" -ne 0 ]]; then
   echo

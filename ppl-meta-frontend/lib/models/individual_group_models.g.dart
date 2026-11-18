@@ -60,6 +60,7 @@ IndividualSummary _$IndividualSummaryFromJson(Map<String, dynamic> json) =>
       confidenceScore: (json['confidence_score'] as num).toDouble(),
       addedBy: json['added_by'] as String?,
       canManageMember: json['can_manage_member'] as bool?,
+      isArchived: json['is_archived'] as bool? ?? false,
       name: json['name'] as String?,
       nameUpdatedAt: json['name_updated_at'] == null
           ? null
@@ -79,6 +80,7 @@ Map<String, dynamic> _$IndividualSummaryToJson(IndividualSummary instance) =>
       'confidence_score': instance.confidenceScore,
       'added_by': instance.addedBy,
       'can_manage_member': instance.canManageMember,
+      'is_archived': instance.isArchived,
       'name': instance.name,
       'name_updated_at': instance.nameUpdatedAt?.toIso8601String(),
       'name_updated_by': instance.nameUpdatedBy,

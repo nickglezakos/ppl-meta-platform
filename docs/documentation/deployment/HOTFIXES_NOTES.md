@@ -21,11 +21,11 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-### 2026-11-18 — Pin 2.25.107 Routes/Motion + analytics quality/cache
-- **Status:** Pending Stage 2–3 (Stage 1 source/schema for `2.25.107`; follow-up Stage 1 for cross-video Motion/Routes series + camera filter; include any remaining dirty pin paths — e.g. Instant cameras detection-flags SQL — before Stage 2)
-- **Source:** Vision timestamp persist; Orchestrator fps/frame velocity; VMeta expand repair + quality map; Instant persist route_points/real quality; Cameras movement_tracking attach; FE normalize/motion; Gateway recording dataset cache + quality plumbing; **follow-up:** FE Instant flush `route_points` union + Motion shared Routes preload + Routes camera name/scope filter; VMeta resolved `camera_name` on route points
-- **Schema (Stage 3 migrations):** pack SQL `add_face_detections_timestamp.sql` + `052_ensure_iva_quality_and_movement_pattern.sql`; verify gates `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern` — Stage 3 must `schema/apply.sh` then `schema/verify.sh` and paste output
-- **Next:** Finish Stage 1 for any remaining open-pin dirty product paths; Stage 2 rebuild frontend + vmeta + gateway + vision + orchestrator + cameras; Stage 3 pull + apply/verify named migrations above
+### 2026-11-18 — Pin 2.25.107 Routes/Motion + analytics quality/cache + MVR soft-archive
+- **Status:** Pending Stage 2–3 (Stage 1 source/schema for `2.25.107` including MVR soft-archive)
+- **Source:** Vision timestamp persist; Orchestrator fps/frame velocity; VMeta expand repair + quality map; Instant persist route_points/real quality; Cameras movement_tracking attach; FE normalize/motion; Gateway recording dataset cache + quality plumbing; FE Instant flush `route_points` union + Motion shared Routes preload + Routes camera name/scope filter; VMeta resolved `camera_name` on route points; **MVR soft-archive** (vmeta archive + promote runner-up, gateway proxy + presence repoint, FE archive icons / Show archived / cross-video Archive)
+- **Schema (Stage 3 migrations):** pack SQL `add_face_detections_timestamp.sql` + `052_ensure_iva_quality_and_movement_pattern.sql` + `055_add_mvr_people_archive.sql`; verify gates `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`, `mvr_people.is_archived` / `archived_at` / `archived_by` — Stage 3 must `schema/apply.sh` then `schema/verify.sh` and paste output
+- **Next:** Stage 2 rebuild frontend + vmeta + gateway + presence + vision + orchestrator + cameras; Stage 3 pull on `lab-work-dual-64g` / eyenet-demo + apply/verify named migrations above
 - **Tracker:** [`platform-release-cicd.md`](./platform-release-cicd.md) § Open
 
 ---

@@ -32,6 +32,9 @@ class _IndividualGroupsScreenState extends ConsumerState<IndividualGroupsScreen>
   late TabController _tabController;
   final GlobalKey<IndividualGroupsTabState> _groupsTabKey =
       GlobalKey<IndividualGroupsTabState>();
+  final GlobalKey<PeopleProfilesTabState> _peopleTabKey =
+      GlobalKey<PeopleProfilesTabState>();
+  bool _showArchived = false;
 
   static int _tabIndexFor(String? tab) {
     final normalized = (tab ?? 'groups').trim().toLowerCase();
@@ -70,6 +73,10 @@ class _IndividualGroupsScreenState extends ConsumerState<IndividualGroupsScreen>
     super.dispose();
   }
 
+  void _toggleShowArchived() {
+    setState(() => _showArchived = !_showArchived);
+  }
+
   @override
   Widget build(BuildContext context) {
     final onGroupsTab = _tabController.index == 0;
@@ -79,6 +86,17 @@ class _IndividualGroupsScreenState extends ConsumerState<IndividualGroupsScreen>
         showBackButton: true,
         showHomeButton: true,
         actions: [
+          FilterChip(
+            label: const Text('Show archived'),
+            selected: _showArchived,
+            onSelected: (_) => _toggleShowArchived(),
+            avatar: Icon(
+              _showArchived ? Icons.archive : Icons.archive_outlined,
+              size: 18,
+            ),
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
           if (onGroupsTab) ...[
             const SizedBox(width: 8),
             IconButton(
@@ -106,8 +124,15 @@ class _IndividualGroupsScreenState extends ConsumerState<IndividualGroupsScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          IndividualGroupsTab(key: _groupsTabKey),
-          PeopleProfilesTab(initialPppUuid: widget.initialPppUuid),
+          IndividualGroupsTab(
+            key: _groupsTabKey,
+            showArchived: _showArchived,
+          ),
+          PeopleProfilesTab(
+            key: _peopleTabKey,
+            initialPppUuid: widget.initialPppUuid,
+            showArchived: _showArchived,
+          ),
         ],
       ),
     );

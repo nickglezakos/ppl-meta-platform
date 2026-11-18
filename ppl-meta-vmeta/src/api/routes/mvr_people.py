@@ -51,6 +51,8 @@ from api.models.mvr_people import (
     MergeIndividualsResponse,
     UnmergeMvrRequest,
     UnmergeMvrResponse,
+    ArchiveMvrRequest,
+    ArchiveMvrResponse,
     MergeHistoryResponse,
     OrphanedMVRResponse,
     MatchingConfigUpdate,
@@ -464,6 +466,7 @@ async def _materialize_single_media_from_persisted_person_objects(
               ON iva.individual_uuid = imm.individual_uuid
             WHERE iva.video_uuid = $1
               AND mp.is_orphaned = FALSE
+              AND COALESCE(mp.is_archived, FALSE) = FALSE
             """,
             media_uuid,
         )
@@ -2204,6 +2207,112 @@ async def unmerge_mvr(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to unmerge MVR: {str(e)}",
         )
+
+
+# ============================================================================
+# ENDPOINT 10c: Archive MVR — soft-delete (irreversible for users)
+# ============================================================================
+
+@router.post(
+    "/{mvr_person_uuid}/archive",
+    response_model=ArchiveMvrResponse,
+    summary="Archive MVR Person",
+    description=(
+        "Soft-archive an MVR person. Delinks groups; if a merge winner has "
+        "children, promotes the highest-quality child as the new winner. "
+        "Archived rows stay in the database but are excluded from default search."
+    ),
+)
+async def archive_mvr_person(
+    mvr_person_uuid: UUID,
+    request: ArchiveMvrRequest = ArchiveMvrRequest(),
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+    cache_client=Depends(get_cache_client),
+):
+    """Soft-archive MVR; promote runner-up when archiving a merge winner."""
+    if not request.confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="confirm must be true to archive an MVR",
+        )
+
+    user_email = current_user.get("email", "unknown")
+    user_id = current_user.get("user_id") or current_user.get("sub") or user_email
+    logger.info(f"Archive MVR {mvr_person_uuid} requested by {user_email}")
+
+    try:
+        result = await mvr_repository.archive_mvr_person(
+            mvr_people_uuid=mvr_person_uuid,
+            user_id=str(user_id) if user_id else None,
+        )
+
+        try:
+            invalidated = await cache_client.invalidate_mvr_search(
+                pattern="mvr_search:*"
+            )
+            logger.info(
+                "Invalidated %s MVR search cache key(s) after archive of %s",
+                invalidated,
+                mvr_person_uuid,
+            )
+        except Exception as _inv_err:
+            logger.warning(
+                "Cache invalidation after archive failed (non-fatal): %s",
+                _inv_err,
+            )
+
+        try:
+            stale_ids = [result["archived_mvr_uuid"]]
+            if result.get("promoted_mvr_uuid"):
+                stale_ids.append(result["promoted_mvr_uuid"])
+            await mvr_repository.mark_batches_stale_for_mvr_people(stale_ids)
+        except Exception as _stale_err:
+            logger.warning(
+                "people-counters: failed to invalidate batches after archive: %s",
+                _stale_err,
+            )
+
+        if result.get("already_archived"):
+            message = f"MVR {result['archived_mvr_uuid']} was already archived."
+        elif result.get("promoted_mvr_uuid"):
+            label = result.get("promoted_name") or result["promoted_mvr_uuid"][:8]
+            message = (
+                f"Archived {result['archived_mvr_uuid']}. "
+                f"Next best match {label} is now the group/search winner."
+            )
+        else:
+            message = (
+                f"Archived {result['archived_mvr_uuid']}; "
+                f"removed from {result.get('groups_removed', 0)} group(s)."
+            )
+
+        return ArchiveMvrResponse(
+            success=True,
+            archived_mvr_uuid=result["archived_mvr_uuid"],
+            promoted_mvr_uuid=result.get("promoted_mvr_uuid"),
+            promoted_name=result.get("promoted_name"),
+            promoted_quality_score=result.get("promoted_quality_score"),
+            groups_transferred=int(result.get("groups_transferred") or 0),
+            groups_removed=int(result.get("groups_removed") or 0),
+            people_links_transferred=int(
+                result.get("people_links_transferred") or 0
+            ),
+            already_archived=bool(result.get("already_archived")),
+            message=message,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Archive failed for {mvr_person_uuid}: {e}")
+        detail = str(e)
+        code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        if "not found" in detail.lower():
+            code = status.HTTP_404_NOT_FOUND
+        elif "orphaned" in detail.lower():
+            code = status.HTTP_409_CONFLICT
+        raise HTTPException(status_code=code, detail=f"Failed to archive MVR: {detail}")
 
 
 # ============================================================================
@@ -4459,6 +4568,7 @@ async def search_mvr_people_by_collection(
                     WHERE mp.created_at >= $1
                         AND mp.created_at <= $2
                         AND mp.is_orphaned = false
+                    AND COALESCE(mp.is_archived, FALSE) = false
                     
                     UNION
                     
@@ -4725,6 +4835,7 @@ async def get_individual_analysis_no_session(
                 LEFT JOIN individual_mvr_mapping imm ON iva.individual_uuid = imm.individual_uuid
                 LEFT JOIN mvr_people mvr ON imm.mvr_people_uuid = mvr.mvr_people_uuid
                     AND mvr.is_orphaned = FALSE
+                    AND COALESCE(mvr.is_archived, FALSE) = FALSE
                 WHERE {' AND '.join(query_conditions)}
                 ORDER BY iva.start_timestamp ASC
             """
@@ -4915,6 +5026,7 @@ async def get_mvr_person_analysis(
                 FROM mvr_people
                 WHERE mvr_people_uuid = $1
                     AND is_orphaned = FALSE
+                    AND COALESCE(is_archived, FALSE) = FALSE
             """
             demographics_row = await conn.fetchrow(demographics_query, mvr_person_uuid)
             
@@ -5336,6 +5448,7 @@ async def get_videos_mvr_people_count_with_demographics(
                 FROM mvr_people mp
                 WHERE mp.mvr_people_uuid IN (SELECT mvr_people_uuid FROM linked_mvr_people)
                     AND mp.is_orphaned = false
+                    AND COALESCE(mp.is_archived, FALSE) = false
             """
 
             # Convert string UUIDs to UUID array for PostgreSQL
@@ -8238,6 +8351,7 @@ async def get_mvr_daily_stats(
                 SELECT COUNT(*) FROM mvr_people
                 WHERE merged_into_mvr_uuid IS NULL
                   AND is_orphaned = FALSE
+                    AND COALESCE(is_archived, FALSE) = FALSE
             """) or 0
 
         return {

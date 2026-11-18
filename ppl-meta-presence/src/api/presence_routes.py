@@ -26,6 +26,7 @@ from models.presence_models import (
     TriggerMatchRequest,
     UnreserveResourceRequest,
     UnlinkMemberRequest,
+    RepointIndividualRequest,
     UpdateActivePresenceGroupRequest,
     UpdateInstallationSettingsRequest,
     UpdateInstallationPolicyRequest,
@@ -746,6 +747,19 @@ def build_presence_router(service: PresenceService) -> APIRouter:
         if not changed:
             raise HTTPException(status_code=404, detail="link not found")
         return {"success": True, "data": {"unlinked": True}}
+
+    @router.post("/people-profiles/repoint-individual")
+    async def repoint_individual(
+        request: RepointIndividualRequest,
+        current_user: dict = Depends(get_current_user),
+    ):
+        """Re-point or unlink all PPP links after an MVR archive."""
+        _ = current_user
+        result = service.repoint_or_unlink_individual(
+            from_individual_id=request.from_individual_id,
+            to_individual_id=request.to_individual_id,
+        )
+        return {"success": True, "data": result}
 
     return router
 

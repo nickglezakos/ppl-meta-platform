@@ -454,6 +454,12 @@ class UnlinkMemberRequest(BaseModel):
     individual_id: str
 
 
+class RepointIndividualRequest(BaseModel):
+    """After MVR archive: move or drop all PPP links for an individual_id."""
+    from_individual_id: str
+    to_individual_id: Optional[str] = None
+
+
 class PresenceExternalAssets(BaseModel):
     individual_group_id: Optional[str] = None
     trigger_uuid: Optional[str] = None

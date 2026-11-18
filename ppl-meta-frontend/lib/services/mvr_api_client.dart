@@ -218,4 +218,93 @@ class MVRApiClient {
       );
     }
   }
+
+  /// Soft-archive an MVR person (irreversible for users).
+  ///
+  /// When archiving a merge winner, the backend may promote the next-best
+  /// child; [ArchiveMvrResponse.promotedMvrUuid] is set in that case.
+  Future<ApiResponse<ArchiveMvrResponse>> archiveMvrPerson(
+    String mvrPersonUuid, {
+    bool confirm = true,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/mvr-people/$mvrPersonUuid/archive',
+        data: {'confirm': confirm},
+      );
+
+      return ApiResponse<ArchiveMvrResponse>.success(
+        ArchiveMvrResponse.fromJson(
+          response.data is Map<String, dynamic>
+              ? response.data as Map<String, dynamic>
+              : <String, dynamic>{},
+        ),
+      );
+    } on DioException catch (e) {
+      debugPrint('❌ Archive MVR person failed: ${e.message}');
+      String errorMessage = 'Failed to archive person';
+      if (e.response?.data != null) {
+        if (e.response!.data is Map) {
+          errorMessage = _parseErrorDetail(
+            e.response!.data['detail'],
+            e.message ?? errorMessage,
+          );
+        } else if (e.response!.data is String) {
+          errorMessage = e.response!.data;
+        }
+      } else if (e.message != null) {
+        errorMessage = e.message!;
+      }
+      return ApiResponse<ArchiveMvrResponse>.error(
+        errorMessage,
+        statusCode: e.response?.statusCode,
+      );
+    } catch (e) {
+      debugPrint('❌ Archive MVR person error: $e');
+      return ApiResponse<ArchiveMvrResponse>.error('Unexpected error: $e');
+    }
+  }
+}
+
+/// Response from soft-archiving an MVR person.
+class ArchiveMvrResponse {
+  final bool success;
+  final String archivedMvrUuid;
+  final String? promotedMvrUuid;
+  final String? promotedName;
+  final double? promotedQualityScore;
+  final int groupsTransferred;
+  final int groupsRemoved;
+  final int peopleLinksTransferred;
+  final bool alreadyArchived;
+  final String? message;
+
+  ArchiveMvrResponse({
+    required this.success,
+    required this.archivedMvrUuid,
+    this.promotedMvrUuid,
+    this.promotedName,
+    this.promotedQualityScore,
+    this.groupsTransferred = 0,
+    this.groupsRemoved = 0,
+    this.peopleLinksTransferred = 0,
+    this.alreadyArchived = false,
+    this.message,
+  });
+
+  factory ArchiveMvrResponse.fromJson(Map<String, dynamic> json) {
+    return ArchiveMvrResponse(
+      success: json['success'] as bool? ?? false,
+      archivedMvrUuid: (json['archived_mvr_uuid'] ?? '').toString(),
+      promotedMvrUuid: json['promoted_mvr_uuid']?.toString(),
+      promotedName: json['promoted_name'] as String?,
+      promotedQualityScore: (json['promoted_quality_score'] as num?)?.toDouble(),
+      groupsTransferred: (json['groups_transferred'] as num?)?.toInt() ?? 0,
+      groupsRemoved: (json['groups_removed'] as num?)?.toInt() ?? 0,
+      peopleLinksTransferred:
+          (json['people_links_transferred'] as num?)?.toInt() ?? 0,
+      alreadyArchived: json['already_archived'] as bool? ?? false,
+      message: json['message'] as String?,
+    );
+  }
 }

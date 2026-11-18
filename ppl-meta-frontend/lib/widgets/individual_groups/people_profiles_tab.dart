@@ -15,15 +15,18 @@ import '../../presentation/widgets/common/ux_breakpoints.dart';
 import '../../providers/mvr_image_service_provider.dart';
 import '../../screens/person_objects_detail_screen.dart';
 import '../../services/individual_groups_api_client.dart';
+import '../../services/mvr_api_client.dart';
 import '../../services/presence_api_client.dart';
 import 'individual_groups_tab.dart';
 
 class PeopleProfilesTab extends ConsumerStatefulWidget {
   final String? initialPppUuid;
+  final bool showArchived;
 
   const PeopleProfilesTab({
     super.key,
     this.initialPppUuid,
+    this.showArchived = false,
   });
 
   @override
@@ -73,6 +76,13 @@ class PeopleProfilesTabState extends ConsumerState<PeopleProfilesTab> {
       _selectedPppUuid = widget.initialPppUuid;
       if (_profiles.isNotEmpty) {
         _onSelectProfile(_selectedPppUuid!);
+      }
+    }
+    if (widget.showArchived != oldWidget.showArchived) {
+      _membersByGroupCache.clear();
+      final selected = _selectedPppUuid;
+      if (selected != null) {
+        _loadLinkedMembers(selected);
       }
     }
   }
@@ -192,6 +202,7 @@ class PeopleProfilesTabState extends ConsumerState<PeopleProfilesTab> {
         confidenceScore: match.confidenceScore,
         addedBy: match.addedBy,
         canManageMember: match.canManageMember,
+        isArchived: match.isArchived,
         name: match.name,
         nameUpdatedAt: match.nameUpdatedAt,
         nameUpdatedBy: match.nameUpdatedBy,
@@ -205,6 +216,7 @@ class PeopleProfilesTabState extends ConsumerState<PeopleProfilesTab> {
       groupCount: 0,
       confidenceScore: 0,
       canManageMember: false,
+      isArchived: false,
     );
   }
 
@@ -232,7 +244,11 @@ class PeopleProfilesTabState extends ConsumerState<PeopleProfilesTab> {
       return;
     }
 
-    final membersResp = await _groupsApi.getGroupMembers(groupId, limit: 200);
+    final membersResp = await _groupsApi.getGroupMembers(
+      groupId,
+      limit: 200,
+      includeArchived: widget.showArchived,
+    );
     if (membersResp.success && membersResp.data != null) {
       _membersByGroupCache[groupId] = membersResp.data!.members;
       _knownGroupIds.add(groupId);
@@ -271,8 +287,12 @@ class PeopleProfilesTabState extends ConsumerState<PeopleProfilesTab> {
       final existingScore = scoreByMvr[mvrUuid] ?? -1;
       if (score <= existingScore) continue;
       scoreByMvr[mvrUuid] = score;
+      final member = _memberWithMvrUuid(match, mvrUuid);
+      if (!widget.showArchived && member.isArchived == true) {
+        continue;
+      }
       byMvr[mvrUuid] = LinkedMemberView(
-        member: _memberWithMvrUuid(match, mvrUuid),
+        member: member,
         groupId: link.groupId,
         groupName: groupName,
         mvrUuid: mvrUuid,
@@ -483,8 +503,16 @@ class PeopleProfilesTabState extends ConsumerState<PeopleProfilesTab> {
               )
             else
               LinkedMembersGrid(
-                key: ValueKey(_selectedPppUuid),
+                key: ValueKey('${_selectedPppUuid}_${widget.showArchived}'),
                 members: _linkedMembers,
+                onArchived: () {
+                  final selected = _selectedPppUuid;
+                  if (selected != null) {
+                    _membersByGroupCache.clear();
+                    _loadLinkedMembers(selected);
+                    _loadProfiles(showSpinner: false);
+                  }
+                },
               ),
           ],
         ),
@@ -782,7 +810,12 @@ class _PeopleLinkedMembersPageState
                     Text('Linked members',
                         style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 8),
-                    LinkedMembersGrid(members: _linkedMembers),
+                    LinkedMembersGrid(
+                      members: _linkedMembers,
+                      onArchived: () {
+                        // Full-screen people detail reloads via parent route.
+                      },
+                    ),
                   ],
                 ),
     );
@@ -792,10 +825,12 @@ class _PeopleLinkedMembersPageState
 /// Grid of linked MVR members — reuses Groups-tab face image loading/rendering.
 class LinkedMembersGrid extends ConsumerStatefulWidget {
   final List<LinkedMemberView> members;
+  final VoidCallback? onArchived;
 
   const LinkedMembersGrid({
     super.key,
     required this.members,
+    this.onArchived,
   });
 
   @override
@@ -804,6 +839,9 @@ class LinkedMembersGrid extends ConsumerStatefulWidget {
 
 class _LinkedMembersGridState extends ConsumerState<LinkedMembersGrid> {
   Map<String, BestImageResponse?> _images = {};
+
+  MVRApiClient get _mvrApiClient =>
+      MVRApiClient(ref.read(apiClientProvider));
 
   @override
   void initState() {
@@ -888,6 +926,71 @@ class _LinkedMembersGridState extends ConsumerState<LinkedMembersGrid> {
     return 'Group Member ${number.toString().padLeft(2, '0')}';
   }
 
+  Future<void> _archiveMember(LinkedMemberView view) async {
+    final mvrUuid = view.mvrUuid;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Archive person'),
+        content: const Text(
+          'Archive this person? This cannot be undone. They will be removed '
+          'from groups and people links and ignored in searches. The record '
+          'is kept in the database as archived.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Archive'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final response = await _mvrApiClient.archiveMvrPerson(mvrUuid);
+    if (!mounted) return;
+
+    if (!response.success || response.data == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response.error ?? 'Failed to archive person'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final result = response.data!;
+    final promoted = result.promotedMvrUuid;
+    final promotedLabel = (result.promotedName?.trim().isNotEmpty == true)
+        ? result.promotedName!.trim()
+        : (promoted != null && promoted.length >= 8
+            ? '${promoted.substring(0, 8)}…'
+            : promoted);
+    if (promoted != null && promoted.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Archived. Next best match $promotedLabel is now the group/search winner.',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message ?? 'Person archived')),
+      );
+    }
+    widget.onArchived?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.members.isEmpty) {
@@ -915,63 +1018,125 @@ class _LinkedMembersGridState extends ConsumerState<LinkedMembersGrid> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final member = view.member;
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: () => _openMemberAnalysis(view),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              // Same widget Groups tab uses for member faces.
-              child: GroupMemberFaceImage(bestImage: _images[view.mvrUuid]),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                children: [
-                  Text(
-                    _label(member, index),
-                    style: theme.textTheme.labelSmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                  ),
-                  if (member.name != null)
+    final archived = member.isArchived == true;
+    return Opacity(
+      opacity: archived ? 0.55 : 1,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: InkWell(
+          onTap: () => _openMemberAnalysis(view),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    GroupMemberFaceImage(bestImage: _images[view.mvrUuid]),
+                    if (archived)
+                      Positioned(
+                        bottom: 6,
+                        left: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.archive,
+                                  size: 12, color: Colors.white),
+                              SizedBox(width: 4),
+                              Text(
+                                'Archived',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (!archived && (member.canManageMember ?? true))
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Tooltip(
+                          message: 'Archive person',
+                          child: Material(
+                            color: Colors.black54,
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: () => _archiveMember(view),
+                              child: const Padding(
+                                padding: EdgeInsets.all(6),
+                                child: Icon(
+                                  Icons.archive_outlined,
+                                  size: 22,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  children: [
                     Text(
-                      member.name!,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: scheme.onSurfaceVariant),
+                      _label(member, index),
+                      style: theme.textTheme.labelSmall
+                          ?.copyWith(fontWeight: FontWeight.w600),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                     ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.secondary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(AppRadius.xs),
-                    ),
-                    child: Text(
-                      view.groupName,
-                      style: AppTextStyles.caption.copyWith(
-                        fontSize: 10,
-                        color: AppColors.secondary,
+                    if (member.name != null)
+                      Text(
+                        member.name!,
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.secondary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(AppRadius.xs),
+                      ),
+                      child: Text(
+                        view.groupName,
+                        style: AppTextStyles.caption.copyWith(
+                          fontSize: 10,
+                          color: AppColors.secondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

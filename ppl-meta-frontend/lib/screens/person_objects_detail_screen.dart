@@ -29,6 +29,7 @@ import '../core/api/api_client.dart';
 import '../core/providers/camera_providers.dart';
 import '../services/media_api_client.dart';
 import '../services/individual_groups_api_client.dart';
+import '../services/mvr_api_client.dart';
 import '../services/mvr_image_service.dart';
 import '../providers/mvr_image_service_provider.dart';
 import '../providers/settings_providers.dart';
@@ -3095,6 +3096,26 @@ class _PersonObjectsDetailScreenState
                   textAlign: TextAlign.center,
                 ),
               ),
+
+            const SizedBox(height: 12),
+
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _confirmAndArchiveSelected();
+              },
+              icon: const Icon(Icons.archive_outlined),
+              label: Text(
+                _selectedIndividuals.length == 1
+                    ? 'Archive'
+                    : 'Archive ${_selectedIndividuals.length} Individuals',
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange.shade800,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
           ],
         ),
         actions: [
@@ -3105,6 +3126,136 @@ class _PersonObjectsDetailScreenState
         ],
       ),
     );
+  }
+
+  Future<void> _confirmAndArchiveSelected() async {
+    final uuids = _selectedIndividuals.toList();
+    if (uuids.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          uuids.length == 1 ? 'Archive person' : 'Archive ${uuids.length} people',
+        ),
+        content: Text(
+          uuids.length == 1
+              ? 'Archive this person? This cannot be undone. They will be removed '
+                  'from groups and people links and ignored in searches. The record '
+                  'is kept in the database as archived.'
+              : 'Archive ${uuids.length} people? This cannot be undone. They will be '
+                  'removed from groups and people links and ignored in searches. '
+                  'Records are kept in the database as archived.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Archive'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _executeArchive(uuids);
+  }
+
+  Future<void> _executeArchive(List<String> uuids) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(
+              'Archiving…',
+              style: TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final apiClient = ref.read(apiClientProvider);
+    final mvrClient = MVRApiClient(apiClient);
+    final archived = <String>[];
+    String? lastPromotedUuid;
+    String? lastPromotedName;
+    String? lastError;
+
+    for (final uuid in uuids) {
+      final response = await mvrClient.archiveMvrPerson(uuid);
+      if (response.success && response.data != null) {
+        archived.add(response.data!.archivedMvrUuid.isNotEmpty
+            ? response.data!.archivedMvrUuid
+            : uuid);
+        if (response.data!.promotedMvrUuid != null) {
+          lastPromotedUuid = response.data!.promotedMvrUuid;
+          lastPromotedName = response.data!.promotedName;
+        }
+      } else {
+        lastError = response.error ?? 'Failed to archive $uuid';
+      }
+    }
+
+    if (mounted) Navigator.of(context).pop();
+    if (!mounted) return;
+
+    if (archived.isNotEmpty) {
+      setState(() {
+        _aggregatedAnalyses?.removeWhere(
+          (a) =>
+              archived.contains(a.individualUuid) ||
+              archived.contains(a.individualId),
+        );
+        _selectedIndividuals.removeWhere(archived.contains);
+      });
+    }
+
+    if (lastPromotedUuid != null) {
+      final promotedUuid = lastPromotedUuid;
+      final label = (lastPromotedName?.trim().isNotEmpty == true)
+          ? lastPromotedName!.trim()
+          : (promotedUuid.length >= 8
+              ? '${promotedUuid.substring(0, 8)}…'
+              : promotedUuid);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Archived. Next best match $label is now the group/search winner.',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } else if (archived.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            archived.length == 1
+                ? 'Person archived'
+                : '${archived.length} people archived',
+          ),
+        ),
+      );
+    }
+
+    if (lastError != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(lastError),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   /// Show dialog for adding selected individuals to a group

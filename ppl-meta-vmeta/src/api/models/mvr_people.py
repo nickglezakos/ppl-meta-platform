@@ -381,6 +381,32 @@ class UnmergeMvrResponse(BaseModel):
 
 
 # ============================================================================
+# ENDPOINT 10c: Archive MVR (soft-delete)
+# ============================================================================
+
+class ArchiveMvrRequest(BaseModel):
+    """Request model for soft-archiving an MVR person."""
+    confirm: bool = Field(
+        True,
+        description="Must be true; FE shows irreversible confirmation first",
+    )
+
+
+class ArchiveMvrResponse(BaseModel):
+    """Response model for archive operation."""
+    success: bool
+    archived_mvr_uuid: str
+    promoted_mvr_uuid: Optional[str] = None
+    promoted_name: Optional[str] = None
+    promoted_quality_score: Optional[float] = None
+    groups_transferred: int = 0
+    groups_removed: int = 0
+    people_links_transferred: int = 0
+    already_archived: bool = False
+    message: str
+
+
+# ============================================================================
 # ENDPOINT 11: Get Merge History
 # ============================================================================
 
