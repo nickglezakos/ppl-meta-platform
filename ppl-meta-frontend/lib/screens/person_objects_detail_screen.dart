@@ -2550,11 +2550,85 @@ class _PersonObjectsDetailScreenState
         }
       }
 
+      // Union route_points from analysis + flush InstantMvrs (parity with
+      // speed_samples). Analysis may return averages without series points;
+      // flush movement_tracking often still carries the full trajectory.
+      final routePoints = <Map<String, dynamic>>[];
+      final seenRouteKeys = <String>{};
+      void addRoutePoint(Map<String, dynamic> point) {
+        final key = [
+          point['sequence_number'] ?? '',
+          point['timestamp'] ?? point['timestamp_ms'] ?? '',
+          point['center_x'] ?? '',
+          point['center_y'] ?? '',
+          point['frame_number'] ?? '',
+        ].join('|');
+        if (!seenRouteKeys.add(key)) return;
+        routePoints.add(Map<String, dynamic>.from(point));
+      }
+
+      void addRoutePointList(dynamic raw) {
+        if (raw is! List) return;
+        for (final point in raw.whereType<Map>()) {
+          addRoutePoint(Map<String, dynamic>.from(point));
+        }
+      }
+
+      addRoutePointList(item['route_points']);
+      addRoutePointList(
+        (item['movement_tracking'] as Map?)?['route_points'],
+      );
+      if (appearances is List) {
+        for (final app in appearances.whereType<Map>()) {
+          addRoutePointList(app['route_points']);
+          addRoutePointList(
+            (app['movement_pattern'] as Map?)?['route_points'],
+          );
+          addRoutePointList(
+            (app['movement_tracking'] as Map?)?['route_points'],
+          );
+        }
+      }
+      for (final memberId in memberIds) {
+        final record = speedByUuid[memberId];
+        if (record == null) continue;
+        addRoutePointList(record['route_points']);
+        addRoutePointList(
+          (record['movement_tracking'] as Map?)?['route_points'],
+        );
+      }
+      routePoints.sort((a, b) {
+        final ta = a['timestamp'] ?? a['timestamp_ms'] ?? 0;
+        final tb = b['timestamp'] ?? b['timestamp_ms'] ?? 0;
+        final na = ta is num ? ta.toDouble() : double.tryParse('$ta') ?? 0;
+        final nb = tb is num ? tb.toDouble() : double.tryParse('$tb') ?? 0;
+        if (na != nb) return na.compareTo(nb);
+        final fa = (a['frame_number'] as num?)?.toInt() ??
+            (a['sequence_number'] as num?)?.toInt() ??
+            0;
+        final fb = (b['frame_number'] as num?)?.toInt() ??
+            (b['sequence_number'] as num?)?.toInt() ??
+            0;
+        return fa.compareTo(fb);
+      });
+
+      final movementTracking = item['movement_tracking'] is Map
+          ? Map<String, dynamic>.from(item['movement_tracking'] as Map)
+          : <String, dynamic>{};
+      if (routePoints.isNotEmpty) {
+        movementTracking['route_points'] = routePoints;
+        final stats = movementTracking['movement_statistics'] is Map
+            ? Map<String, dynamic>.from(
+                movementTracking['movement_statistics'] as Map,
+              )
+            : <String, dynamic>{};
+        stats['total_route_points'] = routePoints.length;
+        movementTracking['movement_statistics'] = stats;
+      }
+
       _instantRoutePayloadByIndividual[uuid] = {
-        'route_points': item['route_points'] ??
-            (item['movement_tracking'] as Map?)?['route_points'] ??
-            const [],
-        'movement_tracking': item['movement_tracking'],
+        'route_points': routePoints,
+        'movement_tracking': movementTracking,
         'average_route_velocity': item['average_route_velocity'],
         'average_speed_mps': item['average_speed_mps'],
         'speed_samples': speedSamples,
@@ -2565,6 +2639,11 @@ class _PersonObjectsDetailScreenState
             (searchParams?['camera_uuids'] is List &&
                     (searchParams!['camera_uuids'] as List).isNotEmpty
                 ? (searchParams['camera_uuids'] as List).first
+                : null),
+        'camera_name': searchParams?['camera_name'] ??
+            (searchParams?['camera_names'] is List &&
+                    (searchParams!['camera_names'] as List).isNotEmpty
+                ? (searchParams['camera_names'] as List).first
                 : null),
       };
       aggregatedAnalyses.add(
@@ -6645,7 +6724,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         final selectedCameraId = _selectedRouteCameraId;
         final selectedCameraName = selectedCameraId == null
             ? null
-            : _routeCameraNamesById[selectedCameraId] ?? selectedCameraId;
+            : _resolveRouteCameraDisplayName(selectedCameraId);
         final selectedCameraLoaded = selectedCameraId == null
             ? 0
             : _getLoadedPointsForCamera(selectedCameraId);
@@ -6971,6 +7050,54 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     }
   }
 
+  /// Resolve a friendly camera label from Instant / search session params.
+  String _resolveRouteCameraDisplayName(String cameraId) {
+    final searchParams = _getRouteSearchParams();
+    final sessionData = widget.crossVideoContext?.sessionData;
+
+    String? fromParams(Map<String, dynamic>? params) {
+      if (params == null) return null;
+      final direct = params['camera_name']?.toString();
+      if (direct != null && direct.isNotEmpty && direct != cameraId) {
+        return direct;
+      }
+      final names = params['camera_names'];
+      final ids = params['camera_ids'] ?? params['camera_uuids'];
+      if (names is List && ids is List) {
+        for (var i = 0; i < ids.length && i < names.length; i++) {
+          if (ids[i]?.toString() == cameraId) {
+            final name = names[i]?.toString();
+            if (name != null && name.isNotEmpty) return name;
+          }
+        }
+        if (names.length == 1) {
+          final name = names.first?.toString();
+          if (name != null && name.isNotEmpty) return name;
+        }
+      } else if (names is List && names.length == 1) {
+        final name = names.first?.toString();
+        if (name != null && name.isNotEmpty) return name;
+      }
+      return null;
+    }
+
+    final fromSearch = fromParams(searchParams);
+    if (fromSearch != null) return fromSearch;
+
+    final sessionName = sessionData?['camera_name']?.toString();
+    if (sessionName != null &&
+        sessionName.isNotEmpty &&
+        sessionName != cameraId) {
+      return sessionName;
+    }
+
+    final cached = _routeCameraNamesById[cameraId];
+    if (cached != null && cached.isNotEmpty && cached != cameraId) {
+      return cached;
+    }
+    return cameraId;
+  }
+
   /// Seed Routes tab from Instant Detection analysis payloads (no VMeta IVA routes).
   Future<List<Map<String, dynamic>>> _seedInstantDetectionRoutesFromAnalysis() async {
     final searchParams = _getRouteSearchParams();
@@ -6984,7 +7111,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     cameraIdRaw ??=
         widget.crossVideoContext?.sessionData['camera_device_id'];
     final cameraId = cameraIdRaw?.toString() ?? 'instant_camera';
-    final cameraName = cameraId;
+    final cameraName = _resolveRouteCameraDisplayName(cameraId);
 
     for (final analysis in _aggregatedAnalyses!) {
       _routeDisplayPersonIdByUuid[analysis.individualUuid] =
@@ -7116,22 +7243,19 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             developer.log('🗺️ ROUTES DEBUG:   camera_id=${c['camera_id']}, camera_name=${c['camera_name']}, total_points=${c['total_points']}');
             developer.log('🗺️ ROUTES DEBUG:   inScope=${_isCameraInSearchScope((c['camera_id'] ?? '').toString(), (c['camera_name'] ?? '').toString())}');
           }
-            // For individual-group searches, show the super-individual's complete
-          // movement history across all cameras (no scope filter).  For
-          // collection-based searches the user explicitly searched within a
-          // specific camera collection, so we restrict route data to that
-          // collection only.
-          final metadataCameras =
-              (!isIndividualGroupSearch && _hasRouteSearchScopeFilter())
-                  ? allMetadataCameras
-                      .where(
-                        (c) => _isCameraInSearchScope(
-                          (c['camera_id'] ?? '').toString(),
-                          (c['camera_name'] ?? '').toString(),
-                        ),
-                      )
-                      .toList()
-                  : allMetadataCameras;
+            // When the original search selected specific cameras/collections,
+            // restrict route chips to that scope (including group camera search).
+            // Full history across all cameras only when no camera scope was set.
+          final metadataCameras = _hasRouteSearchScopeFilter()
+              ? allMetadataCameras
+                  .where(
+                    (c) => _isCameraInSearchScope(
+                      (c['camera_id'] ?? '').toString(),
+                      (c['camera_name'] ?? '').toString(),
+                    ),
+                  )
+                  .toList()
+              : allMetadataCameras;
           _registerCameraMetadata(
             analysis: analysis,
             sourceIndividualUuid: sourceUuid,
@@ -7299,6 +7423,15 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     final singleId = params['camera_id']?.toString() ?? '';
     if (singleId.isNotEmpty && matches(singleId)) return true;
 
+    // 6. camera_names / camera_name (display labels from search UI)
+    final cameraNames = params['camera_names'] as List?;
+    if (cameraNames != null &&
+        cameraNames.any((name) => matches(name.toString()))) {
+      return true;
+    }
+    final cameraNameParam = params['camera_name']?.toString() ?? '';
+    if (cameraNameParam.isNotEmpty && matches(cameraNameParam)) return true;
+
     return false;
   }
 
@@ -7313,7 +7446,11 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         continue;
       }
 
-      final cameraName = (camera['camera_name'] ?? cameraId).toString();
+      final backendName = (camera['camera_name'] ?? '').toString();
+      if (backendName.isNotEmpty && backendName != cameraId) {
+        _routeCameraNamesById[cameraId] = backendName;
+      }
+      final cameraName = _resolveRouteCameraDisplayName(cameraId);
       final totalPoints = (camera['total_points'] as num?)?.toInt() ?? 0;
 
       _routeCameraNamesById[cameraId] = cameraName;
@@ -7449,14 +7586,21 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       return;
     }
 
-    // No camera-scope filter applied.  The routes analysis covers the
-    // super-individual's full appearance history.  Appearances captured by
-    // cameras that no longer exist are still valid route data and must not
-    // be discarded (their camera_id falls back to a raw video UUID when the
-    // originating collection cannot be resolved, so collection-UUID matching
-    // would always reject them).
+    final backendName = (cameraGroup['camera_name'] ?? '').toString();
+    // Final frontend guard: drop cameras outside the original search scope.
+    // Backend page responses can still include multiple camera groups.
+    if (_hasRouteSearchScopeFilter() &&
+        !_isCameraInSearchScope(
+          cameraId,
+          backendName.isNotEmpty ? backendName : cameraId,
+        )) {
+      return;
+    }
 
-    final cameraName = (cameraGroup['camera_name'] ?? cameraId).toString();
+    if (backendName.isNotEmpty && backendName != cameraId) {
+      _routeCameraNamesById[cameraId] = backendName;
+    }
+    final cameraName = _resolveRouteCameraDisplayName(cameraId);
     _routeCameraNamesById[cameraId] = cameraName;
     _routeDisplayIndividualByCameraSource
         .putIfAbsent(cameraId, () => {})[sourceIndividualUuid] =
@@ -7552,8 +7696,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       return [];
     }
 
-    final cameraName =
-        _routeCameraNamesById[selectedCameraId] ?? selectedCameraId;
+    final cameraName = _resolveRouteCameraDisplayName(selectedCameraId);
     final cameraPoints = _routePointsByCamera[selectedCameraId] ?? {};
     final personGroups = <Map<String, dynamic>>[];
 
@@ -7611,7 +7754,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       child: Row(
         children: cameraIds.map((cameraId) {
           final isSelected = cameraId == _selectedRouteCameraId;
-          final cameraName = _routeCameraNamesById[cameraId] ?? cameraId;
+          final cameraName = _resolveRouteCameraDisplayName(cameraId);
           final totalPoints = _getTotalPointsForCamera(cameraId);
           return Padding(
             padding: const EdgeInsets.only(right: 8),
@@ -8031,6 +8174,32 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       return const Center(child: Text('No individual data available'));
     }
 
+    // Share Routes fetch so recording Motions can fall back to route-point
+    // series without requiring the user to open the Routes tab first.
+    // Instant Detection seeding uses the same single-flight helper.
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _fetchCrossVideoRoutesData(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !_hasAnyRouteDataInSelection() &&
+            _instantRoutePayloadByIndividual.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Loading motion data...'),
+              ],
+            ),
+          );
+        }
+        return _buildMotionTabCrossVideoContent();
+      },
+    );
+  }
+
+  Widget _buildMotionTabCrossVideoContent() {
     final span = _motionChartTimeSpan();
     final start = span.$1.toUtc();
     final end = span.$2.toUtc();

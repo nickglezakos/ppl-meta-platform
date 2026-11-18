@@ -18,10 +18,10 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 ## Pending
 
 ### 2026-11-18 — Pin 2.25.107 Routes/Motion + analytics quality/cache
-- **Status:** Pending Stage 2–3 (Stage 1 source/schema for `2.25.107`)
-- **Source:** Vision timestamp persist; Orchestrator fps/frame velocity; VMeta expand repair + quality map; Instant persist route_points/real quality; Cameras movement_tracking attach; FE normalize/motion; Gateway recording dataset cache + quality plumbing
+- **Status:** Pending Stage 2–3 (Stage 1 source/schema for `2.25.107`; follow-up Stage 1 for cross-video Motion/Routes series + camera filter)
+- **Source:** Vision timestamp persist; Orchestrator fps/frame velocity; VMeta expand repair + quality map; Instant persist route_points/real quality; Cameras movement_tracking attach; FE normalize/motion; Gateway recording dataset cache + quality plumbing; **follow-up:** FE Instant flush `route_points` union + Motion shared Routes preload + Routes camera name/scope filter; VMeta resolved `camera_name` on route points
 - **Schema:** `add_face_detections_timestamp.sql`; pack `052_ensure_iva_quality_and_movement_pattern.sql`; verify gates for `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`
-- **Next:** Stage 2 rebuild frontend + vmeta + gateway + vision + orchestrator + cameras; Stage 3 pull + schema verify
+- **Next:** Stage 2 rebuild frontend + vmeta + gateway + vision + orchestrator + cameras (frontend + vmeta required for this follow-up); Stage 3 pull + schema verify
 - **Tracker:** [`platform-release-cicd.md`](./platform-release-cicd.md) § Open
 
 ---

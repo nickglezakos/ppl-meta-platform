@@ -509,6 +509,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
             _CameraPaneMode.instantLogs => InstantDetectionLogsPane(
                 key: ValueKey('id-logs-${camera.deviceId}'),
                 cameraDeviceId: camera.deviceId,
+                cameraName: camera.name,
               ),
             _CameraPaneMode.analytics => AnalyticsScreen(
                 key: ValueKey('analytics-${camera.deviceId}'),

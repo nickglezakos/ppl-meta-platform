@@ -19,9 +19,13 @@ class InstantDetectionLogsPane extends ConsumerStatefulWidget {
   const InstantDetectionLogsPane({
     super.key,
     required this.cameraDeviceId,
+    this.cameraName,
   });
 
   final String cameraDeviceId;
+
+  /// Friendly camera label for Routes chips / search scope (not device UUID).
+  final String? cameraName;
 
   @override
   ConsumerState<InstantDetectionLogsPane> createState() =>
@@ -1121,13 +1125,22 @@ class _InstantDetectionLogsPaneState
       final sessionUuid =
           'instant_search_${DateTime.now().millisecondsSinceEpoch}';
 
+      final cameraDisplayName =
+          (widget.cameraName != null && widget.cameraName!.trim().isNotEmpty)
+              ? widget.cameraName!.trim()
+              : widget.cameraDeviceId;
       final sessionData = <String, dynamic>{
         'source': 'instant_detection_log_search',
         'search_results': mvrPeople,
         'instant_mvrs': flushIndividuals,
+        'camera_device_id': widget.cameraDeviceId,
+        'camera_name': cameraDisplayName,
         'search_parameters': {
           'camera_device_id': widget.cameraDeviceId,
           'camera_uuids': [widget.cameraDeviceId],
+          'camera_ids': [widget.cameraDeviceId],
+          'camera_name': cameraDisplayName,
+          'camera_names': [cameraDisplayName],
           'start_time': startTime.toUtc().toIso8601String(),
           'end_time': endTime.toUtc().toIso8601String(),
           'log_ids': logIds,

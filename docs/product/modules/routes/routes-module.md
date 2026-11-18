@@ -194,7 +194,7 @@ Also, collection-based searches could carry `collection_id` or `collection_ids` 
 
 ### Current fix
 
-The frontend now handles both UUIDs and names.
+The frontend now handles both UUIDs and names (and Instant Detection device ids).
 
 `_hasRouteSearchScopeFilter()` checks whether the original cross-video session was scoped by:
 - `collection_id`
@@ -203,15 +203,20 @@ The frontend now handles both UUIDs and names.
 - `camera_ids`
 - `camera_id`
 
-`_isCameraInSearchScope(cameraId, cameraName)` accepts a route camera group if any stored scope value matches either:
-- the backend `camera_id` (UUID), or
-- the backend `camera_name`
+When that returns true — including `individual_group_camera_search` sessions that selected specific cameras — route chips are restricted to the search scope. Full multi-camera history is only shown when no camera scope was selected.
+
+`_isCameraInSearchScope(cameraId, cameraName)` accepts a route camera group if any stored scope value matches:
+- the backend `camera_id` (UUID),
+- the backend `camera_name`, or
+- search-time `camera_names` / `camera_name`
 
 This function is applied in two places:
 - when filtering metadata cameras before registration
 - inside `_appendCameraGroupedRoutePage()` before any route group is stored
 
 That second guard is critical because even if the request is conceptually scoped, the backend response may still contain multiple camera groups in some call paths.
+
+Friendly labels prefer search-time `camera_names` / resolved collection names via `_resolveRouteCameraDisplayName()` so chips do not fall back to raw UUIDs when a display name is known. The Motion tab shares `_fetchCrossVideoRoutesData()` so recording Motions can use route-point series without visiting the Routes tab first.
 
 ## Backend API Layer
 

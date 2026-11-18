@@ -22,6 +22,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 - Recording Routes/Motion: Vision persists `face_detections.timestamp`; Orchestrator derives timestamps/velocities from frame when ts missing; VMeta route expand repairs `timestamp<=0`, recomputes velocities, and maps `iva.quality_score` (existing Tapo C120 IVA rows render without reprocess).
 - Instant persist: `movement_pattern` can include `route_points`; stores real face quality instead of confidence-as-quality; Cameras attach movement_tracking on Instant people.
 - Cross-individual FE: route normalize keeps `speed_mps` / real `frame_number`; Motion derives magnitude from frame deltas when velocities are zero.
+- Cross-video Motion/Routes: Instant log-search unions flush `route_points` into the analysis payload (parity with `speed_samples`); Motion shares Routes fetch so recordings no longer require opening Routes first; Routes camera chips use search-time / resolved collection names instead of UUIDs and re-apply search-scope filtering (including group camera search when cameras were selected); VMeta route points keep resolved `camera_name`.
 - Recording analytics load: gateway caches the merge dataset (20s TTL), reuses merge sessions by default, pages media search, and parallelizes collection fetches.
 - Analytics Image Quality: always send `source_type`; VMeta falls back to `iva.quality_score` when MVR quality empty; Instant flush quality reads person/face quality fields.
 

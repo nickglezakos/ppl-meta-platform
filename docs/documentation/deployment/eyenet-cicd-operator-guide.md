@@ -65,7 +65,8 @@ You change **code on GitHub** often (Stage 1). When you want labs to **run** con
 
 - *“Stage 1 only”* → git + changelog, **no** images  
 - *“Publish tray for 2.25.82”* → manual lab builds + `gh release`  
-- *“Stage 2 on lab-work-dual-64g”* → build/push images there  
+- *“Stage 2 on lab-work-win-eynetdell”* → build/push images there (default)  
+- *“eyenetdell unavailable — use eyenet-demo?”* → required before any Stage 2 on `lab-work-dual-64g`  
 - *“Upgrade lab-home-win-nickg”* → Stage 3 install (images + tray)  
 
 Never assume “release” means all of the above unless you said so.
@@ -119,7 +120,7 @@ This is “save your homework to the cloud.” Labs can pull **installer scripts
 
 A CHANGELOG **Notes** line that a column is missing, or that persist can 500 until a later schema follow-up, means Stage 1 is not done. That column belongs in the schema pack and in `schema/verify.sh` in the same push.
 
-**Next full Stage 1–3 reminder:** Behavioural triggers need Media DDL (`add_behavioural_trigger_fields.sql`) packed + applied before lab/prod use — see [`platform-release-cicd.md`](./platform-release-cicd.md) § Open for next full Stage 1 → 2 → 3 and [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) Pending. **Analytics Face | Body | Both does not need a new migration** (existing `mvr_people_body` + flush JSON); rebuild gateway/cameras/vmeta/frontend only.
+**Next full Stage 1–3 reminder:** Pin `2.25.107` — Routes/Motion + analytics quality/cache, plus cross-video Motion/Routes series + camera-filter follow-up. See [`platform-release-cicd.md`](./platform-release-cicd.md) § Open and [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) Pending. Stage 2 rebuild must include **frontend** + **vmeta-protected** (no new migration for this follow-up).
 
 #### CHANGELOG (mandatory on meaningful Stage 1)
 
@@ -171,11 +172,14 @@ Long builds break idle SSH — use **tmux** on the builder, or build **one servi
 
 | Preference | Lab ID | Notes |
 |---|---|---|
-| Preferred | `lab-work-dual-64g` | 64 GB dual-boot; Windows/WSL or Ubuntu |
-| Optional | `lab-home-win-nickg` | Home Windows if disk/RAM allow |
+| **Preferred (default)** | `lab-work-win-eynetdell` | `EYNETDELL`, 32 GB, WSL `eyenet` — always try this first |
+| Fallback (ask first) | `lab-work-dual-64g` (`eyenet-demo`) | **Only** if eyenetdell is down **and** the operator explicitly approves |
+| Optional | `lab-home-win-nickg` | Home Windows if disk/RAM allow (still ask) |
 | Not for Stage 2 | `lab-work-u24-mini-8g` | 8 GB soak only |
 
-Access: LAN or Tailscale, then SSH / Windows App (RDP). Details: [`lab-machines.md`](./lab-machines.md).
+**Agents must ask before using eyenet-demo (or any non-preferred host) for Stage 2.** Do not silently fall back.
+
+Access: LAN (`Administrator@192.168.9.11`) or reverse tunnel when off-LAN; then `wsl -d eyenet`. Details: [`lab-machines.md`](./lab-machines.md).
 
 #### Tags
 
@@ -247,10 +251,16 @@ From the Mac (Windows/WSL builder example):
 ssh lab-home-win-nickg "wsl -d eyenet -- bash -lc 'cd /mnt/c/path/to/repo && RELEASE_TAG=2.25.82 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras'"
 ```
 
-Native Linux builder:
+Preferred eyenetdell WSL:
 
 ```bash
-ssh lab-work-dual-64g "cd ~/ppl-meta-platform && git pull && RELEASE_TAG=2.25.82 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras"
+wsl -d eyenet -- bash -lc 'cd ~/ppl-meta-platform && git pull && RELEASE_TAG=2.25.82 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras'
+```
+
+Fallback (only after operator approval) — eyenet-demo:
+
+```bash
+ssh eyenet@192.168.9.13 "cd ~/ppl-meta-platform && git pull && RELEASE_TAG=2.25.82 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras"
 ```
 
 Expect:
@@ -393,8 +403,10 @@ After `compose up -d`, apply and verify schema. Stage 3 is not finished when ima
 
 ```bash
 cd ~/eyenet-platform
-docker compose --project-name pplmeta --env-file .env -f docker-compose.yml pull
-docker compose --project-name pplmeta --env-file .env -f docker-compose.yml up -d
+# Do NOT pass only `-f docker-compose.yml` — that skips `docker-compose.override.yml`
+# (lab USB `/dev/video*` mounts and other host-specific device/env fixes).
+docker compose --project-name pplmeta --env-file .env pull
+docker compose --project-name pplmeta --env-file .env up -d
 bash ~/ppl-meta-platform/deployment/windows-installer/schema/apply.sh
 bash ~/ppl-meta-platform/deployment/windows-installer/schema/verify.sh
 bash ~/ppl-meta-platform/deployment/windows-installer/reregister-discovery-services.sh
@@ -603,7 +615,8 @@ Digest-pinned form (future installer use):
 ```text
 Stage 1  →  git + CHANGELOG (+ pins/schema) → GitHub
 Tray     →  manual Win+Ubuntu build + gh release → GitHub Release assets
-Stage 2  →  build/push on lab-work-dual-64g (amd64) → GHCR :VERSION
+Stage 2  →  build/push on lab-work-win-eynetdell / WSL eyenet (amd64) → GHCR :VERSION
+           (ask before any eyenet-demo fallback)
 Mode D   →  stage2_finalize_manifest.sh → release-manifest.yml → Stage 1 commit
 Stage 3  →  installer on named lab → running stack (images + tray)
 ```

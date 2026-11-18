@@ -1,19 +1,19 @@
 # Platform release CI/CD (single source of truth)
 
 **Status:** Active  
-**Last updated:** 2026-11-17  
+**Last updated:** 2026-11-18  
 **Current pin:** root [`VERSION`](../../VERSION) (today `2.25.107`)  
 **Registry:** `ghcr.io/nickglezakos/ppl-meta-platform`  
 **Architecture:** `linux/amd64` only for customer/lab installs  
 
 ### Open for next full Stage 1 → 2 → 3
 
-**Pin `2.25.107` Stage 1 cut / pending Stage 2–3.** Routes/Motion timestamp+velocity repair, analytics merge cache, Image Quality IVA fallback, schema gates for `face_detections.timestamp` + IVA quality/movement_pattern.
+**Pin `2.25.107` Stage 1 cut (+ follow-up) / Stage 2 in progress on `lab-work-win-eynetdell`.** Routes/Motion timestamp+velocity repair, analytics merge cache, Image Quality IVA fallback, schema gates for `face_detections.timestamp` + IVA quality/movement_pattern; **follow-up:** cross-video Motion/Routes series + camera filter (Instant flush route_points, named/scoped camera chips, VMeta camera_name).
 
 | Step | Must include |
 |---|---|
-| **Stage 1** | Vision/Orchestrator/VMeta/Gateway/Cameras/Frontend route+quality+analytics fixes; pack face_detections.timestamp + IVA quality/movement_pattern; verify gates; CHANGELOG + pin `2.25.107` |
-| **Stage 2** | Mode D rebuild **frontend**, **vmeta-protected**, **gateway**, **vision-protected**, **orchestrator**, **cameras**; retag-forward others from `2.25.106`; finalize release-manifest |
+| **Stage 1** | Vision/Orchestrator/VMeta/Gateway/Cameras/Frontend route+quality+analytics fixes; pack face_detections.timestamp + IVA quality/movement_pattern; verify gates; CHANGELOG + pin `2.25.107` — **done** (`66157f8b`); cross-video Motion/Routes series + camera-filter follow-up — **this push** |
+| **Stage 2** | Mode D on **`lab-work-win-eynetdell`** (WSL `eyenet`): rebuild **frontend**, **vmeta-protected**, **gateway**, **vision-protected**, **orchestrator**, **cameras**; retag-forward others from `2.25.106`; finalize release-manifest |
 | **Stage 3** | Compose pull rebuilt services; apply schema pack + `schema/verify.sh` (new route/quality gates) |
 
 Tracker: [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) § Pending.
@@ -44,7 +44,7 @@ Tell the agent (or yourself) which step you want. Do **not** assume they happen 
 | Step | What it updates | Say this |
 |---|---|---|
 | **1 — Code** | GitHub repo: **commit + push source for all services affected by the fixes**, plus installers, docs, pins, **CHANGELOG** | *“Stage 1: push code to GitHub per platform-release-cicd.md”* |
-| **2 — Images** | GHCR container tags for the current `VERSION` (build on a named lab PC) | *“Stage 2: build and push images for VERSION on lab-work-dual-64g”* |
+| **2 — Images** | GHCR container tags for the current `VERSION` (build on preferred Stage 2 lab) | *“Stage 2: build and push images for VERSION on lab-work-win-eynetdell”* |
 | **3 — Install** | Running stack on a named lab (compose pull + tray install via installer) | *“Upgrade lab-home-win-nickg”* / *“Upgrade Ubuntu on lab-work-dual-64g”* |
 
 Optional extras (always name them explicitly):
@@ -278,22 +278,25 @@ After a successful Stage 2, on the next Stage 1 (manifest commit), add under the
 
 ### Build host
 
-**Connect this Mac to a named lab machine and run the build there.**  
+**Preferred Stage 2 builder is `lab-work-win-eynetdell` (hostname `EYNETDELL`, 32 GB, WSL distro `eyenet`).**  
 Inventory: **[lab-machines.md](./lab-machines.md)**.
 
 | Preference | Lab ID | When |
 |---|---|---|
-| **Preferred** | `lab-work-dual-64g` | Work dual-boot 64 GB (Windows/WSL or Ubuntu) |
-| Optional | `lab-home-win-nickg` | Home Windows if disk and RAM allow |
+| **Preferred (default)** | `lab-work-win-eynetdell` | Always first choice for Stage 2 / Mode D (WSL `eyenet` + Docker; give WSL ≥24 GB via `.wslconfig`) |
+| Fallback (ask first) | `lab-work-dual-64g` (`eyenet-demo`) | **Only** if eyenetdell is unavailable **and** the operator explicitly approves using eyenet-demo |
+| Optional | `lab-home-win-nickg` | Home Windows if disk and RAM allow (still ask before using) |
 | Not for Stage 2 | `lab-work-u24-mini-8g` | 8 GB soak only |
+
+**Hard rule for agents:** do **not** start Stage 2 on `lab-work-dual-64g` / `eyenet-demo` (or any non-preferred host) without asking the operator first. If eyenetdell is unreachable, stop and ask — do not silently fall back.
 
 - Customer/lab images are **`linux/amd64`**.  
 - The development Mac (especially Apple Silicon) is **not** the default builder.  
-- Connect over **LAN** or **Tailscale**, then SSH / Windows App (RDP).  
-- On the host: `git pull` the Stage 1 revision, then run the scripts below.  
-- Mac = operator console (edit, Stage 1, manifests, remote into builder).
+- Connect over **LAN** (`ssh Administrator@192.168.9.11`) or reverse tunnel when off-LAN; then `wsl -d eyenet`.  
+- On the host: `git pull` the Stage 1 revision in the WSL clone, then run the scripts below.  
+- Mac = operator console (edit, Stage 1, manifests, remote into builder). On-prem Cursor on EYNETDELL may run Stage 2 locally in WSL.
 
-Agent wording must name the lab: *“Stage 2 on lab-work-dual-64g (Ubuntu boot).”*
+Agent wording must name the lab: *“Stage 2 on lab-work-win-eynetdell (WSL eyenet).”*
 
 ### SSH timeouts (required practice)
 
@@ -358,8 +361,11 @@ Classic all-at-once (only inside **tmux**):
 # Windows/WSL builder example
 ssh lab-home-win-nickg "wsl -d eyenet -- bash -lc 'cd /mnt/c/path/to/repo && RELEASE_TAG=2.25.83 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras'"
 
-# Native Linux builder
-ssh lab-work-dual-64g "cd ~/ppl-meta-platform && git pull && RELEASE_TAG=2.25.83 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras"
+# Preferred: eyenetdell WSL (on the box or via SSH then wsl)
+wsl -d eyenet -- bash -lc 'cd ~/ppl-meta-platform && git pull && RELEASE_TAG=2.25.83 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras'
+
+# Fallback only after operator approval: eyenet-demo
+# ssh eyenet@192.168.9.13 "cd ~/ppl-meta-platform && git pull && RELEASE_TAG=2.25.83 EXTRA_SHA_TAG=1 ./scripts/stage2_one.sh cameras"
 ```
 
 Expect:
@@ -407,7 +413,8 @@ Then Stage 1: commit `release-manifest.yml` + CHANGELOG Notes (which services, g
 
 **Agent wording:**
 
-- *“Stage 2 full on lab-work-dual-64g for 2.25.83 (tmux / one-by-one).”*  
+- *“Stage 2 full on lab-work-win-eynetdell for 2.25.83 (tmux / one-by-one).”*
+- *“eyenetdell unavailable — may I use eyenet-demo as Stage 2 fallback?”*  
 - *“Stage 2 selective on lab-home-win-nickg from latest Stage 1.”*  
 - *“Stage 2 one: cameras then frontend on lab-home-win-nickg.”*
 
@@ -539,8 +546,10 @@ Manual upgrade of existing `~/eyenet-platform`:
 
 ```bash
 cd ~/eyenet-platform
-docker compose --project-name pplmeta --env-file .env -f docker-compose.yml pull
-docker compose --project-name pplmeta --env-file .env -f docker-compose.yml up -d
+# Omit `-f docker-compose.yml` alone so Compose also merges `docker-compose.override.yml`
+# (required on Ubuntu labs for USB `/dev/video*` device mounts).
+docker compose --project-name pplmeta --env-file .env pull
+docker compose --project-name pplmeta --env-file .env up -d
 bash ~/ppl-meta-platform/deployment/windows-installer/schema/apply.sh
 bash ~/ppl-meta-platform/deployment/windows-installer/schema/verify.sh
 bash ~/ppl-meta-platform/deployment/windows-installer/reregister-discovery-services.sh
@@ -577,7 +586,7 @@ One release identity must agree everywhere:
 When you want a new pin end-to-end (e.g. `2.25.83`):
 
 1. **Stage 1:** bump `VERSION` + all pins, schema pack if needed, CHANGELOG under `[2.25.83]`, pin check, commit, push. If tray should ship: [publish tray manually](#tray-publish-part-of-stage-1) and confirm Release assets.  
-2. **Stage 2:** on preferred builder (`lab-work-dual-64g`), build/push changed images; Mode D retag-forward unchanged services on a pin bump; `stage2_finalize_manifest.sh`.  
+2. **Stage 2:** on preferred builder (`lab-work-win-eynetdell` / WSL `eyenet`; ask before any eyenet-demo fallback), build/push changed images; Mode D retag-forward unchanged services on a pin bump; `stage2_finalize_manifest.sh`.  
 3. **Stage 1 (manifest):** commit `release-manifest.yml` + CHANGELOG Notes.  
 4. **Stage 3:** upgrade named labs — installers pull images **and** download tray (or use a locally copied tray binary).  
 5. Update wiki `software_ref` after promotion evidence.

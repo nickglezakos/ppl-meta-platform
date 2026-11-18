@@ -2624,7 +2624,29 @@ class MVRRepository:
         return None
 
     @staticmethod
-    def _appearance_to_route_point(row: dict, seq: int, camera_id: str) -> dict:
+    def _prefer_route_camera_name(
+        camera_id: str, camera_rows: List[Dict[str, Any]]
+    ) -> str:
+        """Pick the best human-readable camera label from resolved route rows."""
+        for row in camera_rows:
+            name = str(row.get("camera_name") or "").strip()
+            if not name:
+                continue
+            if name != camera_id and name != str(row.get("video_uuid") or ""):
+                return name
+        for row in camera_rows:
+            name = str(row.get("camera_name") or "").strip()
+            if name:
+                return name
+        return camera_id
+
+    @staticmethod
+    def _appearance_to_route_point(
+        row: dict,
+        seq: int,
+        camera_id: str,
+        camera_name: Optional[str] = None,
+    ) -> dict:
         """Convert an individual_video_appearances row to a route-point dict."""
         ts_ms = int(row["timestamp_ms"]) if row.get("timestamp_ms") is not None else 0
         if row.get("precomputed_center_x") is not None:
@@ -2661,6 +2683,16 @@ class MVRRepository:
         if frame_number is None:
             frame_number = row.get("frame_number")
 
+        # Prefer explicit name, then row-resolved collection name; never leave a
+        # blank label. UUID fallback only when enrichment failed.
+        resolved_name = (
+            camera_name
+            or row.get("camera_name")
+            or camera_id
+        )
+        if not resolved_name:
+            resolved_name = camera_id
+
         return {
             "sequence_number": seq,
             "timestamp_ms": ts_ms,
@@ -2679,7 +2711,7 @@ class MVRRepository:
             "person_object_uuid": row.get("person_object_uuid"),
             "individual_uuid": row.get("individual_uuid"),
             "camera_id": camera_id,
-            "camera_name": camera_id,
+            "camera_name": resolved_name,
         }
 
     async def get_individual_routes_by_camera_paged(
@@ -2722,7 +2754,9 @@ class MVRRepository:
             cameras = []
             for current_camera_id in sorted(grouped_rows):
                 camera_rows = grouped_rows[current_camera_id]
-                current_camera_name = camera_rows[0].get("camera_name") or current_camera_id
+                current_camera_name = self._prefer_route_camera_name(
+                    current_camera_id, camera_rows
+                )
                 total_points = len(camera_rows)
                 total_appearances = len(
                     {
@@ -2739,12 +2773,10 @@ class MVRRepository:
                         row,
                         page_start + seq + 1,
                         current_camera_id,
+                        camera_name=current_camera_name,
                     )
                     for seq, row in enumerate(page_rows)
                 ]
-                # Patch camera_name on each point from the row
-                for point, row in zip(points, page_rows):
-                    point["camera_name"] = row.get("camera_name") or current_camera_id
                 has_more = page_end < total_points
                 start_ts = int(camera_rows[0]["timestamp_ms"]) if camera_rows else None
                 end_ts = int(camera_rows[-1]["timestamp_ms"]) if camera_rows else None
@@ -2813,7 +2845,9 @@ class MVRRepository:
                 "cameras": [
                     {
                         "camera_id": current_camera_id,
-                        "camera_name": (camera_rows[0].get("camera_name") or current_camera_id),
+                        "camera_name": self._prefer_route_camera_name(
+                            current_camera_id, camera_rows
+                        ),
                         "total_points": len(camera_rows),
                         "total_appearances": len(
                             {
@@ -2879,6 +2913,7 @@ class MVRRepository:
                     row,
                     offset + seq + 1,
                     row.get("camera_id") or row.get("video_uuid") or "",
+                    camera_name=row.get("camera_name"),
                 )
                 for seq, row in enumerate(page_rows)
             ]
