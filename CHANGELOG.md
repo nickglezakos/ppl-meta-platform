@@ -34,11 +34,13 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 - Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.106 → 2.25.107**.
 - Mode D Stage 2 rebuild: **frontend**, **vmeta-protected**, **gateway**, **vision-protected**, **orchestrator**, **cameras**; retag-forward others from `2.25.106`.
+- CI/CD Stage 1 process: a Stage 1 cut must land the **whole open pin** (Open + HOTFIXES Pending + related dirty product paths), not only the latest chat fix; Stage 3 migrations must be named in Open / HOTFIXES / CHANGELOG.
 
 ### Notes
 
 - No historical Vision reprocess in this pin; read-path repair covers existing IVA route points.
 - Appearance-level SQL cursor paging for routes remains deferred.
+- **Stage 3 migrations:** apply/verify pack SQL `add_face_detections_timestamp.sql` + `052_ensure_iva_quality_and_movement_pattern.sql` (gates `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`).
 
 ## [2.25.106] — 2026-11-17
 

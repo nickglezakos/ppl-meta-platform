@@ -12,9 +12,9 @@
 
 | Step | Must include |
 |---|---|
-| **Stage 1** | Vision/Orchestrator/VMeta/Gateway/Cameras/Frontend route+quality+analytics fixes; pack face_detections.timestamp + IVA quality/movement_pattern; verify gates; CHANGELOG + pin `2.25.107` — **done** (`66157f8b`); cross-video Motion/Routes series + camera-filter follow-up — **this push** |
+| **Stage 1** | **Whole open pin** (not one chat fix): Vision/Orchestrator/VMeta/Gateway/Cameras/Frontend route+quality+analytics; Instant cameras detection-flags SQL path if still dirty; cross-video Motion/Routes series + camera filter; pack + verify gates; CHANGELOG + pin `2.25.107` — base `66157f8b`, follow-up `70f1030c`; any remaining Pending/unstaged pin paths must land before Stage 2 |
 | **Stage 2** | Mode D on **`lab-work-win-eynetdell`** (WSL `eyenet`): rebuild **frontend**, **vmeta-protected**, **gateway**, **vision-protected**, **orchestrator**, **cameras**; retag-forward others from `2.25.106`; finalize release-manifest |
-| **Stage 3** | Compose pull rebuilt services; apply schema pack + `schema/verify.sh` (new route/quality gates) |
+| **Stage 3** | Compose pull rebuilt services; **migrations:** `schema/apply.sh` then `schema/verify.sh` for pack SQL `add_face_detections_timestamp.sql` + `052_ensure_iva_quality_and_movement_pattern.sql` (gates: `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`); paste verify output into lab note |
 
 Tracker: [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) § Pending.
 
@@ -24,9 +24,9 @@ Tracker: [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) § Pending.
 
 **How we ship (memorize this):**
 
-1. **Commit + push source** to GitHub for **every service/path the fixes touched** (Stage 1 hard gate)  
+1. **Commit + push the whole open pin** to GitHub (Stage 1 hard gate — Open + Pending + related dirty paths; name Stage 3 migrations)  
 2. **Build images** on a remote lab PC → GHCR (**only** from that pushed tip)  
-3. **Install** on labs by **pulling GHCR** (images **+** tray)
+3. **Install** on labs by **pulling GHCR** (images **+** tray **+** named migrations via schema apply/verify)
 
 **Non-negotiable:** A lab that “works” after `docker cp`, a local `docker build`, or copying `main.dart.js` between hosts is **debug**, not a release. Other labs must not be patched that way. Source → GHCR → pull.
 
@@ -43,9 +43,9 @@ Tell the agent (or yourself) which step you want. Do **not** assume they happen 
 
 | Step | What it updates | Say this |
 |---|---|---|
-| **1 — Code** | GitHub repo: **commit + push source for all services affected by the fixes**, plus installers, docs, pins, **CHANGELOG** | *“Stage 1: push code to GitHub per platform-release-cicd.md”* |
+| **1 — Code** | GitHub repo: **commit + push the whole open pin** (all Pending/unstaged product paths for that pin — not only the latest chat fix), plus installers, docs, pins, **CHANGELOG**, and named Stage 3 migrations | *“Stage 1: push code to GitHub per platform-release-cicd.md”* |
 | **2 — Images** | GHCR container tags for the current `VERSION` (build on preferred Stage 2 lab) | *“Stage 2: build and push images for VERSION on lab-work-win-eynetdell”* |
-| **3 — Install** | Running stack on a named lab (compose pull + tray install via installer) | *“Upgrade lab-home-win-nickg”* / *“Upgrade Ubuntu on lab-work-dual-64g”* |
+| **3 — Install** | Running stack on a named lab (compose pull + tray + **named migrations** via `schema/apply.sh` / `schema/verify.sh`) | *“Upgrade lab-home-win-nickg”* / *“Upgrade Ubuntu on lab-work-dual-64g”* |
 
 Optional extras (always name them explicitly):
 
@@ -54,13 +54,13 @@ Optional extras (always name them explicitly):
 
 **Critical separations:**
 
-- Stage 1 **hard gate:** every lasting fix must be **committed and pushed** in the monorepo for **all services/paths it touched** before Stage 2. A lab `docker cp` / `.env` edit / DB ALTER that works on one host is **not** Stage 1.  
+- Stage 1 **hard gate:** every lasting fix for the **open pin** must be **committed and pushed** before Stage 2 — including related unstaged work and HOTFIXES **Pending** paths, not only the latest chat fix. A lab `docker cp` / `.env` edit / DB ALTER that works on one host is **not** Stage 1.  
 - Stage 1 does **not** change what labs pull from GHCR.  
 - Stage 2 does **not** upgrade lab hosts unless you also ask for Stage 3.  
-- Stage 3 installs **both** container images and the host tray (when Release assets exist, or when you copy a locally built tray onto the lab).  
+- Stage 3 installs **both** container images and the host tray (when Release assets exist, or when you copy a locally built tray onto the lab) **and** applies/verifies every migration named in Open / HOTFIXES / CHANGELOG for that pin.  
 - Images are built from the git revision checked out on the build host (usually latest `main` after Stage 1). Stage 2 without that push rebuilds **old** source.
 
-**Release notes:** Root [`CHANGELOG.md`](../../CHANGELOG.md) is required on meaningful Stage 1. Saying *“Stage 1 … per platform-release-cicd.md”* already means: land affected service source, update the changelog, then commit and push. Do not use `docs/notes.txt` for release notes.
+**Release notes:** Root [`CHANGELOG.md`](../../CHANGELOG.md) is required on meaningful Stage 1. Saying *“Stage 1 … per platform-release-cicd.md”* already means: land the **whole open pin**, update the changelog (including Stage 3 migration names or an explicit “no new migration”), then commit and push. Do not use `docs/notes.txt` for release notes.
 
 ```text
   Mac (you)                 GitHub / Releases              Lab PC (amd64)               GHCR
@@ -168,22 +168,28 @@ Stage 3 stays: **compose pull from GHCR only**. If two labs disagree, compare di
 
 **Goal:** Land fixes, docs, and installer changes on GitHub. Do this often.
 
-**Does:** `git` commit + push of **all affected service source** (+ pin bumps / schema pack when needed) **and** update [`CHANGELOG.md`](../../CHANGELOG.md).  
+**Does:** `git` commit + push of the **whole open pin** — all affected service source, related Pending/unstaged product paths, pin bumps / schema pack when needed — **and** update [`CHANGELOG.md`](../../CHANGELOG.md) with Stage 3 migration notes.  
 **Does not:** rebuild or push Docker images to GHCR; does not upgrade labs; does not auto-publish tray (tray is manual — see below).
 
-### Hard gate — commit + push source for every affected service (do this first)
+### Hard gate — whole open pin, not only the current chat fix (do this first)
 
-Stage 1 is **not complete** until the monorepo on GitHub contains the lasting code for **every** service or path the fix touched. This is the first gate of CI; Stage 2 and Stage 3 assume it.
+Stage 1 is **not complete** until the monorepo on GitHub contains the lasting code for **every** service or path that belongs to the **open pin** (Open table + HOTFIXES **Pending**), not only the files from the latest operator message. This is the first gate of CI; Stage 2 and Stage 3 assume it.
 
-Before CHANGELOG / pins / “Stage 1 done”:
+When the operator says *“Stage 1”* / *“proper Stage 1”* / *“Stage 1 for this”*:
 
-1. **List affected paths** — e.g. `ppl-meta-cameras`, `ppl-meta-vmeta`, schema pack, compose/env templates, installers, docs. If you hotfixed more than one container, each matching monorepo tree must be updated.  
-2. **Port lab hotfixes into source** — copy lasting logic from `docker cp` / one-off scripts into the repo files. Lab-only DB row edits stay lab data; durable DDL belongs in `deployment/windows-installer/schema/pack/`.  
-3. **Commit and push those sources to GitHub** (same Stage 1 push as CHANGELOG below, or an earlier push — either way they must be on the remote before Stage 2 starts).  
-4. **Refuse Stage 2** if `git status` still shows uncommitted service fixes, or if the only working copy of the fix is on a lab container.  
-5. **Every column the shipped code writes is in the schema pack and in `schema/verify.sh` in this same push.** A CHANGELOG **Notes** line that a column is missing, or that persist can 500 until a later schema follow-up, means Stage 1 is not done. Do not cut that pin.
+1. **Sweep the open pin** — read this doc’s **Open** table and [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) § Pending for the current `VERSION`. Treat that list as the Stage 1 scope.  
+2. **Sweep `git status`** — include **all** uncommitted product/source/schema/installer/operator-doc changes that belong to that pin (e.g. leftover `ppl-meta-cameras` fixes, dual CI/CD doc copies, pack SQL). Do **not** Stage-1 only the latest chat’s files while related pin work stays dirty.  
+3. **Exclude only explicit non-product leftovers** — private `docs/notes.txt`, secrets, one-off lab-data scripts, and local artifacts the operator says to leave out (e.g. personal `artifacts/*.sh` scratch). Ask once if unclear; default is **include**.  
+4. **List affected paths** — e.g. `ppl-meta-cameras`, `ppl-meta-vmeta`, schema pack, compose/env templates, installers, docs. If you hotfixed more than one container, each matching monorepo tree must be updated.  
+5. **Port lab hotfixes into source** — copy lasting logic from `docker cp` / one-off scripts into the repo files. Lab-only DB row edits stay lab data; durable DDL belongs in `deployment/windows-installer/schema/pack/`.  
+6. **Name Stage 3 migrations in the same push** — every new/changed pack SQL file and `schema/verify.sh` gate must appear in: CHANGELOG (Added/Notes), Open **Stage 3** row, and HOTFIXES **Schema** line. If the pin has **no** new migration, say so explicitly (`No new migration` / `schema apply still required for prior pack`).  
+7. **Commit and push those sources to GitHub** (same Stage 1 push as CHANGELOG below, or an earlier push — either way they must be on the remote before Stage 2 starts).  
+8. **Refuse Stage 2** if `git status` still shows uncommitted **product** fixes for the open pin, or if the only working copy of a fix is on a lab container.  
+9. **Every column the shipped code writes is in the schema pack and in `schema/verify.sh` in this same push.** A CHANGELOG **Notes** line that a column is missing, or that persist can 500 until a later schema follow-up, means Stage 1 is not done. Do not cut that pin.
 
 Example (instant detection / stream freeze): cameras + vmeta source **and** schema `048_…` must be pushed before rebuilding those GHCR images. A nickg `docker cp` that “works” is not a release.
+
+**Anti-pattern:** “Stage 1 for this Motion fix” that leaves a related dirty `ppl-meta-cameras` change uncommitted while Open/Stage 2 still lists **cameras**. That is an incomplete Stage 1; Stage 2 would rebuild old cameras source.
 
 ### CHANGELOG is mandatory (do not wait to be asked)
 
@@ -197,17 +203,18 @@ Every Stage 1 with product, installer, schema, tray, or operator-facing doc chan
 
 ### Typical steps
 
-1. **Hard gate:** land and **commit + push** source for **all services affected by the fixes** (see above). No lasting lab-only hotfixes.  
+1. **Hard gate:** sweep Open + HOTFIXES Pending + `git status`; land and **commit + push** the **whole open pin** (see above). No lasting lab-only hotfixes; no “current fix only” while related pin paths stay dirty.  
 2. If cutting a new product pin: set root `VERSION` and **all** installer pins to the same value.  
 3. If schema changed: `bash deployment/mac-lima/sync-schema-pack.sh` and include `schema/pack.tar.gz`.  
-4. Update [`CHANGELOG.md`](../../CHANGELOG.md).  
-5. `./scripts/check_installer_pins.sh`  
-6. Commit and **push to GitHub** (includes any remaining Stage 1 files from steps 2–5).  
-7. **If tray binaries should refresh for this pin:** [publish tray manually](#tray-publish-part-of-stage-1) (lab builds + GitHub Release).
+4. Update [`CHANGELOG.md`](../../CHANGELOG.md) — include **Stage 3 migration names** (or explicit “no new migration”).  
+5. Update Open **Stage 3** row + HOTFIXES **Schema** with the same migration list.  
+6. `./scripts/check_installer_pins.sh`  
+7. Commit and **push to GitHub** (includes any remaining Stage 1 files from steps 2–6).  
+8. **If tray binaries should refresh for this pin:** [publish tray manually](#tray-publish-part-of-stage-1) (lab builds + GitHub Release).
 
 Agent wording:
 
-- *“Stage 1: push code to GitHub per platform-release-cicd.md”* ← includes affected-service source hard gate + changelog  
+- *“Stage 1: push code to GitHub per platform-release-cicd.md”* ← whole open pin + changelog + Stage 3 migration notes  
 - *“Bump VERSION to 2.25.83 and Stage 1 push”*  
 - *“Publish tray for 2.25.83”* ← `gh workflow run tray-release.yml` (or manual build/upload)
 
@@ -485,22 +492,24 @@ Stage 2 stays manual on a lab PC. Tray: prefer Actions; keep real OS smoke on la
 
 **Goal:** Put the published product onto a named lab host. Always say which lab ([lab-machines.md](./lab-machines.md)).
 
-**Does:** Installer (or manual compose pull) + schema apply/verify + discovery reregister + **tray download/autostart** when Release assets exist.  
+**Does:** Installer (or manual compose pull) + **named migrations** via schema apply/verify + discovery reregister + **tray download/autostart** when Release assets exist.  
 **Does not:** publish GHCR or rebuild tray binaries.
 
-**Tracking:** After every Stage 3, update the **Fleet status** table in [lab-machines.md](./lab-machines.md) (pin, match vs `release-manifest.yml`, date, notes). A matching tag is not enough — digests must match. Stage 3 is not finished on a compose pull alone. The lab note must include the `schema/verify.sh` output (every `OK` line, or the `FAIL` that stopped the install).
+**Migrations (required checklist item):** Before calling Stage 3 done, confirm the Open **Stage 3** row / HOTFIXES **Schema** / CHANGELOG list for this pin. Run `schema/apply.sh` then `schema/verify.sh` so every named pack SQL and gate is applied. If Open says **no new migration**, still run apply/verify (idempotent) and note that in the lab entry. A compose pull that skips schema is **not** Stage 3.
+
+**Tracking:** After every Stage 3, update the **Fleet status** table in [lab-machines.md](./lab-machines.md) (pin, match vs `release-manifest.yml`, date, notes, **migrations verified**). A matching tag is not enough — digests must match. Stage 3 is not finished on a compose pull alone. The lab note must include the `schema/verify.sh` output (every `OK` line, or the `FAIL` that stopped the install), including the gates named for this pin.
 
 ### Shared post-install (both installers)
 
 After `compose up -d`:
 
 1. Wait for Postgres healthy  
-2. `schema/apply.sh` then `schema/verify.sh` (fail install if verify fails)  
+2. `schema/apply.sh` then `schema/verify.sh` (fail install if verify fails) — covers **all migrations named for this pin** in Open / HOTFIXES / CHANGELOG  
 3. `reregister-discovery-services.sh` (canonical: `deployment/windows-installer/`)  
 4. Print UI / gateway / discovery / bootstrap URLs  
 5. Remind: `ADVERTISE_HOST` must be the LAN IP phones use  
 6. Install/launch host tray from GitHub Releases `v${VERSION}` (soft-fail if missing)  
-7. Update [lab-machines.md](./lab-machines.md) § Fleet status for that lab
+7. Update [lab-machines.md](./lab-machines.md) § Fleet status for that lab (pin + digests + migration verify)
 
 Host-only:
 

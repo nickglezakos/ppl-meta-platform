@@ -4,24 +4,28 @@ Living tracker for **lab hotfixes** that are not yet a proper release.
 
 A lab that “works” after `docker cp`, an in-container edit, a compose override, or a one-off `.env` change is **debug**, not a release. Other labs must not be patched that way.
 
-**Release path:** Stage 1 (source on `main` + CHANGELOG) → Stage 2 (GHCR images) → Stage 3 (lab pull / install). See [`docs/deployment/platform-release-cicd.md`](../../../docs/deployment/platform-release-cicd.md).
+**Release path:** Stage 1 (source on `main` + CHANGELOG) → Stage 2 (GHCR images) → Stage 3 (lab pull / install + **named migrations**). See [`platform-release-cicd.md`](./platform-release-cicd.md).
 
 | Status | Meaning |
 |--------|---------|
 | **Pending** | Applied on a lab (or source edited locally) but Stage 1–3 not finished |
 | **Completed** | Stage 1 + Stage 2 + Stage 3 done; GHCR replaced the hotfix |
 
-When a release finishes Stage 3, move the entry from **Pending** to **Completed** and note the VERSION / image digests / lab.
+When a release finishes Stage 3, move the entry from **Pending** to **Completed** and note the VERSION / image digests / lab / migration verify.
+
+**Stage 1 scope rule:** A Stage 1 cut for an open pin must land **everything** listed under that Pending entry (and related dirty product paths in `git status`) — not only the latest chat fix. Leave out only explicit non-product leftovers the operator excludes.
+
+**Schema / Stage 3:** Every Pending entry must have a **Schema** line naming pack SQL + verify gates, or an explicit **No new migration**. Stage 3 must run `schema/apply.sh` + `schema/verify.sh` against that list.
 
 ---
 
 ## Pending
 
 ### 2026-11-18 — Pin 2.25.107 Routes/Motion + analytics quality/cache
-- **Status:** Pending Stage 2–3 (Stage 1 source/schema for `2.25.107`; follow-up Stage 1 for cross-video Motion/Routes series + camera filter)
+- **Status:** Pending Stage 2–3 (Stage 1 source/schema for `2.25.107`; follow-up Stage 1 for cross-video Motion/Routes series + camera filter; include any remaining dirty pin paths — e.g. Instant cameras detection-flags SQL — before Stage 2)
 - **Source:** Vision timestamp persist; Orchestrator fps/frame velocity; VMeta expand repair + quality map; Instant persist route_points/real quality; Cameras movement_tracking attach; FE normalize/motion; Gateway recording dataset cache + quality plumbing; **follow-up:** FE Instant flush `route_points` union + Motion shared Routes preload + Routes camera name/scope filter; VMeta resolved `camera_name` on route points
-- **Schema:** `add_face_detections_timestamp.sql`; pack `052_ensure_iva_quality_and_movement_pattern.sql`; verify gates for `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`
-- **Next:** Stage 2 rebuild frontend + vmeta + gateway + vision + orchestrator + cameras (frontend + vmeta required for this follow-up); Stage 3 pull + schema verify
+- **Schema (Stage 3 migrations):** pack SQL `add_face_detections_timestamp.sql` + `052_ensure_iva_quality_and_movement_pattern.sql`; verify gates `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern` — Stage 3 must `schema/apply.sh` then `schema/verify.sh` and paste output
+- **Next:** Finish Stage 1 for any remaining open-pin dirty product paths; Stage 2 rebuild frontend + vmeta + gateway + vision + orchestrator + cameras; Stage 3 pull + apply/verify named migrations above
 - **Tracker:** [`platform-release-cicd.md`](./platform-release-cicd.md) § Open
 
 ---

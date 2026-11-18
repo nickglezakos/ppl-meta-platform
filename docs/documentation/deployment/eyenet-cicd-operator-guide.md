@@ -63,11 +63,11 @@ You change **code on GitHub** often (Stage 1). When you want labs to **run** con
 
 ### What to say out loud (to an agent or yourself)
 
-- *“Stage 1 only”* → git + changelog, **no** images  
+- *“Stage 1 only”* → **whole open pin** + changelog + Stage 3 migration notes, **no** images (not “current chat files only”)  
 - *“Publish tray for 2.25.82”* → manual lab builds + `gh release`  
 - *“Stage 2 on lab-work-win-eynetdell”* → build/push images there (default)  
 - *“eyenetdell unavailable — use eyenet-demo?”* → required before any Stage 2 on `lab-work-dual-64g`  
-- *“Upgrade lab-home-win-nickg”* → Stage 3 install (images + tray)  
+- *“Upgrade lab-home-win-nickg”* → Stage 3 install (images + tray + **named migrations** via schema apply/verify)  
 
 Never assume “release” means all of the above unless you said so.
 
@@ -113,40 +113,44 @@ Pin check (any time):
 
 This is “save your homework to the cloud.” Labs can pull **installer scripts** from git, but they keep running **old containers** until Stage 2.
 
+**Whole open pin:** When you say Stage 1, the agent must include **everything** for the open pin (Open table + HOTFIXES Pending + related dirty `git status` paths) — not only the latest chat fix. Stage 3 migrations for that pin must be named in the same push.
+
 ### Technical details
 
-**Does:** commit + push (source, installers, docs, pins, schema pack when needed) **and** update root [`CHANGELOG.md`](../../CHANGELOG.md).  
+**Does:** commit + push the **whole open pin** (source, installers, docs, pins, schema pack when needed) **and** update root [`CHANGELOG.md`](../../CHANGELOG.md) with Stage 3 migration names (or explicit “no new migration”).  
 **Does not:** build or push Docker images.
 
 A CHANGELOG **Notes** line that a column is missing, or that persist can 500 until a later schema follow-up, means Stage 1 is not done. That column belongs in the schema pack and in `schema/verify.sh` in the same push.
 
-**Next full Stage 1–3 reminder:** Pin `2.25.107` — Routes/Motion + analytics quality/cache, plus cross-video Motion/Routes series + camera-filter follow-up. See [`platform-release-cicd.md`](./platform-release-cicd.md) § Open and [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) Pending. Stage 2 rebuild must include **frontend** + **vmeta-protected** (no new migration for this follow-up).
+**Next full Stage 1–3 reminder:** Pin `2.25.107` — whole open pin (Routes/Motion + analytics quality/cache + cross-video Motion/Routes camera filter + any remaining dirty cameras/docs paths). See [`platform-release-cicd.md`](./platform-release-cicd.md) § Open and [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) Pending. **Stage 3 migrations:** `add_face_detections_timestamp.sql` + `052_ensure_iva_quality_and_movement_pattern.sql` (gates `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`). Stage 2 rebuild must include **frontend** + **vmeta-protected** (+ **cameras** if cameras source changed).
 
 #### CHANGELOG (mandatory on meaningful Stage 1)
 
 1. Prefer `## [Unreleased]` while iterating without a pin bump.  
 2. When cutting a pin, use `## [X.Y.Z] — YYYY-MM-DD` matching root `VERSION`.  
 3. Sections: **Added** / **Changed** / **Fixed** / **Notes** (omit empty).  
-4. No secrets. Do not use `docs/notes.txt` for release notes.  
+4. Name **Stage 3 migrations** (pack SQL + verify gates) under Added/Notes, or write **No new migration**.  
+5. No secrets. Do not use `docs/notes.txt` for release notes.  
 
 #### Typical Stage 1 sequence
 
 ```bash
 # from repo root on the Mac
-# 1) land fixes
+# 1) sweep Open + HOTFIXES Pending + git status — land the WHOLE open pin
 # 2) if new pin: set VERSION + all installer RELEASE_TAG / VERSION pins to the same value
 # 3) if schema changed:
 bash deployment/mac-lima/sync-schema-pack.sh   # include schema/pack.tar.gz in commit
 
-# 4) edit CHANGELOG.md
+# 4) edit CHANGELOG.md (+ Stage 3 migration names)
+# 5) update Open Stage 3 row + HOTFIXES Schema with the same migration list
 ./scripts/check_installer_pins.sh
 
-git add -A   # review; exclude secrets / notes.txt if private
+git add -A   # review; exclude secrets / notes.txt if private; include related pin paths
 git commit -m "…"
 git push origin main
 ```
 
-Agent wording: *“Stage 1: push code to GitHub per platform-release-cicd.md”* (changelog implied).
+Agent wording: *“Stage 1: push code to GitHub per platform-release-cicd.md”* (whole open pin + changelog + Stage 3 migration notes).
 
 ---
 
@@ -377,14 +381,17 @@ Agent wording:
 
 Images sitting in GHCR do nothing until a machine **pulls** them. Say explicitly which lab to upgrade.
 
+**Migrations:** Stage 3 always runs `schema/apply.sh` + `schema/verify.sh` for the migrations named in Open / HOTFIXES / CHANGELOG for that pin. Image digests alone are not enough.
+
 ### Technical details
 
 #### Windows / WSL (`lab-home-win-nickg`, or Windows boot on dual)
 
 1. Installer files match git.  
 2. First time: `install-eyenet-wsl.bat`.  
-3. Install/upgrade: `install-platform.ps1` (or `install-platform.bat` launcher) — pulls `${RELEASE_TAG}`, schema apply/verify, discovery reregister.  
+3. Install/upgrade: `install-platform.ps1` (or `install-platform.bat` launcher) — pulls `${RELEASE_TAG}`, **schema apply/verify (named pin migrations)**, discovery reregister.  
 4. UI: `http://localhost:3000`  
+5. Lab note: paste `schema/verify.sh` output for the gates listed on the pin.  
 
 Manual pull (existing install dir):
 
@@ -399,7 +406,7 @@ bash deployment/ubuntu/install-eyenet-ubuntu.sh
 # or: ADVERTISE_HOST=<lan-ip> RELEASE_TAG=<VERSION> bash deployment/ubuntu/install-eyenet-ubuntu.sh
 ```
 
-After `compose up -d`, apply and verify schema. Stage 3 is not finished when image digests match. Paste the verify output into the lab note.
+After `compose up -d`, apply and verify schema for the **migrations named for this pin**. Stage 3 is not finished when image digests match. Paste the verify output into the lab note (every named gate OK, or the FAIL).
 
 ```bash
 cd ~/eyenet-platform
