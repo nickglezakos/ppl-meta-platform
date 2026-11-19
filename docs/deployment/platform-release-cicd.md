@@ -8,12 +8,12 @@
 
 ### Open for next full Stage 1 → 2 → 3
 
-**Pin `2.25.107` Stage 1 landed / pending Stage 2–3.** Routes/Motion + analytics quality/cache + **MVR soft-archive** + **People profile search**.
+**Pin `2.25.107` Stage 1 + Stage 2 done / pending Stage 3.** Routes/Motion + analytics quality/cache + **MVR soft-archive** + **People profile search**.
 
 | Step | Must include |
 |---|---|
-| **Stage 1** | Routes/Motion series + camera filter; MVR soft-archive (FE/vmeta/gateway/presence + pack `055_add_mvr_people_archive.sql`); People profile search (FE + vmeta `search/by-known-people` + gateway); CHANGELOG + pin `2.25.107` |
-| **Stage 2** | Mode D on **`lab-work-win-eynetdell`**: rebuild **frontend** + **vmeta-protected** + **gateway** + **presence** + vision + orchestrator + cameras; retag-forward others from `2.25.106`; finalize release-manifest |
+| **Stage 1** | Routes/Motion series + camera filter; MVR soft-archive (FE/vmeta/gateway/presence + pack `055_add_mvr_people_archive.sql`); People profile search (FE + vmeta `search/by-known-people` + gateway); CHANGELOG + pin `2.25.107` — **done** (`a2e77c79` + manifest follow-up) |
+| **Stage 2** | Mode D on **`lab-work-win-eynetdell`**: rebuild **frontend** + **vmeta-protected** + **gateway** + **presence** + vision + orchestrator + cameras; retag-forward others from `2.25.106`; finalize release-manifest — **done** (manifest verified) |
 | **Stage 3** | Compose pull/recreate; **apply schema pack** and `schema/verify.sh` including `055_add_mvr_people_archive.sql` / `mvr_people.is_archived` gates (people search: no new migration) |
 
 Tracker: [`HOTFIXES_NOTES.md`](../documentation/deployment/HOTFIXES_NOTES.md) § Pending. Clear Pending entries only after Stage 3 verify passes on the target labs.

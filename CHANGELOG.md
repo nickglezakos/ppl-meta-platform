@@ -44,6 +44,7 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 - No historical Vision reprocess in this pin; read-path repair covers existing IVA route points.
 - Appearance-level SQL cursor paging for routes remains deferred.
 - People profile search: **no new migration** (uses existing MVR + Instant Detection log stores).
+- **GHCR images published for 2.25.107** (Mode D on `lab-work-win-eynetdell`, git `a2e77c79`): rebuilt frontend `1d42b931…`, vmeta `1646923bb8b2…`, gateway `75146d67…`, presence `2ee1e40c…`, vision `a52164ac…`, orchestrator `6930cfc9…`, cameras `626fb28b…`; retagged node/media/discovery/communications/models from `2.25.106`; release-manifest verified.
 - **Stage 3 migrations:** apply/verify pack SQL `add_face_detections_timestamp.sql` + `052_ensure_iva_quality_and_movement_pattern.sql` + `055_add_mvr_people_archive.sql` (gates `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`, `mvr_people.is_archived` / `archived_at` / `archived_by`).
 
 ## [2.25.106] — 2026-11-17
