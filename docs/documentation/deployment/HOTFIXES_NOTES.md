@@ -21,17 +21,19 @@ When a release finishes Stage 3, move the entry from **Pending** to **Completed*
 
 ## Pending
 
-### 2026-11-18 — Pin 2.25.107 Routes/Motion + analytics quality/cache + MVR soft-archive + People profile search
-- **Status:** Pending Stage 3 (Stage 1 + Stage 2 Mode D done for `2.25.107`)
-- **Source:** Vision timestamp persist; Orchestrator fps/frame velocity; VMeta expand repair + quality map; Instant persist route_points/real quality; Cameras movement_tracking attach; FE normalize/motion; Gateway recording dataset cache + quality plumbing; FE Instant flush `route_points` union + Motion shared Routes preload + Routes camera name/scope filter; VMeta resolved `camera_name` on route points; **MVR soft-archive** (vmeta archive + promote runner-up, gateway proxy + presence repoint, FE archive icons / Show archived / cross-video Archive); **People profile search** (FE search entry + restricted analytics filter; vmeta `search/by-known-people` recording+instant; gateway proxy; cross-video source badges)
-- **Schema (Stage 3 migrations):** pack SQL `add_face_detections_timestamp.sql` + `052_ensure_iva_quality_and_movement_pattern.sql` + `055_add_mvr_people_archive.sql`; verify gates `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`, `mvr_people.is_archived` / `archived_at` / `archived_by` — Stage 3 must `schema/apply.sh` then `schema/verify.sh` and paste output. People profile search: **no new migration**.
-- **Stage 2:** Mode D on `lab-work-win-eynetdell` — rebuild frontend/vmeta/gateway/presence/vision/orchestrator/cameras @ `a2e77c79`; retag-forward others from `2.25.106`; release-manifest verified
-- **Next:** Stage 3 pull on `lab-work-dual-64g` / eyenet-demo + apply/verify named migrations above
-- **Tracker:** [`platform-release-cicd.md`](./platform-release-cicd.md) § Open
+*(none)*
 
 ---
 
 ## Completed
+
+### 2026-11-19 — Pin 2.25.107 Routes/Motion + analytics quality/cache + MVR soft-archive + People profile search
+- **Status:** Completed on `lab-work-dual-64g` / `eyenet-demo`
+- **VERSION / pin:** `2.25.107`
+- **Source:** Vision timestamp persist; Orchestrator fps/frame velocity; VMeta expand repair + quality map; Instant persist route_points/real quality; Cameras movement_tracking attach; FE normalize/motion; Gateway recording dataset cache + quality plumbing; FE Instant flush `route_points` union + Motion shared Routes preload + Routes camera name/scope filter; VMeta resolved `camera_name` on route points; **MVR soft-archive** (vmeta archive + promote runner-up, gateway proxy + presence repoint, FE archive icons / Show archived / cross-video Archive); **People profile search** (FE search entry + restricted analytics filter; vmeta `search/by-known-people` recording+instant; gateway proxy; cross-video source badges)
+- **Schema (Stage 3 migrations):** pack SQL `add_face_detections_timestamp.sql` + `052_ensure_iva_quality_and_movement_pattern.sql` + `055_add_mvr_people_archive.sql`; People profile search: **no new migration**
+- **Stage 2:** Mode D on `lab-work-win-eynetdell` — rebuild frontend/vmeta/gateway/presence/vision/orchestrator/cameras @ `a2e77c79`; retag-forward others from `2.25.106`; release-manifest `311d6620`
+- **Stage 3 (eyenet-demo):** compose pull `:2.25.107`; all 12 digests match release-manifest (frontend `1d42b931…`, vmeta `1646923b…`, gateway `75146d67…`, presence `2ee1e40c…`, vision `a52164ac…`, orch `6930cfc9…`, cameras `626fb28b…`); `schema/verify.sh` OK for `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`, `mvr_people.is_archived` / `archived_at` / `archived_by`; discovery healthy=11; UI/gw HTTP 200; FE assets contain archive + known-people search strings
 
 ### 2026-11-17 — Pin 2.25.106 bundle (People & Groups + Details + vmeta fallback + motion DDL pack)
 - **Status:** Completed on `lab-work-dual-64g` / `eyenet-demo`

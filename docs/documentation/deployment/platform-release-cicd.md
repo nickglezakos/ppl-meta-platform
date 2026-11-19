@@ -1,22 +1,22 @@
 # Platform release CI/CD (single source of truth)
 
 **Status:** Active  
-**Last updated:** 2026-11-18  
+**Last updated:** 2026-11-19  
 **Current pin:** root [`VERSION`](../../VERSION) (today `2.25.107`)  
 **Registry:** `ghcr.io/nickglezakos/ppl-meta-platform`  
 **Architecture:** `linux/amd64` only for customer/lab installs  
 
 ### Open for next full Stage 1 → 2 → 3
 
-**Pin `2.25.107` Stage 1 cut (+ follow-up) / Stage 2 in progress on `lab-work-win-eynetdell`.** Routes/Motion timestamp+velocity repair, analytics merge cache, Image Quality IVA fallback, schema gates for `face_detections.timestamp` + IVA quality/movement_pattern; **follow-up:** cross-video Motion/Routes series + camera filter (Instant flush route_points, named/scoped camera chips, VMeta camera_name).
+**Pin `2.25.107` Completed** on `lab-work-dual-64g` / `eyenet-demo` (Stage 1 + Mode D Stage 2 on `lab-work-win-eynetdell` + Stage 3 compose/schema 2026-11-19). No open pin — start a new pin when the next product cut lands.
 
 | Step | Must include |
 |---|---|
-| **Stage 1** | **Whole open pin** (not one chat fix): Vision/Orchestrator/VMeta/Gateway/Cameras/Frontend route+quality+analytics; Instant cameras detection-flags SQL path if still dirty; cross-video Motion/Routes series + camera filter; pack + verify gates; CHANGELOG + pin `2.25.107` — base `66157f8b`, follow-up `70f1030c`; any remaining Pending/unstaged pin paths must land before Stage 2 |
-| **Stage 2** | Mode D on **`lab-work-win-eynetdell`** (WSL `eyenet`): rebuild **frontend**, **vmeta-protected**, **gateway**, **vision-protected**, **orchestrator**, **cameras**; retag-forward others from `2.25.106`; finalize release-manifest |
-| **Stage 3** | Compose pull rebuilt services; **migrations:** `schema/apply.sh` then `schema/verify.sh` for pack SQL `add_face_detections_timestamp.sql` + `052_ensure_iva_quality_and_movement_pattern.sql` (gates: `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`); paste verify output into lab note |
+| **Stage 1** | *(next pin)* Whole open pin + CHANGELOG + named Stage 3 migrations |
+| **Stage 2** | Mode D on **`lab-work-win-eynetdell`** unless operator approves fallback |
+| **Stage 3** | Compose pull + `schema/apply.sh` / `schema/verify.sh` on named lab; update fleet status |
 
-Tracker: [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) § Pending.
+Tracker: [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) § Completed (`2.25.107`).
 
 **Behavioural triggers (Media DDL) — already Completed in pin `2.25.105`**. Do not re-open unless a new Behavioural follow-up lands.
 
