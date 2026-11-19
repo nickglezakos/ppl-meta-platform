@@ -8055,9 +8055,9 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         if (cameraId != collectionId && !isCurrentVideo) {
           continue;
         }
-        final points = (camera['total_points'] as num?)?.toInt() || 0;
+        final points = (camera['total_points'] as num?)?.toInt() ?? 0;
         final appearances =
-            (camera['total_appearances'] as num?)?.toInt() || 0;
+            (camera['total_appearances'] as num?)?.toInt() ?? 0;
         final existing = collapsed[collectionId];
         if (existing == null) {
           collapsed[collectionId] = {
@@ -8072,9 +8072,9 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
           };
         } else {
           existing['total_points'] =
-              ((existing['total_points'] as num?)?.toInt() || 0) + points;
+              ((existing['total_points'] as num?)?.toInt() ?? 0) + points;
           existing['total_appearances'] =
-              ((existing['total_appearances'] as num?)?.toInt() || 0) +
+              ((existing['total_appearances'] as num?)?.toInt() ?? 0) +
                   appearances;
           if (existing['camera_name'] == collectionId &&
               name.isNotEmpty &&
