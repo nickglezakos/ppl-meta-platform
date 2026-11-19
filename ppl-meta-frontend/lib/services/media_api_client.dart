@@ -2343,6 +2343,94 @@ class MediaApiClient {
     return const [];
   }
 
+  /// Read-only search for known MVR people across recording and/or instant logs.
+  Future<ApiResponse<Map<String, dynamic>>> searchKnownPeople({
+    required List<String> mvrPeopleUuids,
+    required List<String> sources,
+    required DateTime startTime,
+    required DateTime endTime,
+    List<String>? cameraIds,
+    List<String>? cameraDeviceIds,
+    double similarityThreshold = 0.6,
+  }) async {
+    try {
+      final data = <String, dynamic>{
+        'mvr_people_uuids': mvrPeopleUuids,
+        'sources': sources,
+        'start_time': startTime.toUtc().toIso8601String(),
+        'end_time': endTime.toUtc().toIso8601String(),
+        'similarity_threshold': similarityThreshold,
+        'detection_modality': 'face',
+        if (cameraIds != null && cameraIds.isNotEmpty) 'camera_ids': cameraIds,
+        if (cameraDeviceIds != null && cameraDeviceIds.isNotEmpty)
+          'camera_device_ids': cameraDeviceIds,
+      };
+      final response = await _apiClient.post(
+        '/api/v1/mvr-people/search/by-known-people',
+        data: data,
+      );
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Known people search failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Known people search unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Analytics camera list enriched with media collection `camera_device_id`.
+  Future<ApiResponse<List<Map<String, dynamic>>>> getEnrichedCamerasList() async {
+    try {
+      final camerasResp = await getCamerasList();
+      if (!camerasResp.success || camerasResp.data == null) {
+        return camerasResp;
+      }
+      final collectionsResp = await getCollections(limit: 1000);
+      final deviceByKey = <String, String>{};
+      if (collectionsResp.success && collectionsResp.data != null) {
+        for (final c in collectionsResp.data!) {
+          final deviceId = c.cameraDeviceId?.trim();
+          if (deviceId == null || deviceId.isEmpty) continue;
+          if (c.id.isNotEmpty) deviceByKey[c.id] = deviceId;
+          if ((c.uuid ?? '').isNotEmpty) deviceByKey[c.uuid!] = deviceId;
+          if (c.name.isNotEmpty) deviceByKey[c.name] = deviceId;
+        }
+      }
+
+      final enriched = camerasResp.data!.map((camera) {
+        final map = Map<String, dynamic>.from(camera);
+        final existing = (map['camera_device_id'] ?? map['device_id'])?.toString();
+        if (existing != null && existing.isNotEmpty) {
+          map['camera_device_id'] = existing;
+          return map;
+        }
+        final keys = [
+          map['id'],
+          map['uuid'],
+          map['collection_name'],
+          map['name'],
+        ];
+        for (final key in keys) {
+          final k = key?.toString();
+          if (k != null && deviceByKey.containsKey(k)) {
+            map['camera_device_id'] = deviceByKey[k];
+            break;
+          }
+        }
+        return map;
+      }).toList();
+
+      return ApiResponse.success(enriched);
+    } on DioException catch (e) {
+      debugPrint('❌ Enriched cameras list failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Enriched cameras list unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
   /// Search Instant Detection InstantMvrs (optional hierarchical auto-merge).
   Future<ApiResponse<Map<String, dynamic>>> searchMVRPeopleByInstantLogs({
     required String cameraDeviceId,

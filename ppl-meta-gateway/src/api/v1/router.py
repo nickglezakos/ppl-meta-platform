@@ -3202,6 +3202,12 @@ async def search_mvr_people_by_instant_logs(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.post("/mvr-people/search/by-known-people")
+async def search_mvr_people_by_known_people(request: Request):
+    """Proxy known-people recording/instant search to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
 @api_router.post("/mvr-people/search/by-videos/persisted-merge-session")
 async def search_mvr_people_by_videos_persisted_merge_session(request: Request):
     """Proxy persisted merge-session MVR search request to vmeta service."""

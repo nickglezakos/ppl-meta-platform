@@ -570,6 +570,57 @@ class MVRHealthResponse(BaseModel):
 
 
 # ============================================================================
+# Known-people search (recording + instant, read-only)
+# ============================================================================
+
+class KnownPeopleSearchRequest(BaseModel):
+    """Search known MVR people across recording and/or instant stored data."""
+
+    mvr_people_uuids: List[str] = Field(
+        ...,
+        min_items=1,
+        description="Known MVR people UUIDs to search for",
+    )
+    sources: List[str] = Field(
+        default_factory=lambda: ["recording"],
+        description="recording | instant_detection (include both for dual search)",
+    )
+    camera_ids: Optional[List[str]] = Field(
+        None,
+        description="Collection names/ids for recording search (empty = all)",
+    )
+    camera_device_ids: Optional[List[str]] = Field(
+        None,
+        description="Camera device ids for instant log search (empty = all)",
+    )
+    start_time: datetime = Field(..., description="Search window start (UTC)")
+    end_time: datetime = Field(..., description="Search window end (UTC)")
+    similarity_threshold: float = Field(
+        0.6,
+        ge=0.0,
+        le=1.0,
+        description="Minimum cosine similarity for embedding matches",
+    )
+    detection_modality: str = Field(
+        "face",
+        description="Always face for this endpoint",
+    )
+
+
+class KnownPeopleSearchResponse(BaseModel):
+    """Response for known-people search."""
+
+    search_session_uuid: str
+    search_window: Dict[str, Any]
+    sources: List[str]
+    requested_mvr_people_uuids: List[str]
+    normalized_mvr_people_uuids: List[str]
+    unsearchable_mvr_uuids: List[str] = Field(default_factory=list)
+    members_found: int = 0
+    matched_people: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+# ============================================================================
 # Export all models
 # ============================================================================
 
@@ -641,4 +692,8 @@ __all__ = [
     "MLModelsHealthStatus",
     "ProcessingQueueStatus",
     "MVRStatistics",
+
+    # Known-people search
+    "KnownPeopleSearchRequest",
+    "KnownPeopleSearchResponse",
 ]

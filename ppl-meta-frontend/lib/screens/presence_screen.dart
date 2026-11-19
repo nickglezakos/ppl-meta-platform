@@ -21,6 +21,7 @@ import '../services/individual_groups_api_client.dart';
 import '../services/presence_api_client.dart';
 import '../utils/platform_file_download.dart';
 import '../widgets/custom_app_bar.dart';
+import '../widgets/individual_groups/people_profile_search_coordinator.dart';
 import '../core/providers/camera_providers.dart';
 import '../presentation/widgets/camera/camera_stream_player_simple.dart';
 
@@ -2511,6 +2512,17 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen>
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      IconButton(
+                        tooltip: 'Search detections',
+                        icon: const Icon(Icons.search, size: 20),
+                        onPressed: _isPeopleSaving
+                            ? null
+                            : () => PeopleProfileSearchCoordinator.run(
+                                  context: context,
+                                  ref: ref,
+                                  profile: profile,
+                                ),
+                      ),
                       IconButton(
                         tooltip: 'Edit profile',
                         icon: const Icon(Icons.edit_outlined, size: 20),

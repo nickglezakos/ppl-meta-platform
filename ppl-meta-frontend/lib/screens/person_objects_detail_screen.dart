@@ -2028,6 +2028,30 @@ class _PersonObjectsDetailScreenState
         return;
       }
 
+      // People profile search — recording and/or instant, source-tagged appearances
+      if (context.sessionData['source'] == 'people_profile_search') {
+        print('👤 Loading people profile search analysis…');
+        await _loadPeopleProfileSearchData(
+          context,
+          activeUuids,
+          aggregatedAnalyses,
+        );
+        if (aggregatedAnalyses.isEmpty) {
+          setState(() {
+            _crossVideoError =
+                'No detections found for this people profile search.';
+            _isLoadingCrossVideoData = false;
+          });
+          return;
+        }
+        setState(() {
+          _aggregatedAnalyses = aggregatedAnalyses;
+          _isLoadingCrossVideoData = false;
+        });
+        _loadBestImagesForIndividuals();
+        return;
+      }
+
       final bool useUnifiedSessionAnalysis =
           !context.sessionUuid.startsWith('mvr_search_') &&
           context.sessionData['search_results'] == null;
@@ -2378,7 +2402,237 @@ class _PersonObjectsDetailScreenState
     }
   }
 
-  /// Load best images for all individuals in cross-video analysis
+  /// People-profile search: build analyses from known-people search hits,
+  /// tagging appearances with recording / instant_detection sources.
+  Future<void> _loadPeopleProfileSearchData(
+    CrossVideoAnalysisContext context,
+    List<String> activeUuids,
+    List<AggregatedIndividualAnalysis> aggregatedAnalyses,
+  ) async {
+    final mediaApiClient = ref.read(mediaApiClientProvider);
+    final rawByMvr =
+        context.sessionData['matched_appearances_by_mvr'] as Map? ?? const {};
+    final appearanceByMvr = <String, List<Map<String, dynamic>>>{};
+    rawByMvr.forEach((key, value) {
+      final uuid = key.toString();
+      if (value is List) {
+        appearanceByMvr[uuid] = value
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    });
+
+    final instantMvrs = (context.sessionData['instant_mvrs'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+
+    DateTime? startTime;
+    DateTime? endTime;
+    final searchParams =
+        context.sessionData['search_parameters'] as Map<String, dynamic>?;
+    if (searchParams != null) {
+      startTime = DateTime.tryParse(searchParams['start_time']?.toString() ?? '');
+      endTime = DateTime.tryParse(searchParams['end_time']?.toString() ?? '');
+    }
+
+    // Enrich recording MVRs via standard analysis when available.
+    final recordingUuids = <String>[];
+    for (final uuid in activeUuids) {
+      final apps = appearanceByMvr[uuid] ?? const [];
+      final hasRecording = apps.any(
+        (a) => (a['data_source']?.toString() ?? 'recording') == 'recording',
+      );
+      if (hasRecording) recordingUuids.add(uuid);
+    }
+
+    final recordingByUuid = <String, AggregatedIndividualAnalysis>{};
+    if (recordingUuids.isNotEmpty) {
+      try {
+        final analysisResponse = await mediaApiClient.getMvrSearchAnalysis(
+          mvrUuids: recordingUuids,
+          sessionUuid: context.sessionUuid,
+          startTime: startTime,
+          endTime: endTime,
+        );
+        if (analysisResponse.success && analysisResponse.data != null) {
+          final items =
+              analysisResponse.data!['analyses'] as List<dynamic>? ?? const [];
+          for (final raw in items.whereType<Map>()) {
+            final analysis = AggregatedIndividualAnalysis.fromJson(
+              Map<String, dynamic>.from(raw),
+            );
+            recordingByUuid[analysis.individualId] = analysis;
+            recordingByUuid[analysis.individualUuid] = analysis;
+          }
+        }
+      } catch (e) {
+        print('⚠️ People profile recording enrichment failed: $e');
+      }
+    }
+
+    // Enrich instant hits when present.
+    final instantByUuid = <String, AggregatedIndividualAnalysis>{};
+    if (instantMvrs.isNotEmpty) {
+      try {
+        final instantResponse = await mediaApiClient.getInstantMvrSearchAnalysis(
+          mvrUuids: activeUuids,
+          sessionUuid: context.sessionUuid,
+          instantMvrs: instantMvrs,
+          startTime: startTime,
+          endTime: endTime,
+        );
+        if (instantResponse.success && instantResponse.data != null) {
+          final items =
+              instantResponse.data!['analyses'] as List<dynamic>? ?? const [];
+          for (final raw in items.whereType<Map>()) {
+            final analysis = AggregatedIndividualAnalysis.fromJson(
+              Map<String, dynamic>.from(raw),
+            );
+            instantByUuid[analysis.individualId] = analysis;
+            instantByUuid[analysis.individualUuid] = analysis;
+          }
+        }
+      } catch (e) {
+        print('⚠️ People profile instant enrichment failed: $e');
+      }
+    }
+
+    for (final uuid in activeUuids) {
+      final rawApps = appearanceByMvr[uuid] ?? const <Map<String, dynamic>>[];
+      if (rawApps.isEmpty &&
+          !recordingByUuid.containsKey(uuid) &&
+          !instantByUuid.containsKey(uuid)) {
+        continue;
+      }
+
+      final appearances = <IndividualAppearance>[];
+      for (final app in rawApps) {
+        final ts = DateTime.tryParse(app['timestamp']?.toString() ?? '') ??
+            DateTime.tryParse(app['start_timestamp']?.toString() ?? '') ??
+            DateTime.now();
+        final endTs = DateTime.tryParse(app['end_timestamp']?.toString() ?? '') ??
+            ts;
+        appearances.add(
+          IndividualAppearance(
+            individualUuid:
+                app['individual_uuid']?.toString() ?? uuid,
+            videoUuid: app['video_uuid']?.toString() ?? '',
+            personObjectUuid:
+                app['person_object_uuid']?.toString() ?? uuid,
+            startTimestamp: ts,
+            endTimestamp: endTs,
+            confidenceScore:
+                (app['confidence'] as num?)?.toDouble() ?? 0.0,
+            cameraId: app['camera_id']?.toString(),
+            cameraName: app['camera_name']?.toString() ??
+                app['camera_id']?.toString(),
+            dataSource: app['data_source']?.toString(),
+          ),
+        );
+      }
+
+      // Prefer tagged search appearances; fall back to enrichment appearances.
+      if (appearances.isEmpty) {
+        final rec = recordingByUuid[uuid];
+        if (rec != null) {
+          appearances.addAll(
+            rec.appearances.map(
+              (a) => IndividualAppearance(
+                individualUuid: a.individualUuid,
+                videoUuid: a.videoUuid,
+                personObjectUuid: a.personObjectUuid,
+                startTimestamp: a.startTimestamp,
+                endTimestamp: a.endTimestamp,
+                entryBbox: a.entryBbox,
+                exitBbox: a.exitBbox,
+                confidenceScore: a.confidenceScore,
+                cameraId: a.cameraId,
+                cameraName: a.cameraName,
+                mvrPeopleUuid: a.mvrPeopleUuid,
+                dataSource: a.dataSource ?? 'recording',
+              ),
+            ),
+          );
+        }
+        final inst = instantByUuid[uuid];
+        if (inst != null) {
+          appearances.addAll(
+            inst.appearances.map(
+              (a) => IndividualAppearance(
+                individualUuid: a.individualUuid,
+                videoUuid: a.videoUuid,
+                personObjectUuid: a.personObjectUuid,
+                startTimestamp: a.startTimestamp,
+                endTimestamp: a.endTimestamp,
+                entryBbox: a.entryBbox,
+                exitBbox: a.exitBbox,
+                confidenceScore: a.confidenceScore,
+                cameraId: a.cameraId,
+                cameraName: a.cameraName,
+                mvrPeopleUuid: a.mvrPeopleUuid,
+                dataSource: a.dataSource ?? 'instant_detection',
+              ),
+            ),
+          );
+        }
+      }
+
+      if (appearances.isEmpty) continue;
+
+      appearances.sort((a, b) => a.startTimestamp.compareTo(b.startTimestamp));
+      final base = recordingByUuid[uuid] ?? instantByUuid[uuid];
+      final uniqueVideos =
+          appearances.map((a) => a.videoUuid).where((v) => v.isNotEmpty).toSet();
+      final avgConf = appearances.isEmpty
+          ? 0.0
+          : appearances
+                  .map((a) => a.confidenceScore)
+                  .fold<double>(0, (s, v) => s + v) /
+              appearances.length;
+
+      aggregatedAnalyses.add(
+        AggregatedIndividualAnalysis(
+          individualUuid: uuid,
+          individualId: uuid,
+          sessionUuid: context.sessionUuid,
+          totalAppearances: appearances.length,
+          uniqueVideos: uniqueVideos.length,
+          firstSeen: appearances.first.startTimestamp,
+          lastSeen: appearances.last.endTimestamp,
+          totalDurationSeconds: appearances.fold<double>(
+            0,
+            (s, a) => s + a.durationSeconds,
+          ),
+          averageConfidence: avgConf,
+          averageQualityScore: base?.averageQualityScore ?? avgConf,
+          averageRouteVelocity: base?.averageRouteVelocity,
+          averageSpeedMps: base?.averageSpeedMps,
+          gaitBand: base?.gaitBand,
+          motionClass: base?.motionClass,
+          motionConfidence: base?.motionConfidence,
+          motionFeatures: base?.motionFeatures,
+          routeCaricature: base?.routeCaricature,
+          demographics: base?.demographics,
+          aggregateDemographics: base?.aggregateDemographics,
+          appearances: appearances,
+          personObjectUuids:
+              appearances.map((a) => a.personObjectUuid).toList(),
+          analysisTimestamp: DateTime.now(),
+          isSuperIndividual: base?.isSuperIndividual ?? false,
+          mergedMVRCount: base?.mergedMVRCount ?? 1,
+          mergedMVRPeople: base?.mergedMVRPeople ?? const [],
+          bestFaceThumbnail: base?.bestFaceThumbnail,
+          name: base?.name ??
+              context.sessionData['ppp_name']?.toString(),
+          nameUpdatedAt: base?.nameUpdatedAt,
+          nameUpdatedBy: base?.nameUpdatedBy,
+        ),
+      );
+    }
+  }
+
   /// Load Instant Detection log search analysis from ephemeral InstantMvr records.
   Future<void> _loadInstantDetectionLogSearchData(
     CrossVideoAnalysisContext context,
@@ -6094,6 +6348,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                                     ),
                                   ),
                                 ),
+                                ..._buildPeopleProfileSourceChips(analysis),
                               ],
                             ),
                             const SizedBox(height: 4),
@@ -6629,10 +6884,116 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
   }
 
   /// Build a single appearance card (same UX as individual card)
+  List<Widget> _buildPeopleProfileSourceChips(
+      AggregatedIndividualAnalysis analysis) {
+    final sessionSource =
+        widget.crossVideoContext?.sessionData['source']?.toString();
+    if (sessionSource != 'people_profile_search') return const [];
+
+    final requested = (widget.crossVideoContext?.sessionData['data_sources']
+                as List?)
+            ?.map((e) => e.toString())
+            .toSet() ??
+        {};
+    final sources = analysis.appearances
+        .map((a) => a.dataSource)
+        .whereType<String>()
+        .toSet();
+    final showBadges = requested.length > 1 || sources.length > 1;
+    if (!showBadges && sources.length <= 1 && requested.length <= 1) {
+      return const [];
+    }
+
+    String label;
+    MaterialColor color;
+    if (sources.contains('recording') &&
+        sources.contains('instant_detection')) {
+      label = 'Recording + Instant';
+      color = Colors.purple;
+    } else if (sources.contains('instant_detection')) {
+      label = 'Instant';
+      color = Colors.orange;
+    } else {
+      label = 'Recording';
+      color = Colors.blue;
+    }
+
+    return [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: color.shade700,
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Widget _appearanceSourceBadge(IndividualAppearance appearance) {
+    final source = appearance.dataSource;
+    if (source == null || source.isEmpty) return const SizedBox.shrink();
+    final sessionSource =
+        widget.crossVideoContext?.sessionData['source']?.toString();
+    final requested = (widget.crossVideoContext?.sessionData['data_sources']
+                as List?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const [];
+    if (sessionSource != 'people_profile_search') {
+      return const SizedBox.shrink();
+    }
+    if (requested.length <= 1) return const SizedBox.shrink();
+
+    final isInstant = source == 'instant_detection';
+    final MaterialColor color = isInstant ? Colors.orange : Colors.blue;
+    final label = isInstant ? 'Instant' : 'Recording';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: color.shade800,
+        ),
+      ),
+    );
+  }
+
+  bool _isSyntheticInstantVideo(String videoUuid) {
+    return videoUuid.startsWith('instant_log_') || videoUuid.isEmpty;
+  }
+
   Widget _buildAppearanceCard(IndividualAppearance appearance, int index) {
+    final isSynthetic = _isSyntheticInstantVideo(appearance.videoUuid) ||
+        appearance.dataSource == 'instant_detection';
     return GestureDetector(
       onTap: () async {
         if (!mounted) {
+          return;
+        }
+        if (isSynthetic) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Instant detection appearances have no recorded video to open',
+              ),
+            ),
+          );
           return;
         }
         final mediaItem = MediaItem(
@@ -6666,33 +7027,36 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                 width: 50,
                 height: 50,
                 decoration: BoxDecoration(
-                  color: Colors.green.shade100,
+                  color: isSynthetic
+                      ? Colors.orange.shade100
+                      : Colors.green.shade100,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.face,
                       size: 32,
-                      color: Colors.green,
+                      color: isSynthetic ? Colors.orange : Colors.green,
                     ),
-                    Positioned(
-                      bottom: 2,
-                      right: 2,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: const BoxDecoration(
-                          color: Colors.blue,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.play_arrow,
-                          size: 12,
-                          color: Colors.white,
+                    if (!isSynthetic)
+                      Positioned(
+                        bottom: 2,
+                        right: 2,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: const BoxDecoration(
+                            color: Colors.blue,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.play_arrow,
+                            size: 12,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -6702,6 +7066,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    _appearanceSourceBadge(appearance),
                     Text(
                       'Appearance ${index + 1}',
                       style: const TextStyle(
@@ -6711,7 +7076,9 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Video: ${appearance.videoUuid.length >= 8 ? appearance.videoUuid.substring(0, 8) : appearance.videoUuid}...',
+                      isSynthetic
+                          ? 'Instant log: ${appearance.videoUuid.isEmpty ? 'n/a' : (appearance.videoUuid.length >= 8 ? appearance.videoUuid.substring(0, 8) : appearance.videoUuid)}…'
+                          : 'Video: ${appearance.videoUuid.length >= 8 ? appearance.videoUuid.substring(0, 8) : appearance.videoUuid}...',
                       style: TextStyle(color: Colors.grey[600], fontSize: 11),
                     ),
                     const SizedBox(height: 2),
@@ -6732,7 +7099,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
               ),
               // Tap indicator icon
               Icon(
-                Icons.chevron_right,
+                isSynthetic ? Icons.info_outline : Icons.chevron_right,
                 color: Colors.grey[600],
                 size: 20,
               ),
@@ -7335,6 +7702,18 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         widget.crossVideoContext?.sessionData['source']?.toString();
     if (sessionSource == 'instant_detection_log_search') {
       return _seedInstantDetectionRoutesFromAnalysis();
+    }
+    if (sessionSource == 'people_profile_search') {
+      final sources = (widget.crossVideoContext?.sessionData['data_sources']
+                  as List?)
+              ?.map((e) => e.toString())
+              .toSet() ??
+          {};
+      // Instant-only people search: seed routes from analysis; mixed/recording
+      // continue to DB route APIs for recorded appearances.
+      if (sources.length == 1 && sources.contains('instant_detection')) {
+        return _seedInstantDetectionRoutesFromAnalysis();
+      }
     }
 
     final apiClient = ref.read(apiClientProvider);

@@ -18,6 +18,7 @@ import '../../services/individual_groups_api_client.dart';
 import '../../services/mvr_api_client.dart';
 import '../../services/presence_api_client.dart';
 import 'individual_groups_tab.dart';
+import 'people_profile_search_coordinator.dart';
 
 class PeopleProfilesTab extends ConsumerStatefulWidget {
   final String? initialPppUuid;
@@ -656,6 +657,23 @@ class PeopleProfilesTabState extends ConsumerState<PeopleProfilesTab> {
                   ),
                 ],
               ],
+            ),
+            footer: Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                tooltip: 'Search detections',
+                icon: const Icon(Icons.search, size: 20),
+                style: IconButton.styleFrom(
+                  foregroundColor: AppColors.secondary,
+                ),
+                onPressed: () {
+                  PeopleProfileSearchCoordinator.run(
+                    context: context,
+                    ref: ref,
+                    profile: profile,
+                  );
+                },
+              ),
             ),
           );
         },

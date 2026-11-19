@@ -57,6 +57,8 @@ from api.models.mvr_people import (
     OrphanedMVRResponse,
     MatchingConfigUpdate,
     MatchingConfigResponse,
+    KnownPeopleSearchRequest,
+    KnownPeopleSearchResponse,
 )
 
 # Batch merge models
@@ -7129,6 +7131,60 @@ def _build_analysis_from_instant_records(
         "estimated_age": age_display,
         "estimated_gender": gender,
     }
+
+
+@router.post(
+    "/search/by-known-people",
+    response_model=KnownPeopleSearchResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Search known MVR people in recording and/or instant data",
+    description=(
+        "Read-only search for known MVR people UUIDs across recorded video "
+        "appearances and/or Instant Detection flush logs. Does not write merge hierarchy."
+    ),
+)
+async def search_by_known_people(
+    request_body: KnownPeopleSearchRequest,
+    request: Request,
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        sources = []
+        for src in request_body.sources or []:
+            normalized = (src or "").strip().lower()
+            if normalized in ("recording", "instant_detection") and normalized not in sources:
+                sources.append(normalized)
+            elif normalized == "both":
+                for s in ("recording", "instant_detection"):
+                    if s not in sources:
+                        sources.append(s)
+        if not sources:
+            sources = ["recording"]
+
+        from services.known_people_search import KnownPeopleSearchService
+
+        service = KnownPeopleSearchService(pool=mvr_repository.pool)
+        auth_token = request.headers.get("Authorization")
+        result = await service.search(
+            mvr_people_uuids=request_body.mvr_people_uuids,
+            sources=sources,
+            start_time=request_body.start_time,
+            end_time=request_body.end_time,
+            camera_ids=request_body.camera_ids or [],
+            camera_device_ids=request_body.camera_device_ids or [],
+            similarity_threshold=request_body.similarity_threshold or 0.6,
+            auth_token=auth_token,
+        )
+        return KnownPeopleSearchResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("search/by-known-people failed: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search known people: {str(e)}",
+        )
 
 
 @router.post(

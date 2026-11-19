@@ -122,7 +122,7 @@ This is “save your homework to the cloud.” Labs can pull **installer scripts
 
 A CHANGELOG **Notes** line that a column is missing, or that persist can 500 until a later schema follow-up, means Stage 1 is not done. That column belongs in the schema pack and in `schema/verify.sh` in the same push.
 
-**Next full Stage 1–3 reminder:** Pin `2.25.107` — whole open pin (Routes/Motion + analytics quality/cache + cross-video Motion/Routes camera filter + any remaining dirty cameras/docs paths). See [`platform-release-cicd.md`](./platform-release-cicd.md) § Open and [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) Pending. **Stage 3 migrations:** `add_face_detections_timestamp.sql` + `052_ensure_iva_quality_and_movement_pattern.sql` (gates `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`). Stage 2 rebuild must include **frontend** + **vmeta-protected** (+ **cameras** if cameras source changed).
+**Next full Stage 1–3 reminder:** Pin `2.25.107` — whole open pin (Routes/Motion + analytics quality/cache + cross-video Motion/Routes camera filter + MVR soft-archive + People profile search). See [`platform-release-cicd.md`](./platform-release-cicd.md) § Open and [`HOTFIXES_NOTES.md`](./HOTFIXES_NOTES.md) Pending. **Stage 3 migrations:** `add_face_detections_timestamp.sql` + `052_ensure_iva_quality_and_movement_pattern.sql` + `055_add_mvr_people_archive.sql` (gates `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`, `mvr_people.is_archived` / `archived_at` / `archived_by`). People profile search: no new migration. Stage 2 Mode D on `lab-work-win-eynetdell`: rebuild **frontend** + **vmeta-protected** + **gateway** + **presence** + vision + orchestrator + cameras.
 
 #### CHANGELOG (mandatory on meaningful Stage 1)
 

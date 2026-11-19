@@ -443,6 +443,8 @@ class IndividualAppearance {
   final String? cameraId;  // Camera/collection ID
   final String? cameraName;  // Camera/collection name
   final String? mvrPeopleUuid;  // Child MVR person this appearance belongs to
+  /// recording | instant_detection — set for people-profile dual-source search
+  final String? dataSource;
   
   IndividualAppearance({
     required this.individualUuid,
@@ -456,6 +458,7 @@ class IndividualAppearance {
     this.cameraId,
     this.cameraName,
     this.mvrPeopleUuid,
+    this.dataSource,
   });
   
   factory IndividualAppearance.fromJson(Map<String, dynamic> json) {
@@ -471,6 +474,7 @@ class IndividualAppearance {
       confidenceScore: (json['confidence_score'] as num).toDouble(),
       cameraId: json['camera_id'] as String?,
       cameraName: json['camera_name'] as String?,
+      dataSource: json['data_source'] as String?,
     );
   }
   

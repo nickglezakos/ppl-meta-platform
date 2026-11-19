@@ -30,17 +30,20 @@ Do **not** put secrets, passwords, or personal scratch notes here (use a private
 
 - Schema: `add_face_detections_timestamp.sql` + pack `052_ensure_iva_quality_and_movement_pattern.sql`; `verify.sh` gates for `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`.
 - MVR soft-archive: `mvr_people.is_archived` / `archived_at` / `archived_by` (pack `055_add_mvr_people_archive.sql`); `POST /api/v1/mvr-people/{uuid}/archive` promotes runner-up merge child, delinks/repoints groups + Presence People links; default search/embeddings exclude archived; People & Groups **Show archived** browse toggle + avatar Archive actions; cross-video Actions Archive.
+- People profile search: search icon on People & Groups left cards and Presence People rows; restricted analytics filter (data source Recording | Instant | Both, time, cameras; face-only); read-only `POST /api/v1/mvr-people/search/by-known-people` across recording + instant logs; results open Cross-Video Individual Analysis with Recording/Instant source badges.
 
 ### Changed
 
 - Platform pin `VERSION` / installer `RELEASE_TAG`: **2.25.106 → 2.25.107**.
 - Mode D Stage 2 rebuild: **frontend**, **vmeta-protected**, **gateway**, **presence**, **vision-protected**, **orchestrator**, **cameras**; retag-forward others from `2.25.106`.
 - CI/CD Stage 1 process: a Stage 1 cut must land the **whole open pin** (Open + HOTFIXES Pending + related dirty product paths), not only the latest chat fix; Stage 3 migrations must be named in Open / HOTFIXES / CHANGELOG.
+- Analytics filter dialog extracted to a reusable widget with visibility flags (shared by Analytics and People profile search).
 
 ### Notes
 
 - No historical Vision reprocess in this pin; read-path repair covers existing IVA route points.
 - Appearance-level SQL cursor paging for routes remains deferred.
+- People profile search: **no new migration** (uses existing MVR + Instant Detection log stores).
 - **Stage 3 migrations:** apply/verify pack SQL `add_face_detections_timestamp.sql` + `052_ensure_iva_quality_and_movement_pattern.sql` + `055_add_mvr_people_archive.sql` (gates `face_detections.timestamp`, `iva.quality_score`, `iva.movement_pattern`, `mvr_people.is_archived` / `archived_at` / `archived_by`).
 
 ## [2.25.106] — 2026-11-17
