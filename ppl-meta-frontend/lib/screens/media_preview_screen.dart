@@ -342,7 +342,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
             if (apiClient.authToken != null)
               'Authorization': 'Bearer ${apiClient.authToken}',
           },
-          collectionId: null, // TODO: Pass collection ID from route parameters
+          collectionId: widget.collectionId,
           // Leave initialFaceData empty so SmartVideoPlayer loads full per-frame
           // Enhanced Logic V2 faces (detection_result.faces_by_frame) for rectangles.
           initialFaceData: null,
@@ -507,6 +507,27 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
         .whereType<String>()
         .toList();
 
+    final collectionId = widget.collectionId?.trim();
+    final hasCollection =
+        collectionId != null && collectionId.isNotEmpty;
+    String? collectionName;
+    if (hasCollection) {
+      final cols = widget.mediaItem.collections;
+      if (cols != null) {
+        for (final raw in cols) {
+          final id = (raw['uuid'] ?? raw['id'])?.toString();
+          if (id == collectionId) {
+            final name = raw['name']?.toString();
+            if (name != null && name.isNotEmpty) {
+              collectionName = name;
+            }
+            break;
+          }
+        }
+      }
+      collectionName ??= widget.mediaItem.collectionInfo?.name;
+    }
+
     final sessionData = {
       'search_results': mvrPeople,
       'total_mvr_people': mvrPeople.length,
@@ -514,9 +535,18 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
         0,
         (sum, person) => sum + ((person['total_appearances'] as int?) ?? 0),
       ),
+      // Scope Routes chips to this collection (not every historical video UUID).
+      if (hasCollection) 'collection_id': collectionId,
+      if (hasCollection) 'collection_ids': [collectionId],
+      if (collectionName != null) 'camera_name': collectionName,
       'search_parameters': {
         'source': 'media_preview_screen',
         'video_uuid': widget.mediaItem.uuid,
+        if (hasCollection) 'collection_id': collectionId,
+        if (hasCollection) 'camera_uuids': [collectionId],
+        if (hasCollection) 'camera_ids': [collectionId],
+        if (collectionName != null) 'camera_names': [collectionName],
+        if (collectionName != null) 'camera_name': collectionName,
       },
       'total_videos': 1,
       'individuals_found': mvrPeople.length,

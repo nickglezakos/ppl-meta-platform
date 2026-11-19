@@ -2427,8 +2427,50 @@ class MVRRepository:
 
         unresolved = set(video_uuids)
         resolved: Dict[str, Tuple[str, str]] = {}
-        media_base_url = os.getenv("PPL_MEDIA_URL", "http://localhost:8000").rstrip("/")
+        # Prefer MEDIA_SERVICE_URL (compose sets this to ppl-meta-media).
+        # PPL_MEDIA_URL historically defaulted to localhost and broke in-container
+        # resolution → every video became its own UUID camera chip.
+        media_base_url = (
+            os.getenv("MEDIA_SERVICE_URL")
+            or os.getenv("PPL_MEDIA_URL")
+            or "http://ppl-meta-media:8000"
+        ).rstrip("/")
         headers = {"Authorization": auth_header}
+
+        def _collection_from_item(item: Dict[str, Any]) -> Tuple[str, str]:
+            collections = item.get("collections") or []
+            collection_uuid = ""
+            collection_name = ""
+            if collections and isinstance(collections, list):
+                first_collection = collections[0] or {}
+                if isinstance(first_collection, dict):
+                    collection_uuid = str(
+                        first_collection.get("uuid")
+                        or first_collection.get("id")
+                        or ""
+                    )
+                    collection_name = str(
+                        first_collection.get("name") or collection_uuid
+                    )
+            # Some media payloads put collection fields on the video itself.
+            if not collection_uuid:
+                collection_uuid = str(
+                    item.get("collection_uuid")
+                    or item.get("collection_id")
+                    or item.get("camera_id")
+                    or ""
+                )
+            if not collection_name:
+                collection_name = str(
+                    item.get("collection_name")
+                    or item.get("camera_name")
+                    or collection_uuid
+                )
+            video_uuid = str(item.get("uuid") or "")
+            cam_id = collection_uuid or video_uuid
+            cam_name = collection_name or cam_id
+            return cam_id, cam_name
+
         page = 1
         page_size = 200
         search_params: Dict[str, Any] = {
@@ -2456,45 +2498,75 @@ class MVRRepository:
                     )
                     if response.status_code != 200:
                         logger.warning(
-                            "Route media search fallback returned status %s on page %s",
+                            "Route media search fallback returned status %s on page %s "
+                            "(media_base_url=%s)",
                             response.status_code,
                             page,
+                            media_base_url,
                         )
                         break
 
-                    items = response.json()
+                    payload = response.json()
+                    if isinstance(payload, list):
+                        items = payload
+                    elif isinstance(payload, dict):
+                        items = (
+                            payload.get("items")
+                            or payload.get("results")
+                            or payload.get("media")
+                            or []
+                        )
+                    else:
+                        items = []
                     if not isinstance(items, list) or not items:
                         break
 
                     for item in items:
+                        if not isinstance(item, dict):
+                            continue
                         video_uuid = str(item.get("uuid") or "")
                         if video_uuid not in unresolved:
                             continue
-
-                        collections = item.get("collections") or []
-                        collection_uuid = ""
-                        collection_name = ""
-                        if collections and isinstance(collections, list):
-                            first_collection = collections[0] or {}
-                            collection_uuid = str(
-                                first_collection.get("uuid")
-                                or first_collection.get("id")
-                                or ""
-                            )
-                            collection_name = str(
-                                first_collection.get("name") or collection_uuid
-                            )
-
-                        cam_id = collection_uuid or video_uuid
-                        cam_name = collection_name or cam_id
-                        resolved[video_uuid] = (cam_id, cam_name)
+                        resolved[video_uuid] = _collection_from_item(item)
                         unresolved.discard(video_uuid)
 
                     if len(items) < page_size:
                         break
                     page += 1
+
+                # Per-video lookup for anything the paged search missed.
+                for video_uuid in list(unresolved):
+                    try:
+                        response = await client.get(
+                            f"{media_base_url}/api/v1/media/video/{video_uuid}",
+                            headers=headers,
+                        )
+                        if response.status_code != 200:
+                            continue
+                        item = response.json()
+                        if not isinstance(item, dict):
+                            continue
+                        # Some handlers wrap the video under "video" / "data".
+                        if "uuid" not in item:
+                            nested = item.get("video") or item.get("data")
+                            if isinstance(nested, dict):
+                                item = nested
+                        if not item.get("uuid"):
+                            item = {**item, "uuid": video_uuid}
+                        resolved[video_uuid] = _collection_from_item(item)
+                        unresolved.discard(video_uuid)
+                    except Exception as per_video_exc:
+                        logger.debug(
+                            "Route per-video media lookup failed for %s: %s",
+                            video_uuid,
+                            per_video_exc,
+                        )
         except Exception as exc:
-            logger.warning("Route media UUID fallback failed: %s", exc)
+            logger.warning(
+                "Route media UUID fallback failed (media_base_url=%s): %s",
+                media_base_url,
+                exc,
+            )
 
         for video_uuid in unresolved:
             resolved[video_uuid] = (video_uuid, video_uuid)
@@ -3025,6 +3097,12 @@ class MVRRepository:
         if not resolved_name:
             resolved_name = camera_id
 
+        def _as_str(value: Any) -> Optional[str]:
+            if value is None:
+                return None
+            text = str(value).strip()
+            return text or None
+
         return {
             "sequence_number": seq,
             "timestamp_ms": ts_ms,
@@ -3039,11 +3117,11 @@ class MVRRepository:
             "direction_radians": 0.0,
             "confidence_score": float(row.get("confidence") or 0.0),
             "detection_quality": detection_quality,
-            "video_uuid": row.get("video_uuid"),
-            "person_object_uuid": row.get("person_object_uuid"),
-            "individual_uuid": row.get("individual_uuid"),
-            "camera_id": camera_id,
-            "camera_name": resolved_name,
+            "video_uuid": _as_str(row.get("video_uuid")),
+            "person_object_uuid": _as_str(row.get("person_object_uuid")),
+            "individual_uuid": _as_str(row.get("individual_uuid")),
+            "camera_id": _as_str(camera_id) or camera_id,
+            "camera_name": _as_str(resolved_name) or resolved_name,
         }
 
     async def get_individual_routes_by_camera_paged(

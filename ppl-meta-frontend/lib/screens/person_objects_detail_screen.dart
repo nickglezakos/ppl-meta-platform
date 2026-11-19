@@ -2486,12 +2486,84 @@ class _PersonObjectsDetailScreenState
         if (instantResponse.success && instantResponse.data != null) {
           final items =
               instantResponse.data!['analyses'] as List<dynamic>? ?? const [];
+          // Seed Routes/Motion payloads the same way Instant log search does.
+          // Without this, people-profile Instant hits never populate the Routes tab.
+          _instantRoutePayloadByIndividual.clear();
           for (final raw in items.whereType<Map>()) {
-            final analysis = AggregatedIndividualAnalysis.fromJson(
-              Map<String, dynamic>.from(raw),
-            );
+            final item = Map<String, dynamic>.from(raw);
+            final analysis = AggregatedIndividualAnalysis.fromJson(item);
             instantByUuid[analysis.individualId] = analysis;
             instantByUuid[analysis.individualUuid] = analysis;
+
+            final uuid = analysis.individualUuid;
+            final routePoints = <Map<String, dynamic>>[];
+            void addRoutePointList(dynamic rawList) {
+              if (rawList is! List) return;
+              for (final point in rawList.whereType<Map>()) {
+                routePoints.add(Map<String, dynamic>.from(point));
+              }
+            }
+
+            addRoutePointList(item['route_points']);
+            addRoutePointList(
+              (item['movement_tracking'] as Map?)?['route_points'],
+            );
+            final apps = item['appearances'];
+            if (apps is List) {
+              for (final app in apps.whereType<Map>()) {
+                addRoutePointList(app['route_points']);
+                addRoutePointList(
+                  (app['movement_pattern'] as Map?)?['route_points'],
+                );
+                addRoutePointList(
+                  (app['movement_tracking'] as Map?)?['route_points'],
+                );
+              }
+            }
+            for (final record in instantMvrs) {
+              final rid = record['instant_mvr_uuid']?.toString() ??
+                  record['mvr_people_uuid']?.toString() ??
+                  record['matched_mvr_people_uuid']?.toString();
+              if (rid != uuid &&
+                  rid != analysis.individualId &&
+                  record['matched_mvr_people_uuid']?.toString() != uuid) {
+                continue;
+              }
+              addRoutePointList(record['route_points']);
+              addRoutePointList(
+                (record['movement_tracking'] as Map?)?['route_points'],
+              );
+            }
+
+            final movementTracking = item['movement_tracking'] is Map
+                ? Map<String, dynamic>.from(item['movement_tracking'] as Map)
+                : <String, dynamic>{};
+            if (routePoints.isNotEmpty) {
+              movementTracking['route_points'] = routePoints;
+            }
+            final speedSamples = <Map<String, dynamic>>[];
+            final rawSamples = item['speed_samples'];
+            if (rawSamples is List) {
+              for (final sample in rawSamples.whereType<Map>()) {
+                speedSamples.add(Map<String, dynamic>.from(sample));
+              }
+            }
+            _instantRoutePayloadByIndividual[uuid] = {
+              'route_points': routePoints,
+              'movement_tracking': movementTracking,
+              'average_route_velocity': item['average_route_velocity'],
+              'average_speed_mps': item['average_speed_mps'],
+              'speed_samples': speedSamples,
+              'gait_band': item['gait_band'],
+              'motion_class': item['motion_class'],
+              'motion_confidence': item['motion_confidence'],
+              'camera_id': searchParams?['camera_device_id'] ??
+                  (searchParams?['camera_device_ids'] is List &&
+                          (searchParams!['camera_device_ids'] as List)
+                              .isNotEmpty
+                      ? (searchParams['camera_device_ids'] as List).first
+                      : null),
+            };
           }
         }
       } catch (e) {
@@ -2582,7 +2654,9 @@ class _PersonObjectsDetailScreenState
       if (appearances.isEmpty) continue;
 
       appearances.sort((a, b) => a.startTimestamp.compareTo(b.startTimestamp));
-      final base = recordingByUuid[uuid] ?? instantByUuid[uuid];
+      final recording = recordingByUuid[uuid];
+      final instant = instantByUuid[uuid];
+      final base = recording ?? instant;
       final uniqueVideos =
           appearances.map((a) => a.videoUuid).where((v) => v.isNotEmpty).toSet();
       final avgConf = appearances.isEmpty
@@ -2591,6 +2665,16 @@ class _PersonObjectsDetailScreenState
                   .map((a) => a.confidenceScore)
                   .fold<double>(0, (s, v) => s + v) /
               appearances.length;
+
+      // Prefer Instant motion/speed when recording enrichment lacks them
+      // (people-profile Instant-only hits are common in mixed searches).
+      final motionClass = _preferMotionClass(
+        recording?.motionClass,
+        instant?.motionClass,
+      );
+      final motionConfidence = motionClass == instant?.motionClass
+          ? (instant?.motionConfidence ?? recording?.motionConfidence)
+          : (recording?.motionConfidence ?? instant?.motionConfidence);
 
       aggregatedAnalyses.add(
         AggregatedIndividualAnalysis(
@@ -2607,15 +2691,20 @@ class _PersonObjectsDetailScreenState
           ),
           averageConfidence: avgConf,
           averageQualityScore: base?.averageQualityScore ?? avgConf,
-          averageRouteVelocity: base?.averageRouteVelocity,
-          averageSpeedMps: base?.averageSpeedMps,
-          gaitBand: base?.gaitBand,
-          motionClass: base?.motionClass,
-          motionConfidence: base?.motionConfidence,
-          motionFeatures: base?.motionFeatures,
-          routeCaricature: base?.routeCaricature,
-          demographics: base?.demographics,
-          aggregateDemographics: base?.aggregateDemographics,
+          averageRouteVelocity:
+              recording?.averageRouteVelocity ?? instant?.averageRouteVelocity,
+          averageSpeedMps:
+              recording?.averageSpeedMps ?? instant?.averageSpeedMps,
+          gaitBand: recording?.gaitBand ?? instant?.gaitBand,
+          motionClass: motionClass,
+          motionConfidence: motionConfidence,
+          motionFeatures:
+              recording?.motionFeatures ?? instant?.motionFeatures,
+          routeCaricature:
+              recording?.routeCaricature ?? instant?.routeCaricature,
+          demographics: base?.demographics ?? instant?.demographics,
+          aggregateDemographics:
+              base?.aggregateDemographics ?? instant?.aggregateDemographics,
           appearances: appearances,
           personObjectUuids:
               appearances.map((a) => a.personObjectUuid).toList(),
@@ -2631,6 +2720,14 @@ class _PersonObjectsDetailScreenState
         ),
       );
     }
+  }
+
+  String? _preferMotionClass(String? primary, String? fallback) {
+    bool usable(String? value) =>
+        value != null && value.isNotEmpty && value.toLowerCase() != 'unknown';
+    if (usable(primary)) return primary;
+    if (usable(fallback)) return fallback;
+    return primary ?? fallback;
   }
 
   /// Load Instant Detection log search analysis from ephemeral InstantMvr records.
@@ -7709,9 +7806,12 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
               ?.map((e) => e.toString())
               .toSet() ??
           {};
-      // Instant-only people search: seed routes from analysis; mixed/recording
-      // continue to DB route APIs for recorded appearances.
-      if (sources.length == 1 && sources.contains('instant_detection')) {
+      final instantOnly = sources.length == 1 &&
+          sources.contains('instant_detection');
+      // Instant-only: seed from analysis payloads (no IVA route rows).
+      // Mixed/recording: fetch IVA/DB routes first, then seed Instant afterward
+      // so Instant trajectories are not skipped by _loadedRouteSourceIndividuals.
+      if (instantOnly) {
         return _seedInstantDetectionRoutesFromAnalysis();
       }
     }
@@ -7720,8 +7820,13 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     final routesClient = IndividualGroupsApiClient(apiClient);
     final bool isIndividualGroupSearch =
       sessionSource == 'individual_group_camera_search';
-    final bool applyTimeFilter =
-      !isIndividualGroupSearch && _hasRouteSearchScopeFilter();
+    // Apply search window whenever start/end exist (people-profile / analytics).
+    // Camera-scope alone used to gate time filtering, which pulled full history
+    // and exploded UUID chips when media→collection resolution failed.
+    final bool applyTimeFilter = !isIndividualGroupSearch &&
+        (_hasRouteSearchScopeFilter() ||
+            _getRouteSearchStartTimeMs() != null ||
+            _getRouteSearchEndTimeMs() != null);
     final int? routeStartTimeMs =
       applyTimeFilter ? _getRouteSearchStartTimeMs() : null;
     final int? routeEndTimeMs =
@@ -7764,10 +7869,11 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         developer.log('🗺️ ROUTES DEBUG: metadata success=${metadataResp.success}');
         if (metadataResp.success && metadataResp.data != null) {
           developer.log('🗺️ ROUTES DEBUG: metadata raw=${metadataResp.data}');
-          final allMetadataCameras =
-              (metadataResp.data!['cameras'] as List<dynamic>? ?? [])
-                  .whereType<Map<String, dynamic>>()
-                  .toList();
+          final allMetadataCameras = _normalizeRouteCameraMetadata(
+            (metadataResp.data!['cameras'] as List<dynamic>? ?? [])
+                .whereType<Map<String, dynamic>>()
+                .toList(),
+          );
           developer.log('🗺️ ROUTES DEBUG: allMetadataCameras count=${allMetadataCameras.length}');
           for (final c in allMetadataCameras) {
             developer.log('🗺️ ROUTES DEBUG:   camera_id=${c['camera_id']}, camera_name=${c['camera_name']}, total_points=${c['total_points']}');
@@ -7822,6 +7928,13 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         (cameraId) => _getTotalPointsForCamera(cameraId) > 0,
         orElse: () => cameraIds.first,
       );
+    }
+
+    // People-profile mixed search: after IVA/DB routes, fold in Instant
+    // trajectories so both sources appear on the Routes tab.
+    if (sessionSource == 'people_profile_search' &&
+        _instantRoutePayloadByIndividual.isNotEmpty) {
+      await _seedInstantDetectionRoutesFromAnalysis();
     }
 
     return _buildSelectedCameraPersonGroups();
@@ -7900,10 +8013,82 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     // Camera-based search via search_parameters
     final params = _getRouteSearchParams();
     if (params == null) return false;
+    if ((params['collection_id'] as String?)?.isNotEmpty == true) return true;
     if ((params['camera_uuids'] as List?)?.isNotEmpty == true) return true;
     if ((params['camera_ids'] as List?)?.isNotEmpty == true) return true;
     if ((params['camera_id'] as String?)?.isNotEmpty == true) return true;
     return false;
+  }
+
+  /// Collapse media-preview video-UUID chips into the collection chip so
+  /// reviewing one collection video does not spawn extra UUID filters.
+  List<Map<String, dynamic>> _normalizeRouteCameraMetadata(
+    List<Map<String, dynamic>> cameras,
+  ) {
+    final sessionData = widget.crossVideoContext?.sessionData;
+    final params = _getRouteSearchParams();
+    final collectionId = (sessionData?['collection_id'] ??
+            params?['collection_id'] ??
+            '')
+        .toString()
+        .trim();
+    if (collectionId.isEmpty) return cameras;
+
+    final isMediaPreview =
+        params?['source']?.toString() == 'media_preview_screen';
+    final videoUuid = params?['video_uuid']?.toString();
+    final collectionName = _resolveRouteCameraDisplayName(collectionId);
+    final collapsed = <String, Map<String, dynamic>>{};
+
+    for (final raw in cameras) {
+      final camera = Map<String, dynamic>.from(raw);
+      final cameraId = (camera['camera_id'] ?? '').toString();
+      if (cameraId.isEmpty) continue;
+
+      final isCurrentVideo = videoUuid != null && cameraId == videoUuid;
+      final name = (camera['camera_name'] ?? '').toString();
+      final unresolved = name.isEmpty || name == cameraId;
+
+      // Media preview: keep only the collection chip (fold current video into
+      // it; drop other unresolved video-UUID chips from sibling appearances).
+      if (isMediaPreview) {
+        if (cameraId != collectionId && !isCurrentVideo) {
+          continue;
+        }
+        final points = (camera['total_points'] as num?)?.toInt() || 0;
+        final appearances =
+            (camera['total_appearances'] as num?)?.toInt() || 0;
+        final existing = collapsed[collectionId];
+        if (existing == null) {
+          collapsed[collectionId] = {
+            ...camera,
+            'camera_id': collectionId,
+            'camera_name': (collectionName.isNotEmpty &&
+                    collectionName != collectionId)
+                ? collectionName
+                : (unresolved ? collectionId : name),
+            'total_points': points,
+            'total_appearances': appearances,
+          };
+        } else {
+          existing['total_points'] =
+              ((existing['total_points'] as num?)?.toInt() || 0) + points;
+          existing['total_appearances'] =
+              ((existing['total_appearances'] as num?)?.toInt() || 0) +
+                  appearances;
+          if (existing['camera_name'] == collectionId &&
+              name.isNotEmpty &&
+              name != cameraId) {
+            existing['camera_name'] = name;
+          }
+        }
+        continue;
+      }
+
+      collapsed[cameraId] = camera;
+    }
+
+    return collapsed.values.toList();
   }
 
   /// Returns true if [cameraId] (UUID) / [cameraName] is within the camera
@@ -8336,8 +8521,10 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       final bool isIndividualGroupSearch =
         widget.crossVideoContext?.sessionData['source'] ==
         'individual_group_camera_search';
-      final bool applyTimeFilter =
-        !isIndividualGroupSearch && _hasRouteSearchScopeFilter();
+      final bool applyTimeFilter = !isIndividualGroupSearch &&
+          (_hasRouteSearchScopeFilter() ||
+              _getRouteSearchStartTimeMs() != null ||
+              _getRouteSearchEndTimeMs() != null);
       final int? routeStartTimeMs =
         applyTimeFilter ? _getRouteSearchStartTimeMs() : null;
       final int? routeEndTimeMs =

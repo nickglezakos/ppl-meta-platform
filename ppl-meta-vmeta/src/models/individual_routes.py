@@ -28,8 +28,8 @@ class RoutePoint(BaseModel):
     confidence_score: float = Field(
         ..., description="Detection confidence 0–1"
     )
-    detection_quality: Optional[str] = Field(
-        None, description="excellent/good/fair/poor"
+    detection_quality: Optional[float] = Field(
+        None, description="Face/detection quality score 0–1 (from IVA quality_score)"
     )
     video_uuid: Optional[str] = Field(None, description="Source video UUID")
     person_object_uuid: Optional[str] = Field(
