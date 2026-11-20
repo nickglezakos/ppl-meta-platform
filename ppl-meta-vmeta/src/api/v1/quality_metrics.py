@@ -7,7 +7,7 @@ Endpoints for calculating average face quality of individuals by collection.
 import logging
 import statistics
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 

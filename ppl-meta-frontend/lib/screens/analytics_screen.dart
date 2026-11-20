@@ -107,13 +107,16 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       return null;
     }
 
-    final selectedCameraIds = _selectedCollectionIds.isNotEmpty
-        ? _selectedCollectionIds
-        : _cameras
-            .map((camera) => (camera['id'] as String?)?.trim())
-            .whereType<String>()
-            .where((value) => value.isNotEmpty)
-            .toList();
+    // "All collections" — do NOT fan out N× media/search from the FE (starves Media
+    // DB pool + Automations). Gateway builds the Recording dataset itself.
+    if (_selectedCollectionIds.isEmpty) {
+      return null;
+    }
+
+    final selectedCameraIds = _selectedCollectionIds
+        .map((id) => id.trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
 
     if (selectedCameraIds.isEmpty) {
       return null;
@@ -123,33 +126,37 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final videoUuids = <String>[];
     final seenVideoUuids = <String>{};
 
-    // Parallel per-camera media search (was sequential and dominated cold loads).
-    final searches = selectedCameraIds.map((selectedCameraId) async {
-      final matchingCamera = _cameras.cast<Map<String, dynamic>?>().firstWhere(
-        (camera) => camera?['id'] == selectedCameraId,
-        orElse: () => null,
-      );
-      final collectionUuid = (matchingCamera?['uuid'] as String?)?.trim();
-      final collectionId = collectionUuid != null && collectionUuid.isNotEmpty
-          ? collectionUuid
-          : selectedCameraId;
+    // Bounded concurrency (was unbounded Future.wait over every camera).
+    const maxConcurrent = 3;
+    for (var offset = 0; offset < selectedCameraIds.length; offset += maxConcurrent) {
+      final chunk = selectedCameraIds.skip(offset).take(maxConcurrent);
+      final searches = chunk.map((selectedCameraId) async {
+        final matchingCamera = _cameras.cast<Map<String, dynamic>?>().firstWhere(
+          (camera) => camera?['id'] == selectedCameraId,
+          orElse: () => null,
+        );
+        final collectionUuid = (matchingCamera?['uuid'] as String?)?.trim();
+        final collectionId = collectionUuid != null && collectionUuid.isNotEmpty
+            ? collectionUuid
+            : selectedCameraId;
 
-      return apiClient.searchMedia(
-        collectionId: collectionId,
-        startDate: effectiveStartDate,
-        endDate: effectiveEndDate,
-        limit: 500,
-      );
-    });
+        return apiClient.searchMedia(
+          collectionId: collectionId,
+          startDate: effectiveStartDate,
+          endDate: effectiveEndDate,
+          limit: 500,
+        );
+      });
 
-    final mediaResponses = await Future.wait(searches);
-    for (final mediaResponse in mediaResponses) {
-      if (!mediaResponse.success || mediaResponse.data == null) {
-        continue;
-      }
-      for (final media in mediaResponse.data!.items) {
-        if (seenVideoUuids.add(media.uuid)) {
-          videoUuids.add(media.uuid);
+      final mediaResponses = await Future.wait(searches);
+      for (final mediaResponse in mediaResponses) {
+        if (!mediaResponse.success || mediaResponse.data == null) {
+          continue;
+        }
+        for (final media in mediaResponse.data!.items) {
+          if (seenVideoUuids.add(media.uuid)) {
+            videoUuids.add(media.uuid);
+          }
         }
       }
     }
@@ -251,7 +258,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       final needsSplitQuality =
           explicitVideoUuids != null && explicitVideoUuids.isNotEmpty;
 
-      // Parallel fan-out: previously 5–6 sequential round-trips.
+      // Two-phase load: primary (summary+quality) warms Gateway dataset cache;
+      // secondary charts reuse it. Avoids thundering-herd Media/vmeta stampede.
       final summaryFuture = apiClient.getAnalyticsSummary(
         timeFilter: _timeFilter,
         cameraIds: cameraIds,
@@ -292,6 +300,14 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               normalised: useNormalised,
             )
           : null;
+
+      final primarySettled = await Future.wait([
+        summaryFuture,
+        qualityFuture,
+        if (overviewQualityFuture != null) overviewQualityFuture,
+      ]);
+      if (!mounted) return;
+
       final timeSeriesFuture = apiClient.getTimeBasedAnalytics(
         timeFilter: _timeFilter,
         cameraIds: cameraIds,
@@ -352,10 +368,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                 )
               : null;
 
-      final settled = await Future.wait([
-        summaryFuture,
-        qualityFuture,
-        if (overviewQualityFuture != null) overviewQualityFuture,
+      final secondarySettled = await Future.wait([
         timeSeriesFuture,
         demographicsFuture,
         behavioralFuture,
@@ -363,6 +376,11 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         if (routeFovFuture != null) routeFovFuture,
       ]);
       if (!mounted) return;
+
+      final settled = <dynamic>[
+        ...primarySettled,
+        ...secondarySettled,
+      ];
 
       var i = 0;
       final response = settled[i++] as ApiResponse<Map<String, dynamic>>;

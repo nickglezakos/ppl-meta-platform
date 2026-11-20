@@ -3,6 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 import logging
+import os
 from .config import config
 
 # Set up logging
@@ -11,13 +12,32 @@ logger = logging.getLogger(__name__)
 # Suppress verbose SQLAlchemy SQL logging (BEGIN/SELECT/ROLLBACK every poll cycle)
 logging.getLogger("sqlalchemy.engine.Engine").setLevel(logging.WARNING)
 
+# Instant Detection trigger eval + Analytics share this pool. Defaults raised so a
+# cold Analytics fan-out cannot starve Automations (/triggers, /user-actions).
+def _env_int(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
+
+
+_POOL_SIZE = _env_int("MEDIA_DB_POOL_SIZE", 20)
+_MAX_OVERFLOW = _env_int("MEDIA_DB_MAX_OVERFLOW", 40)
+logger.info(
+    "SQLAlchemy pool_size=%s max_overflow=%s", _POOL_SIZE, _MAX_OVERFLOW
+)
+
 # Create SQLAlchemy engine
 engine = create_engine(
     config.get_database_url(),
     poolclass=QueuePool,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=_POOL_SIZE,
+    max_overflow=_MAX_OVERFLOW,
     pool_pre_ping=True,
+    pool_timeout=30,
     echo=False,
 )
 

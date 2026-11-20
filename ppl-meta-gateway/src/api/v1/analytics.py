@@ -249,10 +249,29 @@ def _normalize_age_group(age: Optional[int]) -> str:
 # Short TTL cache: Instant Detection analytics hits this dataset 4–5 times per page load.
 _INSTANT_DATASET_TTL_SECONDS = 20.0
 _instant_dataset_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+# Singleflight: FE opens Analytics with 4–6 parallel Instant endpoints; without a lock
+# each misses the empty cache and stamps Media with duplicate 500-row fetches.
+_instant_dataset_locks: Dict[str, asyncio.Lock] = {}
+_instant_dataset_locks_guard = asyncio.Lock()
 
 # Recording analytics hits the same merge dataset from summary/time/demo/behavioral/fov.
 _RECORDING_DATASET_TTL_SECONDS = 20.0
 _recording_dataset_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+_recording_dataset_locks: Dict[str, asyncio.Lock] = {}
+_recording_dataset_locks_guard = asyncio.Lock()
+
+
+async def _lock_for(
+    locks: Dict[str, asyncio.Lock],
+    guard: asyncio.Lock,
+    key: str,
+) -> asyncio.Lock:
+    async with guard:
+        lock = locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            locks[key] = lock
+        return lock
 
 
 async def _fetch_media_collections(auth_token: str) -> List[Dict[str, Any]]:
@@ -847,6 +866,37 @@ async def _get_instant_detection_approx_dataset(
         base = cached[1]
         return _with_instant_modality(base, modality)
 
+    lock = await _lock_for(
+        _instant_dataset_locks, _instant_dataset_locks_guard, cache_key
+    )
+    async with lock:
+        now_mono = datetime.now(timezone.utc).timestamp()
+        cached = _instant_dataset_cache.get(cache_key)
+        if cached and (now_mono - cached[0]) <= _INSTANT_DATASET_TTL_SECONDS:
+            return _with_instant_modality(cached[1], modality)
+        return await _build_instant_detection_approx_dataset_unlocked(
+            auth_token=auth_token,
+            time_filter=time_filter,
+            collection_ids=collection_ids,
+            start_date=start_date,
+            end_date=end_date,
+            normalised=normalised,
+            detection_modality=modality,
+            cache_key=cache_key,
+        )
+
+
+async def _build_instant_detection_approx_dataset_unlocked(
+    auth_token: str,
+    time_filter: str,
+    collection_ids: Optional[str],
+    start_date: Optional[str],
+    end_date: Optional[str],
+    normalised: bool,
+    detection_modality: str,
+    cache_key: str,
+) -> Dict[str, Any]:
+    modality = _normalize_detection_modality(detection_modality)
     start_time, end_time = _parse_time_filter(time_filter, start_date, end_date)
     start_time, end_time = _as_utc(start_time), _as_utc(end_time)
 
@@ -973,6 +1023,7 @@ async def _get_instant_detection_approx_dataset(
         "source": source,
         "normalised": bool(normalised),
     }
+    now_mono = datetime.now(timezone.utc).timestamp()
     _instant_dataset_cache[cache_key] = (now_mono, dataset)
     # Bound cache size for long-lived gateway processes.
     if len(_instant_dataset_cache) > 64:
@@ -1461,6 +1512,38 @@ async def _build_recording_pipeline_search_dataset(
         if cached and (now_mono - cached[0]) <= _RECORDING_DATASET_TTL_SECONDS:
             return dict(cached[1])
 
+    lock = await _lock_for(
+        _recording_dataset_locks, _recording_dataset_locks_guard, cache_key
+    )
+    async with lock:
+        now_mono = datetime.now(timezone.utc).timestamp()
+        if not force_refresh:
+            cached = _recording_dataset_cache.get(cache_key)
+            if cached and (now_mono - cached[0]) <= _RECORDING_DATASET_TTL_SECONDS:
+                return dict(cached[1])
+        return await _build_recording_pipeline_search_dataset_unlocked(
+            auth_token=auth_token,
+            time_filter=time_filter,
+            collection_ids=collection_ids,
+            start_date=start_date,
+            end_date=end_date,
+            explicit_video_uuids=explicit_video_uuids,
+            force_refresh=force_refresh,
+            cache_key=cache_key,
+        )
+
+
+async def _build_recording_pipeline_search_dataset_unlocked(
+    auth_token: str,
+    time_filter: str,
+    collection_ids: Optional[str],
+    start_date: Optional[str],
+    end_date: Optional[str],
+    explicit_video_uuids: List[str],
+    force_refresh: bool,
+    cache_key: str,
+) -> Dict[str, Any]:
+    now_mono = datetime.now(timezone.utc).timestamp()
     start_time, end_time = _parse_time_filter(time_filter, start_date, end_date)
     selected_collection_ids = _parse_csv_query_values(collection_ids)
 
@@ -1671,8 +1754,18 @@ async def _build_recording_pipeline_search_dataset(
                 )
                 return collection_identifier, collection_name, collected
 
+            # Cap concurrent Media searches so Analytics cannot exhaust Media's DB pool.
+            _media_search_sem = asyncio.Semaphore(3)
+
+            async def _fetch_collection_videos_limited(collection: Dict[str, Any]):
+                async with _media_search_sem:
+                    return await _fetch_collection_videos(collection)
+
             collection_results = await asyncio.gather(
-                *[_fetch_collection_videos(collection) for collection in collections]
+                *[
+                    _fetch_collection_videos_limited(collection)
+                    for collection in collections
+                ]
             )
             for collection_identifier, collection_name, collection_videos in collection_results:
                 if not collection_identifier:
